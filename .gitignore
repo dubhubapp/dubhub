@@ -1,0 +1,29 @@
+# Node
+node_modules/
+dist/
+
+# MacOS
+.DS_Store
+
+# Env files
+.env
+.env.*
+
+# Build/system artifacts
+*.tar.gz
+
+# Media (never commit)
+processed/
+*.mp4
+*.mov
+
+# Cursor/Replit agent junk (critical to ignore)
+.local/
+attached_assets/
+
+# Editor junk
+*.swp
+*.log
+
+# Vite temp files
+vite.config.ts.*
