@@ -1,11 +1,5 @@
 import { type Request, type Response, type NextFunction } from 'express';
 import { supabase } from './supabaseClient';
-import { db } from './db';
-import { users } from '@shared/schema';
-import { eq } from 'drizzle-orm';
-import type { User } from '@shared/schema';
-import { storage } from './storage';
-import { normalizeUsername, isUsernameTaken } from './usernameUtils';
 
 export interface AuthenticatedRequest extends Request {
   supabaseUser?: {
@@ -13,8 +7,14 @@ export interface AuthenticatedRequest extends Request {
     email?: string;
     avatarUrl?: string | null;
   };
-  dbUser?: User & {
+  dbUser?: {
+    id: string;
+    username: string;
+    email?: string;
     avatarUrl?: string | null;
+    account_type?: string;
+    verified_artist?: boolean;
+    moderator?: boolean;
   };
 }
 
@@ -40,10 +40,10 @@ export async function withSupabaseUser(
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
-    // Fetch full profile from Supabase profiles table (username, account_type, avatar_url, verified_artist)
+    // Fetch full profile from Supabase profiles table (username, account_type, avatar_url, verified_artist, moderator)
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('username, account_type, avatar_url, verified_artist')
+      .select('username, account_type, avatar_url, verified_artist, moderator')
       .eq('id', user.id)
       .single();
 
@@ -67,59 +67,15 @@ export async function withSupabaseUser(
       avatarUrl: profileData?.avatar_url,
     };
 
-    // Fetch the corresponding user from Neon database
-    let dbUserResult = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
-    
-    // If user doesn't exist in Neon, auto-create them from Supabase profile
-    if (dbUserResult.length === 0) {
-      console.log(`[Auth] User ${user.id} exists in Supabase but not in Neon. Auto-creating...`);
-      try {
-        // Normalize username from Supabase profile
-        const normalizedUsername = normalizeUsername(profileData.username);
-        
-        if (!normalizedUsername) {
-          console.error(`[Auth] Invalid username in Supabase profile for user ${user.id}`);
-          return res.status(400).json({ 
-            message: 'Username already taken, please choose another.'
-          });
-        }
-        
-        // Check if normalized username is already taken (shouldn't happen, but safety check)
-        const usernameTaken = await isUsernameTaken(normalizedUsername, supabase, storage);
-        if (usernameTaken) {
-          console.error(`[Auth] Username conflict for user ${user.id}: ${normalizedUsername}`);
-          return res.status(409).json({ 
-            message: 'Username already taken, please choose another.'
-          });
-        }
-        
-        const newUser = await storage.createUser({
-          id: user.id,
-          username: normalizedUsername, // Use normalized username
-          displayName: profileData.username, // Keep original for display
-          userType: profileData.account_type as 'user' | 'artist',
-          profileImage: profileData.avatar_url || null,
-        });
-        console.log(`[Auth] Successfully created Neon user for ${user.id} with username: ${normalizedUsername}`);
-        dbUserResult = [newUser];
-      } catch (error: any) {
-        console.error(`[Auth] Failed to auto-create Neon user:`, error);
-        // If creation fails (e.g., duplicate username), return error
-        if (error.message?.includes('duplicate') || error.message?.includes('unique') || error.message?.includes("name's taken")) {
-          return res.status(409).json({ 
-            message: 'Username already taken, please choose another.'
-          });
-        }
-        return res.status(500).json({ 
-          message: 'Username already taken, please choose another.'
-        });
-      }
-    }
-
-    // Combine Neon user data with Supabase avatar_url
+    // Build dbUser directly from Supabase profile (no need for separate users table)
     req.dbUser = {
-      ...dbUserResult[0],
+      id: user.id,
+      username: profileData.username,
+      email: user.email,
       avatarUrl: profileData?.avatar_url,
+      account_type: profileData.account_type,
+      verified_artist: profileData.verified_artist,
+      moderator: profileData.moderator || false,
     };
     next();
   } catch (error) {
@@ -155,7 +111,7 @@ export async function optionalSupabaseUser(
     // Fetch full profile from Supabase profiles table
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('username, account_type, avatar_url, verified_artist')
+      .select('username, account_type, avatar_url, verified_artist, moderator')
       .eq('id', user.id)
       .single();
 
@@ -166,57 +122,22 @@ export async function optionalSupabaseUser(
     }
 
     if (profileData) {
-    req.supabaseUser = {
-      id: user.id,
-      email: user.email,
-      avatarUrl: profileData?.avatar_url,
-    };
-
-    // Try to fetch the corresponding user from Neon database
-      let dbUserResult = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
-      
-      // Auto-create if missing (non-blocking for optional auth)
-      if (dbUserResult.length === 0) {
-        console.log(`[Optional Auth] User ${user.id} exists in Supabase but not in Neon. Auto-creating...`);
-        try {
-          // Normalize username from Supabase profile
-          const normalizedUsername = normalizeUsername(profileData.username);
-          
-          if (!normalizedUsername) {
-            console.error(`[Optional Auth] Invalid username in Supabase profile for user ${user.id}, skipping auto-create`);
-            // Continue without Neon user for optional auth
-            return next();
-          }
-          
-          // Check if normalized username is already taken (shouldn't happen, but safety check)
-          const usernameTaken = await isUsernameTaken(normalizedUsername, supabase, storage);
-          if (usernameTaken) {
-            console.warn(`[Optional Auth] Username conflict for optional auth user ${user.id}: ${normalizedUsername}, continuing without Neon user`);
-            // Continue without Neon user for optional auth
-            return next();
-          }
-          
-          const newUser = await storage.createUser({
-            id: user.id,
-            username: normalizedUsername, // Use normalized username
-            displayName: profileData.username, // Keep original for display
-            userType: profileData.account_type as 'user' | 'artist',
-            profileImage: profileData.avatar_url || null,
-          });
-          console.log(`[Optional Auth] Successfully created Neon user for ${user.id} with username: ${normalizedUsername}`);
-          dbUserResult = [newUser];
-        } catch (error: any) {
-          // Silently fail for optional auth - user just won't have dbUser context
-          console.error(`[Optional Auth] Failed to auto-create Neon user:`, error?.message || error);
-        }
-      }
-    
-    if (dbUserResult.length > 0) {
-      req.dbUser = {
-        ...dbUserResult[0],
+      req.supabaseUser = {
+        id: user.id,
+        email: user.email,
         avatarUrl: profileData?.avatar_url,
       };
-      }
+
+      // Build dbUser directly from Supabase profile
+      req.dbUser = {
+        id: user.id,
+        username: profileData.username,
+        email: user.email,
+        avatarUrl: profileData?.avatar_url,
+        account_type: profileData.account_type,
+        verified_artist: profileData.verified_artist,
+        moderator: profileData.moderator || false,
+      };
     }
 
     next();

@@ -229,22 +229,31 @@ export default function SubmitMetadata() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: async (data: SubmitFormData) => {
-      if (!uploadedVideoUrl) {
+    mutationFn: async (data: { formData: SubmitFormData; videoUrl: string }) => {
+      if (!data.videoUrl) {
         throw new Error("Video URL is required");
       }
 
       // Map form data to backend's expected snake_case format
       const submitData = {
-        title: data.title || "Untitled Post", // Backend requires title
-        video_url: uploadedVideoUrl,
-        genre: data.genre || null,
-        description: data.description || null,
-        location: data.location || null,
-        dj_name: data.djName || null,
+        title: data.formData.title || "Untitled Post", // Backend requires title
+        video_url: data.videoUrl,
+        genre: data.formData.genre || null,
+        description: data.formData.description || null,
+        location: data.formData.location || null,
+        dj_name: data.formData.djName || null,
       };
       
-      return apiRequest("POST", "/api/posts", submitData);
+      console.log("Submitting post with data:", { ...submitData, video_url: submitData.video_url.substring(0, 50) + "..." });
+      const response = await apiRequest("POST", "/api/posts", submitData);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }));
+        console.error("Post creation failed:", errorData);
+        throw new Error(errorData.message || `Failed to create post: ${response.status}`);
+      }
+      const responseData = await response.json();
+      console.log("Post created successfully:", responseData);
+      return responseData;
     },
     onSuccess: () => {
       toast({
@@ -280,10 +289,11 @@ export default function SubmitMetadata() {
       // Navigate to home with newPost parameter to trigger scroll to top
       setLocation("/?newPost=true");
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Post submission error:", error);
       toast({
         title: "Submission Failed",
-        description: "There was an error submitting your track. Please try again.",
+        description: error.message || "There was an error submitting your track. Please try again.",
         variant: "destructive",
       });
     },
@@ -307,14 +317,35 @@ export default function SubmitMetadata() {
           start: trimTimes.startTime,
           end: trimTimes.endTime,
         });
-        submitMutation.mutate(data);
+        
+        // Extract URL from upload result
+        // The upload route returns: { success: true, url: publicUrl, filename, ... }
+        const videoUrl = uploadResult.url;
+        if (!videoUrl) {
+          console.error("Upload result:", uploadResult);
+          throw new Error("Upload succeeded but no URL returned. Check server logs.");
+        }
+        
+        console.log("Video uploaded successfully, URL:", videoUrl);
+        
+        // Set the uploaded URL for UI state
+        setUploadedVideoUrl(videoUrl);
+        
+        // Submit with the video URL directly
+        submitMutation.mutate({ formData: data, videoUrl });
       } catch (error) {
+        console.error("Upload/Submit error:", error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to upload or submit video",
+          variant: "destructive",
+        });
         return;
       } finally {
         setIsUploading(false);
       }
     } else {
-      submitMutation.mutate(data);
+      submitMutation.mutate({ formData: data, videoUrl: uploadedVideoUrl });
     }
   };
 

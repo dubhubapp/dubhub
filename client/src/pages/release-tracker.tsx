@@ -168,9 +168,9 @@ export default function ReleaseTracker() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
                         {getStatusBadge(post.verificationStatus)}
-                        {post.eventDate && (
+                        {post.createdAt && (
                           <span className="text-xs text-gray-400">
-                            {formatReleaseDate(post.eventDate)}
+                            {new Date(post.createdAt).toLocaleDateString()}
                           </span>
                         )}
                       </div>

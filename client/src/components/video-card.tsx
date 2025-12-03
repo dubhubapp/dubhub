@@ -405,7 +405,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
             <div className="flex items-center space-x-2 text-xs text-gray-300">
               {post.djName && <span>Mixed by: {post.djName}</span>}
               {post.djName && <span>•</span>}
-              <span>{formatTimeAgo(post.createdAt)}</span>
+              <span>{post.createdAt ? formatTimeAgo(post.createdAt) : 'Recently'}</span>
             </div>
           </div>
         </div>

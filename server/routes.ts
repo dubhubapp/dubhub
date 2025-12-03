@@ -83,8 +83,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Video upload endpoint - process with ffmpeg
+  // Multer must run first to parse multipart form data, then we can authenticate
   app.post("/api/upload-video", upload.single('video'), async (req, res) => {
     try {
+      // Extract user ID from auth header (multer runs first, then we get user)
+      const authHeader = req.headers.authorization;
+      let userId = 'anonymous';
+      
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const { supabase } = await import('./supabaseClient');
+          const accessToken = authHeader.substring(7);
+          const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+          if (!error && user) {
+            userId = user.id;
+          }
+        } catch (authError) {
+          console.warn('Could not authenticate user for upload, using anonymous:', authError);
+        }
+      }
+      
       if (!req.file) {
         return res.status(400).json({ success: false, error: "No video file provided" });
       }
@@ -179,22 +197,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.warn('Could not delete input file:', e);
         }
         
-        // Return processed video URL
+        // Upload processed video to Supabase Storage
+        const { supabase } = await import('./supabaseClient');
+        const videoBuffer = fs.readFileSync(outputPath);
+        
+        // Generate unique path in Supabase Storage
+        const storagePath = `${userId}/${outputFilename}`;
+        
+        console.log('Uploading video to Supabase Storage:', {
+          bucket: 'videos',
+          path: storagePath,
+          size: videoBuffer.length,
+          userId
+        });
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(storagePath, videoBuffer, {
+            contentType: 'video/mp4',
+            cacheControl: '3600',
+            upsert: false, // Don't overwrite existing files
+          });
+        
+        if (uploadError) {
+          console.error('Supabase storage upload error:', uploadError);
+          // Clean up local file
+          try {
+            fs.unlinkSync(outputPath);
+          } catch (e) {
+            console.warn('Could not delete output file:', e);
+          }
+          return res.status(500).json({
+            success: false,
+            error: `Failed to upload video to storage: ${uploadError.message}`
+          });
+        }
+        
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('videos')
+          .getPublicUrl(storagePath);
+        
+        // Clean up local file after successful upload
+        try {
+          fs.unlinkSync(outputPath);
+        } catch (e) {
+          console.warn('Could not delete local output file:', e);
+        }
+        
+        // Return Supabase Storage public URL
         const result = {
           success: true,
-          url: `/videos/${outputFilename}`,
+          url: publicUrl,
           filename: outputFilename,
           start_time: startTime,
           end_time: endTime,
           duration: endTime - startTime,
-          message: "Video trimmed successfully"
+          message: "Video trimmed and uploaded successfully"
         };
 
-        console.log('Video processed with ffmpeg:', {
+        console.log('Video processed and uploaded to Supabase:', {
           originalname: req.file.originalname,
           size: req.file.size,
           trimmed: `${startTime}s to ${endTime}s`,
-          outputFilename
+          outputFilename,
+          storagePath,
+          publicUrl
         });
 
         res.json(result);
@@ -1008,6 +1076,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Moderator: Get pending reports
   app.get("/api/moderator/reports", async (req, res) => {
     try {
+      // Check if reports table exists first
+      const tableCheck = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'reports'
+        );
+      `);
+      const tableExists = (tableCheck as any).rows?.[0]?.exists;
+      
+      if (!tableExists) {
+        console.warn("[/api/moderator/reports] Reports table does not exist in database");
+        return res.json([]); // Return empty array if table doesn't exist
+      }
+
       const result = await db.execute(sql`
         SELECT
           r.id,
@@ -1056,7 +1139,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(reportsWithPost);
     } catch (error) {
       console.error("[/api/moderator/reports] Error:", error);
-      res.status(500).json({ message: "Failed to fetch reports" });
+      console.error("[/api/moderator/reports] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // Return empty array on error instead of 500 to prevent frontend crashes
+      res.json([]);
     }
   });
 
@@ -1069,19 +1157,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
-      await db
-        .update(reports)
-        .set({
-          status: "dismissed",
-          reviewedBy: moderatorId,
-          reviewedAt: sql`NOW()`,
-        })
-        .where(eq(reports.id, reportId));
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'dismissed',
+            reviewed_by = ${moderatorId},
+            reviewed_at = NOW()
+        WHERE id = ${reportId}
+      `);
 
       res.json({ message: "Report dismissed" });
     } catch (error) {
       console.error("[/api/moderator/reports/:reportId/dismiss] Error:", error);
-      console.error("[/api/moderator/reports/:reportId/dismiss] reportId:", req.params.reportId);
+      console.error("[/api/moderator/reports/:reportId/dismiss] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        reportId: req.params.reportId,
+      });
       res.status(500).json({ message: "Failed to dismiss report" });
     }
   });
@@ -1120,7 +1211,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Post removed successfully" });
     } catch (error) {
       console.error("[/api/moderator/reports/:reportId/remove-post] Error:", error);
-      console.error("[/api/moderator/reports/:reportId/remove-post] reportId:", req.params.reportId);
+      console.error("[/api/moderator/reports/:reportId/remove-post] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        reportId: req.params.reportId,
+      });
       res.status(500).json({ message: "Failed to remove post" });
     }
   });

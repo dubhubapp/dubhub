@@ -27,9 +27,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const { profileImage: userProfileImage } = useUser();
 
   // Format time ago helper function
-  const formatTimeAgo = (date: string | Date) => {
+  const formatTimeAgo = (date: string | Date | null) => {
+    if (!date) return "Recently";
     const now = new Date();
-    const commentDate = new Date(date);
+    const commentDate = typeof date === 'string' ? new Date(date) : date;
     const diffInMinutes = Math.floor((now.getTime() - commentDate.getTime()) / (1000 * 60));
     
     if (diffInMinutes < 1) return "Just now";
@@ -103,7 +104,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     queryFn: async () => {
       const response = await fetch(`/api/posts/${post.id}/comments`);
       if (!response.ok) throw new Error("Failed to fetch comments");
-      return response.json() as CommentWithUser[];
+      const data = await response.json();
+      return data as CommentWithUser[];
     },
     enabled: isOpen,
   });
@@ -223,7 +225,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   // const removeVoteMutation = ...
   // const handleVote = ...
   
-  const handleVote = () => {
+  const handleVote = (_commentId: string, _voteType: "upvote" | "downvote", _currentVote: "upvote" | "downvote" | null) => {
     // Voting disabled - functionality removed
   };
 
@@ -290,7 +292,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             
             switch (commentFilter) {
               case 'newest':
-                filteredComments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                filteredComments.sort((a, b) => {
+                  const dateA = a.createdAt ? (typeof a.createdAt === 'string' ? new Date(a.createdAt) : a.createdAt).getTime() : 0;
+                  const dateB = b.createdAt ? (typeof b.createdAt === 'string' ? new Date(b.createdAt) : b.createdAt).getTime() : 0;
+                  return dateB - dateA;
+                });
                 break;
               case 'top':
                 filteredComments.sort((a, b) => (b.voteScore || 0) - (a.voteScore || 0));
@@ -301,22 +307,26 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 break;
             }
             
-            // Always pin identified comments to the top
+            // Always pin verified comments to the top (comments that match the verified comment ID)
             filteredComments.sort((a, b) => {
-              if (a.isIdentified && !b.isIdentified) return -1;
-              if (!a.isIdentified && b.isIdentified) return 1;
+              const aIsVerified = post.verifiedCommentId === a.id;
+              const bIsVerified = post.verifiedCommentId === b.id;
+              if (aIsVerified && !bIsVerified) return -1;
+              if (!aIsVerified && bIsVerified) return 1;
               return 0;
             });
             
-            return filteredComments.map((comment) => (
-              <div key={comment.id} className={`flex space-x-3 ${comment.isIdentified ? 'p-3 rounded-lg border-2 border-green-500 bg-green-50/30' : ''}`}>
+            return filteredComments.map((comment) => {
+              const isVerifiedComment = post.verifiedCommentId === comment.id;
+              return (
+                <div key={comment.id} className={`flex space-x-3 ${isVerifiedComment ? 'p-3 rounded-lg border-2 border-green-500 bg-green-50/30' : ''}`}>
               <div className="relative flex-shrink-0">
                 <img
-                  src={comment.user.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
+                  src={comment.user.avatar_url || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
                   alt={comment.user.username}
                   className="w-8 h-8 rounded-full"
                 />
-                {comment.user.userType === 'artist' && comment.user.isVerified && (
+                {comment.user.account_type === 'artist' && comment.user.verified_artist && (
                   <div title="Verified Artist Profile">
                     <CheckCircle className="absolute -bottom-1 -right-1 w-3 h-3 text-[#FFD700] bg-white rounded-full" />
                   </div>
@@ -327,7 +337,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <div className="flex items-center space-x-1">
                     <span 
                       className={`text-sm font-medium cursor-pointer hover:underline ${
-                        comment.user.userType === 'artist' && comment.user.isVerified ? "text-[#FFD700]" : "text-gray-900"
+                        comment.user.account_type === 'artist' && comment.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
                       }`}
                       onClick={() => {
                         setSelectedUser(comment.user);
@@ -336,21 +346,21 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     >
                       {comment.user.username}
                     </span>
-                    {comment.user.userType === 'artist' && comment.user.isVerified && (
+                    {comment.user.account_type === 'artist' && comment.user.verified_artist && (
                       <div title="Verified Artist Profile">
                         <CheckCircle className="w-3 h-3 text-[#FFD700]" />
                       </div>
                     )}
                   </div>
                   {/* Community Identified Badge - Blue for pending moderator review */}
-                  {!comment.isIdentified && post.verificationStatus === "community" && post.verifiedCommentId === comment.id && (
+                  {post.verificationStatus === "community" && post.verifiedCommentId === comment.id && (
                     <div className="flex items-center space-x-1 bg-blue-500 px-2 py-0.5 rounded-full" data-testid={`badge-community-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Community Identified</span>
                     </div>
                   )}
                   {/* Identified Track ID Badge - Green for moderator confirmed */}
-                  {comment.isIdentified && (
+                  {isVerifiedComment && post.verificationStatus === "identified" && (
                     <div className="flex items-center space-x-1 bg-green-500 px-2 py-0.5 rounded-full" data-testid={`badge-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Identified Track ID</span>
@@ -384,7 +394,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   </span>
                 </div>
                 <p className="text-sm text-gray-700 mt-1">
-                  {highlightArtistMentions(comment.content, comment.tagStatus)}
+                  {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
                 <div className="flex items-center space-x-4 mt-2">
                   {/* Voting buttons */}
@@ -393,7 +403,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-1 ${
                         comment.userVote === "upvote" ? "text-green-600 bg-green-50" : "text-gray-500"
                       }`}
-                      onClick={() => handleVote(comment.id, "upvote", comment.userVote)}
+                      onClick={() => handleVote(comment.id, "upvote", comment.userVote || null)}
                       data-testid={`button-upvote-${comment.id}`}
                     >
                       <ChevronUp className="w-4 h-4" />
@@ -408,7 +418,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-1 ${
                         comment.userVote === "downvote" ? "text-red-600 bg-red-50" : "text-gray-500"
                       }`}
-                      onClick={() => handleVote(comment.id, "downvote", comment.userVote)}
+                      onClick={() => handleVote(comment.id, "downvote", comment.userVote || null)}
                       data-testid={`button-downvote-${comment.id}`}
                     >
                       <ChevronDown className="w-4 h-4" />
@@ -445,7 +455,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     {comment.replies.map((reply) => (
                       <div key={reply.id} className="flex space-x-2">
                         <img
-                          src={reply.user.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
+                          src={reply.user.avatar_url || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
                           alt={reply.user.username}
                           className="w-6 h-6 rounded-full"
                         />
@@ -454,13 +464,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             <div className="flex items-center space-x-1">
                               <span 
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
-                                  reply.user.userType === 'artist' && reply.user.isVerified ? "text-[#FFD700]" : "text-gray-900"
+                                  reply.user.account_type === 'artist' && reply.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
                                 }`}
                                 onClick={() => handleUserClick(reply.user.username)}
                               >
                                 {reply.user.username}
                               </span>
-                              {reply.user.userType === 'artist' && reply.user.isVerified && (
+                              {reply.user.account_type === 'artist' && reply.user.verified_artist && (
                                 <div title="Verified Artist Profile">
                                   <CheckCircle className="w-3 h-3 text-[#FFD700]" />
                                 </div>
@@ -494,7 +504,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             </span>
                           </div>
                           <p className="text-xs text-gray-700 mt-1">
-                            {highlightArtistMentions(reply.content, reply.tagStatus)}
+                            {highlightArtistMentions(reply.body, reply.tagStatus)}
                           </p>
                           <div className="flex items-center space-x-3 mt-1">
                             {/* Voting buttons for replies */}
@@ -503,7 +513,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                 className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-0.5 ${
                                   reply.userVote === "upvote" ? "text-green-600 bg-green-50" : "text-gray-500"
                                 }`}
-                                onClick={() => handleVote(reply.id, "upvote", reply.userVote)}
+                                onClick={() => handleVote(reply.id, "upvote", reply.userVote || null)}
                                 data-testid={`button-upvote-${reply.id}`}
                               >
                                 <ChevronUp className="w-3 h-3" />
@@ -518,7 +528,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                 className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-0.5 ${
                                   reply.userVote === "downvote" ? "text-red-600 bg-red-50" : "text-gray-500"
                                 }`}
-                                onClick={() => handleVote(reply.id, "downvote", reply.userVote)}
+                                onClick={() => handleVote(reply.id, "downvote", reply.userVote || null)}
                                 data-testid={`button-downvote-${reply.id}`}
                               >
                                 <ChevronDown className="w-3 h-3" />
@@ -540,9 +550,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     ))}
                   </div>
                 )}
+                </div>
               </div>
-              </div>
-            ));
+              );
+            });
           })()}
         </div>
 
@@ -582,7 +593,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     data-testid={`artist-option-${artist.id}`}
                   >
                     <img
-                      src={artist.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
+                      src={artist.avatar_url || artist.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
                       alt={artist.username}
                       className="w-8 h-8 rounded-full"
                     />
@@ -634,19 +645,19 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               <div className="text-center">
                 <div className="relative inline-block mb-4">
                   <img
-                    src={selectedUser.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&h=120&fit=crop&crop=face`}
+                    src={selectedUser.avatar_url || selectedUser.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&h=120&fit=crop&crop=face`}
                     alt={selectedUser.username}
                     className="w-20 h-20 rounded-full mx-auto"
                   />
-                  {selectedUser.isVerified && (
+                  {selectedUser.verified_artist && (
                     <CheckCircle className="absolute bottom-0 right-2 w-6 h-6 text-yellow-400 bg-white rounded-full" />
                   )}
                 </div>
                 
                 <h3 className={`text-xl font-bold mb-1 ${
-                  selectedUser.isVerified ? "text-yellow-600" : "text-gray-900"
+                  selectedUser.verified_artist ? "text-yellow-600" : "text-gray-900"
                 }`}>
-                  {selectedUser.displayName}
+                  {selectedUser.displayName || selectedUser.username}
                 </h3>
                 
                 <p className="text-gray-600 mb-2">@{selectedUser.username}</p>
@@ -663,7 +674,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   )}
                 </div>
                 
-                {selectedUser.isVerified && (
+                {selectedUser.verified_artist && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
                     <div className="flex items-center justify-center space-x-2">
                       <CheckCircle className="w-5 h-5 text-yellow-600" />

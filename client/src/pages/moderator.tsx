@@ -42,8 +42,9 @@ export default function ModeratorPage() {
         const notifications = await response.json();
         
         // Mark all unread moderator-related notifications as read
+        // Filter by message content since type field was removed from notifications schema
         const moderatorNotifications = notifications.filter((n: any) => 
-          n.type === "new_review_submission" && !n.isRead
+          n.message && n.message.includes("community verification") && !n.read
         );
         
         for (const notification of moderatorNotifications) {
@@ -285,9 +286,9 @@ export default function ModeratorPage() {
                                   <div className="bg-background/50 rounded p-2">
                                     <div className="flex items-center gap-2 mb-1">
                                       <User className="w-3 h-3" />
-                                      <span className="text-xs font-medium">@{post.verifiedComment.user.username}</span>
+                                      <span className="text-xs font-medium">@{post.verifiedComment.user?.username || 'Unknown'}</span>
                                     </div>
-                                    <p className="text-sm">{post.verifiedComment.body || post.verifiedComment.content}</p>
+                                    <p className="text-sm">{post.verifiedComment.body || post.verifiedComment.content || 'No comment text'}</p>
                                   </div>
                                 </div>
                               ) : (
@@ -304,7 +305,7 @@ export default function ModeratorPage() {
                                   className="bg-green-600 hover:bg-green-700"
                                   onClick={() => {
                                     setSelectedPost(post);
-                                    setSelectedCommentId(post.verifiedCommentId || "");
+                                    setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
                                   }}
                                   data-testid={`button-review-confirm-${post.id}`}
                                 >
@@ -496,8 +497,8 @@ export default function ModeratorPage() {
                               )}
                             </div>
                           </div>
-                          <p className="text-sm text-foreground">{comment.body || comment.content}</p>
-                          {comment.id === selectedPost.verifiedCommentId && (
+                          <p className="text-sm text-foreground">{comment.body}</p>
+                          {(comment.id === selectedPost.verifiedCommentId || comment.id === (selectedPost as any).verified_comment_id) && (
                             <Badge variant="secondary" className="mt-2 text-xs">
                               Uploader's Selection
                             </Badge>
