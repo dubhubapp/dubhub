@@ -1,5 +1,4 @@
-import { type User, type InsertUser, type Track, type InsertTrack, type TrackWithUser, type Interaction, type Comment, type CommentWithUser, type InsertComment, type Achievement, type UserStats, type ArtistVideoTag, type InsertArtistVideoTag, type UserReputation, type InsertUserReputation, type CommentVote, type InsertCommentVote, type Notification, type InsertNotification, type NotificationWithUser } from "@shared/schema";
-import { users, tracks, interactions, comments, achievements, artistVideoTags, userReputation, commentVotes, notifications } from "@shared/schema";
+import { type Notification, type InsertNotification, type NotificationWithUser } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -7,63 +6,32 @@ import { supabase } from "./supabaseClient";
 
 export interface IStorage {
   // Users
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
-  getVerifiedArtists(): Promise<User[]>;
-  findArtistByName(name: string): Promise<User | undefined>;
+  getUser(id: string): Promise<any | undefined>;
+  getUserByUsername(username: string): Promise<any | undefined>;
+  createUser(user: any): Promise<any>;
+  updateUser(id: string, updates: any): Promise<any | undefined>;
 
-  // Tracks
-  getTracks(limit?: number, offset?: number, currentUserId?: string): Promise<TrackWithUser[]>;
-  getTrack(id: string): Promise<Track | undefined>;
-  createTrack(track: InsertTrack & { userId: string }): Promise<Track>;
-  updateTrack(id: string, updates: Partial<Track>): Promise<Track | undefined>;
-  deleteTrack(id: string): Promise<boolean>;
-  getTracksByUser(userId: string): Promise<Track[]>;
-  getTracksByArtist(artistUserId: string, status?: string): Promise<TrackWithUser[]>;
+  // Posts
+  getPosts(limit?: number, offset?: number, currentUserId?: string): Promise<any[]>;
+  getPost(id: string): Promise<any | undefined>;
+  createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string }): Promise<any>;
+  deletePost(id: string): Promise<boolean>;
+  getPostsByArtist(artistId: string): Promise<any[]>;
+  getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<any[]>;
 
-  // Interactions
+  // Likes
   toggleLike(userId: string, postId: string): Promise<boolean>;
-  toggleSave(userId: string, trackId: string): Promise<boolean>;
-  getUserInteractions(userId: string, type: string): Promise<Interaction[]>;
-  getTrackInteractionCounts(trackId: string): Promise<{ likes: number; saves: number; comments: number }>;
+  getPostLikeCount(postId: string): Promise<number>;
+  isPostLikedByUser(userId: string, postId: string): Promise<boolean>;
 
   // Comments
-  getTrackComments(postId: string, currentUserId?: string): Promise<CommentWithUser[]>;
-  createComment(comment: InsertComment & { userId: string; trackId: string; parentId?: string }): Promise<Comment>;
-
-  // Comment Voting
-  voteOnComment(userId: string, commentId: string, voteType: "upvote" | "downvote"): Promise<CommentVote>;
-  removeCommentVote(userId: string, commentId: string): Promise<boolean>;
-  getUserCommentVote(userId: string, commentId: string): Promise<CommentVote | undefined>;
+  createComment(postId: string, userId: string, body: string, artistTag?: string | null): Promise<any>;
+  getPostComments(postId: string, currentUserId?: string): Promise<any[]>;
 
   // Artist Tagging
-  createArtistVideoTag(tag: InsertArtistVideoTag): Promise<ArtistVideoTag>;
-  getArtistVideoTags(trackId: string): Promise<ArtistVideoTag[]>;
-  updateArtistVideoTagStatus(tagId: string, status: "confirmed" | "denied", artistId: string): Promise<ArtistVideoTag | undefined>;
-  
-  // Reputation System
-  getUserReputation(userId: string): Promise<UserReputation | undefined>;
-  updateUserReputation(userId: string, scoreChange: number): Promise<UserReputation>;
-  createUserReputation(reputation: InsertUserReputation): Promise<UserReputation>;
-  addReputationForCorrectID(userId: string): Promise<UserReputation>;
-  addReputationForCorrectArtist(userId: string): Promise<UserReputation>;
-  addReputationForUpvote(userId: string): Promise<UserReputation>;
-
-  // User Stats
-  getUserStats(userId: string): Promise<UserStats>;
-
-  // Achievements
-  getUserAchievements(userId: string): Promise<Achievement[]>;
-  createAchievement(achievement: { userId: string; title: string; description: string; icon: string }): Promise<Achievement>;
-
-  // Release Tracker
-  getSavedTracks(userId: string): Promise<TrackWithUser[]>;
-  getConfirmedTracks(userId: string): Promise<TrackWithUser[]>;
-  getLikedTracks(userId: string): Promise<TrackWithUser[]>;
-  getSavedTracksWithDetails(userId: string): Promise<TrackWithUser[]>;
-  getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<TrackWithUser[]>;
+  createArtistVideoTag(tag: { postId: string; artistId: string; taggedBy: string }): Promise<any>;
+  getArtistVideoTags(postId: string): Promise<any[]>;
+  updateArtistVideoTagStatus(tagId: string, status: "confirmed" | "denied", artistId: string): Promise<any | undefined>;
 
   // Notifications
   createNotification(notification: InsertNotification): Promise<Notification>;
@@ -72,7 +40,10 @@ export interface IStorage {
   markAllNotificationsAsRead(userId: string): Promise<boolean>;
   getUnreadNotificationCount(userId: string): Promise<number>;
 
-  // Leaderboard
+  // Reports
+  createReport(data: { postId: string; reportedBy: string; reason: string }): Promise<any>;
+
+  // Leaderboards
   getLeaderboard(userType: "user" | "artist"): Promise<any[]>;
 }
 
@@ -113,261 +84,213 @@ export class DatabaseStorage implements IStorage {
   }
 
   constructor() {
-    this.seedData();
   }
 
-  private async seedData() {
-    // Check if users already exist
-    const existingUsers = await db.select().from(users).limit(1);
-    if (existingUsers.length > 0) return; // Data already seeded
+  async getUser(id: string): Promise<any | undefined> {
+    if (!id) return undefined;
 
-    // Create sample users
-    const seedUsers = [
-      {
-        id: "user1",
-        username: "alexchen_music",
-        displayName: "Alex Chen",
-        profileImage: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=face",
-        userType: "user" as const,
-        isVerified: false,
-        level: 3,
-        currentXP: 650,
-        memberSince: new Date("2024-11-01"),
-      },
-      {
-        id: "artist1",
-        username: "djshadow_official",
-        displayName: "DJ Shadow",
-        profileImage: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop&crop=face",
-        userType: "artist" as const,
-        isVerified: true,
-        level: 10,
-        currentXP: 5000,
-        memberSince: new Date("2024-01-01"),
-      },
-      {
-        id: "user2",
-        username: "djbeatsmaster",
-        displayName: "Beats Master",
-        profileImage: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&h=120&fit=crop&crop=face",
-        userType: "user" as const,
-        isVerified: false,
-        level: 2,
-        currentXP: 300,
-        memberSince: new Date("2024-10-01"),
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, username, avatar_url, account_type, moderator, verified_artist, created_at")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[getUser] Supabase error:", error);
+        return undefined;
       }
-    ];
 
-    await db.insert(users).values(seedUsers);
-  }
-
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    // Normalize username for case-insensitive lookup
-    const normalizedUsername = username.trim().toLowerCase();
-    // Use ilike for case-insensitive comparison (PostgreSQL)
-    const [user] = await db.select().from(users).where(sql`LOWER(${users.username}) = ${normalizedUsername}`);
-    return user || undefined;
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    // Normalize username before inserting
-    const normalizedUsername = insertUser.username.trim().toLowerCase();
-    
-    if (!normalizedUsername) {
-      throw new Error('Username cannot be empty');
+      return data || undefined;
+    } catch (error) {
+      console.error("[getUser] Error:", error);
+      return undefined;
     }
-    
-    const [user] = await db
-      .insert(users)
-      .values({
-        ...insertUser,
-        id: insertUser.id,
-        username: normalizedUsername, // Use normalized username
-        profileImage: insertUser.profileImage || null,
-        userType: insertUser.userType || "user",
-        isVerified: false,
-        level: 1,
-        currentXP: 0,
-        memberSince: new Date(),
-      })
-      .returning();
-    return user;
   }
 
-  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
-    // Normalize username if it's being updated
-    const normalizedUpdates = { ...updates };
-    if (updates.username !== undefined) {
-      const normalizedUsername = updates.username.trim().toLowerCase();
-      if (!normalizedUsername) {
-        throw new Error('Username cannot be empty');
+  async getUserByUsername(username: string): Promise<any | undefined> {
+    const normalized = username?.trim().toLowerCase();
+    if (!normalized) return undefined;
+
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, username, avatar_url, account_type, moderator, verified_artist, created_at")
+        .ilike("username", normalized)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[getUserByUsername] Supabase error:", error);
+        return undefined;
       }
-      normalizedUpdates.username = normalizedUsername;
+
+      return data || undefined;
+    } catch (error) {
+      console.error("[getUserByUsername] Error:", error);
+      return undefined;
     }
-    
-    const [updatedUser] = await db
-      .update(users)
-      .set(normalizedUpdates)
-      .where(eq(users.id, id))
-      .returning();
-    return updatedUser || undefined;
   }
 
-  async getTracks(limit = 10, offset = 0, currentUserId?: string): Promise<any[]> {
-    const result = await db.execute(sql`
-      SELECT
-        p.id,
-        p.title,
-        p.video_url,
-        p.genre,
-        p.description,
-        p.location,
-        p.dj_name,
-        p.created_at,
-        pr.id         AS profile_id,
-        pr.username   AS profile_username,
-        pr.avatar_url AS profile_avatar_url,
-        COALESCE(pl_counts.likes_count, 0)    AS likes_count,
-        COALESCE(c_counts.comments_count, 0)  AS comments_count,
-        ${
-          currentUserId
-            ? sql`EXISTS (
-                 SELECT 1 FROM post_likes pl2
-                 WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
-               )`
-            : sql`false`
-        } AS is_liked
-      FROM posts p
-      JOIN profiles pr
-        ON pr.id = p.user_id
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS likes_count
-        FROM post_likes pl
-        WHERE pl.post_id = p.id
-      ) pl_counts ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS comments_count
-        FROM comments c
-        WHERE c.post_id = p.id
-      ) c_counts ON TRUE
-      ORDER BY p.created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `);
+  async getPosts(limit = 10, offset = 0, currentUserId?: string): Promise<any[]> {
+    console.log("[getPosts] called", { limit, offset, currentUserId });
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.user_id,
+          p.title,
+          p.video_url,
+          p.genre,
+          p.description,
+          p.location,
+          p.dj_name,
+          p.verification_status,
+          p.is_verified_community,
+          p.verified_by_moderator,
+          p.verified_comment_id,
+          p.verified_by,
+          p.created_at,
+          pr.id         AS profile_id,
+          pr.username   AS profile_username,
+          pr.avatar_url AS profile_avatar_url,
+          pr.account_type AS profile_account_type,
+          pr.verified_artist AS profile_verified_artist,
+          pr.moderator AS profile_moderator,
+          COALESCE(pl_counts.likes_count, 0)    AS likes_count,
+          COALESCE(c_counts.comments_count, 0)  AS comments_count,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM post_likes pl2
+                   WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
+                 )`
+              : sql`false`
+          } AS is_liked
+        FROM posts p
+        JOIN profiles pr
+          ON pr.id = p.user_id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS likes_count
+          FROM post_likes pl
+          WHERE pl.post_id = p.id
+        ) pl_counts ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS comments_count
+          FROM comments c
+          WHERE c.post_id = p.id
+        ) c_counts ON TRUE
+        ORDER BY p.created_at DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `);
 
-    const rows = (result as any).rows || [];
+      const rows = (result as any).rows || [];
+      console.log("[getPosts] returning posts count", rows.length);
 
-    return rows.map((row: any) => ({
-      id: row.id,
-      title: row.title,
-      videoUrl: row.video_url,
-      genre: row.genre,
-      description: row.description,
-      location: row.location,
-      djName: row.dj_name,
-      createdAt: row.created_at,
-      likes: Number(row.likes_count ?? 0),
-      comments: Number(row.comments_count ?? 0),
-      saves: 0,
-      isLiked: !!row.is_liked,
-      isSaved: false,
-      user: {
-        id: row.profile_id,
-        username: row.profile_username,
-        avatarUrl: row.profile_avatar_url,
-      },
-    }));
-  }
-
-  async getTrack(id: string): Promise<Track | undefined> {
-    const [track] = await db.select().from(tracks).where(eq(tracks.id, id));
-    return track || undefined;
-  }
-
-  async createTrack(track: InsertTrack & { userId: string }): Promise<Track> {
-    const [newTrack] = await db
-      .insert(tracks)
-      .values({
-        userId: track.userId,
-        description: track.description,
-        genre: track.genre,
-        djName: track.djName || null,
-        location: track.location || null,
-        eventDate: track.eventDate ? new Date(track.eventDate) : null,
-        videoUrl: track.videoUrl || null,
-        status: "pending",
-        confirmedBy: null,
-        releaseDate: null,
-        trackTitle: null,
-        artistName: null,
-        labelName: null,
-        createdAt: new Date(),
-      })
-      .returning();
-    return newTrack;
-  }
-
-  async updateTrack(id: string, updates: Partial<Track>): Promise<Track | undefined> {
-    const [updatedTrack] = await db
-      .update(tracks)
-      .set(updates)
-      .where(eq(tracks.id, id))
-      .returning();
-    return updatedTrack || undefined;
-  }
-
-  async deleteTrack(id: string): Promise<boolean> {
-    // Delete related data first (foreign key constraints)
-    await db.delete(interactions).where(eq(interactions.trackId, id));
-    await db.delete(comments).where(eq(comments.trackId, id));
-    
-    // Delete the track
-    const result = await db.delete(tracks).where(eq(tracks.id, id));
-    return (result.rowCount || 0) > 0;
-  }
-
-  async getTracksByUser(userId: string): Promise<Track[]> {
-    return await db.select().from(tracks).where(eq(tracks.userId, userId));
-  }
-
-  async getTracksByArtist(artistUserId: string, status?: string): Promise<TrackWithUser[]> {
-    const [artist] = await db.select().from(users).where(eq(users.id, artistUserId));
-    if (!artist) return [];
-
-    let query = db
-      .select()
-      .from(tracks)
-      .leftJoin(users, eq(tracks.userId, users.id))
-      .where(
-        and(
-          or(
-            eq(tracks.djName, artist.displayName),
-            eq(tracks.artistName, artist.displayName)
-          ),
-          status ? eq(tracks.status, status) : undefined
-        )
-      );
-
-    const tracksData = await query;
-    const tracksWithUser: TrackWithUser[] = [];
-    
-    for (const row of tracksData) {
-      if (row.users && row.tracks) {
-        const counts = await this.getTrackInteractionCounts(row.tracks.id);
-        tracksWithUser.push({
-          ...row.tracks,
-          user: row.users,
-          ...counts,
-        });
-      }
+      return rows.map((row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        title: row.title,
+        videoUrl: row.video_url,
+        genre: row.genre,
+        description: row.description,
+        location: row.location,
+        djName: row.dj_name,
+        verificationStatus: row.verification_status,
+        isVerifiedCommunity: row.is_verified_community,
+        verifiedByModerator: row.verified_by_moderator,
+        verifiedCommentId: row.verified_comment_id,
+        verifiedBy: row.verified_by,
+        createdAt: row.created_at,
+        likes: Number(row.likes_count ?? 0),
+        comments: Number(row.comments_count ?? 0),
+        isLiked: !!row.is_liked,
+        user: {
+          id: row.profile_id,
+          username: row.profile_username,
+          avatar_url: row.profile_avatar_url,
+          account_type: row.profile_account_type,
+          verified_artist: row.profile_verified_artist,
+          moderator: row.profile_moderator,
+        },
+      }));
+    } catch (error) {
+      console.error("[getPosts] Error:", error);
+      console.error("[getPosts] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        limit,
+        offset,
+        currentUserId,
+      });
+      throw error;
     }
+  }
 
-    return tracksWithUser;
+  async getPost(id: string): Promise<any | undefined> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.user_id,
+          p.title,
+          p.video_url,
+          p.genre,
+          p.description,
+          p.location,
+          p.dj_name,
+          p.verification_status,
+          p.is_verified_community,
+          p.verified_by_moderator,
+          p.verified_comment_id,
+          p.verified_by,
+          p.created_at,
+          pr.id         AS profile_id,
+          pr.username   AS profile_username,
+          pr.avatar_url AS profile_avatar_url,
+          pr.account_type AS profile_account_type,
+          pr.verified_artist AS profile_verified_artist,
+          pr.moderator AS profile_moderator
+        FROM posts p
+        JOIN profiles pr
+          ON pr.id = p.user_id
+        WHERE p.id = ${id}
+        LIMIT 1
+      `);
+
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) return undefined;
+
+      const row = rows[0];
+      return {
+        id: row.id,
+        userId: row.user_id,
+        title: row.title,
+        videoUrl: row.video_url,
+        genre: row.genre,
+        description: row.description,
+        location: row.location,
+        djName: row.dj_name,
+        verificationStatus: row.verification_status,
+        isVerifiedCommunity: row.is_verified_community,
+        verifiedByModerator: row.verified_by_moderator,
+        verifiedCommentId: row.verified_comment_id,
+        verifiedBy: row.verified_by,
+        createdAt: row.created_at,
+        user: {
+          id: row.profile_id,
+          username: row.profile_username,
+          avatar_url: row.profile_avatar_url,
+          account_type: row.profile_account_type,
+          verified_artist: row.profile_verified_artist,
+          moderator: row.profile_moderator,
+        },
+      };
+    } catch (error) {
+      console.error("[getPost] Error:", error);
+      console.error("[getPost] postId:", id);
+      return undefined;
+    }
   }
 
   async toggleLike(userId: string, postId: string): Promise<boolean> {
@@ -407,721 +330,503 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async toggleSave(userId: string, trackId: string): Promise<boolean> {
-    const [existingSave] = await db
-      .select()
-      .from(interactions)
-      .where(and(
-        eq(interactions.userId, userId),
-        eq(interactions.trackId, trackId),
-        eq(interactions.type, "save")
-      ));
 
-    if (existingSave) {
-      await db.delete(interactions).where(eq(interactions.id, existingSave.id));
-      return false;
-    } else {
-      await db.insert(interactions).values({
-        userId,
-        trackId,
-        type: "save",
-        createdAt: new Date(),
-      });
-      return true;
-    }
-  }
-
-  async getUserInteractions(userId: string, type: string): Promise<Interaction[]> {
-    return await db
-      .select()
-      .from(interactions)
-      .where(and(
-        eq(interactions.userId, userId),
-        eq(interactions.type, type)
-      ));
-  }
-
-  async getTrackInteractionCounts(postId: string): Promise<{ likes: number; comments: number; saves: number }> {
-    const result = await db.execute(sql`
-      SELECT
-        (SELECT COUNT(*)::int FROM post_likes pl WHERE pl.post_id = ${postId}) AS likes,
-        (SELECT COUNT(*)::int FROM comments c   WHERE c.post_id = ${postId})   AS comments
-    `);
-
-    const row = (result as any).rows?.[0] || {};
-    return {
-      likes: Number(row.likes ?? 0),
-      comments: Number(row.comments ?? 0),
-      saves: 0,
-    };
-  }
-
-  async getTrackComments(postId: string, currentUserId?: string): Promise<CommentWithUser[]> {
-    // Get all comments for this post from the database
-    // Note: comments table uses track_id column which maps to post_id
-    const allTrackComments = await db
-      .select()
-      .from(comments)
-      .leftJoin(users, eq(comments.userId, users.id))
-      .leftJoin(artistVideoTags, eq(comments.id, artistVideoTags.commentId))
-      .where(eq(comments.trackId, postId))
-      .orderBy(desc(comments.createdAt));
-
-    // Separate top-level comments (no parentId) and replies
-    const topLevelComments = allTrackComments
-      .filter(row => row.comments && row.users && !row.comments.parentId)
-      .map(row => ({ 
-        comment: row.comments!, 
-        user: row.users!, 
-        artistTag: row.artist_video_tags || null 
-      }));
-
-    const replies = allTrackComments
-      .filter(row => row.comments && row.users && row.comments.parentId)
-      .map(row => ({ 
-        comment: row.comments!, 
-        user: row.users!,
-        artistTag: row.artist_video_tags || null
-      }));
-
-    // Collect all unique user IDs and fetch their avatars from Supabase
-    const allUserIds = new Set<string>();
-    topLevelComments.forEach(({ user }) => allUserIds.add(user.id));
-    replies.forEach(({ user }) => allUserIds.add(user.id));
-    
-    const avatarMap = await this.getUserAvatars(Array.from(allUserIds));
-
-    const commentsWithUser: CommentWithUser[] = [];
-    
-    for (const { comment, user, artistTag } of topLevelComments) {
-      // Get replies for this comment
-      const commentReplies = replies
-        .filter(({ comment: reply }) => reply.parentId === comment.id)
-        .sort(({ comment: a }, { comment: b }) => a.createdAt.getTime() - b.createdAt.getTime());
-
-      const repliesWithUser: CommentWithUser[] = [];
-      for (const { comment: reply, user: replyUser, artistTag: replyArtistTag } of commentReplies) {
-        let taggedArtist = undefined;
-        if (reply.artistTag) {
-          taggedArtist = await this.getUser(reply.artistTag);
-        }
-
-        // Get voting information for reply
-        const replyVoteScore = reply.upvotes - reply.downvotes;
-        let replyUserVote: "upvote" | "downvote" | null = null;
-        if (currentUserId) {
-          const userVote = await this.getUserCommentVote(currentUserId, reply.id);
-          replyUserVote = userVote?.voteType as "upvote" | "downvote" || null;
-        }
-
-        repliesWithUser.push({
-          ...reply,
-          user: {
-            ...replyUser,
-            profileImage: avatarMap.get(replyUser.id) || replyUser.profileImage,
-          },
-          taggedArtist,
-          tagStatus: replyArtistTag?.status as "pending" | "confirmed" | "denied" | undefined,
-          isVerifiedByArtist: replyArtistTag?.status === "confirmed",
-          voteScore: replyVoteScore,
-          userVote: replyUserVote,
-        });
-      }
-
-      // Get tagged artist info for top-level comment
-      let taggedArtist = undefined;
-      if (comment.artistTag) {
-        taggedArtist = await this.getUser(comment.artistTag);
-      }
-
-      // Get voting information for top-level comment
-      const commentVoteScore = comment.upvotes - comment.downvotes;
-      let commentUserVote: "upvote" | "downvote" | null = null;
-      if (currentUserId) {
-        const userVote = await this.getUserCommentVote(currentUserId, comment.id);
-        commentUserVote = userVote?.voteType as "upvote" | "downvote" || null;
-      }
-
-      commentsWithUser.push({
-        ...comment,
-        user: {
-          ...user,
-          profileImage: avatarMap.get(user.id) || user.profileImage,
-        },
-        taggedArtist,
-        tagStatus: artistTag?.status as "pending" | "confirmed" | "denied" | undefined,
-        isVerifiedByArtist: artistTag?.status === "confirmed",
-        replies: repliesWithUser,
-        voteScore: commentVoteScore,
-        userVote: commentUserVote,
-      });
-    }
-
-    return commentsWithUser;
-  }
-
-  async createComment(comment: InsertComment & { userId: string; trackId: string; parentId?: string }): Promise<Comment> {
-    // trackId parameter maps to post_id in the database
-    // Use raw SQL to ensure we're writing to track_id column (which represents post_id)
-    const postId = comment.trackId;
+  async getPostLikeCount(postId: string): Promise<number> {
     try {
-      // Try raw SQL first to explicitly use post_id semantics
       const result = await db.execute(sql`
-        INSERT INTO comments (user_id, track_id, content, artist_tag, parent_id, created_at)
-        VALUES (${comment.userId}, ${postId}, ${comment.content}, ${comment.artistTag || null}, ${comment.parentId || null}, NOW())
+        SELECT COUNT(*)::int AS count
+        FROM post_likes
+        WHERE post_id = ${postId}
+      `);
+      const row = (result as any).rows?.[0];
+      return Number(row?.count ?? 0);
+    } catch (error) {
+      console.error("[getPostLikeCount] Error:", error);
+      return 0;
+    }
+  }
+
+  async isPostLikedByUser(userId: string, postId: string): Promise<boolean> {
+    try {
+      const result = await db.execute(sql`
+        SELECT 1
+        FROM post_likes
+        WHERE post_id = ${postId} AND user_id = ${userId}
+        LIMIT 1
+      `);
+      const rows = (result as any).rows || [];
+      return rows.length > 0;
+    } catch (error) {
+      console.error("[isPostLikedByUser] Error:", error);
+      return false;
+    }
+  }
+
+  async getPostComments(postId: string, currentUserId?: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          c.id,
+          c.post_id,
+          c.user_id,
+          c.body,
+          c.artist_tag,
+          c.created_at,
+          p.username,
+          p.avatar_url
+        FROM comments c
+        LEFT JOIN profiles p
+          ON p.id = c.user_id
+        WHERE c.post_id = ${postId}
+        ORDER BY c.created_at DESC
+      `);
+
+      const rows = (result as any).rows || [];
+
+      return rows.map((row: any) => ({
+        id: row.id,
+        postId: row.post_id,
+        userId: row.user_id,
+        body: row.body,
+        artistTag: row.artist_tag,
+        createdAt: row.created_at,
+        user: {
+          id: row.user_id,
+          username: row.username,
+          avatarUrl: row.avatar_url,
+        },
+      }));
+    } catch (error) {
+      console.error("[getPostComments] Error fetching comments:", error);
+      return [];
+    }
+  }
+
+  async createComment(
+    postId: string,
+    userId: string,
+    body: string,
+    artistTag?: string | null
+  ): Promise<any> {
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO comments (post_id, user_id, body, artist_tag, created_at)
+        VALUES (${postId}, ${userId}, ${body}, ${artistTag ?? null}, NOW())
         RETURNING *
       `);
-      
+
       const rows = (result as any).rows || [];
-      if (rows.length > 0) {
-        return rows[0] as Comment;
+      if (rows.length === 0) {
+        throw new Error("Failed to insert comment");
       }
+
+      return rows[0];
     } catch (error) {
-      // Fallback to Drizzle if raw SQL fails
-      console.warn('[createComment] Raw SQL failed, using Drizzle fallback:', error);
+      console.error("[createComment] Error inserting comment:", error);
+      throw error;
     }
-    
-    // Fallback to Drizzle ORM
-    const [newComment] = await db
-      .insert(comments)
-      .values({
-        userId: comment.userId,
-        trackId: postId, // trackId field maps to track_id column which represents post_id
-        content: comment.content,
-        artistTag: comment.artistTag || null,
-        parentId: comment.parentId || null,
-        createdAt: new Date(),
-      })
-      .returning();
-    return newComment;
   }
 
-  async getVerifiedArtists(): Promise<User[]> {
-    return await db
+
+  async createUser(user: any): Promise<any> {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert({
+          id: user.id,
+          email: user.email,
+          username: user.username?.trim().toLowerCase(),
+          avatar_url: user.avatar_url || null,
+          account_type: user.account_type || "user",
+          moderator: user.moderator || false,
+          verified_artist: user.verified_artist || false,
+        })
       .select()
-      .from(users)
-      .where(and(
-        eq(users.userType, "artist"),
-        eq(users.isVerified, true)
-      ));
+        .single();
+
+      if (error) {
+        console.error("[createUser] Supabase error:", error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error("[createUser] Error:", error);
+      throw error;
+    }
   }
 
-  async findArtistByName(name: string): Promise<User | undefined> {
-    // Normalize name for case-insensitive lookup
-    const normalizedName = name.trim().toLowerCase();
-    const [artist] = await db
+  async updateUser(id: string, updates: any): Promise<any | undefined> {
+    try {
+      const normalizedUpdates: any = { ...updates };
+      if (updates.username) {
+        normalizedUpdates.username = updates.username.trim().toLowerCase();
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .update(normalizedUpdates)
+        .eq("id", id)
       .select()
-      .from(users)
-      .where(and(
-        eq(users.userType, "artist"),
-        eq(users.isVerified, true),
-        or(
-          sql`LOWER(${users.displayName}) = ${normalizedName}`,
-          sql`LOWER(${users.username}) = ${normalizedName}`
+        .single();
+
+      if (error) {
+        console.error("[updateUser] Supabase error:", error);
+        return undefined;
+      }
+
+      return data || undefined;
+    } catch (error) {
+      console.error("[updateUser] Error:", error);
+      return undefined;
+    }
+  }
+
+  async createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string }): Promise<any> {
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO posts (user_id, title, video_url, genre, description, location, dj_name, created_at)
+        VALUES (
+          ${data.userId},
+          ${data.title},
+          ${data.video_url},
+          ${data.genre ?? null},
+          ${data.description ?? null},
+          ${data.location ?? null},
+          ${data.dj_name ?? null},
+          NOW()
         )
-      ));
-    return artist || undefined;
-  }
+        RETURNING *
+      `);
 
-  async createArtistVideoTag(tag: InsertArtistVideoTag): Promise<ArtistVideoTag> {
-    const [newTag] = await db
-      .insert(artistVideoTags)
-      .values({
-        trackId: tag.trackId,
-        artistId: tag.artistId,
-        userId: tag.userId,
-        commentId: tag.commentId,
-        status: "pending",
-        createdAt: new Date(),
-      })
-      .returning();
-    return newTag;
-  }
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) {
+        throw new Error("Failed to insert post");
+      }
 
-  async getArtistVideoTags(trackId: string): Promise<ArtistVideoTag[]> {
-    return await db
-      .select()
-      .from(artistVideoTags)
-      .where(eq(artistVideoTags.trackId, trackId))
-      .orderBy(desc(artistVideoTags.createdAt));
-  }
-
-  async updateArtistVideoTagStatus(tagId: string, status: "confirmed" | "denied", artistId: string): Promise<ArtistVideoTag | undefined> {
-    // Verify the artist can update this tag
-    const [tag] = await db
-      .select()
-      .from(artistVideoTags)
-      .where(and(
-        eq(artistVideoTags.id, tagId),
-        eq(artistVideoTags.artistId, artistId)
-      ));
-
-    if (!tag) return undefined;
-
-    const [updatedTag] = await db
-      .update(artistVideoTags)
-      .set({ status })
-      .where(eq(artistVideoTags.id, tagId))
-      .returning();
-
-    return updatedTag || undefined;
-  }
-
-  async getUserReputation(userId: string): Promise<UserReputation | undefined> {
-    const [reputation] = await db
-      .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
-    return reputation || undefined;
-  }
-
-  async updateUserReputation(userId: string, scoreChange: number): Promise<UserReputation> {
-    const existingReputation = await this.getUserReputation(userId);
-
-    if (existingReputation) {
-      const [updatedReputation] = await db
-        .update(userReputation)
-        .set({
-          reputation: existingReputation.reputation + scoreChange,
-          updatedAt: new Date(),
-        })
-        .where(eq(userReputation.userId, userId))
-        .returning();
-      return updatedReputation;
-    } else {
-      return await this.createUserReputation({
-        userId,
-        reputation: Math.max(0, scoreChange),
-      });
+      return rows[0];
+    } catch (error) {
+      console.error("[createPost] Error:", error);
+      throw error;
     }
   }
 
-  async createUserReputation(reputation: InsertUserReputation): Promise<UserReputation> {
-    const [newReputation] = await db
-      .insert(userReputation)
-      .values({
-        userId: reputation.userId,
-        reputation: reputation.reputation || 0,
-        confirmedIds: reputation.confirmedIds || 0,
-      })
-      .returning();
-    return newReputation;
-  }
+  async deletePost(id: string): Promise<boolean> {
+    try {
+      // Delete related data first
+      await db.execute(sql`DELETE FROM post_likes WHERE post_id = ${id}`);
+      await db.execute(sql`DELETE FROM comments WHERE post_id = ${id}`);
+      await db.execute(sql`DELETE FROM artist_video_tags WHERE post_id = ${id}`);
+      await db.execute(sql`DELETE FROM reports WHERE post_id = ${id}`);
+      await db.execute(sql`DELETE FROM notifications WHERE post_id = ${id}`);
 
-  // Reputation earning methods for the three rules
-  async addReputationForCorrectID(userId: string): Promise<UserReputation> {
-    return await this.updateUserReputation(userId, 10); // +10 points for correct track ID
-  }
+      // Delete the post
+      const result = await db.execute(sql`
+        DELETE FROM posts WHERE id = ${id}
+      `);
 
-  async addReputationForCorrectArtist(userId: string): Promise<UserReputation> {
-    return await this.updateUserReputation(userId, 5); // +5 points for correct artist suggestion
-  }
-
-  async addReputationForUpvote(userId: string): Promise<UserReputation> {
-    return await this.updateUserReputation(userId, 1); // +1 point per upvote
-  }
-
-  async getUserStats(userId: string): Promise<UserStats> {
-    const userTracks = await this.getTracksByUser(userId);
-    const userInteractions = await db
-      .select()
-      .from(interactions)
-      .where(eq(interactions.userId, userId));
-    
-    return {
-      totalIDs: userTracks.length,
-      confirmedIDs: userTracks.filter(track => track.status === "confirmed").length,
-      savedTracks: userInteractions.filter(int => int.type === "save").length,
-      totalLikes: userInteractions.filter(int => int.type === "like").length,
-    };
-  }
-
-  async getUserGenreStats(userId: string): Promise<{ genre: string; count: number }[]> {
-    const userTracks = await this.getTracksByUser(userId);
-    const genreMap = new Map<string, number>();
-    
-    userTracks.forEach(track => {
-      const genre = track.genre;
-      genreMap.set(genre, (genreMap.get(genre) || 0) + 1);
-    });
-    
-    return Array.from(genreMap.entries())
-      .map(([genre, count]) => ({ genre, count }))
-      .sort((a, b) => b.count - a.count); // Sort by count descending
-  }
-
-  async getUserAchievements(userId: string): Promise<Achievement[]> {
-    return await db
-      .select()
-      .from(achievements)
-      .where(eq(achievements.userId, userId));
-  }
-
-  async createAchievement(achievement: { userId: string; title: string; description: string; icon: string }): Promise<Achievement> {
-    const [newAchievement] = await db
-      .insert(achievements)
-      .values({
-        userId: achievement.userId,
-        title: achievement.title,
-        description: achievement.description,
-        icon: achievement.icon,
-        earnedAt: new Date(),
-      })
-      .returning();
-    return newAchievement;
-  }
-
-  async getSavedTracks(userId: string): Promise<TrackWithUser[]> {
-    const saves = await this.getUserInteractions(userId, "save");
-    const savedTrackIds = saves.map(save => save.trackId);
-    
-    const savedTracks: TrackWithUser[] = [];
-    for (const trackId of savedTrackIds) {
-      const track = await this.getTrack(trackId);
-      if (track) {
-        const user = await this.getUser(track.userId);
-        if (user) {
-          const counts = await this.getTrackInteractionCounts(track.id);
-          savedTracks.push({
-            ...track,
-            user,
-            ...counts,
-          });
-        }
-      }
-    }
-
-    return savedTracks;
-  }
-
-  async getConfirmedTracks(userId: string): Promise<TrackWithUser[]> {
-    const userTracks = await this.getTracksByUser(userId);
-    const confirmedTracks = userTracks.filter(track => track.status === "confirmed");
-    
-    const tracksWithUser: TrackWithUser[] = [];
-    for (const track of confirmedTracks) {
-      const user = await this.getUser(track.userId);
-      if (user) {
-        const counts = await this.getTrackInteractionCounts(track.id);
-        tracksWithUser.push({
-          ...track,
-          user,
-          ...counts,
-        });
-      }
-    }
-
-    return tracksWithUser;
-  }
-
-  async getLikedTracks(userId: string): Promise<TrackWithUser[]> {
-    const likes = await this.getUserInteractions(userId, "like");
-    const likedTrackIds = likes.map(like => like.trackId);
-    
-    const likedTracks: TrackWithUser[]= [];
-    for (const trackId of likedTrackIds) {
-      const track = await this.getTrack(trackId);
-      if (track) {
-        const user = await this.getUser(track.userId);
-        if (user) {
-          const counts = await this.getTrackInteractionCounts(track.id);
-          
-          // Check if user has liked/saved (for consistency)
-          const userInteractions = await db
-            .select()
-            .from(interactions)
-            .where(
-              and(
-                eq(interactions.userId, userId),
-                eq(interactions.trackId, trackId)
-              )
-            );
-          
-          const isLiked = userInteractions.some(i => i.type === "like");
-          const isSaved = userInteractions.some(i => i.type === "save");
-          
-          likedTracks.push({
-            ...track,
-            user,
-            ...counts,
-            isLiked,
-            isSaved,
-          });
-        }
-      }
-    }
-
-    // Sort by most recent interaction first
-    likedTracks.sort((a, b) => {
-      const aLike = likes.find(l => l.trackId === a.id);
-      const bLike = likes.find(l => l.trackId === b.id);
-      if (aLike && bLike) {
-        return new Date(bLike.createdAt).getTime() - new Date(aLike.createdAt).getTime();
-      }
-      return 0;
-    });
-
-    return likedTracks;
-  }
-
-  async getSavedTracksWithDetails(userId: string): Promise<TrackWithUser[]> {
-    // This is the same as getSavedTracks but with proper sorting
-    const saves = await this.getUserInteractions(userId, "save");
-    const savedTrackIds = saves.map(save => save.trackId);
-    
-    const savedTracks: TrackWithUser[] = [];
-    for (const trackId of savedTrackIds) {
-      const track = await this.getTrack(trackId);
-      if (track) {
-        const user = await this.getUser(track.userId);
-        if (user) {
-          const counts = await this.getTrackInteractionCounts(track.id);
-          
-          // Check if user has liked/saved (for consistency)
-          const userInteractions = await db
-            .select()
-            .from(interactions)
-            .where(
-              and(
-                eq(interactions.userId, userId),
-                eq(interactions.trackId, trackId)
-              )
-            );
-          
-          const isLiked = userInteractions.some(i => i.type === "like");
-          const isSaved = userInteractions.some(i => i.type === "save");
-          
-          savedTracks.push({
-            ...track,
-            user,
-            ...counts,
-            isLiked,
-            isSaved,
-          });
-        }
-      }
-    }
-
-    // Sort by most recent save first
-    savedTracks.sort((a, b) => {
-      const aSave = saves.find(s => s.trackId === a.id);
-      const bSave = saves.find(s => s.trackId === b.id);
-      if (aSave && bSave) {
-        return new Date(bSave.createdAt).getTime() - new Date(aSave.createdAt).getTime();
-      }
-      return 0;
-    });
-
-    return savedTracks;
-  }
-
-  async getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<TrackWithUser[]> {
-    // Get all tracks uploaded by this user, sorted newest first
-    const userTracks = await db
-      .select()
-      .from(tracks)
-      .where(eq(tracks.userId, userId))
-      .orderBy(desc(tracks.createdAt));
-    
-    const tracksWithDetails: TrackWithUser[] = [];
-    
-    for (const track of userTracks) {
-      const user = await this.getUser(track.userId);
-      if (user) {
-        const counts = await this.getTrackInteractionCounts(track.id);
-        
-        // Check if current user has liked/saved this track (if currentUserId provided)
-        let isLiked = false;
-        let isSaved = false;
-        
-        if (currentUserId) {
-          const userInteractions = await db
-            .select()
-            .from(interactions)
-            .where(
-              and(
-                eq(interactions.userId, currentUserId),
-                eq(interactions.trackId, track.id)
-              )
-            );
-          
-          isLiked = userInteractions.some(i => i.type === "like");
-          isSaved = userInteractions.some(i => i.type === "save");
-        }
-        
-        tracksWithDetails.push({
-          ...track,
-          user,
-          ...counts,
-          isLiked,
-          isSaved,
-        });
-      }
-    }
-
-    return tracksWithDetails;
-  }
-
-  // Comment Voting Methods
-  async voteOnComment(userId: string, commentId: string, voteType: "upvote" | "downvote"): Promise<CommentVote> {
-    // First, get the comment to find its author
-    const [comment] = await db
-      .select()
-      .from(comments)
-      .where(eq(comments.id, commentId));
-    
-    if (!comment) {
-      throw new Error("Comment not found");
-    }
-
-    // Check if user already voted on this comment
-    const existingVote = await this.getUserCommentVote(userId, commentId);
-    
-    if (existingVote) {
-      // Check if vote type is changing
-      const wasUpvote = existingVote.voteType === "upvote";
-      const isUpvote = voteType === "upvote";
-      
-      // Update existing vote
-      await db
-        .update(commentVotes)
-        .set({ voteType, updatedAt: new Date() })
-        .where(and(eq(commentVotes.userId, userId), eq(commentVotes.commentId, commentId)));
-        
-      // Update comment vote counts
-      await this.updateCommentVoteCounts(commentId);
-      
-      // Handle reputation changes for vote switching
-      if (wasUpvote && !isUpvote) {
-        // Was upvote, now downvote/neutral - remove reputation
-        await this.updateUserReputation(comment.userId, -1);
-      } else if (!wasUpvote && isUpvote) {
-        // Was downvote/neutral, now upvote - add reputation
-        await this.addReputationForUpvote(comment.userId);
-      }
-      
-      return { ...existingVote, voteType };
-    } else {
-      // Create new vote
-      const [newVote] = await db
-        .insert(commentVotes)
-        .values({
-          userId,
-          commentId,
-          voteType,
-          createdAt: new Date(),
-        })
-        .returning();
-        
-      // Update comment vote counts
-      await this.updateCommentVoteCounts(commentId);
-      
-      // Award reputation for new upvotes
-      if (voteType === "upvote") {
-        await this.addReputationForUpvote(comment.userId);
-      }
-      
-      return newVote;
+      return true;
+    } catch (error) {
+      console.error("[deletePost] Error:", error);
+      return false;
     }
   }
 
-  async removeCommentVote(userId: string, commentId: string): Promise<boolean> {
-    // First, get the existing vote and comment to handle reputation
-    const existingVote = await this.getUserCommentVote(userId, commentId);
-    const [comment] = await db
-      .select()
-      .from(comments)
-      .where(eq(comments.id, commentId));
-    
-    const result = await db
-      .delete(commentVotes)
-      .where(and(eq(commentVotes.userId, userId), eq(commentVotes.commentId, commentId)));
-      
-    // Update comment vote counts
-    await this.updateCommentVoteCounts(commentId);
-    
-    // Remove reputation if it was an upvote
-    if (existingVote && existingVote.voteType === "upvote" && comment) {
-      await this.updateUserReputation(comment.userId, -1);
+  async getPostsByArtist(artistId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.title,
+          p.video_url,
+          p.genre,
+          p.description,
+          p.location,
+          p.dj_name,
+          p.created_at,
+          pr.id         AS profile_id,
+          pr.username   AS profile_username,
+          pr.avatar_url AS profile_avatar_url,
+          (SELECT COUNT(*)::int FROM post_likes pl WHERE pl.post_id = p.id) AS likes_count,
+          (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id) AS comments_count
+        FROM posts p
+        JOIN profiles pr ON pr.id = p.user_id
+        WHERE p.user_id = ${artistId}
+        ORDER BY p.created_at DESC
+      `);
+
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        videoUrl: row.video_url,
+        genre: row.genre,
+        description: row.description,
+        location: row.location,
+        djName: row.dj_name,
+        createdAt: row.created_at,
+        likes: Number(row.likes_count ?? 0),
+        comments: Number(row.comments_count ?? 0),
+        user: {
+          id: row.profile_id,
+          username: row.profile_username,
+          avatarUrl: row.profile_avatar_url,
+        },
+      }));
+    } catch (error) {
+      console.error("[getPostsByArtist] Error:", error);
+      return [];
     }
-    
-    return true;
   }
 
-  async getUserCommentVote(userId: string, commentId: string): Promise<CommentVote | undefined> {
-    const [vote] = await db
-      .select()
-      .from(commentVotes)
-      .where(and(eq(commentVotes.userId, userId), eq(commentVotes.commentId, commentId)));
-    return vote || undefined;
+  async getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.user_id,
+          p.title,
+          p.video_url,
+          p.genre,
+          p.description,
+          p.location,
+          p.dj_name,
+          p.verification_status,
+          p.is_verified_community,
+          p.verified_by_moderator,
+          p.verified_comment_id,
+          p.verified_by,
+          p.created_at,
+          pr.id         AS profile_id,
+          pr.username   AS profile_username,
+          pr.avatar_url AS profile_avatar_url,
+          pr.account_type AS profile_account_type,
+          pr.verified_artist AS profile_verified_artist,
+          pr.moderator AS profile_moderator,
+          (SELECT COUNT(*)::int FROM post_likes pl WHERE pl.post_id = p.id) AS likes_count,
+          (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id) AS comments_count,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM post_likes pl2
+                   WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
+                 )`
+              : sql`false`
+          } AS is_liked
+        FROM posts p
+        JOIN profiles pr ON pr.id = p.user_id
+        WHERE p.user_id = ${userId}
+        ORDER BY p.created_at DESC
+      `);
+
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        title: row.title,
+        videoUrl: row.video_url,
+        genre: row.genre,
+        description: row.description,
+        location: row.location,
+        djName: row.dj_name,
+        verificationStatus: row.verification_status,
+        isVerifiedCommunity: row.is_verified_community,
+        verifiedByModerator: row.verified_by_moderator,
+        verifiedCommentId: row.verified_comment_id,
+        verifiedBy: row.verified_by,
+        createdAt: row.created_at,
+        likes: Number(row.likes_count ?? 0),
+        comments: Number(row.comments_count ?? 0),
+        isLiked: !!row.is_liked,
+        user: {
+          id: row.profile_id,
+          username: row.profile_username,
+          avatar_url: row.profile_avatar_url,
+          account_type: row.profile_account_type,
+          verified_artist: row.profile_verified_artist,
+          moderator: row.profile_moderator,
+        },
+      }));
+    } catch (error) {
+      console.error("[getUserPostsWithDetails] Error:", error);
+      return [];
+    }
   }
 
-  private async updateCommentVoteCounts(commentId: string): Promise<void> {
-    // Get all votes for this comment
-    const votes = await db
-      .select()
-      .from(commentVotes)
-      .where(eq(commentVotes.commentId, commentId));
-      
-    const upvotes = votes.filter(vote => vote.voteType === "upvote").length;
-    const downvotes = votes.filter(vote => vote.voteType === "downvote").length;
-    
-    // Update comment vote counts
-    await db
-      .update(comments)
-      .set({ upvotes, downvotes })
-      .where(eq(comments.id, commentId));
+  async createArtistVideoTag(tag: { postId: string; artistId: string; taggedBy: string }): Promise<any> {
+    const { postId, artistId, taggedBy } = tag;
+
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO artist_video_tags (post_id, artist_id, tagged_by, status, created_at)
+        VALUES (
+          ${postId},
+          ${artistId},
+          ${taggedBy},
+          'PENDING',
+          NOW()
+        )
+        RETURNING *
+      `);
+
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) {
+        throw new Error("Failed to insert artist_video_tag");
+      }
+
+      return rows[0];
+    } catch (error) {
+      console.error("[createArtistVideoTag] Error:", error);
+      throw error;
+    }
   }
+
+  async getArtistVideoTags(postId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT *
+        FROM artist_video_tags
+        WHERE post_id = ${postId}
+        ORDER BY created_at DESC
+      `);
+
+      return (result as any).rows || [];
+    } catch (error) {
+      console.error("[getArtistVideoTags] Error:", error);
+      return [];
+    }
+  }
+
+  async updateArtistVideoTagStatus(
+    tagId: string,
+    status: "confirmed" | "denied",
+    artistId: string
+  ): Promise<any | undefined> {
+    try {
+      const result = await db.execute(sql`
+        UPDATE artist_video_tags
+        SET status = ${status}
+        WHERE id = ${tagId}
+          AND artist_id = ${artistId}
+        RETURNING *
+      `);
+
+      const rows = (result as any).rows || [];
+      return rows[0] || undefined;
+    } catch (error) {
+      console.error("[updateArtistVideoTagStatus] Error:", error);
+      return undefined;
+    }
+  }
+
+
+
 
   // Notification Methods
   async createNotification(notification: InsertNotification): Promise<Notification> {
-    const [newNotification] = await db
-      .insert(notifications)
-      .values({
-        userId: notification.userId,
-        triggeredByUserId: notification.triggeredByUserId,
-        trackId: notification.trackId,
-        commentId: notification.commentId || null,
-        type: notification.type,
-        message: notification.message,
-        createdAt: new Date(),
-      })
-      .returning();
-    return newNotification;
+    const anyNotification = notification as any;
+    const artistId = anyNotification.userId || anyNotification.artistId;
+    const postId = anyNotification.trackId || anyNotification.postId;
+    const triggeredBy = anyNotification.triggeredByUserId || anyNotification.triggered_by;
+    const message = anyNotification.message || "";
+
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO notifications (artist_id, post_id, triggered_by, message, read, created_at)
+        VALUES (${artistId}, ${postId}, ${triggeredBy}, ${message}, false, NOW())
+        RETURNING *
+      `);
+
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) {
+        throw new Error("Failed to insert notification");
+      }
+
+      return rows[0] as Notification;
+    } catch (error) {
+      console.error("[createNotification] Error:", error);
+      throw error;
+    }
   }
 
   async getUserNotifications(userId: string): Promise<NotificationWithUser[]> {
-    const userNotifications = await db
-      .select()
-      .from(notifications)
-      .leftJoin(users, eq(notifications.triggeredByUserId, users.id))
-      .leftJoin(tracks, eq(notifications.trackId, tracks.id))
-      .where(eq(notifications.userId, userId))
-      .orderBy(desc(notifications.createdAt));
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          n.id,
+          n.artist_id,
+          n.post_id,
+          n.triggered_by,
+          n.message,
+          n.read,
+          n.created_at,
+          p.username       AS triggered_by_username,
+          p.avatar_url       AS triggered_by_avatar_url,
+          po.title           AS post_title,
+          po.video_url       AS post_video_url
+        FROM notifications n
+        LEFT JOIN profiles p
+          ON p.id = n.triggered_by
+        LEFT JOIN posts po
+          ON po.id = n.post_id
+        WHERE n.artist_id = ${userId}
+        ORDER BY n.created_at DESC
+      `);
 
-    return userNotifications
-      .filter(row => row.notifications && row.users && row.tracks)
-      .map(row => ({
-        ...row.notifications!,
-        triggeredByUser: row.users!,
-        track: row.tracks!,
+      const rows = (result as any).rows || [];
+
+      return rows.map((row: any) => ({
+        id: row.id,
+        artistId: row.artist_id,
+        postId: row.post_id,
+        triggeredBy: row.triggered_by,
+        message: row.message,
+        read: row.read,
+        createdAt: row.created_at,
+        triggeredByUser: {
+          id: row.triggered_by,
+          username: row.triggered_by_username,
+          avatarUrl: row.triggered_by_avatar_url,
+        },
+        post: {
+          id: row.post_id,
+          title: row.post_title,
+          videoUrl: row.post_video_url,
+        },
       }));
+    } catch (error) {
+      console.error("[getUserNotifications] Error:", error);
+      return [];
+    }
   }
 
   async markNotificationAsRead(notificationId: string): Promise<boolean> {
-    const result = await db
-      .update(notifications)
-      .set({ isRead: true })
-      .where(eq(notifications.id, notificationId));
-    return true;
+    try {
+      await db.execute(sql`
+        UPDATE notifications
+        SET read = true
+        WHERE id = ${notificationId}
+      `);
+      return true;
+    } catch (error) {
+      console.error("[markNotificationAsRead] Error:", error);
+      return false;
+    }
   }
 
   async markAllNotificationsAsRead(userId: string): Promise<boolean> {
-    await db
-      .update(notifications)
-      .set({ isRead: true })
-      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
-    return true;
+    try {
+      await db.execute(sql`
+        UPDATE notifications
+        SET read = true
+        WHERE artist_id = ${userId}
+          AND read = false
+      `);
+      return true;
+    } catch (error) {
+      console.error("[markAllNotificationsAsRead] Error:", error);
+      return false;
+    }
   }
 
   async getUnreadNotificationCount(userId: string): Promise<number> {
@@ -1136,30 +841,78 @@ export class DatabaseStorage implements IStorage {
     return Number(row?.count ?? 0);
   }
 
-  async getLeaderboard(userType: "user" | "artist"): Promise<any[]> {
-    const leaderboard = await db
-      .select({
-        user_id: users.id,
-        username: users.username,
-        profile_image: users.profileImage,
-        score: sql<number>`COALESCE(${userReputation.reputation}, 0)`,
-        correct_ids: sql<number>`COALESCE(${userReputation.confirmedIds}, 0)`,
-        reputation: sql<number>`COALESCE(${userReputation.reputation}, 0)`,
-        created_at: userReputation.updatedAt,
-        account_type: users.userType,
-        moderator: sql<boolean>`false`,
-        role: users.userType,
-      })
-      .from(users)
-      .leftJoin(userReputation, eq(users.id, userReputation.userId))
-      .where(eq(users.userType, userType))
-      .orderBy(
-        sql`COALESCE(${userReputation.reputation}, 0) DESC`,
-        sql`COALESCE(${userReputation.confirmedIds}, 0) DESC`
-      );
+  async createReport(data: { postId: string; reportedBy: string; reason: string }): Promise<any> {
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO reports (post_id, reported_by, reason, created_at, status)
+        VALUES (${data.postId}, ${data.reportedBy}, ${data.reason}, NOW(), 'pending')
+        RETURNING *
+      `);
 
-    return leaderboard;
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) {
+        throw new Error("Failed to insert report");
+      }
+
+      return rows[0];
+    } catch (error) {
+      console.error("[createReport] Error:", error);
+      throw error;
+    }
   }
+
+  async getLeaderboard(userType: "user" | "artist"): Promise<any[]> {
+    try {
+      if (userType === "user") {
+        const result = await db.execute(sql`
+          SELECT
+            p.id,
+            p.username,
+            p.avatar_url,
+            p.account_type,
+            p.moderator,
+            p.verified_artist,
+            COALESCE(uk.score, 0) AS karma,
+            COALESCE(uk.correct_ids, 0) AS correct_ids,
+            COALESCE(ls.correct_ids, 0) AS leaderboard_correct_ids,
+            COALESCE(ls.score, 0) AS leaderboard_score
+          FROM profiles p
+          LEFT JOIN user_karma uk ON uk.user_id = p.id
+          LEFT JOIN leaderboard_stats ls ON ls.user_id = p.id
+          WHERE p.account_type = 'user'
+          ORDER BY COALESCE(uk.score, 0) DESC, COALESCE(uk.correct_ids, 0) DESC
+          LIMIT 100
+        `);
+
+        return (result as any).rows || [];
+      } else {
+        const result = await db.execute(sql`
+          SELECT
+            p.id,
+            p.username,
+            p.avatar_url,
+            p.account_type,
+            p.moderator,
+            p.verified_artist,
+            COALESCE(uk.score, 0) AS karma,
+            COALESCE(als.correct_ids, 0) AS confirmed_tags,
+            COALESCE(als.score, 0) AS artist_score
+          FROM profiles p
+          LEFT JOIN user_karma uk ON uk.user_id = p.id
+          LEFT JOIN artist_leaderboard_stats als ON als.artist_id = p.id
+          WHERE p.account_type = 'artist'
+          ORDER BY COALESCE(uk.score, 0) DESC, COALESCE(als.correct_ids, 0) DESC
+          LIMIT 100
+        `);
+
+        return (result as any).rows || [];
+      }
+    } catch (error) {
+      console.error("[getLeaderboard] Error:", error);
+      return [];
+    }
+  }
+
 }
 
 export const storage = new DatabaseStorage();

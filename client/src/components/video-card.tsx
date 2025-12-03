@@ -4,7 +4,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
-import type { TrackWithUser } from "@shared/schema";
+import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
@@ -17,19 +17,18 @@ import {
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
-  track: TrackWithUser;
+  post: PostWithUser;
   isHighlighted?: boolean;
   showStatusBadge?: boolean;
 }
 
-export function VideoCard({ track, isHighlighted = false, showStatusBadge = false }: VideoCardProps) {
+export function VideoCard({ post, isHighlighted = false, showStatusBadge = false }: VideoCardProps) {
+  console.log("[VideoCard] render", { id: post.id, user: post.user, likes: post.likes, comments: post.comments });
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
-  const [isLiked, setIsLiked] = useState(track.isLiked || false);
-  const [isSaved, setIsSaved] = useState(track.isSaved || false);
-  const [likes, setLikes] = useState(track.likes);
-  const [saves, setSaves] = useState(track.saves);
+  const [isLiked, setIsLiked] = useState(post.isLiked || false);
+  const [likes, setLikes] = useState(post.likes);
   const [showComments, setShowComments] = useState(false);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -41,13 +40,11 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Sync state with track prop when it changes (e.g., after navigation or refresh)
+  // Sync state with post prop when it changes (e.g., after navigation or refresh)
   useEffect(() => {
-    setIsLiked(track.isLiked || false);
-    setIsSaved(track.isSaved || false);
-    setLikes(track.likes);
-    setSaves(track.saves);
-  }, [track.isLiked, track.isSaved, track.likes, track.saves]);
+    setIsLiked(post.isLiked || false);
+    setLikes(post.likes);
+  }, [post.isLiked, post.likes]);
 
   // Ensure video plays immediately and loops properly
   useEffect(() => {
@@ -102,77 +99,57 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('ended', handleEnded);
     };
-  }, [track.videoUrl]);
+  }, [post.videoUrl]);
 
   const likeMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/posts/${track.id}/like`),
+    mutationFn: () => apiRequest("POST", `/api/posts/${post.id}/like`),
     onSuccess: async (response) => {
       const data = await response.json();
       setIsLiked(data.isLiked);
       setLikes(data.counts.likes);
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to like track", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to like post", variant: "destructive" });
     },
   });
 
-  const saveMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/tracks/${track.id}/save`),
-    onSuccess: async (response) => {
-      const data = await response.json();
-      setIsSaved(data.isSaved);
-      setSaves(data.counts.saves);
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
-      if (contextUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "saved"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "stats"] });
-      }
-      
-      toast({
-        title: data.isSaved ? "Track Saved" : "Track Removed",
-        description: data.isSaved ? "Added to your saved tracks" : "Removed from saved tracks",
-      });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to save track", variant: "destructive" });
-    },
-  });
+  // Save functionality removed - no longer supported
 
   const deleteMutation = useMutation({
-    mutationFn: () => apiRequest("DELETE", `/api/tracks/${track.id}`),
+    mutationFn: () => apiRequest("DELETE", `/api/posts/${post.id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({
-        title: "Track Deleted",
-        description: "Your track has been successfully deleted.",
+        title: "Post Deleted",
+        description: "Your post has been successfully deleted.",
       });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete track", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete post", variant: "destructive" });
     },
   });
 
   const reportMutation = useMutation({
-    mutationFn: (reason: string) => apiRequest("POST", `/api/tracks/${track.id}/report`, { reason }),
+    mutationFn: (reason: string) => apiRequest("POST", `/api/posts/${post.id}/report`, { reason }),
     onSuccess: () => {
       toast({
-        title: "Track Reported",
-        description: "Thank you for reporting. Our moderators will review this track.",
+        title: "Post Reported",
+        description: "Thank you for reporting. Our moderators will review this post.",
       });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to report track", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to report post", variant: "destructive" });
     },
   });
 
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/?track=${track.id}`;
+    const shareUrl = `${window.location.origin}/?post=${post.id}`;
     try {
       await navigator.clipboard.writeText(shareUrl);
       toast({
         title: "Link Copied",
-        description: "Track link copied to clipboard",
+        description: "Post link copied to clipboard",
       });
     } catch (error) {
       toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
@@ -180,13 +157,13 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
   };
 
   const handleReport = () => {
-    const reason = prompt("Please provide a reason for reporting this track:");
+    const reason = prompt("Please provide a reason for reporting this post:");
     if (reason && reason.trim()) {
       reportMutation.mutate(reason.trim());
     }
   };
 
-  // Get current user to check if they own this track
+  // Get current user to check if they own this post
   const { data: currentUser } = useQuery({
     queryKey: ["/api/user/current"],
     queryFn: async () => {
@@ -198,7 +175,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
 
   const getStatusBadge = () => {
     // Show identified badge if moderator confirmed
-    if (track.verificationStatus === "identified") {
+    if (post.verificationStatus === "identified") {
       return (
         <span className="bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-identified">
           <CheckCircle className="w-3 h-3 inline mr-1" />
@@ -208,7 +185,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
     }
     
     // Show community identified badge if uploader marked but not yet moderator approved
-    if (track.verificationStatus === "community") {
+    if (post.verificationStatus === "community") {
       return (
         <span className="bg-blue-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-community-identified">
           <ShieldCheck className="w-3 h-3 inline mr-1" />
@@ -218,7 +195,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
     }
     
     // Show unidentified badge when explicitly requested (e.g., in profile Posts tab)
-    if (showStatusBadge && track.verificationStatus === "unverified" && track.status !== "confirmed") {
+    if (showStatusBadge && post.verificationStatus === "unverified") {
       return (
         <span className="bg-gray-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-unidentified">
           <Clock className="w-3 h-3 inline mr-1" />
@@ -227,32 +204,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
       );
     }
     
-    // Fall back to old status badges
-    switch (track.status) {
-      case "confirmed":
-        return (
-          <span className="bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium">
-            <Check className="w-3 h-3 inline mr-1" />
-            Track Identified
-          </span>
-        );
-      case "pending":
-        return (
-          <span className="bg-yellow-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium">
-            <Clock className="w-3 h-3 inline mr-1" />
-            Pending
-          </span>
-        );
-      case "rejected":
-        return (
-          <span className="bg-red-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium">
-            <X className="w-3 h-3 inline mr-1" />
-            Rejected
-          </span>
-        );
-      default:
-        return null;
-    }
+    return null;
   };
 
   const getGenreColor = (genre: string) => {
@@ -297,9 +249,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
   };
 
   // Check if artist is verified
-  // For now, use isVerified from Neon DB (legacy field)
-  // TODO: Fetch verified_artist from Supabase profiles for accurate verification
-  const isVerifiedArtist = track.user.userType === 'artist' && track.user.isVerified;
+  const isVerifiedArtist = post.user.account_type === 'artist' && post.user.verified_artist === true;
 
 
 
@@ -308,7 +258,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
       className={`h-screen w-full relative snap-start flex-shrink-0 transition-all duration-300 ${
         isHighlighted ? 'ring-4 ring-primary ring-inset' : ''
       }`}
-      data-track-id={track.id}
+      data-post-id={post.id}
     >
       {/* Video background */}
       <div className="absolute inset-0">
@@ -334,7 +284,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
             }
           }}
         >
-          <source src={track.videoUrl || ""} type="video/mp4" />
+          <source src={post.videoUrl || ""} type="video/mp4" />
         </video>
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
       </div>
@@ -366,23 +316,13 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
           <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
             <MessageCircle className="w-6 h-6 text-white" />
           </div>
-          <span className="text-xs mt-1 font-medium text-white">{formatCount(track.comments)}</span>
+          <span className="text-xs mt-1 font-medium text-white">{formatCount(post.comments)}</span>
         </button>
 
-        {/* Save button */}
-        <button 
-          className="flex flex-col items-center group"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-        >
-          <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-            <Bookmark className={`w-6 h-6 ${isSaved ? "text-accent fill-accent" : "text-white"}`} />
-          </div>
-          <span className="text-xs mt-1 font-medium text-white">{formatCount(saves)}</span>
-        </button>
+        {/* Save button removed - functionality no longer supported */}
 
-        {/* Community Verify button - only show for track owner if not already verified */}
-        {currentUser && track.userId === currentUser.id && track.verificationStatus === "unverified" && (
+        {/* Community Verify button - only show for post owner if not already verified */}
+        {currentUser && post.userId === currentUser.id && post.verificationStatus === "unverified" && (
           <button 
             className="flex flex-col items-center group"
             onClick={() => setShowVerificationDialog(true)}
@@ -395,17 +335,17 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
           </button>
         )}
 
-        {/* Delete button - only show for track owner */}
-        {currentUser && track.userId === currentUser.id && (
+        {/* Delete button - only show for post owner */}
+        {currentUser && post.userId === currentUser.id && (
           <button 
             className="flex flex-col items-center group"
             onClick={() => {
-              if (confirm("Are you sure you want to delete this track?")) {
+              if (confirm("Are you sure you want to delete this post?")) {
                 deleteMutation.mutate();
               }
             }}
             disabled={deleteMutation.isPending}
-            data-testid="button-delete-track"
+            data-testid="button-delete-post"
           >
             <div className="w-12 h-12 rounded-full bg-red-500/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
               <Trash2 className="w-6 h-6 text-red-400" />
@@ -422,17 +362,17 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
             <div className="relative">
               <img 
                 src={
-                  contextUser && track.userId === contextUser.id 
+                  contextUser && post.userId === contextUser.id 
                     ? (userProfileImage || undefined)
-                    : (track.user.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`)
+                    : (post.user.avatar_url || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`)
                 }
                 alt="User Profile" 
                 className={`w-10 h-10 rounded-full border-2 ${
                   isVerifiedArtist 
                     ? "border-[#FFD700]" 
-                    : track.genre === "DnB" 
+                    : post.genre === "DnB" 
                       ? "border-primary" 
-                      : track.genre === "UKG" 
+                      : post.genre === "UKG" 
                         ? "border-secondary" 
                         : "border-green-600"
                 }`}
@@ -447,7 +387,7 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
               <div className="flex items-center space-x-2">
                 <div className="flex items-center space-x-1">
                   <p className={`font-semibold text-sm ${isVerifiedArtist ? "text-[#FFD700]" : "text-white"}`}>
-                    @{track.user.username}
+                    @{post.user.username}
                   </p>
                   {isVerifiedArtist && (
                     <div title="Verified Artist Profile">
@@ -456,24 +396,16 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
                   )}
                 </div>
               </div>
-              <p className="text-xs text-gray-300">{track.location}</p>
+              <p className="text-xs text-gray-300">{post.location}</p>
             </div>
           </div>
           
           <div className="space-y-2">
-            <p className="text-sm font-medium text-white">{track.description}</p>
-            {track.status === "confirmed" && track.trackTitle && (
-              <div className="bg-black/60 rounded-lg p-2">
-                <p className="text-green-400 text-xs font-medium">This DnB track from Shy Focus set is absolutely mental! Anyone know the DnB 🔥</p>
-                <p className="text-white text-sm font-semibold mt-1">DJ: Shy Focus</p>
-                <p className="text-gray-300 text-xs">FABRIC, London</p>
-                <p className="text-gray-400 text-xs mt-1">2025-08-04</p>
-              </div>
-            )}
+            <p className="text-sm font-medium text-white">{post.description}</p>
             <div className="flex items-center space-x-2 text-xs text-gray-300">
-              {track.djName && <span>Mixed by: {track.djName}</span>}
-              {track.djName && <span>•</span>}
-              <span>{formatTimeAgo(track.createdAt)}</span>
+              {post.djName && <span>Mixed by: {post.djName}</span>}
+              {post.djName && <span>•</span>}
+              <span>{formatTimeAgo(post.createdAt)}</span>
             </div>
           </div>
         </div>
@@ -511,13 +443,13 @@ export function VideoCard({ track, isHighlighted = false, showStatusBadge = fals
       </div>
       {/* Comments Modal */}
       <CommentsModal 
-        track={track}
+        post={post}
         isOpen={showComments}
         onClose={() => setShowComments(false)}
       />
       {/* Community Verification Dialog */}
       <CommunityVerificationDialog 
-        trackId={track.id}
+        postId={post.id}
         isOpen={showVerificationDialog}
         onClose={() => setShowVerificationDialog(false)}
       />

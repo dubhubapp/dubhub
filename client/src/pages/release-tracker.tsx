@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Calendar, List, Check, Clock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
-import type { TrackWithUser } from "@shared/schema";
+import type { PostWithUser } from "@shared/schema";
 
 type ViewMode = "list" | "calendar";
 type FilterMode = "saved" | "confirmed" | "following";
@@ -13,48 +13,50 @@ export default function ReleaseTracker() {
   const [filterMode, setFilterMode] = useState<FilterMode>("saved");
   const { currentUser } = useUser();
 
-  const { data: savedTracks = [], isLoading: loadingSaved } = useQuery<TrackWithUser[]>({
-    queryKey: ["/api/user", currentUser?.id, "saved"],
-    enabled: filterMode === "saved" && !!currentUser?.id,
-  });
+  // Saved posts removed - no longer supported
+  const savedPosts: PostWithUser[] = [];
+  const loadingSaved = false;
 
-  const { data: confirmedTracks = [], isLoading: loadingConfirmed } = useQuery<TrackWithUser[]>({
-    queryKey: ["/api/user", currentUser?.id, "confirmed"],
+  // Confirmed posts - filter from user's posts
+  const { data: userPosts = [], isLoading: loadingPosts } = useQuery<PostWithUser[]>({
+    queryKey: ["/api/user", currentUser?.id, "posts"],
     enabled: filterMode === "confirmed" && !!currentUser?.id,
   });
 
-  const isLoading = loadingSaved || loadingConfirmed;
-  const tracks = filterMode === "saved" ? savedTracks : confirmedTracks;
+  const confirmedPosts = userPosts.filter(post => post.verificationStatus === "identified");
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "confirmed":
+  const isLoading = loadingSaved || loadingPosts;
+  const posts = filterMode === "saved" ? savedPosts : confirmedPosts;
+
+  const getStatusColor = (verificationStatus?: string) => {
+    switch (verificationStatus) {
+      case "identified":
         return "border-green-500/20 bg-green-500/5";
-      case "pending":
-        return "border-yellow-500/20 bg-yellow-500/5";
+      case "community":
+        return "border-blue-500/20 bg-blue-500/5";
       default:
         return "border-primary/20 bg-primary/5";
     }
   };
 
-  const getStatusBadge = (status: string, releaseDate?: Date) => {
-    switch (status) {
-      case "confirmed":
+  const getStatusBadge = (verificationStatus?: string) => {
+    switch (verificationStatus) {
+      case "identified":
         return (
           <span className="bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">
-            Confirmed
+            Identified
           </span>
         );
-      case "pending":
+      case "community":
         return (
-          <span className="bg-yellow-500 text-black px-2 py-1 rounded text-xs font-medium">
-            TBD
+          <span className="bg-blue-500 text-white px-2 py-1 rounded text-xs font-medium">
+            Community ID
           </span>
         );
       default:
         return (
           <span className="bg-primary text-white px-2 py-1 rounded text-xs font-medium">
-            My ID
+            Unidentified
           </span>
         );
     }
@@ -139,52 +141,51 @@ export default function ReleaseTracker() {
           </div>
 
           {/* Release List */}
-          {tracks.length === 0 ? (
+          {posts.length === 0 ? (
             <div className="text-center text-gray-400 py-12">
               <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p className="text-lg mb-2">No releases found</p>
               <p className="text-sm">
                 {filterMode === "saved" 
-                  ? "Save some tracks to see their release dates here"
-                  : "Submit track IDs to see them here when confirmed"
+                  ? "Save some posts to see their release dates here"
+                  : "Submit post IDs to see them here when identified"
                 }
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {tracks.map((track) => (
+              {posts.map((post) => (
                 <div 
-                  key={track.id} 
-                  className={`bg-surface rounded-xl p-4 border ${getStatusColor(track.status)}`}
+                  key={post.id} 
+                  className={`bg-surface rounded-xl p-4 border ${getStatusColor(post.verificationStatus)}`}
                 >
                   <div className="flex items-start space-x-3">
-                    {/* Track artwork placeholder */}
+                    {/* Post artwork placeholder */}
                     <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold">
-                      {track.genre.slice(0, 2).toUpperCase()}
+                      {post.genre ? post.genre.slice(0, 2).toUpperCase() : "ID"}
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        {getStatusBadge(track.status, track.releaseDate)}
-                        <span className="text-xs text-gray-400">
-                          {formatReleaseDate(track.releaseDate)}
-                        </span>
+                        {getStatusBadge(post.verificationStatus)}
+                        {post.eventDate && (
+                          <span className="text-xs text-gray-400">
+                            {formatReleaseDate(post.eventDate)}
+                          </span>
+                        )}
                       </div>
                       
                       <h3 className="font-semibold text-sm truncate">
-                        {track.trackTitle || "Unknown Track"}
+                        {post.title || post.description || "Untitled Post"}
                       </h3>
                       
                       <p className="text-sm text-gray-400 truncate">
-                        {track.artistName 
-                          ? `by ${track.artistName}` 
-                          : `ID from ${track.location || "Unknown location"}`
-                        }
+                        {post.description || `ID from ${post.location || "Unknown location"}`}
                       </p>
                       
                       <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
-                        <span>{track.labelName || "Unknown Label"}</span>
-                        <span>{track.genre}</span>
+                        {post.location && <span>{post.location}</span>}
+                        {post.genre && <span>{post.genre}</span>}
                       </div>
                     </div>
                     
@@ -195,7 +196,6 @@ export default function ReleaseTracker() {
                           <div className="w-6 h-6 bg-accent rounded-full flex items-center justify-center mb-1">
                             <Check className="w-4 h-4 text-black" />
                           </div>
-                          <span className="text-xs">{track.saves}</span>
                         </div>
                       ) : (
                         <User className="w-6 h-6" />
@@ -208,29 +208,29 @@ export default function ReleaseTracker() {
           )}
 
           {/* Stats Summary */}
-          {tracks.length > 0 && (
+          {posts.length > 0 && (
             <div className="mt-8 bg-surface rounded-xl p-4">
               <h3 className="font-semibold mb-3 text-center">Your Release Stats</h3>
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-xl font-bold text-primary">
-                    {filterMode === "saved" ? savedTracks.length : tracks.filter(t => t.status === "confirmed").length}
+                    {filterMode === "saved" ? savedPosts.length : posts.filter(p => p.verificationStatus === "identified").length}
                   </div>
                   <div className="text-xs text-gray-400">
-                    {filterMode === "saved" ? "Saved" : "Confirmed"}
+                    {filterMode === "saved" ? "Saved" : "Identified"}
                   </div>
                 </div>
                 <div>
                   <div className="text-xl font-bold text-green-500">
-                    {tracks.filter(t => t.status === "confirmed").length}
+                    {posts.filter(p => p.verificationStatus === "identified").length}
                   </div>
-                  <div className="text-xs text-gray-400">Confirmed</div>
+                  <div className="text-xs text-gray-400">Identified</div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-accent">
-                    {tracks.filter(t => t.status === "pending").length}
+                  <div className="text-xl font-bold text-blue-500">
+                    {posts.filter(p => p.verificationStatus === "community").length}
                   </div>
-                  <div className="text-xs text-gray-400">Pending</div>
+                  <div className="text-xs text-gray-400">Community ID</div>
                 </div>
               </div>
             </div>

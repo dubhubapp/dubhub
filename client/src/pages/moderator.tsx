@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Shield, AlertTriangle, Users, FileText, Settings, CheckCircle, XCircle, User, ExternalLink, MessageSquare } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { TrackWithUser, CommentWithUser } from "@shared/schema";
+import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
 
 export default function ModeratorPage() {
@@ -22,9 +22,9 @@ export default function ModeratorPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedTrack, setSelectedTrack] = useState<TrackWithUser | null>(null);
+  const [selectedPost, setSelectedPost] = useState<PostWithUser | null>(null);
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
-  const [trackForComments, setTrackForComments] = useState<TrackWithUser | null>(null);
+  const [postForComments, setPostForComments] = useState<PostWithUser | null>(null);
 
   // Route protection - redirect non-moderators
   useEffect(() => {
@@ -65,7 +65,7 @@ export default function ModeratorPage() {
   }, [userType, queryClient]);
 
   // Query for pending community verifications
-  const { data: pendingVerifications = [], isLoading: isPendingLoading } = useQuery<TrackWithUser[]>({
+  const { data: pendingVerifications = [], isLoading: isPendingLoading } = useQuery<PostWithUser[]>({
     queryKey: ["/api/moderator/pending-verifications"],
   });
 
@@ -87,26 +87,26 @@ export default function ModeratorPage() {
     },
   });
 
-  // Query for comments when a track is selected for review
-  const { data: trackComments = [] } = useQuery<CommentWithUser[]>({
-    queryKey: ["/api/posts", selectedTrack?.id, "comments"],
-    enabled: !!selectedTrack,
+  // Query for comments when a post is selected for review
+  const { data: postComments = [] } = useQuery<CommentWithUser[]>({
+    queryKey: ["/api/posts", selectedPost?.id, "comments"],
+    enabled: !!selectedPost,
   });
 
   const confirmVerificationMutation = useMutation({
-    mutationFn: async ({ trackId, commentId }: { trackId: string; commentId?: string }) => {
-      return apiRequest("POST", `/api/moderator/confirm-verification/${trackId}`, {
+    mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string }) => {
+      return apiRequest("POST", `/api/moderator/confirm-verification/${postId}`, {
         commentId,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
-      setSelectedTrack(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      setSelectedPost(null);
       setSelectedCommentId("");
       toast({
-        title: "Track Identified",
-        description: "Track has been confirmed as identified",
+        title: "Post Identified",
+        description: "Post has been confirmed as identified",
       });
     },
     onError: () => {
@@ -119,21 +119,21 @@ export default function ModeratorPage() {
   });
 
   const reopenVerificationMutation = useMutation({
-    mutationFn: async (trackId: string) => {
-      return apiRequest("POST", `/api/moderator/reopen-verification/${trackId}`);
+    mutationFn: async (postId: string) => {
+      return apiRequest("POST", `/api/moderator/reopen-verification/${postId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({
-        title: "Track Reopened",
-        description: "Track has been reopened for review",
+        title: "Post Reopened",
+        description: "Post has been reopened for review",
       });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to reopen track",
+        description: "Failed to reopen post",
         variant: "destructive",
       });
     },
@@ -159,22 +159,22 @@ export default function ModeratorPage() {
     },
   });
 
-  const removeTrackMutation = useMutation({
+  const removePostMutation = useMutation({
     mutationFn: async (reportId: string) => {
-      return apiRequest("POST", `/api/moderator/reports/${reportId}/remove-track`);
+      return apiRequest("POST", `/api/moderator/reports/${reportId}/remove-post`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({
-        title: "Track Removed",
-        description: "Reported track has been removed",
+        title: "Post Removed",
+        description: "Reported post has been removed",
       });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to remove track",
+        description: "Failed to remove post",
         variant: "destructive",
       });
     },
@@ -208,7 +208,7 @@ export default function ModeratorPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Pending Verifications</CardTitle>
-                <CardDescription>Community-verified tracks awaiting moderator confirmation</CardDescription>
+                <CardDescription>Community-verified posts awaiting moderator confirmation</CardDescription>
               </CardHeader>
               <CardContent>
                 {isPendingLoading ? (
@@ -223,20 +223,20 @@ export default function ModeratorPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {pendingVerifications.map((track: any) => (
-                      <Card key={track.id} className="border-blue-500/20" data-testid={`pending-verification-${track.id}`}>
+                    {pendingVerifications.map((post: any) => (
+                      <Card key={post.id} className="border-blue-500/20" data-testid={`pending-verification-${post.id}`}>
                         <CardContent className="p-4">
                           <div className="flex gap-4">
                             {/* Video thumbnail - clickable */}
                             <div 
                               className="relative w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted cursor-pointer group"
-                              onClick={() => setTrackForComments(track)}
-                              data-testid={`thumbnail-${track.id}`}
+                              onClick={() => setPostForComments(post)}
+                              data-testid={`thumbnail-${post.id}`}
                             >
-                              {track.videoUrl ? (
+                              {post.videoUrl ? (
                                 <>
                                   <video
-                                    src={track.videoUrl}
+                                    src={post.videoUrl}
                                     className="w-full h-full object-cover"
                                     muted
                                   />
@@ -251,29 +251,29 @@ export default function ModeratorPage() {
                               )}
                               <div className="absolute top-1 right-1">
                                 <Badge variant="secondary" className="text-xs">
-                                  {track.genre}
+                                  {post.genre}
                                 </Badge>
                               </div>
                             </div>
 
-                            {/* Track info */}
+                            {/* Post info */}
                             <div className="flex-1 space-y-2">
                               <div>
                                 <p 
                                   className="font-semibold cursor-pointer hover:text-primary transition-colors"
-                                  onClick={() => setTrackForComments(track)}
-                                  data-testid={`description-${track.id}`}
+                                  onClick={() => setPostForComments(post)}
+                                  data-testid={`description-${post.id}`}
                                 >
-                                  {track.description}
+                                  {post.description}
                                 </p>
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                                   <User className="w-4 h-4" />
-                                  <span>Uploaded by @{track.user.username}</span>
+                                  <span>Uploaded by @{post.user.username}</span>
                                 </div>
                               </div>
 
                               {/* Verified comment display */}
-                              {track.verifiedComment ? (
+                              {post.verifiedComment ? (
                                 <div className="bg-blue-500/10 border border-blue-500/20 rounded p-3 space-y-2">
                                   <div className="flex items-center justify-between">
                                     <p className="text-xs font-medium text-blue-400">Uploader's Selection:</p>
@@ -285,9 +285,9 @@ export default function ModeratorPage() {
                                   <div className="bg-background/50 rounded p-2">
                                     <div className="flex items-center gap-2 mb-1">
                                       <User className="w-3 h-3" />
-                                      <span className="text-xs font-medium">@{track.verifiedComment.user.username}</span>
+                                      <span className="text-xs font-medium">@{post.verifiedComment.user.username}</span>
                                     </div>
-                                    <p className="text-sm">{track.verifiedComment.content}</p>
+                                    <p className="text-sm">{post.verifiedComment.body || post.verifiedComment.content}</p>
                                   </div>
                                 </div>
                               ) : (
@@ -303,10 +303,10 @@ export default function ModeratorPage() {
                                   size="sm"
                                   className="bg-green-600 hover:bg-green-700"
                                   onClick={() => {
-                                    setSelectedTrack(track);
-                                    setSelectedCommentId(track.verifiedCommentId || "");
+                                    setSelectedPost(post);
+                                    setSelectedCommentId(post.verifiedCommentId || "");
                                   }}
-                                  data-testid={`button-review-confirm-${track.id}`}
+                                  data-testid={`button-review-confirm-${post.id}`}
                                 >
                                   <CheckCircle className="w-4 h-4 mr-1" />
                                   Review & Confirm
@@ -314,9 +314,9 @@ export default function ModeratorPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => reopenVerificationMutation.mutate(track.id)}
+                                  onClick={() => reopenVerificationMutation.mutate(post.id)}
                                   disabled={reopenVerificationMutation.isPending}
-                                  data-testid={`button-reopen-${track.id}`}
+                                  data-testid={`button-reopen-${post.id}`}
                                 >
                                   <XCircle className="w-4 h-4 mr-1" />
                                   Reopen for Review
@@ -360,13 +360,13 @@ export default function ModeratorPage() {
                             {/* Video thumbnail - clickable */}
                             <div 
                               className="relative w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted cursor-pointer group"
-                              onClick={() => report.track && setTrackForComments(report.track)}
+                              onClick={() => report.post && setPostForComments(report.post)}
                               data-testid={`thumbnail-${report.id}`}
                             >
-                              {report.track?.videoUrl ? (
+                              {report.post?.videoUrl || report.post?.video_url ? (
                                 <>
                                   <video
-                                    src={report.track.videoUrl}
+                                    src={report.post.videoUrl || report.post.video_url}
                                     className="w-full h-full object-cover"
                                     muted
                                   />
@@ -386,10 +386,10 @@ export default function ModeratorPage() {
                               <div>
                                 <p 
                                   className="font-semibold cursor-pointer hover:text-primary transition-colors"
-                                  onClick={() => report.track && setTrackForComments(report.track)}
+                                  onClick={() => report.post && setPostForComments(report.post)}
                                   data-testid={`description-${report.id}`}
                                 >
-                                  {report.track?.description || "Unknown track"}
+                                  {report.post?.description || report.post_title || "Unknown post"}
                                 </p>
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                                   <User className="w-4 h-4" />
@@ -419,15 +419,15 @@ export default function ModeratorPage() {
                                   size="sm"
                                   variant="destructive"
                                   onClick={() => {
-                                    if (confirm("Are you sure you want to remove this track? This action cannot be undone.")) {
-                                      removeTrackMutation.mutate(report.id);
+                                    if (confirm("Are you sure you want to remove this post? This action cannot be undone.")) {
+                                      removePostMutation.mutate(report.id);
                                     }
                                   }}
-                                  disabled={removeTrackMutation.isPending}
+                                  disabled={removePostMutation.isPending}
                                   data-testid={`button-remove-${report.id}`}
                                 >
                                   <XCircle className="w-4 h-4 mr-1" />
-                                  Remove Track
+                                  Remove Post
                                 </Button>
                               </div>
                             </div>
@@ -444,8 +444,8 @@ export default function ModeratorPage() {
       </div>
 
       {/* Comment Selection Dialog */}
-      <Dialog open={!!selectedTrack} onOpenChange={() => {
-        setSelectedTrack(null);
+      <Dialog open={!!selectedPost} onOpenChange={() => {
+        setSelectedPost(null);
         setSelectedCommentId("");
       }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-background/95 backdrop-blur-md">
@@ -453,24 +453,24 @@ export default function ModeratorPage() {
             <DialogTitle>Review Comments & Select Identification</DialogTitle>
           </DialogHeader>
 
-          {selectedTrack && (
+          {selectedPost && (
             <div className="space-y-4">
-              {/* Track info summary */}
+              {/* Post info summary */}
               <div className="bg-muted/50 p-3 rounded-lg">
-                <p className="font-semibold text-sm mb-1">{selectedTrack.description}</p>
-                <p className="text-xs text-muted-foreground">Uploaded by @{selectedTrack.user.username}</p>
+                <p className="font-semibold text-sm mb-1">{selectedPost.description}</p>
+                <p className="text-xs text-muted-foreground">Uploaded by @{selectedPost.user.username}</p>
               </div>
 
               {/* Comments list */}
-              {trackComments.length === 0 ? (
+              {postComments.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No comments on this track yet</p>
+                  <p>No comments on this post yet</p>
                 </div>
               ) : (
                 <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
                   <div className="space-y-3">
-                    {trackComments.map((comment) => (
+                    {postComments.map((comment) => (
                       <div 
                         key={comment.id} 
                         className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${
@@ -491,13 +491,13 @@ export default function ModeratorPage() {
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">@{comment.user.username}</span>
-                              {comment.user.isVerified && (
+                              {comment.user.verified_artist && (
                                 <CheckCircle className="w-4 h-4 text-primary" />
                               )}
                             </div>
                           </div>
-                          <p className="text-sm text-foreground">{comment.content}</p>
-                          {comment.id === selectedTrack.verifiedCommentId && (
+                          <p className="text-sm text-foreground">{comment.body || comment.content}</p>
+                          {comment.id === selectedPost.verifiedCommentId && (
                             <Badge variant="secondary" className="mt-2 text-xs">
                               Uploader's Selection
                             </Badge>
@@ -514,7 +514,7 @@ export default function ModeratorPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setSelectedTrack(null);
+                    setSelectedPost(null);
                     setSelectedCommentId("");
                   }}
                   data-testid="button-cancel-selection"
@@ -524,9 +524,9 @@ export default function ModeratorPage() {
                 <Button
                   className="bg-green-600 hover:bg-green-700"
                   onClick={() => {
-                    if (selectedCommentId && selectedTrack) {
+                    if (selectedCommentId && selectedPost) {
                       confirmVerificationMutation.mutate({
-                        trackId: selectedTrack.id,
+                        postId: selectedPost.id,
                         commentId: selectedCommentId,
                       });
                     }
@@ -543,13 +543,13 @@ export default function ModeratorPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Full Track View Modal */}
-      <Dialog open={!!trackForComments} onOpenChange={() => setTrackForComments(null)}>
+      {/* Full Post View Modal */}
+      <Dialog open={!!postForComments} onOpenChange={() => setPostForComments(null)}>
         <DialogContent className="max-w-md h-screen p-0 m-0 border-0 rounded-none bg-black">
-          <DialogTitle className="sr-only">Track View</DialogTitle>
-          {trackForComments && (
+          <DialogTitle className="sr-only">Post View</DialogTitle>
+          {postForComments && (
             <div className="h-full w-full overflow-hidden">
-              <VideoCard track={trackForComments} />
+              <VideoCard post={postForComments} />
             </div>
           )}
         </DialogContent>

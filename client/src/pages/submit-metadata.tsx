@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { insertTrackSchema } from "@shared/schema";
+import { insertPostSchema } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +16,7 @@ import { useLocation } from "wouter";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
 
-const submitFormSchema = insertTrackSchema.extend({
+const submitFormSchema = insertPostSchema.omit({ userId: true, videoUrl: true }).extend({
   eventDate: z.string().optional(),
   eventTime: z.string().optional(),
 });
@@ -138,7 +138,7 @@ export default function SubmitMetadata() {
   const form = useForm<SubmitFormData>({
     resolver: zodResolver(submitFormSchema),
     defaultValues: {
-      videoUrl: "",
+      title: "",
       description: "",
       genre: "",
       djName: "",
@@ -212,7 +212,6 @@ export default function SubmitMetadata() {
     },
     onSuccess: (data) => {
       setUploadedVideoUrl(data.url);
-      form.setValue('videoUrl', data.url);
       setUploadProgress(0);
       toast({
         title: "Video Uploaded!",
@@ -231,19 +230,21 @@ export default function SubmitMetadata() {
 
   const submitMutation = useMutation({
     mutationFn: async (data: SubmitFormData) => {
+      if (!uploadedVideoUrl) {
+        throw new Error("Video URL is required");
+      }
+
+      // Map form data to backend's expected snake_case format
       const submitData = {
-        ...data,
-        videoUrl: uploadedVideoUrl || data.videoUrl,
-        eventDate: data.eventDate && data.eventTime 
-          ? new Date(`${data.eventDate}T${data.eventTime}:00`) 
-          : data.eventDate 
-            ? new Date(data.eventDate) 
-            : undefined,
+        title: data.title || "Untitled Post", // Backend requires title
+        video_url: uploadedVideoUrl,
+        genre: data.genre || null,
+        description: data.description || null,
+        location: data.location || null,
+        dj_name: data.djName || null,
       };
       
-      const { eventTime, ...finalData } = submitData;
-      
-      return apiRequest("POST", "/api/tracks", finalData);
+      return apiRequest("POST", "/api/posts", submitData);
     },
     onSuccess: () => {
       toast({
@@ -269,7 +270,7 @@ export default function SubmitMetadata() {
       form.reset();
       setUploadedVideoUrl(null);
       setVideoFile(null); // Clear video file reference
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       
       // Invalidate user posts query to show new post in profile immediately
       if (currentUser?.id) {
@@ -306,8 +307,7 @@ export default function SubmitMetadata() {
           start: trimTimes.startTime,
           end: trimTimes.endTime,
         });
-        const finalData = { ...data, videoUrl: uploadResult.url };
-        submitMutation.mutate(finalData);
+        submitMutation.mutate(data);
       } catch (error) {
         return;
       } finally {
@@ -352,6 +352,26 @@ export default function SubmitMetadata() {
           
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-gray-300">Title</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="e.g., Amazing DnB track from Fabric"
+                        className="bg-surface border-gray-600 text-white placeholder-gray-400"
+                        data-testid="input-title"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="genre"

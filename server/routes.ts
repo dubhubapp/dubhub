@@ -2,8 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
-import { insertTrackSchema, insertCommentSchema, insertArtistVideoTagSchema } from "@shared/schema";
-import { comments, tracks as tracksTable, moderatorActions as moderatorActionsTable, userReputation as userReputationTable, reports } from "@shared/schema";
+import { insertCommentSchema } from "@shared/schema";
+import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -27,20 +27,19 @@ function detectArtistMentions(text: string): string[] {
 }
 
 // Helper function to process artist tags in comments
-async function processArtistTags(commentId: string, trackId: string, userId: string, content: string) {
+async function processArtistTags(commentId: string, postId: string, userId: string, content: string) {
   const mentions = detectArtistMentions(content);
   
   for (const mention of mentions) {
-    // Try to find verified artist by display name or username
-    const artist = await storage.findArtistByName(mention);
+    // Try to find verified artist by username
+    const artist = await storage.getUserByUsername(mention);
     
-    if (artist) {
+    if (artist && artist.verified_artist) {
       // Create artist video tag
       await storage.createArtistVideoTag({
-        trackId,
+        postId,
         artistId: artist.id,
-        userId,
-        commentId,
+        taggedBy: userId,
       });
     }
   }
@@ -388,12 +387,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Get user reputation data
-      const userReputation = await storage.getUserReputation(user.id);
+      // Get user karma data
+      const karmaResult = await db.execute(sql`
+        SELECT score FROM user_karma WHERE user_id = ${user.id} LIMIT 1
+      `);
+      const karmaRow = (karmaResult as any).rows?.[0];
+      const karma = karmaRow ? Number(karmaRow.score) : 0;
       
       const userProfile = {
         ...user,
-        reputation: userReputation || { score: 0 }
+        karma: karma
       };
 
       res.json(userProfile);
@@ -403,73 +406,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get tracks feed
-  app.get("/api/tracks", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Get posts feed
+  app.get("/api/posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    console.log("[/api/posts] incoming request", {
+      query: req.query,
+    });
     try {
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = parseInt(req.query.offset as string) || 0;
       const genre = req.query.genre as string;
       const currentUserId = req.dbUser?.id || undefined;
       
-      let tracks = await storage.getTracks(limit, offset, currentUserId);
+      let posts = await storage.getPosts(limit, offset, currentUserId);
       
       if (genre && genre !== "all") {
-        tracks = tracks.filter(track => track.genre.toLowerCase() === genre.toLowerCase());
+        posts = posts.filter(post => post.genre?.toLowerCase() === genre.toLowerCase());
       }
       
-      // Debug: Log first track's like/save status
-      if (tracks.length > 0) {
-        console.log(`[DEBUG] First track ${tracks[0].id}: isLiked=${tracks[0].isLiked}, isSaved=${tracks[0].isSaved}`);
-      }
-      
-      res.json(tracks);
+      res.json(posts);
     } catch (error) {
-      console.error("Get tracks error:", error);
-      res.status(500).json({ message: "Failed to get tracks" });
+      const limit = parseInt(req.query.limit as string) || 10;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const currentUserId = req.dbUser?.id || undefined;
+      console.error("[/api/posts] error", error);
+      console.error("[/api/posts] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        limit,
+        offset,
+        userId: currentUserId,
+      });
+      res.status(500).json({ 
+        message: "Failed to get posts",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
-  // Create new track
-  app.post("/api/tracks", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Create new post
+  app.post("/api/posts", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      console.log('Track submission data:', JSON.stringify(req.body, null, 2));
-      const validatedData = insertTrackSchema.parse(req.body);
+      console.log('Post submission data:', JSON.stringify(req.body, null, 2));
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
       
-      // Keep eventDate as string for storage compatibility
-      const processedData = {
-        ...validatedData,
-        userId,
-      };
+      const { title, video_url, genre, description, location, dj_name } = req.body;
       
-      const track = await storage.createTrack(processedData);
-      
-      res.status(201).json(track);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        console.error('Validation errors:', error.errors);
-        return res.status(400).json({ message: "Invalid track data", errors: error.errors });
+      if (!title || !video_url) {
+        return res.status(400).json({ message: "Title and video_url are required" });
       }
-      console.error('Track creation error:', error);
-      res.status(500).json({ message: "Failed to create track" });
+      
+      const post = await storage.createPost({
+        userId,
+        title,
+        video_url,
+        genre: genre || null,
+        description: description || null,
+        location: location || null,
+        dj_name: dj_name || null,
+      });
+      
+      res.status(201).json(post);
+    } catch (error) {
+      console.error('Post creation error:', error);
+      res.status(500).json({ message: "Failed to create post" });
     }
   });
 
   // Toggle like
   app.post("/api/posts/:id/like", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     const postId = req.params.id;
-    const userId = req.dbUser!.id;
-
+      const userId = req.dbUser!.id;
+      
     try {
       const isLiked = await storage.toggleLike(userId, postId);
-      const counts = await storage.getTrackInteractionCounts(postId);
+      const likesCount = await storage.getPostLikeCount(postId);
+      const comments = await storage.getPostComments(postId);
+      const counts = { likes: likesCount, comments: comments.length, saves: 0 };
 
       // Notifications temporarily disabled until schema alignment is complete.
       // No references to getTrack(), trackId, interactions, or older notification logic.
-
+      
       res.json({ isLiked, counts });
     } catch (error) {
       console.error("[/api/posts/:id/like] Error:", error);
@@ -477,55 +496,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Toggle save
-  app.post("/api/tracks/:id/save", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Delete post (only owner can delete)
+  app.delete("/api/posts/:id", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.id;
-      const userId = req.dbUser!.id;
-      
-      const isSaved = await storage.toggleSave(userId, trackId);
-      const counts = await storage.getTrackInteractionCounts(trackId);
-      
-      res.json({ isSaved, counts });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to toggle save" });
-    }
-  });
-
-  // Delete track (only owner can delete)
-  app.delete("/api/tracks/:id", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
-    try {
-      const trackId = req.params.id;
+      const postId = req.params.id;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
       
-      const track = await storage.getTrack(trackId);
-      if (!track) {
-        return res.status(404).json({ message: "Track not found" });
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      if (post.user?.id !== req.dbUser.id) {
+        return res.status(403).json({ message: "You can only delete your own posts" });
       }
       
-      if (track.userId !== userId) {
-        return res.status(403).json({ message: "You can only delete your own tracks" });
-      }
-      
-      const success = await storage.deleteTrack(trackId);
+      const success = await storage.deletePost(postId);
       if (!success) {
-        return res.status(404).json({ message: "Track not found" });
+        return res.status(404).json({ message: "Post not found" });
       }
       
-      res.json({ message: "Track deleted successfully" });
+      res.json({ message: "Post deleted successfully" });
     } catch (error) {
-      console.error('Track deletion error:', error);
-      res.status(500).json({ message: "Failed to delete track" });
+      console.error('Post deletion error:', error);
+      res.status(500).json({ message: "Failed to delete post" });
     }
   });
 
-  // Report track
-  app.post("/api/tracks/:id/report", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Report post
+  app.post("/api/posts/:id/report", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.id;
+      const postId = req.params.id;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
@@ -536,31 +540,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Report reason is required" });
       }
 
-      const track = await storage.getTrack(trackId);
-      if (!track) {
-        return res.status(404).json({ message: "Track not found" });
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
       }
 
-      // Insert the report
-      await db.insert(reports).values({
-        trackId,
+      // Create the report
+      await storage.createReport({
+        postId,
         reportedBy: userId,
         reason: reason.trim(),
       });
 
       res.status(201).json({ message: "Report submitted successfully" });
     } catch (error) {
-      console.error('Track report error:', error);
-      res.status(500).json({ message: "Failed to report track" });
+      console.error('Post report error:', error);
+      res.status(500).json({ message: "Failed to report post" });
     }
   });
 
-  // Get track comments
-  app.get("/api/tracks/:id/comments", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Get post comments
+  app.get("/api/posts/:id/comments", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.id;
+      const postId = req.params.id;
       const currentUserId = req.dbUser?.id || undefined;
-      const comments = await storage.getTrackComments(trackId, currentUserId);
+      const comments = await storage.getPostComments(postId, currentUserId);
       res.json(comments);
     } catch (error) {
       res.status(500).json({ message: "Failed to get comments" });
@@ -568,54 +572,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create comment with artist tagging support
-  app.post("/api/tracks/:id/comments", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/posts/:id/comments", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.id;
+      const postId = req.params.id;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
-      const validatedData = insertCommentSchema.parse(req.body);
+      const { body, artistTag } = req.body;
       
-      const comment = await storage.createComment({
-        ...validatedData,
+      if (!body || !body.trim()) {
+        return res.status(400).json({ message: "Comment body is required" });
+      }
+      
+      const comment = await storage.createComment(
+        postId,
         userId,
-        trackId,
-        parentId: validatedData.parentId || undefined,
-      });
+        body.trim(),
+        artistTag || null
+      );
       
       // Process artist mentions in the comment
-      await processArtistTags(comment.id, trackId, userId, validatedData.content);
+      await processArtistTags(comment.id, postId, userId, body.trim());
       
       // Create notifications
-      if (validatedData.parentId) {
-        // This is a reply - notify the original commenter
-        const parentComment = await db.select().from(comments).where(eq(comments.id, validatedData.parentId)).limit(1);
-        if (parentComment[0]) {
-          const commenter = await storage.getUser(userId);
+      const post = await storage.getPost(postId);
+      if (post && post.user?.id !== userId) {
           await storage.createNotification({
-            userId: parentComment[0].userId,
-            triggeredByUserId: userId,
-            trackId,
-            commentId: comment.id,
-            type: "comment_reply",
-            message: `replied to your comment`,
-          });
-        }
-      } else {
-        // This is a new comment on a track - notify the track owner
-        const track = await storage.getTrack(trackId);
-        if (track) {
-          const commenter = await storage.getUser(userId);
-          await storage.createNotification({
-            userId: track.userId,
-            triggeredByUserId: userId,
-            trackId,
-            commentId: comment.id,
-            type: "track_comment",
-            message: `commented on your track`,
-          });
-        }
+          artistId: post.user.id,
+            triggeredBy: userId,
+          postId: postId,
+          message: `commented on your post`,
+        } as any);
       }
       
       res.status(201).json(comment);
@@ -628,80 +616,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Vote on a comment
-  app.post("/api/comments/:id/vote", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Get artist video tags for a post
+  app.get("/api/posts/:id/artist-tags", async (req, res) => {
     try {
-      const commentId = req.params.id;
-      if (!req.dbUser) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
-      const userId = req.dbUser.id;
-      const { voteType } = req.body;
-      
-      if (!["upvote", "downvote"].includes(voteType)) {
-        return res.status(400).json({ message: "Invalid vote type. Must be 'upvote' or 'downvote'" });
-      }
-      
-      const vote = await storage.voteOnComment(userId, commentId, voteType);
-      res.json(vote);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to vote on comment" });
-    }
-  });
-
-  // Remove vote from a comment
-  app.delete("/api/comments/:id/vote", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
-    try {
-      const commentId = req.params.id;
-      if (!req.dbUser) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
-      const userId = req.dbUser.id;
-      
-      await storage.removeCommentVote(userId, commentId);
-      res.json({ message: "Vote removed successfully" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to remove vote" });
-    }
-  });
-
-  // Get user stats
-  app.get("/api/user/:id/stats", async (req, res) => {
-    try {
-      const userId = req.params.id;
-      const stats = await storage.getUserStats(userId);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get user stats" });
-    }
-  });
-
-  // Get user reputation
-  app.get("/api/user/:id/reputation", async (req, res) => {
-    try {
-      const userId = req.params.id;
-      const reputation = await storage.getUserReputation(userId);
-      res.json(reputation || { userId, reputation: 0, confirmedIds: 0 });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get user reputation" });
-    }
-  });
-
-  // Get verified artists (for auto-complete)
-  app.get("/api/artists/verified", async (req, res) => {
-    try {
-      const artists = await storage.getVerifiedArtists();
-      res.json(artists);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get verified artists" });
-    }
-  });
-
-  // Get artist video tags for a track
-  app.get("/api/tracks/:id/artist-tags", async (req, res) => {
-    try {
-      const trackId = req.params.id;
-      const tags = await storage.getArtistVideoTags(trackId);
+      const postId = req.params.id;
+      const tags = await storage.getArtistVideoTags(postId);
       res.json(tags);
     } catch (error) {
       res.status(500).json({ message: "Failed to get artist tags" });
@@ -709,10 +628,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Artist confirms or denies a tag
-  app.post("/api/artist-tags/:id/status", async (req, res) => {
+  app.post("/api/artist-tags/:id/status", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const tagId = req.params.id;
-      const artistId = "artist1"; // Mock current artist ID - in real app this would come from auth
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const artistId = req.dbUser.id;
       const { status } = req.body;
 
       if (!["confirmed", "denied"].includes(status)) {
@@ -725,69 +647,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Tag not found or you don't have permission to update it" });
       }
 
-      // If confirmed, award reputation to the user who made the tag
-      if (status === "confirmed") {
-        await storage.addReputationForCorrectArtist(updatedTag.userId); // +5 reputation for correct artist
-      }
-
       res.json(updatedTag);
     } catch (error) {
       res.status(500).json({ message: "Failed to update tag status" });
     }
   });
 
-  // Get user reputation
-  app.get("/api/user/:id/reputation", async (req, res) => {
+  // Get user karma
+  app.get("/api/user/:id/karma", async (req, res) => {
     try {
       const userId = req.params.id;
-      const reputation = await storage.getUserReputation(userId);
-      res.json(reputation || { score: 0 });
+      const result = await db.execute(sql`
+        SELECT score FROM user_karma WHERE user_id = ${userId} LIMIT 1
+      `);
+      const row = (result as any).rows?.[0];
+      const karma = row ? Number(row.score) : 0;
+      res.json({ karma });
     } catch (error) {
-      res.status(500).json({ message: "Failed to get reputation" });
+      console.error("[/api/user/:id/karma] Error:", error);
+      console.error("[/api/user/:id/karma] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        userId: req.params.id,
+      });
+      res.status(500).json({ 
+        message: "Failed to get karma",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
-  // Get user genre statistics
-  app.get("/api/user/:id/genre-stats", async (req, res) => {
+  // Get user stats
+  app.get("/api/user/:id/stats", async (req, res) => {
     try {
       const userId = req.params.id;
-      const genreStats = await storage.getUserGenreStats(userId);
-      res.json(genreStats);
+      
+      // Get total posts created by user
+      const totalIDsResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM posts
+        WHERE user_id = ${userId}
+      `);
+      const totalIDs = Number((totalIDsResult as any).rows?.[0]?.count ?? 0);
+      
+      // Get confirmed posts (identified)
+      const confirmedIDsResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM posts
+        WHERE user_id = ${userId}
+          AND verification_status = 'identified'
+      `);
+      const confirmedIDs = Number((confirmedIDsResult as any).rows?.[0]?.count ?? 0);
+      
+      // Get total likes given by user
+      const totalLikesResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM post_likes
+        WHERE user_id = ${userId}
+      `);
+      const totalLikes = Number((totalLikesResult as any).rows?.[0]?.count ?? 0);
+      
+      // savedTracks is always 0 (no saves feature)
+      const savedTracks = 0;
+      
+      res.json({
+        totalIDs,
+        confirmedIDs,
+        savedTracks,
+        totalLikes,
+      });
     } catch (error) {
-      res.status(500).json({ message: "Failed to get genre stats" });
-    }
-  });
-
-  // Get saved tracks
-  app.get("/api/user/:id/saved", async (req, res) => {
-    try {
-      const userId = req.params.id;
-      const savedTracks = await storage.getSavedTracks(userId);
-      res.json(savedTracks);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get saved tracks" });
-    }
-  });
-
-  // Get liked tracks
-  app.get("/api/user/:id/liked-tracks", async (req, res) => {
-    try {
-      const userId = req.params.id;
-      const likedTracks = await storage.getLikedTracks(userId);
-      res.json(likedTracks);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get liked tracks" });
-    }
-  });
-
-  // Get saved tracks with full details (for profile page)
-  app.get("/api/user/:id/saved-tracks", async (req, res) => {
-    try {
-      const userId = req.params.id;
-      const savedTracks = await storage.getSavedTracksWithDetails(userId);
-      res.json(savedTracks);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get saved tracks" });
+      console.error("[/api/user/:id/stats] Error:", error);
+      console.error("[/api/user/:id/stats] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        userId: req.params.id,
+      });
+      res.status(500).json({ 
+        message: "Failed to get user stats",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
@@ -803,58 +742,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get tracks by artist (for artist portal)
-  app.get("/api/artist/:id/tracks", async (req, res) => {
+  // Get posts by artist (for artist portal)
+  app.get("/api/artist/:id/posts", async (req, res) => {
     try {
       const artistId = req.params.id;
-      const status = req.query.status as string;
-      const tracks = await storage.getTracksByArtist(artistId, status);
-      res.json(tracks);
+      const posts = await storage.getPostsByArtist(artistId);
+      res.json(posts);
     } catch (error) {
-      res.status(500).json({ message: "Failed to get artist tracks" });
+      res.status(500).json({ message: "Failed to get artist posts" });
     }
   });
 
-  // Confirm/reject track (artist only)
-  app.patch("/api/tracks/:id/status", async (req, res) => {
-    try {
-      const trackId = req.params.id;
-      const artistId = "artist1"; // Mock artist ID
-      const { status, trackTitle, artistName, labelName, releaseDate } = req.body;
-      
-      if (!["confirmed", "rejected"].includes(status)) {
-        return res.status(400).json({ message: "Invalid status" });
-      }
-      
-      const updates: any = { 
-        status,
-        confirmedBy: artistId,
-      };
-      
-      if (status === "confirmed" && trackTitle) {
-        updates.trackTitle = trackTitle;
-        updates.artistName = artistName;
-        updates.labelName = labelName;
-        updates.releaseDate = releaseDate ? new Date(releaseDate) : undefined;
-      }
-      
-      const track = await storage.updateTrack(trackId, updates);
-      
-      // Award reputation for correct track ID when confirmed
-      if (status === "confirmed" && track) {
-        await storage.addReputationForCorrectID(track.userId);
-      }
-      
-      res.json(track);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update track status" });
-    }
-  });
 
   // Community verification endpoint
-  app.post("/api/tracks/:id/community-verify", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/posts/:id/community-verify", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.id;
+      const postId = req.params.id;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
@@ -865,304 +768,294 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Comment ID is required" });
       }
       
-      // Verify the user owns the track
-      const track = await storage.getTrack(trackId);
-      if (!track) {
-        return res.status(404).json({ message: "Track not found" });
+      // Verify the user owns the post
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
       }
       
-      if (track.userId !== userId) {
-        return res.status(403).json({ message: "Only the track owner can verify" });
+      if (post.user?.id !== userId) {
+        return res.status(403).json({ message: "Only the post owner can verify" });
       }
       
       // Get the comment to find the commenter
-      const comment = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
-      if (!comment[0]) {
+      const commentResult = await db.execute(sql`
+        SELECT * FROM comments WHERE id = ${commentId} LIMIT 1
+      `);
+      const commentRows = (commentResult as any).rows || [];
+      if (commentRows.length === 0) {
         return res.status(404).json({ message: "Comment not found" });
       }
+      const comment = commentRows[0];
       
-      // Update track with community verification
-      const updatedTrack = await storage.updateTrack(trackId, {
-        isVerifiedCommunity: true,
-        verificationStatus: "community",
-        verifiedCommentId: commentId,
-        verifiedBy: comment[0].userId,
-      });
+      // Update post with community verification
+      await db.execute(sql`
+        UPDATE posts
+        SET is_verified_community = true,
+            verification_status = 'community',
+            verified_comment_id = ${commentId},
+            verified_by = ${comment.user_id}
+        WHERE id = ${postId}
+      `);
       
       // Notify the commenter that their ID was submitted for moderator review
       await storage.createNotification({
-        userId: comment[0].userId,
-        triggeredByUserId: userId,
-        trackId,
-        commentId,
-        type: "moderator_review_submitted",
+        artistId: comment.user_id,
+        triggeredBy: userId,
+        postId: postId,
         message: "submitted your track ID for moderator review",
-      });
+      } as any);
       
-      // Notify moderator about new submission for review
-      // In a real app, this would notify all moderators or specific moderators
-      const moderatorId = "moderator1"; // Mock moderator ID
-      await storage.createNotification({
-        userId: moderatorId,
-        triggeredByUserId: userId,
-        trackId,
-        commentId,
-        type: "new_review_submission",
-        message: "submitted a track for moderator review",
-      });
-      
-      res.json(updatedTrack);
+      res.json({ message: "Post verified by community" });
     } catch (error) {
       console.error("Community verification error:", error);
-      res.status(500).json({ message: "Failed to verify track" });
+      res.status(500).json({ message: "Failed to verify post" });
     }
   });
 
   // Moderator: Get pending verifications
   app.get("/api/moderator/pending-verifications", async (req, res) => {
     try {
-      const tracks = await db
-        .select()
-        .from(tracksTable)
-        .where(eq(tracksTable.verificationStatus, "community"));
+      const result = await db.execute(sql`
+        SELECT * FROM posts
+        WHERE verification_status = 'community'
+        ORDER BY created_at DESC
+      `);
       
-      const tracksWithUserAndComment = await Promise.all(
-        tracks.map(async (track) => {
-          const user = await storage.getUser(track.userId);
+      const posts = (result as any).rows || [];
+      
+      const postsWithUserAndComment = await Promise.all(
+        posts.map(async (post: any) => {
+          const user = await storage.getUser(post.user_id);
           
           // Get the verified comment if it exists
           let verifiedComment = null;
-          if (track.verifiedCommentId) {
-            const commentResult = await db
-              .select()
-              .from(comments)
-              .where(eq(comments.id, track.verifiedCommentId))
-              .limit(1);
-            
-            if (commentResult[0]) {
-              const commentUser = await storage.getUser(commentResult[0].userId);
+          if (post.verified_comment_id) {
+            const commentResult = await db.execute(sql`
+              SELECT * FROM comments WHERE id = ${post.verified_comment_id} LIMIT 1
+            `);
+            const commentRows = (commentResult as any).rows || [];
+            if (commentRows.length > 0) {
+              const comment = commentRows[0];
+              const commentUser = await storage.getUser(comment.user_id);
               verifiedComment = {
-                ...commentResult[0],
+                ...comment,
                 user: commentUser,
               };
             }
           }
           
           return {
-            ...track,
+            ...post,
             user,
             verifiedComment,
             likes: 0,
-            saves: 0,
             comments: 0,
           };
         })
       );
       
-      res.json(tracksWithUserAndComment);
+      res.json(postsWithUserAndComment);
     } catch (error) {
-      console.error("Error fetching pending verifications:", error);
+      console.error("[/api/moderator/pending-verifications] Error:", error);
       res.status(500).json({ message: "Failed to get pending verifications" });
     }
   });
 
   // Moderator: Confirm verification
-  app.post("/api/moderator/confirm-verification/:trackId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/moderator/confirm-verification/:postId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.trackId;
+      const postId = req.params.postId;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const moderatorId = req.dbUser.id;
       const { commentId } = req.body; // Moderator can select a different comment
       
-      const track = await storage.getTrack(trackId);
-      if (!track) {
-        return res.status(404).json({ message: "Track not found" });
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
       }
       
       // Use the moderator-selected comment if provided, otherwise use the uploader's selection
-      const selectedCommentId = commentId || track.verifiedCommentId;
+      const selectedCommentId = commentId || (post as any).verified_comment_id;
       
       if (!selectedCommentId) {
         return res.status(400).json({ message: "No comment selected for verification" });
       }
       
       // Get the comment to find the commenter
-      const commentResult = await db.select().from(comments).where(eq(comments.id, selectedCommentId)).limit(1);
-      if (!commentResult[0]) {
+      const commentResult = await db.execute(sql`
+        SELECT * FROM comments WHERE id = ${selectedCommentId} LIMIT 1
+      `);
+      const commentRows = (commentResult as any).rows || [];
+      if (commentRows.length === 0) {
         return res.status(404).json({ message: "Selected comment not found" });
       }
+      const comment = commentRows[0];
       
-      // Update track to identified status with the selected comment
-      await storage.updateTrack(trackId, {
-        verifiedByModerator: true,
-        verificationStatus: "identified",
-        verifiedCommentId: selectedCommentId,
-        verifiedBy: commentResult[0].userId,
-      });
-      
-      // Mark the verified comment as identified
-      await db
-        .update(comments)
-        .set({ isIdentified: true })
-        .where(eq(comments.id, selectedCommentId));
+      // Update post to identified status with the selected comment
+      await db.execute(sql`
+        UPDATE posts
+        SET verified_by_moderator = true,
+            verification_status = 'identified',
+            verified_comment_id = ${selectedCommentId},
+            verified_by = ${comment.user_id}
+        WHERE id = ${postId}
+      `);
       
       // Record moderator action
-      await db.insert(moderatorActionsTable).values({
-        action: "confirmed_id",
-        postId: trackId,
-        moderatorId,
-      });
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
+        VALUES (${postId}, ${moderatorId}, 'confirmed_id', NOW())
+      `);
       
-      // Reward the commenter who provided the ID
-      const commenterReputation = await db
-        .select()
-        .from(userReputationTable)
-        .where(eq(userReputationTable.userId, commentResult[0].userId))
-        .limit(1);
-      
-      if (commenterReputation.length > 0) {
-        await db
-          .update(userReputationTable)
-          .set({
-            reputation: sql`${userReputationTable.reputation} + 10`,
-            confirmedIds: sql`${userReputationTable.confirmedIds} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(eq(userReputationTable.userId, commentResult[0].userId));
-      } else {
-        await db.insert(userReputationTable).values({
-          userId: commentResult[0].userId,
-          reputation: 10,
-          confirmedIds: 1,
-        });
-      }
+      // Reward the commenter who provided the ID using user_karma
+      await db.execute(sql`
+        INSERT INTO user_karma (user_id, score, correct_ids)
+        VALUES (${comment.user_id}, 10, 1)
+        ON CONFLICT (user_id) DO UPDATE
+        SET score = user_karma.score + 10,
+            correct_ids = user_karma.correct_ids + 1
+      `);
       
       // Reward the moderator
-      const moderatorReputation = await db
-        .select()
-        .from(userReputationTable)
-        .where(eq(userReputationTable.userId, moderatorId))
-        .limit(1);
-      
-      if (moderatorReputation.length > 0) {
-        await db
-          .update(userReputationTable)
-          .set({
-            reputation: sql`${userReputationTable.reputation} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(eq(userReputationTable.userId, moderatorId));
-      } else {
-        await db.insert(userReputationTable).values({
-          userId: moderatorId,
-          reputation: 1,
-          confirmedIds: 0,
-        });
-      }
+      await db.execute(sql`
+        INSERT INTO user_karma (user_id, score)
+        VALUES (${moderatorId}, 1)
+        ON CONFLICT (user_id) DO UPDATE
+        SET score = user_karma.score + 1
+      `);
       
       // Notify the commenter that their ID was confirmed
       await storage.createNotification({
-        userId: commentResult[0].userId,
-        triggeredByUserId: moderatorId,
-        trackId,
-        commentId: selectedCommentId,
-        type: "moderator_confirmed",
+        artistId: comment.user_id,
+        triggeredBy: moderatorId,
+        postId: postId,
         message: "confirmed your track ID",
-      });
+      } as any);
       
       res.json({ message: "Verification confirmed" });
     } catch (error) {
-      console.error("Error confirming verification:", error);
+      console.error("[/api/moderator/confirm-verification/:postId] Error:", error);
+      console.error("[/api/moderator/confirm-verification/:postId] postId:", req.params.postId);
       res.status(500).json({ message: "Failed to confirm verification" });
     }
   });
 
   // Moderator: Reopen verification
-  app.post("/api/moderator/reopen-verification/:trackId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/moderator/reopen-verification/:postId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const trackId = req.params.trackId;
+      const postId = req.params.postId;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const moderatorId = req.dbUser.id;
       
-      const track = await storage.getTrack(trackId);
-      if (!track) {
-        return res.status(404).json({ message: "Track not found" });
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
       }
       
       // Get the comment that was rejected (if exists) for notification
       let rejectedCommentUserId = null;
-      if (track.verifiedCommentId) {
-        const commentResult = await db.select().from(comments).where(eq(comments.id, track.verifiedCommentId)).limit(1);
-        if (commentResult[0]) {
-          rejectedCommentUserId = commentResult[0].userId;
+      const postAny = post as any;
+      if (postAny.verified_comment_id) {
+        const commentResult = await db.execute(sql`
+          SELECT * FROM comments WHERE id = ${postAny.verified_comment_id} LIMIT 1
+        `);
+        const commentRows = (commentResult as any).rows || [];
+        if (commentRows.length > 0) {
+          rejectedCommentUserId = commentRows[0].user_id;
         }
-        
-        // Reset the comment's identified status
-        await db
-          .update(comments)
-          .set({ isIdentified: false })
-          .where(eq(comments.id, track.verifiedCommentId));
       }
       
       // Reset verification fields
-      await storage.updateTrack(trackId, {
-        isVerifiedCommunity: false,
-        verificationStatus: "unverified",
-        verifiedCommentId: null,
-        verifiedBy: null,
-        verifiedByModerator: false,
-      });
+      await db.execute(sql`
+        UPDATE posts
+        SET is_verified_community = false,
+            verification_status = 'unverified',
+            verified_comment_id = NULL,
+            verified_by = NULL,
+            verified_by_moderator = false
+        WHERE id = ${postId}
+      `);
       
       // Record moderator action
-      await db.insert(moderatorActionsTable).values({
-        action: "reopened",
-        postId: trackId,
-        moderatorId,
-      });
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
+        VALUES (${postId}, ${moderatorId}, 'reopen_verification', NOW())
+      `);
       
       // Notify the commenter that their ID was rejected
-      if (rejectedCommentUserId && track.verifiedCommentId) {
+      if (rejectedCommentUserId && postAny.verified_comment_id) {
         await storage.createNotification({
-          userId: rejectedCommentUserId,
-          triggeredByUserId: moderatorId,
-          trackId,
-          commentId: track.verifiedCommentId,
-          type: "moderator_rejected",
+          artistId: rejectedCommentUserId,
+          triggeredBy: moderatorId,
+          postId: postId,
           message: "rejected your track ID",
-        });
+        } as any);
       }
       
-      res.json({ message: "Track reopened for review" });
+      res.json({ message: "Post reopened for review" });
     } catch (error) {
-      console.error("Error reopening track:", error);
-      res.status(500).json({ message: "Failed to reopen track" });
+      console.error("[/api/moderator/reopen-verification/:postId] Error:", error);
+      console.error("[/api/moderator/reopen-verification/:postId] postId:", req.params.postId);
+      res.status(500).json({ message: "Failed to reopen post" });
     }
   });
 
   // Moderator: Get pending reports
   app.get("/api/moderator/reports", async (req, res) => {
     try {
-      const pendingReports = await db
-        .select({
-          id: reports.id,
-          reason: reports.reason,
-          createdAt: reports.createdAt,
-          track: tracksTable,
-          reportedBy: sql`json_build_object('id', u.id, 'username', u.username, 'profileImage', u.profile_image)`,
-        })
-        .from(reports)
-        .leftJoin(tracksTable, eq(reports.trackId, tracksTable.id))
-        .leftJoin(sql`users u`, eq(reports.reportedBy, sql`u.id`))
-        .where(eq(reports.status, "pending"))
-        .orderBy(sql`${reports.createdAt} DESC`);
+      const result = await db.execute(sql`
+        SELECT
+          r.id,
+          r.post_id,
+          r.reported_by,
+          r.reason,
+          r.status,
+          r.created_at,
+          p.title AS post_title,
+          p.video_url AS post_video_url,
+          p.description AS post_description,
+          p.genre AS post_genre,
+          p.location AS post_location,
+          pr.username AS reported_by_username,
+          pr.avatar_url AS reported_by_avatar_url
+        FROM reports r
+        LEFT JOIN posts p ON p.id = r.post_id
+        LEFT JOIN profiles pr ON pr.id = r.reported_by
+        WHERE r.status = 'pending'
+        ORDER BY r.created_at DESC
+      `);
 
-      res.json(pendingReports);
+      const reports = (result as any).rows || [];
+      // Map reports to include post object for frontend compatibility
+      const reportsWithPost = reports.map((report: any) => ({
+        id: report.id,
+        post_id: report.post_id,
+        reported_by: report.reported_by,
+        reason: report.reason,
+        status: report.status,
+        created_at: report.created_at,
+        post: report.post_title ? {
+          id: report.post_id,
+          title: report.post_title,
+          videoUrl: report.post_video_url,
+          video_url: report.post_video_url,
+          description: report.post_description,
+          genre: report.post_genre,
+          location: report.post_location,
+        } : null,
+        reportedBy: report.reported_by_username ? {
+          username: report.reported_by_username,
+          avatar_url: report.reported_by_avatar_url,
+        } : null,
+      }));
+      res.json(reportsWithPost);
     } catch (error) {
-      console.error("Error fetching reports:", error);
+      console.error("[/api/moderator/reports] Error:", error);
       res.status(500).json({ message: "Failed to fetch reports" });
     }
   });
@@ -1187,13 +1080,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "Report dismissed" });
     } catch (error) {
-      console.error("Error dismissing report:", error);
+      console.error("[/api/moderator/reports/:reportId/dismiss] Error:", error);
+      console.error("[/api/moderator/reports/:reportId/dismiss] reportId:", req.params.reportId);
       res.status(500).json({ message: "Failed to dismiss report" });
     }
   });
 
-  // Moderator: Remove reported track
-  app.post("/api/moderator/reports/:reportId/remove-track", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Moderator: Remove reported post
+  app.post("/api/moderator/reports/:reportId/remove-post", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const reportId = req.params.reportId;
       if (!req.dbUser) {
@@ -1201,29 +1095,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
-      // Get the report to find the track ID
-      const report = await db.select().from(reports).where(eq(reports.id, reportId)).limit(1);
-      if (!report[0]) {
+      // Get the report to find the post ID
+      const reportResult = await db.execute(sql`
+        SELECT * FROM reports WHERE id = ${reportId} LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
         return res.status(404).json({ message: "Report not found" });
       }
+      const report = reportRows[0];
 
-      // Delete the track
-      await storage.deleteTrack(report[0].trackId);
+      // Delete the post
+      await storage.deletePost(report.post_id);
 
       // Mark report as reviewed
-      await db
-        .update(reports)
-        .set({
-          status: "reviewed",
-          reviewedBy: moderatorId,
-          reviewedAt: sql`NOW()`,
-        })
-        .where(eq(reports.id, reportId));
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'reviewed',
+            reviewed_by = ${moderatorId},
+            reviewed_at = NOW()
+        WHERE id = ${reportId}
+      `);
 
-      res.json({ message: "Track removed successfully" });
+      res.json({ message: "Post removed successfully" });
     } catch (error) {
-      console.error("Error removing track:", error);
-      res.status(500).json({ message: "Failed to remove track" });
+      console.error("[/api/moderator/reports/:reportId/remove-post] Error:", error);
+      console.error("[/api/moderator/reports/:reportId/remove-post] reportId:", req.params.reportId);
+      res.status(500).json({ message: "Failed to remove post" });
     }
   });
 
@@ -1245,8 +1143,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const count = await storage.getUnreadNotificationCount(userId);
       res.json({ count });
     } catch (error) {
-      console.error("Error fetching unread count:", error);
-      res.status(500).json({ message: "Failed to get unread count" });
+      console.error("[/api/user/:id/notifications/unread-count] Error:", error);
+      console.error("[/api/user/:id/notifications/unread-count] Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        userId: req.params.id,
+      });
+      res.status(500).json({ 
+        message: "Failed to get unread count",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
@@ -1256,7 +1162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Count only moderator-related notifications (new review submissions)
       const allNotifications = await storage.getUserNotifications(moderatorId);
       const moderatorNotifications = allNotifications.filter(n => 
-        n.type === "new_review_submission" && !n.isRead
+        n.message.includes("submitted your track ID for moderator review") && !n.read
       );
       res.json({ count: moderatorNotifications.length });
     } catch (error) {
@@ -1377,6 +1283,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching artist leaderboard:", error);
       res.status(500).json({ message: "Failed to get artist leaderboard" });
+    }
+  });
+
+  // Dev-only: Seed a test post for debugging
+  app.post("/api/dev/seed-post", async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+
+      const post = await storage.createPost({
+        userId,
+        title: "Test Post",
+        video_url: "/videos/test.mp4",
+        genre: "DnB",
+        description: "Test post for debugging",
+        location: "Debug City",
+        dj_name: "Debug DJ",
+      });
+
+      res.json(post);
+    } catch (error) {
+      console.error("[/api/dev/seed-post] error", error);
+      res.status(500).json({ message: "Failed to seed post" });
     }
   });
 

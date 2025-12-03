@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { TrackWithUser } from "@shared/schema";
+import type { PostWithUser } from "@shared/schema";
 
 type FilterMode = "pending" | "confirmed" | "all";
 
@@ -16,44 +16,49 @@ export default function ArtistProfile() {
   const queryClient = useQueryClient();
   const [filterMode, setFilterMode] = useState<FilterMode>("pending");
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [selectedTrack, setSelectedTrack] = useState<TrackWithUser | null>(null);
-  const [confirmationData, setConfirmationData] = useState({
-    trackTitle: "",
-    artistName: "",
-    labelName: "",
-    releaseDate: "",
-  });
+  const [selectedTrack, setSelectedTrack] = useState<PostWithUser | null>(null);
+  // Release tracker confirmation data will be added when that feature is implemented
 
   const { data: artistTracks = [], isLoading } = useQuery({
-    queryKey: ["/api/artist", "artist1", "tracks", filterMode],
+    queryKey: ["/api/artist", "artist1", "posts", filterMode],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filterMode !== "all") {
-        params.append("status", filterMode);
+      const response = await fetch(`/api/artist/artist1/posts`);
+      if (!response.ok) throw new Error("Failed to fetch artist posts");
+      const posts = await response.json() as PostWithUser[];
+      // Filter client-side based on verification status
+      if (filterMode === "pending") {
+        return posts.filter(p => p.verificationStatus === "unverified");
+      } else if (filterMode === "confirmed") {
+        return posts.filter(p => p.verificationStatus === "identified" || p.verificationStatus === "community");
       }
-      const response = await fetch(`/api/artist/artist1/tracks?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch artist tracks");
-      return response.json() as Promise<TrackWithUser[]>;
+      return posts;
     },
   });
 
   const confirmMutation = useMutation({
-    mutationFn: async ({ trackId, data }: { trackId: string; data: any }) => {
-      return apiRequest("PATCH", `/api/tracks/${trackId}/status`, {
-        status: "confirmed",
-        ...data,
-      });
+    mutationFn: async ({ postId }: { postId: string }) => {
+      // Artist confirmation via artist_video_tags will be implemented when release tracker is built
+      // For now, this is a placeholder - the actual implementation will use /api/artist-tags/:id/status
+      // Find the artist tag for this post and confirm it
+      const tags = await apiRequest("GET", `/api/posts/${postId}/artist-tags`);
+      const tagsData = await tags.json();
+      if (tagsData.length > 0) {
+        // Confirm the first tag (in future, this will be more sophisticated)
+        return apiRequest("POST", `/api/artist-tags/${tagsData[0].id}/status`, {
+          status: "confirmed",
+        });
+      }
+      throw new Error("No artist tag found for this post");
     },
     onSuccess: () => {
       toast({
-        title: "Track Confirmed",
-        description: "The track has been confirmed and will appear in release trackers.",
+        title: "Post Confirmed",
+        description: "The post has been confirmed.",
       });
       setConfirmDialogOpen(false);
       setSelectedTrack(null);
-      setConfirmationData({ trackTitle: "", artistName: "", labelName: "", releaseDate: "" });
-      queryClient.invalidateQueries({ queryKey: ["/api/artist", "artist1", "tracks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/artist", "artist1", "posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
     },
     onError: () => {
       toast({
@@ -65,17 +70,26 @@ export default function ArtistProfile() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async (trackId: string) => {
-      return apiRequest("PATCH", `/api/tracks/${trackId}/status`, {
-        status: "rejected",
-      });
+    mutationFn: async (postId: string) => {
+      // Find artist tags for this post and deny them
+      // This will be fully implemented when release tracker is built
+      const tags = await apiRequest("GET", `/api/posts/${postId}/artist-tags`);
+      const tagsData = await tags.json();
+      if (tagsData.length > 0) {
+        // Deny the first tag
+        return apiRequest("POST", `/api/artist-tags/${tagsData[0].id}/status`, {
+          status: "denied",
+        });
+      }
+      // If no tags exist, we can't deny - this is expected behavior
+      throw new Error("No artist tag found to deny");
     },
     onSuccess: () => {
       toast({
-        title: "Track Rejected",
-        description: "The track has been marked as not yours.",
+        title: "Post Rejected",
+        description: "The post has been marked as not yours.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/artist", "artist1", "tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/artist", "artist1", "posts"] });
     },
     onError: () => {
       toast({
@@ -86,26 +100,18 @@ export default function ArtistProfile() {
     },
   });
 
-  const handleConfirmClick = (track: TrackWithUser) => {
+  const handleConfirmClick = (track: PostWithUser) => {
     setSelectedTrack(track);
-    setConfirmationData({
-      trackTitle: track.trackTitle || "",
-      artistName: track.artistName || "",
-      labelName: track.labelName || "",
-      releaseDate: track.releaseDate ? track.releaseDate.toISOString().split('T')[0] : "",
-    });
+    // Release tracker fields will be added when that feature is implemented
     setConfirmDialogOpen(true);
   };
 
   const handleConfirmSubmit = () => {
     if (!selectedTrack) return;
     
+    // For now, just confirm the post - release tracker details will be added later
     confirmMutation.mutate({
-      trackId: selectedTrack.id,
-      data: {
-        ...confirmationData,
-        releaseDate: confirmationData.releaseDate || undefined,
-      },
+      postId: selectedTrack.id,
     });
   };
 
@@ -226,32 +232,32 @@ export default function ArtistProfile() {
                 <div 
                   key={track.id} 
                   className={`bg-surface rounded-xl p-4 border ${
-                    track.status === "pending" 
+                    track.verificationStatus === "unverified" 
                       ? "border-yellow-500/20" 
-                      : track.status === "confirmed"
+                      : track.verificationStatus === "identified" || track.verificationStatus === "community"
                       ? "border-green-500/20"
                       : "border-red-500/20"
                   }`}
                 >
                   <div className="flex items-start space-x-3">
                     <img 
-                      src={track.user.profileImage || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face"}
+                      src={track.user.avatar_url || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face"}
                       alt="User Profile" 
                       className="w-10 h-10 rounded-full"
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
                         <span className="font-semibold text-sm">@{track.user.username}</span>
-                        <span className="text-xs text-gray-400">{formatTimeAgo(track.createdAt)}</span>
+                        <span className="text-xs text-gray-400">{track.createdAt ? formatTimeAgo(track.createdAt) : 'Recently'}</span>
                       </div>
                       <p className="text-sm text-gray-300 mb-2">{track.description}</p>
                       <div className="flex items-center space-x-4 text-xs text-gray-500 mb-3">
-                        <span>{track.location}</span>
-                        <span>{track.eventDate ? new Intl.DateTimeFormat().format(typeof track.eventDate === 'string' ? new Date(track.eventDate) : track.eventDate) : "Date unknown"}</span>
-                        <span>{track.genre}</span>
+                        {track.location && <span>{track.location}</span>}
+                        {track.djName && <span>DJ: {track.djName}</span>}
+                        {track.genre && <span>{track.genre}</span>}
                       </div>
                       
-                      {track.status === "pending" && (
+                      {track.verificationStatus === "unverified" && (
                         <div className="flex space-x-2">
                           <Button
                             size="sm"
@@ -275,13 +281,13 @@ export default function ArtistProfile() {
                         </div>
                       )}
 
-                      {track.status === "confirmed" && track.trackTitle && (
+                      {(track.verificationStatus === "identified" || track.verificationStatus === "community") && (
                         <div className="text-xs text-green-400">
-                          ✓ Confirmed as "{track.trackTitle}" by {track.artistName}
+                          ✓ Post has been identified
                         </div>
                       )}
 
-                      {track.status === "rejected" && (
+                      {track.deniedByArtist && (
                         <div className="text-xs text-red-400">
                           ✗ Marked as not your track
                         </div>
@@ -300,46 +306,9 @@ export default function ArtistProfile() {
                 <DialogTitle className="text-white">Confirm Track Details</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div>
-                  <Label htmlFor="trackTitle" className="text-gray-300">Track Title</Label>
-                  <Input
-                    id="trackTitle"
-                    value={confirmationData.trackTitle}
-                    onChange={(e) => setConfirmationData(prev => ({ ...prev, trackTitle: e.target.value }))}
-                    placeholder="Enter track title"
-                    className="bg-dark border-gray-600 text-white"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="artistName" className="text-gray-300">Artist Name</Label>
-                  <Input
-                    id="artistName"
-                    value={confirmationData.artistName}
-                    onChange={(e) => setConfirmationData(prev => ({ ...prev, artistName: e.target.value }))}
-                    placeholder="Enter artist name"
-                    className="bg-dark border-gray-600 text-white"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="labelName" className="text-gray-300">Label</Label>
-                  <Input
-                    id="labelName"
-                    value={confirmationData.labelName}
-                    onChange={(e) => setConfirmationData(prev => ({ ...prev, labelName: e.target.value }))}
-                    placeholder="Enter label name"
-                    className="bg-dark border-gray-600 text-white"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="releaseDate" className="text-gray-300">Release Date (Optional)</Label>
-                  <Input
-                    id="releaseDate"
-                    type="date"
-                    value={confirmationData.releaseDate}
-                    onChange={(e) => setConfirmationData(prev => ({ ...prev, releaseDate: e.target.value }))}
-                    className="bg-dark border-gray-600 text-white"
-                  />
-                </div>
+                <p className="text-gray-300 text-sm">
+                  Confirm that this post is your track? Release tracker details will be added in a future update.
+                </p>
                 <div className="flex space-x-2 pt-4">
                   <Button
                     variant="outline"
@@ -350,10 +319,10 @@ export default function ArtistProfile() {
                   </Button>
                   <Button
                     onClick={handleConfirmSubmit}
-                    disabled={confirmMutation.isPending || !confirmationData.trackTitle}
+                    disabled={confirmMutation.isPending}
                     className="flex-1 bg-green-600 hover:bg-green-700"
                   >
-                    {confirmMutation.isPending ? "Confirming..." : "Confirm Track"}
+                    {confirmMutation.isPending ? "Confirming..." : "Confirm Post"}
                   </Button>
                 </div>
               </div>

@@ -19,6 +19,8 @@ interface UserContextType {
   displayName: string | null;
   username: string | null;
   verifiedArtist: boolean; // Whether current user is a verified artist
+  isLoading: boolean;
+  isAuthenticated: boolean;
   updateProfileImage: (url: string) => void;
   updateDisplayName: (name: string) => void;
 }
@@ -32,12 +34,21 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [verifiedArtist, setVerifiedArtist] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   // Load profile from Supabase on mount and auth changes
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('[UserContext] Error getting session:', sessionError);
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          return;
+        }
         
         if (!session?.user) {
           // No session - clear all profile data
@@ -47,6 +58,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setUserType("user");
           setCurrentUser(null);
           setVerifiedArtist(false);
+          setIsAuthenticated(false);
+          setIsLoading(false);
           return;
         }
 
@@ -59,7 +72,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
         if (profileError || !profileData) {
           console.error('[UserContext] Error loading profile:', profileError);
-          // Don't set mock data - leave as null
+          setIsAuthenticated(false);
+          setIsLoading(false);
           return;
         }
 
@@ -94,9 +108,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           memberSince: new Date(),
           createdAt: new Date(),
         } as unknown as User);
+        
+        setIsAuthenticated(true);
+        setIsLoading(false);
       } catch (error) {
         console.error('[UserContext] Error loading profile:', error);
-        // Don't set mock data - leave as null
+        setIsAuthenticated(false);
+        setIsLoading(false);
       }
     };
 
@@ -138,6 +156,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       displayName,
       username,
       verifiedArtist,
+      isLoading,
+      isAuthenticated,
       updateProfileImage,
       updateDisplayName
     }}>

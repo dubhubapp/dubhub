@@ -10,18 +10,18 @@ import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
 
 interface CommunityVerificationDialogProps {
-  trackId: string;
+  postId: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function CommunityVerificationDialog({ trackId, isOpen, onClose }: CommunityVerificationDialogProps) {
+export function CommunityVerificationDialog({ postId, isOpen, onClose }: CommunityVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
-    queryKey: ["/api/posts", trackId, "comments"],
+    queryKey: ["/api/posts", postId, "comments"],
     enabled: isOpen,
   });
 
@@ -30,12 +30,12 @@ export function CommunityVerificationDialog({ trackId, isOpen, onClose }: Commun
       if (!selectedCommentId) {
         throw new Error("Please select a comment");
       }
-      return apiRequest("POST", `/api/tracks/${trackId}/community-verify`, {
+      return apiRequest("POST", `/api/posts/${postId}/community-verify`, {
         commentId: selectedCommentId,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       toast({
         title: "Track ID Submitted",

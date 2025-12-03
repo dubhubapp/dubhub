@@ -10,6 +10,8 @@ export const profiles = pgTable("profiles", {
   username: text("username").notNull().unique(),
   account_type: text("account_type").notNull(), // "user" | "artist"
   moderator: boolean("moderator").notNull().default(false),
+  avatar_url: text("avatar_url"),
+  verified_artist: boolean("verified_artist").notNull().default(false),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -25,47 +27,95 @@ export const users = pgTable("users", {
   memberSince: timestamp("member_since").notNull().defaultNow(),
 });
 
-export const tracks = pgTable("tracks", {
+// Posts table (replaces tracks)
+export const posts = pgTable("posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  videoUrl: text("video_url"),
-  description: text("description").notNull(),
-  genre: text("genre").notNull(),
+  userId: varchar("user_id").notNull().references(() => profiles.id),
+  title: text("title"),
+  videoUrl: text("video_url").notNull(),
+  description: text("description"),
+  genre: text("genre"),
   djName: text("dj_name"),
   location: text("location"),
-  eventDate: timestamp("event_date"),
-  status: text("status").notNull().default("pending"), // "pending" | "confirmed" | "rejected"
-  confirmedBy: varchar("confirmed_by").references(() => users.id),
-  releaseDate: timestamp("release_date"),
-  trackTitle: text("track_title"),
-  artistName: text("artist_name"),
-  labelName: text("label_name"),
-  isVerifiedCommunity: boolean("is_verified_community").notNull().default(false),
-  verificationStatus: text("verification_status").notNull().default("unverified"), // "unverified" | "community" | "identified"
-  verifiedCommentId: varchar("verified_comment_id"), // References comments.id (circular ref avoided)
-  verifiedBy: varchar("verified_by"), // Commenter user ID who provided the ID
-  verifiedByModerator: boolean("verified_by_moderator").notNull().default(false),
+  verificationStatus: text("verification_status").default("unverified"), // "unverified" | "community" | "identified"
+  isVerifiedCommunity: boolean("is_verified_community").default(false),
+  isVerifiedArtist: boolean("is_verified_artist").default(false),
+  verifiedByModerator: boolean("verified_by_moderator").default(false),
+  verifiedCommentId: varchar("verified_comment_id"), // References comments.id (no FK to avoid circular ref)
+  verifiedBy: varchar("verified_by").references(() => profiles.id), // Commenter user ID who provided the ID
+  deniedByArtist: boolean("denied_by_artist").default(false),
+  deniedAt: timestamp("denied_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Post likes table (replaces interactions for likes)
+export const postLikes = pgTable("post_likes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => profiles.id),
+  postId: varchar("post_id").notNull().references(() => posts.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Comments table - updated to use postId and body
+export const comments = pgTable("comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => profiles.id),
+  postId: varchar("post_id").notNull().references(() => posts.id),
+  body: text("body").notNull(),
+  artistTag: varchar("artist_tag"), // UUID reference to artist_video_tags.id
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Artist video tags - updated to use postId
+export const artistVideoTags = pgTable("artist_video_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  postId: varchar("post_id").notNull().references(() => posts.id),
+  artistId: varchar("artist_id").notNull().references(() => profiles.id),
+  taggedBy: varchar("tagged_by").notNull().references(() => profiles.id), // User who made the tag
+  releaseDate: timestamp("release_date"),
+  status: text("status").notNull().default("pending"), // "pending" | "confirmed" | "denied"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Notifications - updated to use postId and correct field names
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  artistId: varchar("artist_id").notNull().references(() => profiles.id), // Who receives the notification
+  triggeredBy: varchar("triggered_by").notNull().references(() => profiles.id), // Who caused the notification
+  postId: varchar("post_id").notNull().references(() => posts.id), // Related post
+  message: text("message").notNull(), // e.g., "commented on your post", "liked your video", "confirmed your track ID"
+  read: boolean("read").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Reports - updated to use postId
+export const reports = pgTable("reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  postId: varchar("post_id").notNull().references(() => posts.id),
+  reportedBy: varchar("reported_by").notNull().references(() => profiles.id),
+  reason: text("reason").notNull(),
+  status: text("status").notNull().default("pending"), // "pending" | "reviewed" | "dismissed"
+  reviewedBy: varchar("reviewed_by").references(() => profiles.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  reviewedAt: timestamp("reviewed_at"),
+});
+
+// Moderator actions - fixed to reference posts.id
+export const moderatorActions = pgTable("moderator_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  action: text("action"), // "confirmed_id" | "reopen_verification"
+  postId: varchar("post_id").references(() => posts.id),
+  moderatorId: varchar("moderator_id").references(() => profiles.id),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Legacy tables (kept for reference but not actively used)
 export const interactions = pgTable("interactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
-  trackId: varchar("track_id").notNull().references(() => tracks.id),
+  postId: varchar("post_id").notNull().references(() => posts.id),
   type: text("type").notNull(), // "like" | "save" | "comment"
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const comments = pgTable("comments", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  trackId: varchar("track_id").notNull().references(() => tracks.id),
-  parentId: varchar("parent_id"),
-  content: text("content").notNull(),
-  artistTag: varchar("artist_tag").references(() => users.id), // References verified artist
-  upvotes: integer("upvotes").notNull().default(0),
-  downvotes: integer("downvotes").notNull().default(0),
-  isIdentified: boolean("is_identified").notNull().default(false), // Marked as correct track ID by moderator
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -76,16 +126,6 @@ export const commentVotes = pgTable("comment_votes", {
   voteType: text("vote_type").notNull(), // "upvote" | "downvote"
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const artistVideoTags = pgTable("artist_video_tags", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  trackId: varchar("track_id").notNull().references(() => tracks.id),
-  artistId: varchar("artist_id").notNull().references(() => users.id),
-  userId: varchar("user_id").notNull().references(() => users.id), // User who made the tag
-  commentId: varchar("comment_id").notNull().references(() => comments.id),
-  status: text("status").notNull().default("pending"), // "pending" | "confirmed" | "denied"
-  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const userReputation = pgTable("user_reputation", {
@@ -106,37 +146,14 @@ export const achievements = pgTable("achievements", {
   earnedAt: timestamp("earned_at").notNull().defaultNow(),
 });
 
-export const notifications = pgTable("notifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id), // Who receives the notification
-  triggeredByUserId: varchar("triggered_by_user_id").notNull().references(() => users.id), // Who caused the notification
-  trackId: varchar("track_id").notNull().references(() => tracks.id), // Related track
-  commentId: varchar("comment_id").references(() => comments.id), // Related comment if applicable
-  type: text("type").notNull(), // "track_comment", "comment_reply", "track_like", "moderator_review_submitted", "moderator_confirmed", "moderator_rejected"
-  message: text("message").notNull(), // e.g., "commented on your track", "liked your video", "confirmed your track ID"
-  isRead: boolean("is_read").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+// User karma table (Supabase)
+export const userKarma = pgTable("user_karma", {
+  userId: varchar("user_id").primaryKey().references(() => profiles.id),
+  score: integer("score").notNull().default(0),
+  correctIds: integer("correct_ids").notNull().default(0),
 });
 
-export const reports = pgTable("reports", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  trackId: varchar("track_id").notNull().references(() => tracks.id),
-  reportedBy: varchar("reported_by").notNull().references(() => users.id),
-  reason: text("reason").notNull(),
-  status: text("status").notNull().default("pending"), // "pending" | "reviewed" | "dismissed"
-  reviewedBy: varchar("reviewed_by").references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  reviewedAt: timestamp("reviewed_at"),
-});
-
-export const moderatorActions = pgTable("moderator_actions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  action: text("action").notNull(), // "confirmed_id" | "reopened"
-  postId: varchar("post_id").notNull().references(() => tracks.id),
-  moderatorId: varchar("moderator_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
+// Zod Schemas
 export const insertProfileSchema = createInsertSchema(profiles).pick({
   email: true,
   username: true,
@@ -154,32 +171,28 @@ export const insertUserSchema = createInsertSchema(users).pick({
   profileImage: z.string().optional().nullable(),
 });
 
-export const insertTrackSchema = createInsertSchema(tracks).pick({
-  videoUrl: true,
-  description: true,
-  genre: true,
-  djName: true,
-  location: true,
-  eventDate: true,
-}).extend({
-  // Allow eventDate to be optional string or empty, convert on backend
-  eventDate: z.string().optional().transform(val => val === "" ? null : val),
+// Posts schema
+export const insertPostSchema = z.object({
+  userId: z.string(),
+  title: z.string().optional(),
+  videoUrl: z.string(),
+  description: z.string().optional(),
+  genre: z.string().optional(),
+  djName: z.string().optional(),
+  location: z.string().optional(),
 });
 
-export const insertCommentSchema = createInsertSchema(comments).pick({
-  content: true,
-  artistTag: true,
-  parentId: true,
-}).extend({
-  artistTag: z.string().optional().nullable(),
-  parentId: z.string().optional().nullable(),
+// Comments schema - updated to use body instead of content
+export const insertCommentSchema = z.object({
+  body: z.string(),
+  artistTag: z.string().optional().nullable(), // UUID of artist_video_tags.id
 });
 
 export const insertArtistVideoTagSchema = createInsertSchema(artistVideoTags).pick({
-  trackId: true,
+  postId: true,
   artistId: true,
-  userId: true,
-  commentId: true,
+  taggedBy: true,
+  releaseDate: true,
 });
 
 export const insertUserReputationSchema = createInsertSchema(userReputation).pick({
@@ -200,26 +213,28 @@ export const insertCommentVoteSchema = createInsertSchema(commentVotes).pick({
   voteType: true,
 });
 
-export const insertNotificationSchema = createInsertSchema(notifications).pick({
-  userId: true,
-  triggeredByUserId: true,
-  trackId: true,
-  commentId: true,
-  type: true,
-  message: true,
+// Notifications schema - updated to use postId and correct field names
+export const insertNotificationSchema = z.object({
+  artistId: z.string(), // Who receives
+  triggeredBy: z.string(), // Who triggered
+  postId: z.string(),
+  message: z.string(),
 });
 
-export const insertReportSchema = createInsertSchema(reports).pick({
-  trackId: true,
-  reportedBy: true,
-  reason: true,
+// Reports schema - updated to use postId
+export const insertReportSchema = z.object({
+  postId: z.string(),
+  reportedBy: z.string(),
+  reason: z.string(),
 });
 
+// Type exports
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
-export type InsertTrack = z.infer<typeof insertTrackSchema>;
+export type InsertPost = z.infer<typeof insertPostSchema>;
+export type Post = typeof posts.$inferSelect;
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type InsertArtistVideoTag = z.infer<typeof insertArtistVideoTagSchema>;
 export type InsertUserReputation = z.infer<typeof insertUserReputationSchema>;
@@ -228,33 +243,32 @@ export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type InsertModeratorAction = z.infer<typeof insertModeratorActionSchema>;
 export type InsertReport = z.infer<typeof insertReportSchema>;
 export type Report = typeof reports.$inferSelect;
-export type Track = typeof tracks.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type CommentVote = typeof commentVotes.$inferSelect;
 export type ArtistVideoTag = typeof artistVideoTags.$inferSelect;
 export type UserReputation = typeof userReputation.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type ModeratorAction = typeof moderatorActions.$inferSelect;
+export type PostLike = typeof postLikes.$inferSelect;
+export type Interaction = typeof interactions.$inferSelect;
+export type Achievement = typeof achievements.$inferSelect;
 
 export type CommentWithUser = Comment & {
-  user: User;
-  taggedArtist?: User; // The artist that was tagged in this comment
+  user: Profile;
+  taggedArtist?: Profile; // The artist that was tagged in this comment
   tagStatus?: "pending" | "confirmed" | "denied"; // Status of the artist tag
   replies?: CommentWithUser[];
   isVerifiedByArtist?: boolean; // Whether this comment was verified by the artist
   voteScore?: number; // Net votes (upvotes - downvotes)
   userVote?: "upvote" | "downvote" | null; // Current user's vote on this comment
 };
-export type Interaction = typeof interactions.$inferSelect;
-export type Achievement = typeof achievements.$inferSelect;
 
-export type TrackWithUser = Track & {
-  user: User;
+// PostWithUser type (replaces TrackWithUser)
+export type PostWithUser = Post & {
+  user: Profile;
   likes: number;
-  saves: number;
   comments: number;
   isLiked?: boolean;
-  isSaved?: boolean;
   verificationStatus?: string;
   isVerifiedCommunity?: boolean;
   verifiedByModerator?: boolean;
@@ -267,7 +281,8 @@ export type UserStats = {
   totalLikes: number;
 };
 
+// NotificationWithUser - updated to use Post instead of Track
 export type NotificationWithUser = Notification & {
-  triggeredByUser: User;
-  track: Track;
+  triggeredByUser: Profile;
+  post: Post;
 };

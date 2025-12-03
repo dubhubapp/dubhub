@@ -8,16 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
-import type { TrackWithUser, CommentWithUser, UserReputation } from "@shared/schema";
+import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 interface CommentsModalProps {
-  track: TrackWithUser;
+  post: PostWithUser;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
+export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [newComment, setNewComment] = useState("");
   const [showArtistDropdown, setShowArtistDropdown] = useState(false);
   const [artistSearchTerm, setArtistSearchTerm] = useState("");
@@ -99,7 +99,12 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
   };
 
   const { data: comments = [] } = useQuery<CommentWithUser[]>({
-    queryKey: ["/api/posts", track.id, "comments"],
+    queryKey: ["/api/posts", post.id, "comments"],
+    queryFn: async () => {
+      const response = await fetch(`/api/posts/${post.id}/comments`);
+      if (!response.ok) throw new Error("Failed to fetch comments");
+      return response.json() as CommentWithUser[];
+    },
     enabled: isOpen,
   });
 
@@ -109,31 +114,25 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
     enabled: isOpen,
   });
 
-  // Function to get reputation display for a user
-  const { data: userReputations } = useQuery<Record<string, UserReputation>>({
-    queryKey: ["/api/users/reputation"],
+  // Function to get karma display for a user
+  const { data: userKarma } = useQuery<Record<string, number>>({
+    queryKey: ["/api/users/karma"],
     queryFn: async () => {
-      // Get reputation for all users who have commented
+      // Get karma for all users who have commented
       const userIds = Array.from(new Set(comments.flatMap(c => [c.userId, ...(c.replies?.map(r => r.userId) || [])])));
-      const reputationData: Record<string, UserReputation> = {};
+      const karmaData: Record<string, number> = {};
       
       for (const userId of userIds) {
         try {
-          const reputation = await apiRequest("GET", `/api/user/${userId}/reputation`) as unknown as UserReputation;
-          reputationData[userId] = reputation;
+          const response = await apiRequest("GET", `/api/user/${userId}/karma`);
+          const data = await response.json() as { karma: number };
+          karmaData[userId] = data.karma || 0;
         } catch {
-          reputationData[userId] = {
-            id: '',
-            userId,
-            reputation: 0,
-            confirmedIds: 0,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          };
+          karmaData[userId] = 0;
         }
       }
       
-      return reputationData;
+      return karmaData;
     },
     enabled: isOpen && comments.length > 0,
   });
@@ -192,9 +191,13 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
 
   const addCommentMutation = useMutation({
     mutationFn: async (data: { content: string; parentId?: string }) => {
-      return apiRequest("POST", `/api/posts/${track.id}/comments`, {
-        content: data.content,
-        parentId: data.parentId,
+      // Extract artist tag from content if present
+      const artistTagMatch = data.content.match(/@(\w+)/);
+      const artistTag = artistTagMatch ? artistTagMatch[1] : null;
+      
+      return apiRequest("POST", `/api/posts/${post.id}/comments`, {
+        body: data.content,
+        artistTag: artistTag,
       });
     },
     onSuccess: (_, variables) => {
@@ -207,7 +210,7 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
           return newSet;
         });
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/posts", track.id, "comments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "comments"] });
       toast({ title: "Comment added successfully!" });
     },
     onError: () => {
@@ -215,39 +218,13 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
     },
   });
 
-  // Voting mutations
-  const voteMutation = useMutation({
-    mutationFn: async ({ commentId, voteType }: { commentId: string; voteType: "upvote" | "downvote" }) => {
-      return apiRequest("POST", `/api/comments/${commentId}/vote`, { voteType });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/posts", track.id, "comments"] });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to vote", variant: "destructive" });
-    },
-  });
-
-  const removeVoteMutation = useMutation({
-    mutationFn: async (commentId: string) => {
-      return apiRequest("DELETE", `/api/comments/${commentId}/vote`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/posts", track.id, "comments"] });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to remove vote", variant: "destructive" });
-    },
-  });
-
-  const handleVote = (commentId: string, voteType: "upvote" | "downvote", currentUserVote?: "upvote" | "downvote" | null) => {
-    if (currentUserVote === voteType) {
-      // Remove vote if clicking the same vote type
-      removeVoteMutation.mutate(commentId);
-    } else {
-      // Add or change vote
-      voteMutation.mutate({ commentId, voteType });
-    }
+  // Voting functionality removed - no longer supported by backend
+  // const voteMutation = ...
+  // const removeVoteMutation = ...
+  // const handleVote = ...
+  
+  const handleVote = () => {
+    // Voting disabled - functionality removed
   };
 
   const toggleReplies = (commentId: string) => {
@@ -268,7 +245,7 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
       addCommentMutation.mutate({
         content: newComment.trim(),
         parentId: replyingTo?.id
-      });
+      } as any);
       setReplyingTo(null); // Clear reply state after submitting
     }
   };
@@ -366,7 +343,7 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
                     )}
                   </div>
                   {/* Community Identified Badge - Blue for pending moderator review */}
-                  {!comment.isIdentified && track.verificationStatus === "community" && track.verifiedCommentId === comment.id && (
+                  {!comment.isIdentified && post.verificationStatus === "community" && post.verifiedCommentId === comment.id && (
                     <div className="flex items-center space-x-1 bg-blue-500 px-2 py-0.5 rounded-full" data-testid={`badge-community-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Community Identified</span>
@@ -379,12 +356,12 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
                       <span className="text-xs text-white font-bold">Identified Track ID</span>
                     </div>
                   )}
-                  {/* Reputation Score */}
-                  {userReputations?.[comment.userId] && userReputations[comment.userId].reputation > 0 && (
+                  {/* Karma Score */}
+                  {userKarma?.[comment.userId] && userKarma[comment.userId] > 0 && (
                     <div className="flex items-center space-x-1 bg-blue-50 px-2 py-0.5 rounded-full">
                       <Award className="w-3 h-3 text-blue-600" />
                       <span className="text-xs text-blue-600 font-medium">
-                        {userReputations[comment.userId].reputation}
+                        {userKarma[comment.userId]}
                       </span>
                     </div>
                   )}
@@ -489,12 +466,12 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
                                 </div>
                               )}
                             </div>
-                            {/* Reputation Score for Reply */}
-                            {userReputations?.[reply.userId] && userReputations[reply.userId].reputation > 0 && (
+                            {/* Karma Score for Reply */}
+                            {userKarma?.[reply.userId] && userKarma[reply.userId] > 0 && (
                               <div className="flex items-center space-x-1 bg-blue-50 px-1.5 py-0.5 rounded-full">
                                 <Award className="w-2.5 h-2.5 text-blue-600" />
                                 <span className="text-xs text-blue-600 font-medium">
-                                  {userReputations[reply.userId].reputation}
+                                  {userKarma[reply.userId]}
                                 </span>
                               </div>
                             )}
@@ -674,29 +651,17 @@ export function CommentsModal({ track, isOpen, onClose }: CommentsModalProps) {
                 
                 <p className="text-gray-600 mb-2">@{selectedUser.username}</p>
                 
-                {/* Reputation Score */}
+                {/* Karma Score */}
                 <div className="flex items-center justify-center space-x-2 mb-3">
-                  {selectedUser.reputation && selectedUser.reputation.reputation > 0 && (
+                  {userKarma?.[selectedUser.id] && userKarma[selectedUser.id] > 0 && (
                     <div className="flex items-center space-x-1 bg-blue-50 px-3 py-1 rounded-full">
                       <Award className="w-4 h-4 text-blue-600" />
                       <span className="text-sm text-blue-600 font-medium">
-                        {selectedUser.reputation.reputation} reputation
+                        {userKarma[selectedUser.id]} karma
                       </span>
                     </div>
                   )}
                 </div>
-                
-                {/* Fallback to userReputations for cached data */}
-                {!selectedUser.reputation && userReputations?.[selectedUser.id] && (
-                  <div className="flex items-center justify-center space-x-2 mb-3">
-                    <div className="flex items-center space-x-1 bg-blue-50 px-3 py-1 rounded-full">
-                      <Award className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm text-blue-600 font-medium">
-                        {userReputations[selectedUser.id].reputation} reputation
-                      </span>
-                    </div>
-                  </div>
-                )}
                 
                 {selectedUser.isVerified && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">

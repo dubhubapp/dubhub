@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
-import type { UserStats, NotificationWithUser, TrackWithUser } from "@shared/schema";
+import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 
@@ -29,36 +29,34 @@ export default function UserProfile(props: any = {}) {
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [, navigate] = useLocation();
-  const { data: userStats, isLoading: statsLoading } = useQuery<UserStats>({
+  const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
     queryKey: ["/api/user", currentUser?.id, "stats"],
     enabled: !!currentUser?.id,
+    retry: false,
   });
 
-  // Reputation system - replace karma
-  const { data: userReputation, isLoading: reputationLoading } = useQuery<{reputation: number; confirmedIds: number}>({
-    queryKey: ["/api/user", currentUser?.id, "reputation"],
+  // Karma system
+  const { data: karmaData, isLoading: reputationLoading, isError: karmaError } = useQuery<{karma: number}>({
+    queryKey: ["/api/user", currentUser?.id, "karma"],
     enabled: !!currentUser?.id,
+    retry: false,
   });
+  const userReputation = karmaData ? { reputation: karmaData.karma, confirmedIds: userStats?.confirmedIDs || 0 } : { reputation: 0, confirmedIds: userStats?.confirmedIDs || 0 };
 
-  const { data: genreStats = [], isLoading: genreStatsLoading } = useQuery<{ genre: string; count: number }[]>({
-    queryKey: ["/api/user", currentUser?.id, "genre-stats"],
-    enabled: !!currentUser?.id,
-  });
+  // Genre stats removed - no longer supported
+  const genreStats: { genre: string; count: number }[] = [];
+  const genreStatsLoading = false;
 
-  // Query for liked tracks
-  const { data: likedTracks = [], isLoading: likedLoading } = useQuery<TrackWithUser[]>({
-    queryKey: ["/api/user", currentUser?.id, "liked-tracks"],
-    enabled: !!currentUser?.id,
-  });
+  // Liked posts removed - no longer supported
+  const likedPosts: PostWithUser[] = [];
+  const likedLoading = false;
 
-  // Query for saved tracks
-  const { data: savedTracks = [], isLoading: savedLoading } = useQuery<TrackWithUser[]>({
-    queryKey: ["/api/user", currentUser?.id, "saved-tracks"],
-    enabled: !!currentUser?.id,
-  });
+  // Saved posts removed - no longer supported
+  const savedPosts: PostWithUser[] = [];
+  const savedLoading = false;
 
   // Query for user's posts
-  const { data: userPosts = [], isLoading: postsLoading } = useQuery<TrackWithUser[]>({
+  const { data: userPosts = [], isLoading: postsLoading } = useQuery<PostWithUser[]>({
     queryKey: ["/api/user", currentUser?.id, "posts"],
     enabled: !!currentUser?.id,
   });
@@ -68,9 +66,10 @@ export default function UserProfile(props: any = {}) {
     enabled: !!currentUser?.id,
   });
 
-  const { data: unreadCountData } = useQuery<{ count: number }>({
+  const { data: unreadCountData, isError: unreadCountError } = useQuery<{ count: number }>({
     queryKey: ["/api/user", currentUser?.id, "notifications", "unread-count"],
     enabled: !!currentUser?.id,
+    retry: false,
   });
 
   const unreadCount = unreadCountData?.count || 0;
@@ -80,16 +79,14 @@ export default function UserProfile(props: any = {}) {
     if (postFilter === "all") {
       return userPosts;
     } else if (postFilter === "identified") {
-      return userPosts.filter(track => 
-        track.verificationStatus === "identified" || 
-        track.verificationStatus === "community" ||
-        track.status === "confirmed"
+      return userPosts.filter(post => 
+        post.verificationStatus === "identified" || 
+        post.verificationStatus === "community"
       );
     } else {
       // unidentified
-      return userPosts.filter(track => 
-        track.verificationStatus === "unverified" && 
-        track.status !== "confirmed"
+      return userPosts.filter(post => 
+        post.verificationStatus === "unverified"
       );
     }
   }, [userPosts, postFilter]);
@@ -248,11 +245,11 @@ export default function UserProfile(props: any = {}) {
 
   const handleNotificationClick = (notification: NotificationWithUser) => {
     // Mark as read if unread
-    if (!notification.isRead) {
+    if (!notification.read) {
       markNotificationAsReadMutation.mutate(notification.id);
     }
-    // Navigate to the home feed with the track ID
-    navigate(`/?track=${notification.trackId}`);
+    // Navigate to the home feed with the post ID
+    navigate(`/?post=${notification.postId}`);
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -282,6 +279,17 @@ export default function UserProfile(props: any = {}) {
       profileImageMutation.mutate(file);
     }
   };
+
+  // Early return if no current user
+  if (!currentUser) {
+    return (
+      <div className="flex-1 bg-dark flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-400">Please log in to view your profile</p>
+        </div>
+      </div>
+    );
+  }
 
   if (statsLoading || reputationLoading || genreStatsLoading) {
     return (
@@ -620,8 +628,7 @@ export default function UserProfile(props: any = {}) {
                 >
                   Identified ({userPosts.filter(t => 
                     t.verificationStatus === "identified" || 
-                    t.verificationStatus === "community" || 
-                    t.status === "confirmed"
+                    t.verificationStatus === "community"
                   ).length})
                 </Button>
                 <Button
@@ -631,8 +638,7 @@ export default function UserProfile(props: any = {}) {
                   data-testid="filter-unidentified-posts"
                 >
                   Unidentified ({userPosts.filter(t => 
-                    t.verificationStatus === "unverified" && 
-                    t.status !== "confirmed"
+                    t.verificationStatus === "unverified"
                   ).length})
                 </Button>
               </div>
@@ -658,8 +664,8 @@ export default function UserProfile(props: any = {}) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {filteredPosts.map((track) => (
-                    <VideoCard key={track.id} track={track} showStatusBadge />
+                  {filteredPosts.map((post) => (
+                    <VideoCard key={post.id} post={post} showStatusBadge />
                   ))}
                 </div>
               )}
@@ -672,7 +678,7 @@ export default function UserProfile(props: any = {}) {
                   <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
                   <p className="text-gray-400">Loading liked videos...</p>
                 </div>
-              ) : likedTracks.length === 0 ? (
+              ) : likedPosts.length === 0 ? (
                 <div className="text-center py-12">
                   <Heart className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                   <p className="text-gray-400 text-lg mb-2">No liked videos yet</p>
@@ -680,9 +686,10 @@ export default function UserProfile(props: any = {}) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {likedTracks.map((track) => (
-                    <VideoCard key={track.id} track={track} />
-                  ))}
+                  {/* Liked tracks feature removed */}
+                  <div className="text-center py-12">
+                    <p className="text-gray-400">Liked tracks feature is no longer available</p>
+                  </div>
                 </div>
               )}
             </TabsContent>
@@ -694,7 +701,7 @@ export default function UserProfile(props: any = {}) {
                   <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
                   <p className="text-gray-400">Loading saved videos...</p>
                 </div>
-              ) : savedTracks.length === 0 ? (
+              ) : savedPosts.length === 0 ? (
                 <div className="text-center py-12">
                   <Bookmark className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                   <p className="text-gray-400 text-lg mb-2">No saved videos yet</p>
@@ -702,9 +709,10 @@ export default function UserProfile(props: any = {}) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {savedTracks.map((track) => (
-                    <VideoCard key={track.id} track={track} />
-                  ))}
+                  {/* Saved tracks feature removed */}
+                  <div className="text-center py-12">
+                    <p className="text-gray-400">Saved tracks feature is no longer available</p>
+                  </div>
                 </div>
               )}
             </TabsContent>
@@ -741,7 +749,7 @@ export default function UserProfile(props: any = {}) {
                     <div
                       key={notification.id}
                       className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        notification.isRead
+                        notification.read
                           ? 'border-gray-700 bg-surface hover:bg-gray-800'
                           : 'border-primary/30 bg-primary/10 hover:bg-primary/20'
                       }`}
@@ -750,9 +758,9 @@ export default function UserProfile(props: any = {}) {
                     >
                       {/* Video Thumbnail */}
                       <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
-                        {notification.track?.videoUrl ? (
+                        {notification.post?.videoUrl ? (
                           <video
-                            src={notification.track.videoUrl}
+                            src={notification.post.videoUrl}
                             className="w-full h-full object-cover"
                             muted
                           />
@@ -775,7 +783,7 @@ export default function UserProfile(props: any = {}) {
                       </div>
 
                       {/* Unread Indicator */}
-                      {!notification.isRead && (
+                      {!notification.read && (
                         <div className="flex items-center">
                           <div className="w-2 h-2 bg-primary rounded-full"></div>
                         </div>

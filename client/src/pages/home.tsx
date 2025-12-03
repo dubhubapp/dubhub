@@ -5,57 +5,60 @@ import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { GenreFilter } from "@/components/genre-filter";
 import { Header } from "@/components/brand/Header";
-import type { TrackWithUser } from "@shared/schema";
+import type { PostWithUser } from "@shared/schema";
 
 export default function Home() {
+  console.log("[Home] component mounted");
+  console.log("[Home] render checkpoint 1");
+  
   const [selectedGenre, setSelectedGenre] = useState("all");
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
-  const [highlightedTrackId, setHighlightedTrackId] = useState<string | null>(null);
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
-  const lastScrolledTrackId = useRef<string | null>(null);
+  const lastScrolledPostId = useRef<string | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocationRef = useRef<string>(location);
 
-  const { data: tracks = [], isLoading, isPlaceholderData } = useQuery({
-    queryKey: ["/api/tracks", { genre: selectedGenre, identification: identificationFilter }],
+  const postsQuery = useQuery({
+    queryKey: ["/api/posts", { genre: selectedGenre, identification: identificationFilter }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedGenre !== "all") {
         params.append("genre", selectedGenre);
       }
-      const response = await fetch(`/api/tracks?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch tracks");
-      const allTracks = await response.json() as TrackWithUser[];
+      const response = await fetch(`/api/posts?${params}`);
+      if (!response.ok) throw new Error("Failed to fetch posts");
+      const allPosts = await response.json() as PostWithUser[];
       
       // Filter by identification status
       if (identificationFilter === "identified") {
-        return allTracks.filter(track => 
-          track.verificationStatus === "identified" || 
-          track.verificationStatus === "community" ||
-          track.status === "confirmed"
+        return allPosts.filter(post => 
+          post.verificationStatus === "identified" || 
+          post.verificationStatus === "community"
         );
       } else if (identificationFilter === "unidentified") {
-        return allTracks.filter(track => 
-          track.verificationStatus === "unverified" && 
-          track.status !== "confirmed"
+        return allPosts.filter(post => 
+          post.verificationStatus === "unverified"
         );
       }
       
-      return allTracks;
+      return allPosts;
     },
     placeholderData: (previousData) => previousData,
     staleTime: 30000, // Keep data fresh for 30 seconds
   });
 
-  // Handle scroll to specific track from notification OR scroll to top after new post
+  const { data: posts = [], isLoading, isError, error } = postsQuery;
+
+  // Handle scroll to specific post from notification OR scroll to top after new post
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const trackId = params.get('track');
+    const postId = params.get('post') || params.get('track'); // Support both for backward compatibility
     const newPost = params.get('newPost');
     
-    // Check if location has changed (not just tracks refetch)
+    // Check if location has changed (not just posts refetch)
     const locationChanged = location !== lastLocationRef.current;
     if (locationChanged) {
       lastLocationRef.current = location;
@@ -66,7 +69,7 @@ export default function Home() {
     }
     
     // Handle scroll to top after new post submission
-    if (newPost && tracks.length > 0) {
+    if (newPost && posts.length > 0) {
       setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         // Clear the query parameter
@@ -75,35 +78,35 @@ export default function Home() {
       return;
     }
     
-    // Only process if we have a trackId, it's different from the last one we scrolled to, and tracks are loaded
-    if (trackId && trackId !== lastScrolledTrackId.current && tracks.length > 0 && videoFeedRef.current) {
-      // Find the track in the list
-      const trackIndex = tracks.findIndex(t => t.id === trackId);
+    // Only process if we have a postId, it's different from the last one we scrolled to, and posts are loaded
+    if (postId && postId !== lastScrolledPostId.current && posts.length > 0 && videoFeedRef.current) {
+      // Find the post in the list
+      const postIndex = posts.findIndex(p => p.id === postId);
       
-      if (trackIndex !== -1) {
-        // Mark that we've scrolled to this track
-        lastScrolledTrackId.current = trackId;
+      if (postIndex !== -1) {
+        // Mark that we've scrolled to this post
+        lastScrolledPostId.current = postId;
         
-        // Highlight the track
-        setHighlightedTrackId(trackId);
+        // Highlight the post
+        setHighlightedPostId(postId);
         
-        // Scroll to the track using data-track-id attribute
+        // Scroll to the post using data-post-id attribute
         scrollTimeoutRef.current = setTimeout(() => {
-          const trackElement = document.querySelector(`[data-track-id="${trackId}"]`);
-          if (trackElement && videoFeedRef.current) {
-            trackElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+          if (postElement && videoFeedRef.current) {
+            postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         }, 100);
         
-        // Remove highlight after 3 seconds, reset the last scrolled track, and clear query param
+        // Remove highlight after 3 seconds, reset the last scrolled post, and clear query param
         highlightTimeoutRef.current = setTimeout(() => {
-          setHighlightedTrackId(null);
-          lastScrolledTrackId.current = null;
+          setHighlightedPostId(null);
+          lastScrolledPostId.current = null;
           navigate('/', { replace: true });
         }, 3000);
       }
     }
-  }, [tracks, location, navigate]);
+  }, [posts, location, navigate]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -113,18 +116,38 @@ export default function Home() {
     };
   }, []);
 
+  // Debug logging
+  console.log("[Home] postsQuery state", {
+    status: postsQuery.status,
+    isLoading: postsQuery.isLoading,
+    isError: postsQuery.isError,
+    error: postsQuery.error,
+    data: postsQuery.data,
+  });
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-muted-foreground">Loading tracks...</p>
+          <p className="text-muted-foreground">Loading posts...</p>
         </div>
       </div>
     );
   }
 
-  if (tracks.length === 0) {
+  if (isError) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-background">
+        <div className="text-center text-red-400">
+          <p className="text-lg mb-2">Failed to load feed</p>
+          <p className="text-sm">{error instanceof Error ? error.message : "Unknown error"}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (posts.length === 0) {
     return (
       <div className="flex-1 relative bg-background">
         <div className="absolute top-0 left-0 right-0 z-20 bg-white/10 backdrop-blur-xl h-16">
@@ -139,7 +162,7 @@ export default function Home() {
         />
         <div className="h-full flex items-center justify-center pt-32">
           <div className="text-center text-muted-foreground">
-            <p className="text-lg mb-2">No tracks found</p>
+            <p className="text-lg mb-2">No posts yet. Be the first to upload!</p>
             <p className="text-sm">Try selecting different filters</p>
           </div>
         </div>
@@ -167,11 +190,11 @@ export default function Home() {
         ref={videoFeedRef}
         className="h-full overflow-y-auto snap-y snap-mandatory scrollbar-hide pt-16"
       >
-        {tracks.map((track) => (
+        {posts.map((post) => (
           <VideoCard 
-            key={track.id} 
-            track={track}
-            isHighlighted={highlightedTrackId === track.id}
+            key={post.id} 
+            post={post}
+            isHighlighted={highlightedPostId === post.id}
           />
         ))}
       </div>
