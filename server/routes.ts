@@ -663,16 +663,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process artist mentions in the comment
       await processArtistTags(comment.id, postId, userId, body.trim());
       
-      // Create notifications
-      const post = await storage.getPost(postId);
-      if (post && post.user?.id !== userId) {
-          await storage.createNotification({
-          artistId: post.user.id,
-            triggeredBy: userId,
-          postId: postId,
-          message: `commented on your post`,
-        } as any);
-      }
+      // Note: Notifications for comments are handled by the database trigger
+      // No manual notification creation needed
       
       res.status(201).json(comment);
     } catch (error) {
@@ -866,13 +858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE id = ${postId}
       `);
       
-      // Notify the commenter that their ID was submitted for moderator review
-      await storage.createNotification({
-        artistId: comment.user_id,
-        triggeredBy: userId,
-        postId: postId,
-        message: "submitted your track ID for moderator review",
-      } as any);
+      // Note: Notifications are handled by database triggers
       
       res.json({ message: "Post verified by community" });
     } catch (error) {
@@ -972,10 +958,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE id = ${postId}
       `);
       
-      // Record moderator action
+      // Record moderator action (trigger will create notification)
       await db.execute(sql`
         INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
-        VALUES (${postId}, ${moderatorId}, 'confirmed_id', NOW())
+        VALUES (${postId}, ${moderatorId}, 'confirmed', NOW())
       `);
       
       // Reward the commenter who provided the ID using user_karma
@@ -995,13 +981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         SET score = user_karma.score + 1
       `);
       
-      // Notify the commenter that their ID was confirmed
-      await storage.createNotification({
-        artistId: comment.user_id,
-        triggeredBy: moderatorId,
-        postId: postId,
-        message: "confirmed your track ID",
-      } as any);
+      // Note: Notification to commenter is handled by the database trigger on moderator_actions
       
       res.json({ message: "Verification confirmed" });
     } catch (error) {
@@ -1049,21 +1029,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE id = ${postId}
       `);
       
-      // Record moderator action
+      // Record moderator action (trigger will create notification)
       await db.execute(sql`
         INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
-        VALUES (${postId}, ${moderatorId}, 'reopen_verification', NOW())
+        VALUES (${postId}, ${moderatorId}, 'rejected', NOW())
       `);
-      
-      // Notify the commenter that their ID was rejected
-      if (rejectedCommentUserId && postAny.verified_comment_id) {
-        await storage.createNotification({
-          artistId: rejectedCommentUserId,
-          triggeredBy: moderatorId,
-          postId: postId,
-          message: "rejected your track ID",
-        } as any);
-      }
       
       res.json({ message: "Post reopened for review" });
     } catch (error) {
@@ -1378,6 +1348,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching artist leaderboard:", error);
       res.status(500).json({ message: "Failed to get artist leaderboard" });
+    }
+  });
+
+  // Get verified artists for autocomplete
+  app.get("/api/artists/verified", async (req, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT 
+          id,
+          username,
+          avatar_url,
+          verified_artist
+        FROM profiles
+        WHERE account_type = 'artist' AND verified_artist = true
+        ORDER BY username ASC
+      `);
+      
+      const artists = (result as any).rows || [];
+      res.json(artists.map((artist: any) => ({
+        id: artist.id,
+        username: artist.username,
+        displayName: artist.username,
+        profileImage: artist.avatar_url,
+        avatar_url: artist.avatar_url,
+        verified_artist: artist.verified_artist,
+      })));
+    } catch (error) {
+      console.error("Error fetching verified artists:", error);
+      res.status(500).json({ message: "Failed to get verified artists" });
     }
   });
 

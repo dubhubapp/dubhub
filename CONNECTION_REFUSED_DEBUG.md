@@ -185,3 +185,4 @@ Check your `.env` file:
 - The fact that it says 5174 suggests Vite may have tried to use that port but failed
 - Check the terminal output from `npm run dev` to see what actually happened
 
+

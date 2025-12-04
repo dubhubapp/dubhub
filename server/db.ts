@@ -30,11 +30,6 @@ try {
         rejectUnauthorized: false, // Allow self-signed certs in development
       };
   
-  console.log('[DB] SSL configuration:', { 
-    isProduction, 
-    rejectUnauthorized: sslConfig.rejectUnauthorized 
-  });
-  
   pool = new Pool({ 
     connectionString: url.toString(),
     ssl: sslConfig,

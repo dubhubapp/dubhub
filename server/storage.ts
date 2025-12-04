@@ -312,51 +312,12 @@ export class DatabaseStorage implements IStorage {
     } else {
       // Like: insert with ON CONFLICT DO NOTHING to handle race conditions
       // This makes the like action idempotent - multiple calls won't cause errors
-      try {
-        await db.execute(sql`
-          INSERT INTO post_likes (post_id, user_id)
-          VALUES (${postId}, ${userId})
-          ON CONFLICT (post_id, user_id) DO NOTHING
-        `);
-        
-        // Create notification manually (database trigger uses old schema)
-        // Get the post owner to notify them
-        const postResult = await db.execute(sql`
-          SELECT user_id FROM posts WHERE id = ${postId} LIMIT 1
-        `);
-        const postRows = (postResult as any).rows || [];
-        
-        if (postRows.length > 0 && postRows[0].user_id !== userId) {
-          // Only notify if the post owner is different from the liker
-          try {
-            await db.execute(sql`
-              INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
-              VALUES (
-                ${postRows[0].user_id},
-                ${userId},
-                ${postId},
-                'liked your post',
-                false,
-                NOW()
-              )
-              ON CONFLICT DO NOTHING
-            `);
-          } catch (notifError) {
-            // Silently fail notification creation - like still succeeds
-            console.warn("[toggleLike] Failed to create notification:", notifError);
-          }
-        }
-      } catch (error: any) {
-        // If the error is from the old database trigger, the like might still have been inserted
-        // Check if the trigger error occurred (column "user_id" of relation "notifications" does not exist)
-        if (error.code === '42703' || (error.message?.includes('user_id') && error.message?.includes('notifications'))) {
-          console.warn("[toggleLike] Database trigger error (old schema detected). Like may have succeeded. Verifying...");
-          // Don't throw - verify if like was inserted despite the trigger error
-        } else {
-          // Re-throw other errors
-          throw error;
-        }
-      }
+      // Notifications are handled by the database trigger handle_notifications()
+      await db.execute(sql`
+        INSERT INTO post_likes (post_id, user_id)
+        VALUES (${postId}, ${userId})
+        ON CONFLICT (post_id, user_id) DO NOTHING
+      `);
       
       // Verify the like was inserted (or already existed)
       const insertedLikeResult = await db.execute(sql`
@@ -764,16 +725,10 @@ export class DatabaseStorage implements IStorage {
 
   // Notification Methods
   async createNotification(notification: InsertNotification): Promise<Notification> {
-    const anyNotification = notification as any;
-    const artistId = anyNotification.userId || anyNotification.artistId;
-    const postId = anyNotification.trackId || anyNotification.postId;
-    const triggeredBy = anyNotification.triggeredByUserId || anyNotification.triggered_by;
-    const message = anyNotification.message || "";
-
     try {
       const result = await db.execute(sql`
-        INSERT INTO notifications (artist_id, post_id, triggered_by, message, read, created_at)
-        VALUES (${artistId}, ${postId}, ${triggeredBy}, ${message}, false, NOW())
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        VALUES (${notification.artistId}, ${notification.triggeredBy}, ${notification.postId}, ${notification.message}, false, NOW())
         RETURNING *
       `);
 

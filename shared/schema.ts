@@ -77,13 +77,13 @@ export const artistVideoTags = pgTable("artist_video_tags", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-// Notifications - updated to use postId and correct field names
+// Notifications - actual database schema uses artist_id, triggered_by (NO type column)
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   artistId: varchar("artist_id").notNull().references(() => profiles.id), // Who receives the notification
   triggeredBy: varchar("triggered_by").notNull().references(() => profiles.id), // Who caused the notification
   postId: varchar("post_id").notNull().references(() => posts.id), // Related post
-  message: text("message").notNull(), // e.g., "commented on your post", "liked your video", "confirmed your track ID"
+  message: text("message").notNull(), // e.g., "liked your post", "commented on your post"
   read: boolean("read").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -215,8 +215,8 @@ export const insertCommentVoteSchema = createInsertSchema(commentVotes).pick({
 
 // Notifications schema - updated to use postId and correct field names
 export const insertNotificationSchema = z.object({
-  artistId: z.string(), // Who receives
-  triggeredBy: z.string(), // Who triggered
+  artistId: z.string(), // Who receives the notification
+  triggeredBy: z.string(), // Who triggered the notification
   postId: z.string(),
   message: z.string(),
 });
