@@ -268,7 +268,7 @@ export type PostWithUser = Post & {
   user: Profile;
   likes: number;
   comments: number;
-  isLiked?: boolean;
+  hasLiked?: boolean;
   verificationStatus?: string;
   isVerifiedCommunity?: boolean;
   verifiedByModerator?: boolean;

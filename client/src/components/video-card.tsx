@@ -8,6 +8,7 @@ import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
+import { ReportModal } from "./report-modal";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -27,13 +28,17 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
-  const [isLiked, setIsLiked] = useState(post.isLiked || false);
+  const [hasLiked, setHasLiked] = useState(post.hasLiked || false);
   const [likes, setLikes] = useState(post.likes);
   const [showComments, setShowComments] = useState(false);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const isPlayingRef = useRef(true);
+  const hasManuallyToggledLike = useRef(false);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -41,10 +46,13 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   }, [isPlaying]);
 
   // Sync state with post prop when it changes (e.g., after navigation or refresh)
+  // Only sync if we haven't manually toggled the like (to prevent overwriting optimistic updates)
   useEffect(() => {
-    setIsLiked(post.isLiked || false);
-    setLikes(post.likes);
-  }, [post.isLiked, post.likes]);
+    if (!hasManuallyToggledLike.current) {
+      setHasLiked(post.hasLiked || false);
+      setLikes(post.likes);
+    }
+  }, [post.id, post.hasLiked, post.likes, post]); // Sync when post ID, hasLiked, likes, or entire post object changes
 
   // Ensure video plays immediately and loops properly
   useEffect(() => {
@@ -103,14 +111,64 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
   const likeMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/posts/${post.id}/like`),
-    onSuccess: async (response) => {
-      const data = await response.json();
-      setIsLiked(data.isLiked);
-      setLikes(data.counts.likes);
-      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+    onMutate: async () => {
+      // Optimistic update before API call
+      hasManuallyToggledLike.current = true;
+      const previousHasLiked = hasLiked;
+      const previousLikes = likes;
+      setHasLiked(!previousHasLiked);
+      setLikes(previousHasLiked ? previousLikes - 1 : previousLikes + 1);
+      
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/posts"] });
+      
+      return { previousHasLiked, previousLikes };
     },
-    onError: () => {
+    onSuccess: async (response, variables, context) => {
+      const data = await response.json();
+      // Update with server response
+      setHasLiked(data.isLiked);
+      setLikes(data.counts.likes);
+      
+      // Update the cache with server response - this ensures hasLiked persists
+      // Update all query keys that start with "/api/posts" to handle filtered queries
+      queryClient.setQueriesData<any[]>(
+        { queryKey: ["/api/posts"], exact: false },
+        (old) => {
+          if (!old) return old;
+          return old.map((p) => 
+            p.id === post.id 
+              ? { ...p, hasLiked: data.isLiked, likes: data.counts.likes }
+              : p
+          );
+        }
+      );
+      
+      // Reset the flag immediately after cache update so the component can sync with the updated post prop
+      // This allows the useEffect to sync when the post prop updates from the cache
+      hasManuallyToggledLike.current = false;
+      
+      // Invalidate liked-posts query so the liked video appears in Profile tab
+      if (contextUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
+      }
+    },
+    onError: (error, variables, context) => {
+      // Rollback on error
+      if (context) {
+        setHasLiked(context.previousHasLiked);
+        setLikes(context.previousLikes);
+      }
+      hasManuallyToggledLike.current = false;
       toast({ title: "Error", description: "Failed to like post", variant: "destructive" });
+    },
+    onSettled: () => {
+      // Flag is already reset in onSuccess, but ensure it's reset on error too
+      // This is a safety net in case onSuccess doesn't run
+      if (hasManuallyToggledLike.current) {
+        hasManuallyToggledLike.current = false;
+      }
     },
   });
 
@@ -130,19 +188,6 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     },
   });
 
-  const reportMutation = useMutation({
-    mutationFn: (reason: string) => apiRequest("POST", `/api/posts/${post.id}/report`, { reason }),
-    onSuccess: () => {
-      toast({
-        title: "Post Reported",
-        description: "Thank you for reporting. Our moderators will review this post.",
-      });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to report post", variant: "destructive" });
-    },
-  });
-
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/?post=${post.id}`;
     try {
@@ -157,10 +202,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   };
 
   const handleReport = () => {
-    const reason = prompt("Please provide a reason for reporting this post:");
-    if (reason && reason.trim()) {
-      reportMutation.mutate(reason.trim());
-    }
+    // Close menu first, then open modal after menu has closed
+    setMenuOpen(false);
+    requestAnimationFrame(() => {
+      setShowReportModal(true);
+    });
   };
 
   // Get current user to check if they own this post
@@ -190,6 +236,16 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         <span className="bg-blue-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-community-identified">
           <ShieldCheck className="w-3 h-3 inline mr-1" />
           Community Identified
+        </span>
+      );
+    }
+    
+    // Show under review badge
+    if (post.verificationStatus === "under_review") {
+      return (
+        <span className="bg-yellow-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-under-review">
+          <ShieldCheck className="w-3 h-3 inline mr-1" />
+          Under review by moderators
         </span>
       );
     }
@@ -303,7 +359,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
           disabled={likeMutation.isPending}
         >
           <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-            <Heart className={`w-6 h-6 ${isLiked ? "text-red-500 fill-red-500" : "text-white"}`} />
+            <Heart className={`w-6 h-6 ${hasLiked ? "text-red-500 fill-red-500" : "text-white"}`} />
           </div>
           <span className="text-xs mt-1 font-medium text-white">{formatCount(likes)}</span>
         </button>
@@ -363,8 +419,8 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               <img 
                 src={
                   contextUser && post.userId === contextUser.id 
-                    ? (userProfileImage || undefined)
-                    : (post.user.avatar_url || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`)
+                    ? (userProfileImage || post.user.avatar_url || undefined)
+                    : (post.user.avatar_url || undefined)
                 }
                 alt="User Profile" 
                 className={`w-10 h-10 rounded-full border-2 ${
@@ -412,9 +468,10 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
       </div>
       {/* 3-dot menu in bottom right */}
       <div className="absolute bottom-4 right-4 z-10">
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button 
+              ref={menuTriggerRef}
               className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center hover:bg-black/50 transition-colors"
               data-testid="button-more-options"
             >
@@ -431,7 +488,10 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               Share Video
             </DropdownMenuItem>
             <DropdownMenuItem 
-              onClick={handleReport}
+              onSelect={(e) => {
+                e.preventDefault();
+                handleReport();
+              }}
               className="cursor-pointer text-red-600 focus:text-red-600"
               data-testid="menu-item-report"
             >
@@ -441,6 +501,37 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {/* Report Modal */}
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => {
+          setShowReportModal(false);
+          // Restore focus to menu trigger after modal closes
+          // Wait for Dialog's aria-hidden cleanup to complete
+          // Use a small delay to ensure Radix has finished cleanup
+          setTimeout(() => {
+            const root = document.getElementById('root');
+            // Check if root still has aria-hidden - if so, wait a bit more
+            if (root?.getAttribute('aria-hidden')) {
+              // Root still has aria-hidden, wait for cleanup
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  if (menuTriggerRef.current && document.contains(menuTriggerRef.current)) {
+                    menuTriggerRef.current.focus({ preventScroll: true });
+                  }
+                });
+              });
+            } else {
+              // Root is clean, safe to restore focus
+              if (menuTriggerRef.current && document.contains(menuTriggerRef.current)) {
+                menuTriggerRef.current.focus({ preventScroll: true });
+              }
+            }
+          }, 10);
+        }}
+        type="post"
+        postId={post.id}
+      />
       {/* Comments Modal */}
       <CommentsModal 
         post={post}

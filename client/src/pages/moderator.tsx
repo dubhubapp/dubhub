@@ -10,11 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Shield, AlertTriangle, Users, FileText, Settings, CheckCircle, XCircle, User, ExternalLink, MessageSquare } from "lucide-react";
+import { Shield, AlertTriangle, Users, FileText, Settings, CheckCircle, XCircle, User, ExternalLink, MessageSquare, MoreVertical } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
+import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
 
 export default function ModeratorPage() {
   const [activeTab, setActiveTab] = useState("pending");
@@ -25,6 +26,8 @@ export default function ModeratorPage() {
   const [selectedPost, setSelectedPost] = useState<PostWithUser | null>(null);
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [postForComments, setPostForComments] = useState<PostWithUser | null>(null);
+  const [moderationDialogOpen, setModerationDialogOpen] = useState(false);
+  const [selectedReportForModeration, setSelectedReportForModeration] = useState<{ reportId: string; userId: string; username: string } | null>(null);
 
   // Route protection - redirect non-moderators
   useEffect(() => {
@@ -33,37 +36,42 @@ export default function ModeratorPage() {
     }
   }, [userType, setLocation]);
 
-  // Mark moderator notifications as read when page is opened
+  // Get current user for authenticated requests
+  const { currentUser } = useUser();
+  
+  // Mark moderator notifications as read when Reports tab is opened
   useEffect(() => {
-    const markModeratorNotificationsAsRead = async () => {
+    const markReportNotificationsAsRead = async () => {
+      if (!currentUser?.id || activeTab !== "reports") return;
+      
       try {
-        // Get all notifications for the moderator
-        const response = await fetch("/api/user/moderator1/notifications");
+        // Get all notifications for the moderator using authenticated user's UUID
+        const response = await apiRequest("GET", `/api/user/${currentUser.id}/notifications`);
+        if (!response.ok) return;
         const notifications = await response.json();
         
-        // Mark all unread moderator-related notifications as read
-        // Filter by message content since type field was removed from notifications schema
-        const moderatorNotifications = notifications.filter((n: any) => 
-          n.message && n.message.includes("community verification") && !n.read
+        // Mark all unread report-related notifications as read
+        const reportNotifications = notifications.filter((n: any) => 
+          n.message && n.message.includes("report") && !n.read
         );
         
-        for (const notification of moderatorNotifications) {
+        for (const notification of reportNotifications) {
           await apiRequest("PATCH", `/api/notifications/${notification.id}/read`);
         }
         
-        // Invalidate queries to update the badge count
-        if (moderatorNotifications.length > 0) {
-          queryClient.invalidateQueries({ queryKey: ["/api/moderator", "moderator1", "notifications", "unread-count"] });
+        // Invalidate queries to update the badge count instantly
+        if (reportNotifications.length > 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
         }
       } catch (error) {
-        console.error("Failed to mark moderator notifications as read:", error);
+        console.error("Failed to mark report notifications as read:", error);
       }
     };
 
-    if (userType === "moderator") {
-      markModeratorNotificationsAsRead();
+    if (userType === "moderator" && currentUser?.id && activeTab === "reports") {
+      markReportNotificationsAsRead();
     }
-  }, [userType, queryClient]);
+  }, [userType, currentUser, activeTab, queryClient]);
 
   // Query for pending community verifications
   const { data: pendingVerifications = [], isLoading: isPendingLoading } = useQuery<PostWithUser[]>({
@@ -73,6 +81,10 @@ export default function ModeratorPage() {
   // Query for reported tracks
   const { data: reportedContent = [], isLoading: isReportsLoading } = useQuery<any[]>({
     queryKey: ["/api/moderator/reports"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/moderator/reports");
+      return response.json();
+    },
   });
 
   const { data: userStats } = useQuery({
@@ -144,17 +156,84 @@ export default function ModeratorPage() {
     mutationFn: async (reportId: string) => {
       return apiRequest("POST", `/api/moderator/reports/${reportId}/dismiss`);
     },
+    onMutate: async (reportId: string) => {
+      // Optimistically remove the report from the list
+      await queryClient.cancelQueries({ queryKey: ["/api/moderator/reports"] });
+      const previousReports = queryClient.getQueryData<any[]>(["/api/moderator/reports"]);
+      queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) => 
+        old.filter((r: any) => r.id !== reportId)
+      );
+      return { previousReports };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+      // Invalidate and refetch notification queries for instant updates
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+      }
       toast({
         title: "Report Dismissed",
         description: "Report has been dismissed",
       });
     },
-    onError: () => {
+    onError: (error, reportId, context) => {
+      // Rollback on error
+      if (context?.previousReports) {
+        queryClient.setQueryData(["/api/moderator/reports"], context.previousReports);
+      }
       toast({
         title: "Error",
         description: "Failed to dismiss report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeCommentMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      return apiRequest("POST", `/api/moderator/reports/${reportId}/remove-comment`);
+    },
+    onMutate: async (reportId: string) => {
+      // Optimistically remove the report from the list
+      await queryClient.cancelQueries({ queryKey: ["/api/moderator/reports"] });
+      const previousReports = queryClient.getQueryData<any[]>(["/api/moderator/reports"]);
+      const report = previousReports?.find((r: any) => r.id === reportId);
+      queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) => 
+        old.filter((r: any) => r.id !== reportId)
+      );
+      return { previousReports, report };
+    },
+    onSuccess: (_, reportId: string, context) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      queryClient.refetchQueries({ queryKey: ["/api/posts"] });
+      // Get the reported user ID from context (stored before removal)
+      const report = context?.report;
+      if (report?.reported_user_id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications", "unread-count"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications", "unread-count"] });
+      }
+      // Invalidate and refetch notification queries for instant updates
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+      }
+      toast({
+        title: "Comment Removed",
+        description: "Reported comment has been removed and user notified",
+      });
+    },
+    onError: (error, reportId, context) => {
+      // Rollback on error
+      if (context?.previousReports) {
+        queryClient.setQueryData(["/api/moderator/reports"], context.previousReports);
+      }
+      toast({
+        title: "Error",
+        description: "Failed to remove comment",
         variant: "destructive",
       });
     },
@@ -164,15 +243,35 @@ export default function ModeratorPage() {
     mutationFn: async (reportId: string) => {
       return apiRequest("POST", `/api/moderator/reports/${reportId}/remove-post`);
     },
+    onMutate: async (reportId: string) => {
+      // Optimistically remove the report from the list
+      await queryClient.cancelQueries({ queryKey: ["/api/moderator/reports"] });
+      const previousReports = queryClient.getQueryData<any[]>(["/api/moderator/reports"]);
+      queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) => 
+        old.filter((r: any) => r.id !== reportId)
+      );
+      return { previousReports };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      // Force refetch to ensure deleted post is removed from feed
+      queryClient.refetchQueries({ queryKey: ["/api/posts"] });
+      // Invalidate and refetch notification queries for instant updates
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+      }
       toast({
         title: "Post Removed",
         description: "Reported post has been removed",
       });
     },
-    onError: () => {
+    onError: (error, reportId, context) => {
+      // Rollback on error
+      if (context?.previousReports) {
+        queryClient.setQueryData(["/api/moderator/reports"], context.previousReports);
+      }
       toast({
         title: "Error",
         description: "Failed to remove post",
@@ -361,7 +460,42 @@ export default function ModeratorPage() {
                             {/* Video thumbnail - clickable */}
                             <div 
                               className="relative w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted cursor-pointer group"
-                              onClick={() => report.post && setPostForComments(report.post)}
+                              onClick={async () => {
+                                if (report.post?.id) {
+                                  // Fetch the full post data to ensure we have all fields
+                                  try {
+                                    const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
+                                    if (!response.ok) {
+                                      throw new Error(`Failed to fetch post: ${response.status}`);
+                                    }
+                                    const fullPost = await response.json();
+                                    console.log("[Moderator] Fetched post for thumbnail click:", fullPost);
+                                    // Ensure all required fields are present
+                                    if (fullPost && fullPost.id && fullPost.videoUrl && fullPost.user) {
+                                      setPostForComments(fullPost);
+                                    } else {
+                                      console.error("[Moderator] Post data incomplete:", fullPost);
+                                      toast({
+                                        title: "Error",
+                                        description: "Failed to load post data",
+                                        variant: "destructive",
+                                      });
+                                    }
+                                    // Don't set selectedPost - that's only for verification dialog
+                                  } catch (error) {
+                                    console.error("[Moderator] Failed to fetch post:", error);
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to load post",
+                                      variant: "destructive",
+                                    });
+                                    // Fallback to report.post if fetch fails
+                                    if (report.post && report.post.videoUrl) {
+                                      setPostForComments(report.post);
+                                    }
+                                  }
+                                }
+                              }}
                               data-testid={`thumbnail-${report.id}`}
                             >
                               {report.post?.videoUrl || report.post?.video_url ? (
@@ -385,16 +519,56 @@ export default function ModeratorPage() {
                             {/* Report info */}
                             <div className="flex-1 space-y-2">
                               <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant={report.is_user_report ? "secondary" : "destructive"}>
+                                    {report.is_user_report ? "User Report" : "Post Report"}
+                                  </Badge>
+                                </div>
                                 <p 
                                   className="font-semibold cursor-pointer hover:text-primary transition-colors"
-                                  onClick={() => report.post && setPostForComments(report.post)}
+                                  onClick={async () => {
+                                    if (report.post?.id) {
+                                      // Fetch the full post data to ensure we have all fields
+                                      try {
+                                        const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
+                                        const fullPost = await response.json();
+                                        setPostForComments(fullPost);
+                                        // Don't set selectedPost - that's only for verification dialog
+                                      } catch (error) {
+                                        console.error("Failed to fetch post:", error);
+                                        // Fallback to report.post if fetch fails
+                                        if (report.post) {
+                                          setPostForComments(report.post);
+                                        }
+                                      }
+                                    }
+                                  }}
                                   data-testid={`description-${report.id}`}
                                 >
-                                  {report.post?.description || report.post_title || "Unknown post"}
+                                  {report.post?.title || report.post?.description || "Unknown post"}
                                 </p>
+                                {report.is_user_report && report.reportedUser && (
+                                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded p-2 mt-2">
+                                    <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ User Comment Report</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Reported user: <span className="font-semibold">@{report.reportedUser.username}</span>
+                                    </p>
+                                    {report.reported_comment_body && (
+                                      <div className="mt-2 pt-2 border-t border-yellow-500/20">
+                                        <p className="text-xs font-medium text-yellow-600 mb-1">Reported Comment:</p>
+                                        <p className="text-sm italic">"{report.reported_comment_body}"</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {report.post?.user && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    Post by: @{report.post.user.username}
+                                  </p>
+                                )}
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                                   <User className="w-4 h-4" />
-                                  <span>Reported by @{report.reportedBy?.username || "Unknown"}</span>
+                                  <span>Reported by @{report.reporter?.username || "Unknown"}</span>
                                 </div>
                               </div>
 
@@ -402,10 +576,16 @@ export default function ModeratorPage() {
                               <div className="bg-red-500/10 border border-red-500/20 rounded p-3">
                                 <p className="text-xs font-medium text-red-400 mb-1">Report Reason:</p>
                                 <p className="text-sm">{report.reason}</p>
+                                {report.description && (
+                                  <div className="mt-2 pt-2 border-t border-red-500/20">
+                                    <p className="text-xs font-medium text-red-400 mb-1">Additional Details:</p>
+                                    <p className="text-sm text-muted-foreground">{report.description}</p>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Action buttons */}
-                              <div className="flex gap-2 pt-2">
+                              <div className="flex gap-2 pt-2 flex-wrap">
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -416,20 +596,77 @@ export default function ModeratorPage() {
                                   <CheckCircle className="w-4 h-4 mr-1" />
                                   Dismiss Report
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => {
-                                    if (confirm("Are you sure you want to remove this post? This action cannot be undone.")) {
-                                      removePostMutation.mutate(report.id);
-                                    }
-                                  }}
-                                  disabled={removePostMutation.isPending}
-                                  data-testid={`button-remove-${report.id}`}
-                                >
-                                  <XCircle className="w-4 h-4 mr-1" />
-                                  Remove Post
-                                </Button>
+                                {report.is_user_report ? (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => {
+                                        if (confirm("Are you sure you want to remove this comment? The user will be notified. This action cannot be undone.")) {
+                                          removeCommentMutation.mutate(report.id);
+                                        }
+                                      }}
+                                      disabled={removeCommentMutation.isPending}
+                                      data-testid={`button-remove-comment-${report.id}`}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-1" />
+                                      Remove Comment
+                                    </Button>
+                                    {report.reportedUser && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setSelectedReportForModeration({
+                                            reportId: report.id,
+                                            userId: report.reported_user_id,
+                                            username: report.reportedUser.username,
+                                          });
+                                          setModerationDialogOpen(true);
+                                        }}
+                                        data-testid={`button-moderate-user-${report.id}`}
+                                      >
+                                        <Shield className="w-4 h-4 mr-1" />
+                                        Moderate User
+                                      </Button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => {
+                                        if (confirm("Are you sure you want to remove this post? This action cannot be undone.")) {
+                                          removePostMutation.mutate(report.id);
+                                        }
+                                      }}
+                                      disabled={removePostMutation.isPending}
+                                      data-testid={`button-remove-${report.id}`}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-1" />
+                                      Remove Post
+                                    </Button>
+                                    {report.post?.user && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setSelectedReportForModeration({
+                                            reportId: report.id,
+                                            userId: report.post.user.id,
+                                            username: report.post.user.username,
+                                          });
+                                          setModerationDialogOpen(true);
+                                        }}
+                                        data-testid={`button-moderate-user-${report.id}`}
+                                      >
+                                        <Shield className="w-4 h-4 mr-1" />
+                                        Moderate User
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -443,6 +680,20 @@ export default function ModeratorPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Moderation Actions Dialog */}
+      {selectedReportForModeration && (
+        <ModerationActionsDialog
+          isOpen={moderationDialogOpen}
+          onClose={() => {
+            setModerationDialogOpen(false);
+            setSelectedReportForModeration(null);
+          }}
+          reportId={selectedReportForModeration.reportId}
+          reportedUserId={selectedReportForModeration.userId}
+          reportedUsername={selectedReportForModeration.username}
+        />
+      )}
 
       {/* Comment Selection Dialog */}
       <Dialog open={!!selectedPost} onOpenChange={() => {
@@ -545,12 +796,20 @@ export default function ModeratorPage() {
       </Dialog>
 
       {/* Full Post View Modal */}
-      <Dialog open={!!postForComments} onOpenChange={() => setPostForComments(null)}>
-        <DialogContent className="max-w-md h-screen p-0 m-0 border-0 rounded-none bg-black">
+      <Dialog open={!!postForComments} onOpenChange={(open) => {
+        if (!open) {
+          setPostForComments(null);
+        }
+      }}>
+        <DialogContent className="max-w-md max-h-[90vh] p-0 m-0 border-0 rounded-lg bg-black overflow-y-auto">
           <DialogTitle className="sr-only">Post View</DialogTitle>
-          {postForComments && (
-            <div className="h-full w-full overflow-hidden">
+          {postForComments && postForComments.videoUrl && postForComments.user ? (
+            <div className="w-full relative">
               <VideoCard post={postForComments} />
+            </div>
+          ) : (
+            <div className="p-4 text-white">
+              <p>Loading post...</p>
             </div>
           )}
         </DialogContent>

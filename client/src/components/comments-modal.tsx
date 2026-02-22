@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, CheckCircle, Award, XCircle, ChevronUp, ChevronDown, Filter } from "lucide-react";
+import { X, Send, Heart, CheckCircle, Award, XCircle, ChevronUp, ChevronDown, Filter, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { ReportModal } from "./report-modal";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -22,6 +23,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [showArtistDropdown, setShowArtistDropdown] = useState(false);
   const [artistSearchTerm, setArtistSearchTerm] = useState("");
   const [currentMentionStart, setCurrentMentionStart] = useState(-1);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage } = useUser();
@@ -253,7 +256,19 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <>
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => {
+          setShowReportModal(false);
+          setReportingComment(null);
+        }}
+        type="comment"
+        postId={post.id}
+        commentId={reportingComment?.id}
+        reportedUserId={reportingComment?.userId}
+      />
+      <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md h-[60vh] p-0 bg-white/95 backdrop-blur-sm rounded-t-3xl fixed bottom-0 left-1/2 transform -translate-x-1/2 animate-in slide-in-from-bottom duration-300 border-0 shadow-2xl">
         <DialogTitle className="sr-only">Comments for track</DialogTitle>
         <DialogDescription className="sr-only">View and add comments for this track</DialogDescription>
@@ -322,7 +337,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <div key={comment.id} className={`flex space-x-3 ${isVerifiedComment ? 'p-3 rounded-lg border-2 border-green-500 bg-green-50/30' : ''}`}>
               <div className="relative flex-shrink-0">
                 <img
-                  src={comment.user.avatar_url || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
+                  src={comment.user.avatar_url || undefined}
                   alt={comment.user.username}
                   className="w-8 h-8 rounded-full"
                 />
@@ -434,6 +449,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   >
                     Reply
                   </button>
+                  <button 
+                    className="text-xs text-red-600 hover:text-red-700"
+                    onClick={() => {
+                      setReportingComment({id: comment.id, userId: comment.userId});
+                      setShowReportModal(true);
+                    }}
+                    data-testid={`report-button-${comment.id}`}
+                  >
+                    <Flag className="w-3 h-3 inline mr-1" />
+                    Report
+                  </button>
                   {/* Toggle replies button */}
                   {comment.replies && comment.replies.length > 0 && (
                     <button 
@@ -455,7 +481,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     {comment.replies.map((reply) => (
                       <div key={reply.id} className="flex space-x-2">
                         <img
-                          src={reply.user.avatar_url || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
+                          src={reply.user.avatar_url || undefined}
                           alt={reply.user.username}
                           className="w-6 h-6 rounded-full"
                         />
@@ -593,7 +619,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     data-testid={`artist-option-${artist.id}`}
                   >
                     <img
-                      src={artist.avatar_url || artist.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face`}
+                      src={artist.avatar_url || artist.profileImage || undefined}
                       alt={artist.username}
                       className="w-8 h-8 rounded-full"
                     />
@@ -613,7 +639,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             
             <form onSubmit={handleSubmit} className="flex space-x-2">
               <img
-                src={userProfileImage || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=face`}
+                src={userProfileImage || undefined}
                 alt="Your profile"
                 className="w-8 h-8 rounded-full flex-shrink-0"
               />
@@ -645,7 +671,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               <div className="text-center">
                 <div className="relative inline-block mb-4">
                   <img
-                    src={selectedUser.avatar_url || selectedUser.profileImage || `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&h=120&fit=crop&crop=face`}
+                    src={selectedUser.avatar_url || selectedUser.profileImage || undefined}
                     alt={selectedUser.username}
                     className="w-20 h-20 rounded-full mx-auto"
                   />
@@ -708,5 +734,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }

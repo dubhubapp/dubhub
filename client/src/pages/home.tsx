@@ -6,6 +6,7 @@ import { VideoCard } from "@/components/video-card";
 import { GenreFilter } from "@/components/genre-filter";
 import { Header } from "@/components/brand/Header";
 import type { PostWithUser } from "@shared/schema";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function Home() {
   console.log("[Home] component mounted");
@@ -24,11 +25,21 @@ export default function Home() {
   const postsQuery = useQuery({
     queryKey: ["/api/posts", { genre: selectedGenre, identification: identificationFilter }],
     queryFn: async () => {
+      // Get auth headers to include user session for hasLiked calculation
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = {};
+      if (session?.access_token) {
+        authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+      }
+      
       const params = new URLSearchParams();
       if (selectedGenre !== "all") {
         params.append("genre", selectedGenre);
       }
-      const response = await fetch(`/api/posts?${params}`);
+      const response = await fetch(`/api/posts?${params}`, {
+        headers: authHeaders,
+        credentials: "include",
+      });
       if (!response.ok) throw new Error("Failed to fetch posts");
       const allPosts = await response.json() as PostWithUser[];
       

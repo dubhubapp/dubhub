@@ -46,6 +46,7 @@ async function processArtistTags(commentId: string, postId: string, userId: stri
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  console.log("[Routes] Registering routes...");
   // Serve video files from processed directory
   app.use('/videos', express.static(path.join(process.cwd(), 'processed')));
   app.use('/images', express.static(path.join(process.cwd(), 'processed')));
@@ -433,14 +434,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get current user (authenticated via Supabase)
-  app.get("/api/user/current", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/user/current", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      // User is already fetched and attached by middleware
+      // User is already fetched and attached by middleware (if authenticated)
+      // Return null if not authenticated (optional endpoint)
       if (!req.dbUser) {
-        return res.status(404).json({ message: "User profile not found" });
+        return res.json(null);
       }
       res.json(req.dbUser);
     } catch (error) {
+      console.error("[/api/user/current] Error:", error);
       res.status(500).json({ message: "Failed to get current user" });
     }
   });
@@ -508,6 +511,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to get posts",
         error: error instanceof Error ? error.message : String(error)
       });
+    }
+  });
+
+  // Get single post by ID
+  app.get("/api/posts/:id", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const postId = req.params.id;
+      const currentUserId = req.dbUser?.id || undefined;
+      
+      const post = await storage.getPost(postId, currentUserId);
+      
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      
+      res.json(post);
+    } catch (error) {
+      console.error("[/api/posts/:id] Error:", error);
+      res.status(500).json({ message: "Failed to fetch post" });
     }
   });
 
@@ -595,6 +617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Report post
+  // Report post endpoint with abuse prevention and rate limiting
   app.post("/api/posts/:id/report", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const postId = req.params.id;
@@ -602,28 +625,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
-      const { reason } = req.body;
+      const { reason, description } = req.body;
 
       if (!reason || !reason.trim()) {
         return res.status(400).json({ message: "Report reason is required" });
       }
 
+      // Validate post exists
       const post = await storage.getPost(postId);
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
       }
 
+      // Abuse prevention: Check if user already reported this post
+      const existingReport = await db.execute(sql`
+        SELECT id FROM reports
+        WHERE reporter_id = ${userId}
+          AND reported_post_id = ${postId}
+          AND status != 'dismissed'
+        LIMIT 1
+      `);
+      if ((existingReport as any).rows?.length > 0) {
+        return res.status(409).json({ message: "Already reported" });
+      }
+
+      // Rate limiting: Check reports in last hour
+      const recentReports = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM reports
+        WHERE reporter_id = ${userId}
+          AND created_at > NOW() - INTERVAL '1 hour'
+      `);
+      const reportCount = Number((recentReports as any).rows?.[0]?.count ?? 0);
+      if (reportCount >= 5) {
+        return res.status(429).json({ message: "Rate limit exceeded. Maximum 5 reports per hour." });
+      }
+
       // Create the report
-      await storage.createReport({
-        postId,
-        reportedBy: userId,
-        reason: reason.trim(),
-      });
+      await db.execute(sql`
+        INSERT INTO reports (reporter_id, reported_post_id, reported_user_id, reason, description, status, created_at)
+        VALUES (${userId}, ${postId}, NULL, ${reason.trim()}, ${description || null}, 'open', NOW())
+      `);
+
+      // Notify all moderators about the new post report
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        SELECT 
+          p.id,
+          ${userId},
+          ${postId},
+          'New post report: ' || ${reason.trim()},
+          false,
+          NOW()
+        FROM profiles p
+        WHERE p.moderator = true
+      `);
+
+      // Auto soft-hide: Check if post has 3+ open reports
+      const openReportsCount = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM reports
+        WHERE reported_post_id = ${postId}
+          AND status = 'open'
+      `);
+      const openCount = Number((openReportsCount as any).rows?.[0]?.count ?? 0);
+      
+      if (openCount >= 3) {
+        // Auto soft-hide: Set verification_status to 'under_review'
+        await db.execute(sql`
+          UPDATE posts
+          SET verification_status = 'under_review'
+          WHERE id = ${postId}
+            AND verification_status != 'under_review'
+        `);
+      }
 
       res.status(201).json({ message: "Report submitted successfully" });
     } catch (error) {
-      console.error('Post report error:', error);
+      console.error('[/api/posts/:id/report] Error:', error);
       res.status(500).json({ message: "Failed to report post" });
+    }
+  });
+
+  // Report comment endpoint with abuse prevention and rate limiting
+  app.post("/api/comments/:id/report", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const commentId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const userId = req.dbUser.id;
+      const { reason, description, reported_user_id } = req.body;
+
+      if (!reason || !reason.trim()) {
+        return res.status(400).json({ message: "Report reason is required" });
+      }
+
+      // Get comment to validate it exists and get post_id
+      const commentResult = await db.execute(sql`
+        SELECT id, post_id, user_id FROM comments WHERE id = ${commentId} LIMIT 1
+      `);
+      const commentRows = (commentResult as any).rows || [];
+      if (commentRows.length === 0) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      const comment = commentRows[0];
+
+      // Abuse prevention: Check if user already reported this comment
+      const existingReport = await db.execute(sql`
+        SELECT id FROM reports
+        WHERE reporter_id = ${userId}
+          AND reported_user_id = ${comment.user_id}
+          AND reported_post_id = ${comment.post_id}
+          AND status != 'dismissed'
+        LIMIT 1
+      `);
+      if ((existingReport as any).rows?.length > 0) {
+        return res.status(409).json({ message: "Already reported" });
+      }
+
+      // Rate limiting: Check reports in last hour
+      const recentReports = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM reports
+        WHERE reporter_id = ${userId}
+          AND created_at > NOW() - INTERVAL '1 hour'
+      `);
+      const reportCount = Number((recentReports as any).rows?.[0]?.count ?? 0);
+      if (reportCount >= 5) {
+        return res.status(429).json({ message: "Rate limit exceeded. Maximum 5 reports per hour." });
+      }
+
+      // Create the report - store comment_id in description for reference
+      // Format: "COMMENT_ID:{commentId}|{original_description}"
+      const reportDescription = description 
+        ? `COMMENT_ID:${commentId}|${description}`
+        : `COMMENT_ID:${commentId}`;
+      
+      await db.execute(sql`
+        INSERT INTO reports (reporter_id, reported_post_id, reported_user_id, reason, description, status, created_at)
+        VALUES (${userId}, ${comment.post_id}, ${comment.user_id}, ${reason.trim()}, ${reportDescription}, 'open', NOW())
+      `);
+
+      // Notify all moderators about the new user report (comment report)
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        SELECT 
+          p.id,
+          ${userId},
+          ${comment.post_id},
+          'New user report: ' || ${reason.trim()},
+          false,
+          NOW()
+        FROM profiles p
+        WHERE p.moderator = true
+      `);
+
+      res.status(201).json({ message: "Report submitted successfully" });
+    } catch (error) {
+      console.error('[/api/comments/:id/report] Error:', error);
+      res.status(500).json({ message: "Failed to report comment" });
     }
   });
 
@@ -791,6 +952,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user's uploaded posts (for profile page)
+  app.get("/api/user/:id/liked-posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.params.id;
+      const likedPosts = await storage.getUserLikedPosts(userId);
+      res.json(likedPosts);
+    } catch (error) {
+      console.error("[/api/user/:id/liked-posts] Error:", error);
+      res.status(500).json({ message: "Failed to get liked posts" });
+    }
+  });
+
   app.get("/api/user/:id/posts", async (req, res) => {
     try {
       const userId = req.params.id;
@@ -1043,69 +1215,168 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Moderator: Get pending reports
-  app.get("/api/moderator/reports", async (req, res) => {
+  // Moderator: Get all reports (using correct schema with filters)
+  app.get("/api/moderator/reports", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      // Check if reports table exists first
-      const tableCheck = await db.execute(sql`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = 'reports'
-        );
-      `);
-      const tableExists = (tableCheck as any).rows?.[0]?.exists;
-      
-      if (!tableExists) {
-        console.warn("[/api/moderator/reports] Reports table does not exist in database");
-        return res.json([]); // Return empty array if table doesn't exist
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
       }
+
+      const { status, reason, assigned_moderator_id } = req.query;
+      
+      // Build WHERE clause based on filters
+      // By default, only show open and under_review reports (exclude dismissed and resolved)
+      const conditions: any[] = [];
+      if (status) {
+        conditions.push(sql`r.status = ${status as string}`);
+      } else {
+        // Default: only show open and under_review reports
+        conditions.push(sql`r.status IN ('open', 'under_review')`);
+      }
+      if (reason) {
+        conditions.push(sql`r.reason = ${reason as string}`);
+      }
+      if (assigned_moderator_id) {
+        conditions.push(sql`r.assigned_moderator_id = ${assigned_moderator_id as string}`);
+      }
+      
+      const whereClause = conditions.length > 0 
+        ? sql`WHERE ${conditions.reduce((acc, cond, idx) => 
+            idx === 0 ? cond : sql`${acc} AND ${cond}`
+          )}`
+        : sql``;
 
       const result = await db.execute(sql`
         SELECT
           r.id,
-          r.post_id,
-          r.reported_by,
+          r.reporter_id,
+          r.reported_post_id,
+          r.reported_user_id,
           r.reason,
+          r.description,
           r.status,
+          r.assigned_moderator_id,
+          r.resolution_action,
+          r.resolved_at,
           r.created_at,
           p.title AS post_title,
           p.video_url AS post_video_url,
           p.description AS post_description,
           p.genre AS post_genre,
           p.location AS post_location,
-          pr.username AS reported_by_username,
-          pr.avatar_url AS reported_by_avatar_url
+          p.verification_status AS post_verification_status,
+          p.user_id AS post_user_id,
+          pr.username AS reporter_username,
+          pr.avatar_url AS reporter_avatar_url,
+          pu.username AS reported_user_username,
+          pu.avatar_url AS reported_user_avatar_url,
+          pp.username AS post_user_username,
+          pp.avatar_url AS post_user_avatar_url,
+          (SELECT c.body FROM comments c 
+           WHERE c.user_id = r.reported_user_id 
+           AND c.post_id = r.reported_post_id
+           AND (
+             -- If description contains COMMENT_ID, match that specific comment
+             CASE 
+               WHEN r.description LIKE 'COMMENT_ID:%' THEN
+                 c.id::text = (
+                   CASE 
+                     WHEN r.description LIKE '%|%' THEN
+                       TRIM(SPLIT_PART(SPLIT_PART(r.description, 'COMMENT_ID:', 2), '|', 1))
+                     ELSE
+                       TRIM(SPLIT_PART(r.description, 'COMMENT_ID:', 2))
+                   END
+                 )
+               ELSE
+                 -- Otherwise get most recent comment by this user on this post
+                 TRUE
+             END
+           )
+           ORDER BY 
+             CASE 
+               WHEN r.description LIKE 'COMMENT_ID:%' AND c.id::text = (
+                 CASE 
+                   WHEN r.description LIKE '%|%' THEN
+                     TRIM(SPLIT_PART(SPLIT_PART(r.description, 'COMMENT_ID:', 2), '|', 1))
+                   ELSE
+                     TRIM(SPLIT_PART(r.description, 'COMMENT_ID:', 2))
+                 END
+               ) THEN 0
+               ELSE 1
+             END,
+             c.created_at DESC 
+           LIMIT 1) AS reported_comment_body
         FROM reports r
-        LEFT JOIN posts p ON p.id = r.post_id
-        LEFT JOIN profiles pr ON pr.id = r.reported_by
-        WHERE r.status = 'pending'
-        ORDER BY r.created_at DESC
+        LEFT JOIN posts p ON p.id = r.reported_post_id
+        LEFT JOIN profiles pr ON pr.id = r.reporter_id
+        LEFT JOIN profiles pu ON pu.id = r.reported_user_id
+        LEFT JOIN profiles pp ON pp.id = p.user_id
+        ${whereClause}
+        ORDER BY r.created_at ASC
       `);
 
       const reports = (result as any).rows || [];
-      // Map reports to include post object for frontend compatibility
-      const reportsWithPost = reports.map((report: any) => ({
-        id: report.id,
-        post_id: report.post_id,
-        reported_by: report.reported_by,
-        reason: report.reason,
-        status: report.status,
-        created_at: report.created_at,
-        post: report.post_title ? {
-          id: report.post_id,
+      // Map reports to match frontend expectations
+      const reportsWithPost = reports.map((report: any) => {
+        // Extract original description if it contains COMMENT_ID prefix
+        let description = report.description;
+        if (description && description.startsWith('COMMENT_ID:')) {
+          const parts = description.split('|');
+          description = parts.length > 1 ? parts.slice(1).join('|') : null;
+        }
+        
+        return {
+          id: report.id,
+          reporter_id: report.reporter_id,
+          reported_post_id: report.reported_post_id,
+          reported_user_id: report.reported_user_id,
+          reason: report.reason,
+          description: description,
+          status: report.status,
+          assigned_moderator_id: report.assigned_moderator_id,
+          resolution_action: report.resolution_action,
+          resolved_at: report.resolved_at,
+          created_at: report.created_at,
+          is_user_report: !!report.reported_user_id,
+          reported_comment_body: report.reported_comment_body,
+          post: report.post_title ? {
+          id: report.reported_post_id,
           title: report.post_title,
           videoUrl: report.post_video_url,
           video_url: report.post_video_url,
           description: report.post_description,
           genre: report.post_genre,
           location: report.post_location,
+          verificationStatus: report.post_verification_status || 'unverified',
+          isVerifiedCommunity: false,
+          verifiedByModerator: false,
+          verifiedCommentId: null,
+          verifiedBy: null,
+          createdAt: report.post_created_at || null,
+          likes: report.post_likes_count || 0,
+          comments: report.post_comments_count || 0,
+          hasLiked: false,
+          user: report.post_user_username ? {
+            id: report.post_user_id,
+            username: report.post_user_username,
+            avatar_url: report.post_user_avatar_url,
+            account_type: report.post_user_account_type || null,
+            verified_artist: report.post_user_verified_artist || false,
+            moderator: report.post_user_moderator || false,
+          } : null,
         } : null,
-        reportedBy: report.reported_by_username ? {
-          username: report.reported_by_username,
-          avatar_url: report.reported_by_avatar_url,
+        reporter: report.reporter_username ? {
+          id: report.reporter_id,
+          username: report.reporter_username,
+          avatar_url: report.reporter_avatar_url,
         } : null,
-      }));
+        reportedUser: report.reported_user_username ? {
+          id: report.reported_user_id,
+          username: report.reported_user_username,
+          avatar_url: report.reported_user_avatar_url,
+        } : null,
+        };
+      });
       res.json(reportsWithPost);
     } catch (error) {
       console.error("[/api/moderator/reports] Error:", error);
@@ -1118,47 +1389,141 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Moderator: Dismiss report
-  app.post("/api/moderator/reports/:reportId/dismiss", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Moderator: Assign report
+  app.post("/api/moderator/reports/:reportId/assign", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const reportId = req.params.reportId;
-      if (!req.dbUser) {
-        return res.status(401).json({ message: "Not authenticated" });
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
       }
       const moderatorId = req.dbUser.id;
 
       await db.execute(sql`
         UPDATE reports
-        SET status = 'dismissed',
-            reviewed_by = ${moderatorId},
-            reviewed_at = NOW()
+        SET assigned_moderator_id = ${moderatorId},
+            status = 'under_review'
         WHERE id = ${reportId}
       `);
+
+      // Notify all moderators that report was assigned (for real-time updates)
+      // This helps other moderators see the report is being handled
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        SELECT 
+          p.id,
+          ${moderatorId},
+          (SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1),
+          'Report assigned to moderator',
+          false,
+          NOW()
+        FROM profiles p
+        WHERE p.moderator = true AND p.id != ${moderatorId}
+      `);
+
+      res.json({ message: "Report assigned" });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/assign] Error:", error);
+      res.status(500).json({ message: "Failed to assign report" });
+    }
+  });
+
+  // Moderator: Resolve report
+  app.post("/api/moderator/reports/:reportId/resolve", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = req.params.reportId;
+      const { resolution_action } = req.body;
+      
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      if (!resolution_action) {
+        return res.status(400).json({ message: "Resolution action is required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = ${resolution_action},
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      // Notify all moderators that report was resolved (for real-time updates)
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        SELECT 
+          p.id,
+          ${moderatorId},
+          (SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1),
+          'Report resolved: ' || ${resolution_action},
+          false,
+          NOW()
+        FROM profiles p
+        WHERE p.moderator = true AND p.id != ${moderatorId}
+      `);
+
+      res.json({ message: "Report resolved" });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/resolve] Error:", error);
+      res.status(500).json({ message: "Failed to resolve report" });
+    }
+  });
+
+  // Moderator: Dismiss report
+  app.post("/api/moderator/reports/:reportId/dismiss", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = req.params.reportId;
+      
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      // Get the report's post_id to mark related notifications as read
+      const reportResult = await db.execute(sql`
+        SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      const postId = reportRows[0]?.reported_post_id;
+
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'dismissed',
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      // Mark related report notifications as read for all moderators
+      if (postId) {
+        await db.execute(sql`
+          UPDATE notifications
+          SET read = true
+          WHERE post_id = ${postId}
+            AND message LIKE '%report%'
+            AND read = false
+        `);
+      }
 
       res.json({ message: "Report dismissed" });
     } catch (error) {
       console.error("[/api/moderator/reports/:reportId/dismiss] Error:", error);
-      console.error("[/api/moderator/reports/:reportId/dismiss] Error details:", {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        reportId: req.params.reportId,
-      });
       res.status(500).json({ message: "Failed to dismiss report" });
     }
   });
 
-  // Moderator: Remove reported post
-  app.post("/api/moderator/reports/:reportId/remove-post", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  // Moderator: Delete post from report
+  app.post("/api/moderator/reports/:reportId/delete-post", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const reportId = req.params.reportId;
-      if (!req.dbUser) {
-        return res.status(401).json({ message: "Not authenticated" });
+      
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
       }
-      const moderatorId = req.dbUser.id;
 
       // Get the report to find the post ID
       const reportResult = await db.execute(sql`
-        SELECT * FROM reports WHERE id = ${reportId} LIMIT 1
+        SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1
       `);
       const reportRows = (reportResult as any).rows || [];
       if (reportRows.length === 0) {
@@ -1166,72 +1531,553 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const report = reportRows[0];
 
-      // Delete the post
-      await storage.deletePost(report.post_id);
+      if (!report.reported_post_id) {
+        return res.status(400).json({ message: "This report does not have an associated post" });
+      }
 
-      // Mark report as reviewed
+      // Delete the post
+      await storage.deletePost(report.reported_post_id);
+
+      // Mark report as resolved
       await db.execute(sql`
         UPDATE reports
-        SET status = 'reviewed',
-            reviewed_by = ${moderatorId},
-            reviewed_at = NOW()
+        SET status = 'resolved',
+            resolution_action = 'post_deleted',
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      res.json({ message: "Post deleted successfully" });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/delete-post] Error:", error);
+      res.status(500).json({ message: "Failed to delete post" });
+    }
+  });
+
+  // Moderator: Remove reported comment
+  app.post("/api/moderator/reports/:reportId/remove-comment", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      console.log("[/api/moderator/reports/:reportId/remove-comment] Request received:", req.params.reportId);
+      const reportId = req.params.reportId;
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      // Get the report to find the comment ID, reason, and comment owner
+      const reportResult = await db.execute(sql`
+        SELECT 
+          r.reported_post_id,
+          r.reported_user_id,
+          r.reason,
+          r.description
+        FROM reports r
+        WHERE r.id = ${reportId}
+        LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      const report = reportRows[0];
+
+      if (!report.reported_user_id) {
+        return res.status(400).json({ message: "This report does not have an associated user/comment" });
+      }
+
+      // Extract comment ID from description (format: "COMMENT_ID:{commentId}|{description}")
+      let commentId: string | null = null;
+      if (report.description && report.description.startsWith('COMMENT_ID:')) {
+        const parts = report.description.split('|');
+        commentId = parts[0].replace('COMMENT_ID:', '').trim();
+      }
+
+      if (!commentId) {
+        return res.status(400).json({ message: "Could not find comment ID in report" });
+      }
+
+      // Delete the comment
+      await db.execute(sql`
+        DELETE FROM comments WHERE id = ${commentId}
+      `);
+
+      // Notify the comment owner about the removal
+      if (report.reported_user_id) {
+        await db.execute(sql`
+          INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+          VALUES (
+            ${report.reported_user_id},
+            ${moderatorId},
+            ${report.reported_post_id},
+            'Your comment was removed: ' || ${report.reason || 'Violation of community guidelines'},
+            false,
+            NOW()
+          )
+        `);
+      }
+
+      // Mark report as resolved
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = 'comment_removed',
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      res.json({ message: "Comment removed successfully" });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/remove-comment] Error:", error);
+      res.status(500).json({ message: "Failed to remove comment" });
+    }
+  });
+
+  // Moderator: Warn user from report
+  app.post("/api/moderator/reports/:reportId/warn-user", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      console.log("[/api/moderator/reports/:reportId/warn-user] Request received:", req.params.reportId);
+      const reportId = req.params.reportId;
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      // Get the report to find the user ID, reason, and check if it's a comment or post report
+      const reportResult = await db.execute(sql`
+        SELECT 
+          r.reported_user_id,
+          r.reported_post_id,
+          r.reason,
+          r.description,
+          p.user_id AS post_owner_id
+        FROM reports r
+        LEFT JOIN posts p ON p.id = r.reported_post_id
+        WHERE r.id = ${reportId}
+        LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      const report = reportRows[0];
+
+      if (!report.reported_user_id) {
+        return res.status(400).json({ message: "This report does not have an associated user" });
+      }
+
+      // Check if this is a comment report (description contains COMMENT_ID)
+      const isCommentReport = report.description && report.description.startsWith('COMMENT_ID:');
+      let commentId: string | null = null;
+      if (isCommentReport) {
+        const parts = report.description.split('|');
+        commentId = parts[0].replace('COMMENT_ID:', '').trim();
+      }
+
+      // Apply moderation action: Warn user (includes removing reported content)
+      // Part 1: Remove the reported content as part of the warning action
+      if (isCommentReport && commentId) {
+        await db.execute(sql`
+          DELETE FROM comments WHERE id = ${commentId}
+        `);
+      } else if (report.reported_post_id && report.post_owner_id === report.reported_user_id) {
+        await storage.deletePost(report.reported_post_id);
+      }
+
+      // Part 2: Apply warning to user profile
+      try {
+        await db.execute(sql`
+          UPDATE profiles
+          SET warning_count = COALESCE(warning_count, 0) + 1
+          WHERE id = ${report.reported_user_id}
+        `);
+      } catch (error) {
+        // If warning_count column doesn't exist, that's okay
+      }
+
+      // Create detailed notification message
+      let notificationMessage: string;
+      if (isCommentReport) {
+        notificationMessage = `Your comment was removed for breaking our content guidelines following a report for ${report.reason || 'violation of community guidelines'}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`;
+      } else {
+        notificationMessage = `Your post was removed for breaking our content guidelines following a report for ${report.reason || 'violation of community guidelines'}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`;
+      }
+
+      // Notify the user about the warning
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        VALUES (
+          ${report.reported_user_id},
+          ${moderatorId},
+          ${report.reported_post_id},
+          ${notificationMessage},
+          false,
+          NOW()
+        )
+      `);
+
+      // Mark report as resolved
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = 'user_warned',
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      res.json({ message: "User warned successfully" });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/warn-user] Error:", error);
+      res.status(500).json({ message: "Failed to warn user" });
+    }
+  });
+
+  // Moderator: Suspend user from report
+  app.post("/api/moderator/reports/:reportId/suspend-user", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = req.params.reportId;
+      const { days = 7 } = req.body;
+      
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      // Get the report to find the user ID, reason, and check if it's a comment or post report
+      const reportResult = await db.execute(sql`
+        SELECT 
+          r.reported_user_id,
+          r.reported_post_id,
+          r.reason,
+          r.description,
+          p.user_id AS post_owner_id
+        FROM reports r
+        LEFT JOIN posts p ON p.id = r.reported_post_id
+        WHERE r.id = ${reportId}
+        LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      const report = reportRows[0];
+
+      if (!report.reported_user_id) {
+        return res.status(400).json({ message: "This report does not have an associated user" });
+      }
+
+      // Check if this is a comment report (description contains COMMENT_ID)
+      const isCommentReport = report.description && report.description.startsWith('COMMENT_ID:');
+      let commentId: string | null = null;
+      if (isCommentReport) {
+        const parts = report.description.split('|');
+        commentId = parts[0].replace('COMMENT_ID:', '').trim();
+      }
+
+      // Apply moderation action: Suspend user (includes removing reported content)
+      // Part 1: Remove the reported content as part of the suspension action
+      if (isCommentReport && commentId) {
+        await db.execute(sql`
+          DELETE FROM comments WHERE id = ${commentId}
+        `);
+      } else if (report.reported_post_id && report.post_owner_id === report.reported_user_id) {
+        await storage.deletePost(report.reported_post_id);
+      }
+
+      // Part 2: Apply suspension to user profile
+      await db.execute(sql`
+        UPDATE profiles
+        SET suspended_until = NOW() + (INTERVAL '1 day' * ${days})
+        WHERE id = ${report.reported_user_id}
+      `);
+
+      // Create detailed notification message
+      let notificationMessage: string;
+      if (isCommentReport) {
+        notificationMessage = `Your comment was removed and your account has been suspended for ${days} days following a report for ${report.reason || 'violation of community guidelines'}. You're here to get tracks ID'd, so please respect our platform.`;
+      } else {
+        notificationMessage = `Your post was removed and your account has been suspended for ${days} days following a report for ${report.reason || 'violation of community guidelines'}. You're here to get tracks ID'd, so please respect our platform.`;
+      }
+
+      // Notify the user about the suspension
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        VALUES (
+          ${report.reported_user_id},
+          ${moderatorId},
+          ${report.reported_post_id},
+          ${notificationMessage},
+          false,
+          NOW()
+        )
+      `);
+
+      // Mark report as resolved
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = ${`user_suspended_${days}_days`},
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      res.json({ message: `User suspended for ${days} days` });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/suspend-user] Error:", error);
+      res.status(500).json({ message: "Failed to suspend user" });
+    }
+  });
+
+  // Moderator: Ban user permanently from report
+  app.post("/api/moderator/reports/:reportId/ban-user", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = req.params.reportId;
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      // Get the report to find the user ID, reason, and check if it's a comment or post report
+      const reportResult = await db.execute(sql`
+        SELECT 
+          r.reported_user_id,
+          r.reported_post_id,
+          r.reason,
+          r.description,
+          p.user_id AS post_owner_id
+        FROM reports r
+        LEFT JOIN posts p ON p.id = r.reported_post_id
+        WHERE r.id = ${reportId}
+        LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      const report = reportRows[0];
+
+      if (!report.reported_user_id) {
+        return res.status(400).json({ message: "This report does not have an associated user" });
+      }
+
+      // Check if this is a comment report (description contains COMMENT_ID)
+      const isCommentReport = report.description && report.description.startsWith('COMMENT_ID:');
+      let commentId: string | null = null;
+      if (isCommentReport) {
+        const parts = report.description.split('|');
+        commentId = parts[0].replace('COMMENT_ID:', '').trim();
+      }
+
+      // Apply moderation action: Ban user permanently (includes removing reported content)
+      // Part 1: Remove the reported content as part of the ban action
+      if (isCommentReport && commentId) {
+        await db.execute(sql`
+          DELETE FROM comments WHERE id = ${commentId}
+        `);
+      } else if (report.reported_post_id && report.post_owner_id === report.reported_user_id) {
+        await storage.deletePost(report.reported_post_id);
+      }
+
+      // Part 2: Apply permanent ban to user profile
+      // Using suspended_until with a very far future date (100 years = 36500 days) as a permanent ban
+      try {
+        await db.execute(sql`
+          UPDATE profiles
+          SET suspended_until = NOW() + (INTERVAL '1 day' * 36500),
+              banned = true
+          WHERE id = ${report.reported_user_id}
+        `);
+      } catch (error) {
+        // If banned column doesn't exist, just use suspended_until
+        await db.execute(sql`
+          UPDATE profiles
+          SET suspended_until = NOW() + (INTERVAL '1 day' * 36500)
+          WHERE id = ${report.reported_user_id}
+        `);
+      }
+
+      // Create detailed notification message
+      let notificationMessage: string;
+      if (isCommentReport) {
+        notificationMessage = `Your comment was removed and your account has been permanently banned following a report for ${report.reason || 'violation of community guidelines'}.`;
+      } else {
+        notificationMessage = `Your post was removed and your account has been permanently banned following a report for ${report.reason || 'violation of community guidelines'}.`;
+      }
+
+      // Notify the user about the ban
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        VALUES (
+          ${report.reported_user_id},
+          ${moderatorId},
+          ${report.reported_post_id},
+          ${notificationMessage},
+          false,
+          NOW()
+        )
+      `);
+
+      // Mark report as resolved
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = 'user_banned_permanently',
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      res.json({ message: "User banned permanently" });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/ban-user] Error:", error);
+      res.status(500).json({ message: "Failed to ban user" });
+    }
+  });
+
+  // Moderator: Remove reported post
+  app.post("/api/moderator/reports/:reportId/remove-post", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = req.params.reportId;
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      // Get the report to find the post ID, reason, and post owner
+      const reportResult = await db.execute(sql`
+        SELECT 
+          r.reported_post_id,
+          r.reason,
+          p.user_id AS post_owner_id
+        FROM reports r
+        LEFT JOIN posts p ON p.id = r.reported_post_id
+        WHERE r.id = ${reportId}
+        LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      const report = reportRows[0];
+
+      if (!report.reported_post_id) {
+        return res.status(400).json({ message: "This report does not have an associated post" });
+      }
+
+      // Delete the post
+      await storage.deletePost(report.reported_post_id);
+
+      // Notify the post owner about the removal
+      if (report.post_owner_id) {
+        await db.execute(sql`
+          INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+          VALUES (
+            ${report.post_owner_id},
+            ${moderatorId},
+            ${report.reported_post_id},
+            'Your post was removed: ' || ${report.reason || 'Violation of community guidelines'},
+            false,
+            NOW()
+          )
+        `);
+      }
+
+      // Mark related report notifications as read for all moderators
+      await db.execute(sql`
+        UPDATE notifications
+        SET read = true
+        WHERE post_id = ${report.reported_post_id}
+          AND message LIKE '%report%'
+          AND read = false
+      `);
+
+      // Mark report as resolved
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = 'post_removed',
+            resolved_at = NOW()
         WHERE id = ${reportId}
       `);
 
       res.json({ message: "Post removed successfully" });
     } catch (error) {
       console.error("[/api/moderator/reports/:reportId/remove-post] Error:", error);
-      console.error("[/api/moderator/reports/:reportId/remove-post] Error details:", {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        reportId: req.params.reportId,
-      });
       res.status(500).json({ message: "Failed to remove post" });
     }
   });
 
-  // Notification endpoints
-  app.get("/api/user/:id/notifications", async (req, res) => {
+  // Notification endpoints - use authenticated user's UUID
+  app.get("/api/user/:id/notifications", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const userId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      // Use authenticated user's UUID, not params
+      const userId = req.dbUser.id;
       const notifications = await storage.getUserNotifications(userId);
       res.json(notifications);
     } catch (error) {
-      console.error("Error fetching notifications:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("[/api/user/:id/notifications] Error:", error);
+      if (errorMessage.includes("Invalid user ID format")) {
+        return res.status(400).json({ message: errorMessage });
+      }
       res.status(500).json({ message: "Failed to get notifications" });
     }
   });
 
-  app.get("/api/user/:id/notifications/unread-count", async (req, res) => {
+  app.get("/api/user/:id/notifications/unread-count", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const userId = req.params.id;
-      const count = await storage.getUnreadNotificationCount(userId);
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      // Use authenticated user's UUID, not params
+      const userId = req.dbUser.id;
+      // Exclude report notifications from profile count (only show non-report notifications)
+      const result = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM notifications
+        WHERE artist_id = ${userId}
+          AND read = false
+          AND (message NOT LIKE 'New post report:%' AND message NOT LIKE 'New user report:%')
+      `);
+      const count = Number((result as any).rows?.[0]?.count ?? 0);
       res.json({ count });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("[/api/user/:id/notifications/unread-count] Error:", error);
-      console.error("[/api/user/:id/notifications/unread-count] Error details:", {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        userId: req.params.id,
-      });
+      if (errorMessage.includes("Invalid user ID format")) {
+        return res.status(400).json({ message: errorMessage });
+      }
       res.status(500).json({ 
         message: "Failed to get unread count",
-        error: error instanceof Error ? error.message : String(error)
+        error: errorMessage
       });
     }
   });
 
-  app.get("/api/moderator/:id/notifications/unread-count", async (req, res) => {
+  app.get("/api/moderator/:id/notifications/unread-count", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const moderatorId = req.params.id;
-      // Count only moderator-related notifications (new review submissions)
-      const allNotifications = await storage.getUserNotifications(moderatorId);
-      const moderatorNotifications = allNotifications.filter(n => 
-        n.message.includes("submitted your track ID for moderator review") && !n.read
-      );
-      res.json({ count: moderatorNotifications.length });
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      // Use authenticated user's UUID, not params
+      const moderatorId = req.dbUser.id;
+      // Count unread notifications where moderator is the recipient AND message contains "report" or "community verification"
+      const result = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM notifications
+        WHERE artist_id = ${moderatorId}
+          AND read = false
+          AND (message LIKE '%report%' OR message LIKE '%community verification%')
+      `);
+      const count = Number((result as any).rows?.[0]?.count ?? 0);
+      res.json({ count });
     } catch (error) {
-      console.error("Error fetching moderator unread count:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("[/api/moderator/:id/notifications/unread-count] Error:", error);
+      if (errorMessage.includes("Invalid user ID format")) {
+        return res.status(400).json({ message: errorMessage });
+      }
       res.status(500).json({ message: "Failed to get moderator unread count" });
     }
   });
@@ -1247,13 +2093,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/user/:id/notifications/mark-all-read", async (req, res) => {
+  app.patch("/api/user/:id/notifications/mark-all-read", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const userId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      // Use authenticated user's UUID, not params
+      const userId = req.dbUser.id;
       await storage.markAllNotificationsAsRead(userId);
       res.json({ message: "All notifications marked as read" });
     } catch (error) {
-      console.error("Error marking all notifications as read:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("[/api/user/:id/notifications/mark-all-read] Error:", error);
+      if (errorMessage.includes("Invalid user ID format")) {
+        return res.status(400).json({ message: errorMessage });
+      }
       res.status(500).json({ message: "Failed to mark all notifications as read" });
     }
   });
@@ -1404,6 +2258,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to seed post" });
     }
   });
+
+  // Log all registered moderator report routes for debugging
+  console.log("[Routes] Registered moderator report endpoints:");
+  const routes = [
+    "/api/moderator/reports/:reportId/assign",
+    "/api/moderator/reports/:reportId/resolve",
+    "/api/moderator/reports/:reportId/dismiss",
+    "/api/moderator/reports/:reportId/delete-post",
+    "/api/moderator/reports/:reportId/remove-comment",
+    "/api/moderator/reports/:reportId/warn-user",
+    "/api/moderator/reports/:reportId/suspend-user",
+    "/api/moderator/reports/:reportId/ban-user",
+    "/api/moderator/reports/:reportId/remove-post",
+  ];
+  routes.forEach(route => console.log(`  POST ${route}`));
 
   const httpServer = createServer(app);
   return httpServer;

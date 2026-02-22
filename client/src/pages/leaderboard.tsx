@@ -6,11 +6,12 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Trophy, Medal, Award, TrendingUp, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { useUser } from "@/lib/user-context";
+import { supabase } from '@/lib/supabaseClient';
 
 interface LeaderboardEntry {
   user_id: string;
   username: string;
-  profile_image: string | null;
+  avatar_url: string | null;
   score: number;
   correct_ids: number;
   reputation: number;
@@ -97,8 +98,28 @@ export default function Leaderboard() {
     const level = getLevel(entry.reputation);
     const levelProgress = getLevelProgress(entry.reputation);
 
-    // Use the profile image from the entry, or fall back to a placeholder
-    const profileImageUrl = entry.profile_image || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face&random=${entry.user_id}`;
+    // Use the profile image from the entry
+    // avatar_url should already be set (either uploaded or default from trigger)
+    // If it's null/empty or contains the wrong default avatar, we construct the correct default URL
+    const getDefaultAvatarUrl = () => {
+      const defaultPath = entry.account_type === "artist" 
+        ? "artists/default_artist_avatar.png" 
+        : "users/default_user_avatar.png";
+      const { data } = supabase.storage
+        .from('profile_uploads')
+        .getPublicUrl(defaultPath);
+      return data.publicUrl;
+    };
+
+    // Check if avatar_url is null/empty or if it's a default avatar that doesn't match account_type
+    const isWrongDefaultAvatar = entry.avatar_url && (
+      (entry.account_type === "user" && entry.avatar_url.includes("default_artist_avatar")) ||
+      (entry.account_type === "artist" && entry.avatar_url.includes("default_user_avatar"))
+    );
+
+    const profileImageUrl = (!entry.avatar_url || isWrongDefaultAvatar) 
+      ? getDefaultAvatarUrl()
+      : entry.avatar_url;
 
     return (
       <div

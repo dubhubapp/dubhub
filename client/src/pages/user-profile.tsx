@@ -47,9 +47,11 @@ export default function UserProfile(props: any = {}) {
   const genreStats: { genre: string; count: number }[] = [];
   const genreStatsLoading = false;
 
-  // Liked posts removed - no longer supported
-  const likedPosts: PostWithUser[] = [];
-  const likedLoading = false;
+  // Query for user's liked posts
+  const { data: likedPosts = [], isLoading: likedLoading } = useQuery<PostWithUser[]>({
+    queryKey: ["/api/user", currentUser?.id, "liked-posts"],
+    enabled: !!currentUser?.id,
+  });
 
   // Saved posts removed - no longer supported
   const savedPosts: PostWithUser[] = [];
@@ -686,10 +688,9 @@ export default function UserProfile(props: any = {}) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Liked tracks feature removed */}
-                  <div className="text-center py-12">
-                    <p className="text-gray-400">Liked tracks feature is no longer available</p>
-                  </div>
+                  {likedPosts.map((post) => (
+                    <VideoCard key={post.id} post={post} showStatusBadge />
+                  ))}
                 </div>
               )}
             </TabsContent>

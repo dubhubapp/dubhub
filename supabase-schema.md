@@ -1,10 +1,10 @@
-# Supabase Database Schema – Source of Truth
+# Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 2025-12-03  
+Last updated: 2025-12-10  
 
-This file is the single source of truth for the live Supabase database.
-All API routes, triggers, services, and frontend queries MUST match this file.
+This file is the single source of truth for the live Supabase database.  
+All API routes, triggers, services, and frontend queries MUST match this file.  
 Cursor must NOT infer, rename, or “standardise” columns without explicitly asking me and updating this file when granted permission first.
 
 ---
@@ -86,8 +86,8 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 | created_at | timestamptz | YES | now() | Created |
 
 ⚠️ **Important:** Notifications use:
-- `artist_id` (recipient)
-- `triggered_by` (triggerer)
+- `artist_id` → recipient  
+- `triggered_by` → actor  
 NOT `user_id` or `from_user_id`.
 
 ---
@@ -136,39 +136,14 @@ NOT `user_id` or `from_user_id`.
 | created_at | timestamptz | NO | now() | Created |
 | avatar_url | text | YES | – | Avatar |
 | verified_artist | boolean | YES | false | Verified artist |
+| suspended_until | timestamptz | YES | – | Temporary suspension |
+| banned | boolean | YES | false | Permanent ban flag |
+| warning_count | integer | YES | 0 | Moderation warnings |
 
 ---
 
-## reserved_artist_usernames
+## reports
 | Column | Type | Nullable | Default | Notes |
 |--------|------|----------|---------|-------|
-| id | integer | NO | auto-increment | Primary key |
-| username | varchar | NO | – | Reserved name |
-| created_at | timestamp | YES | now() | Created |
-
----
-
-## user_karma
-| Column | Type | Nullable | Default | Notes |
-|--------|------|----------|---------|-------|
-| user_id | uuid | NO | – | FK → profiles.id |
-| score | integer | YES | 0 | Karma score |
-| correct_ids | integer | YES | 0 | Correct IDs |
-
----
-
-## Triggers
-### on_like_notify
-- Table: public.post_likes
-- Timing: AFTER INSERT
-- Function: handle_notifications()
-
----
-
-## Functions
-### handle_notifications()
-- Creates notifications for:
-  - post_likes
-  - comments
-  - moderator_actions
-- Must NEVER throw or block the original write
+| id | uuid | NO | gen_random_uuid() | Primary key |
+| reporter_id | uuid | YES | – |_

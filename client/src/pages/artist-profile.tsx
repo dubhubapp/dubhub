@@ -152,7 +152,7 @@ export default function ArtistProfile() {
           <div className="text-center mb-6">
             <div className="relative inline-block">
               <img 
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop&crop=face"
+                src={undefined}
                 alt="Artist Profile" 
                 className="w-20 h-20 rounded-full mx-auto border-3 border-accent"
               />
@@ -241,7 +241,7 @@ export default function ArtistProfile() {
                 >
                   <div className="flex items-start space-x-3">
                     <img 
-                      src={track.user.avatar_url || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face"}
+                      src={track.user.avatar_url || undefined}
                       alt="User Profile" 
                       className="w-10 h-10 rounded-full"
                     />

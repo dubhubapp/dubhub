@@ -122,7 +122,7 @@ BEGIN
     IF NEW.account_type = 'artist' THEN
       NEW.avatar_url := 'https://uasgdviuzvdtsythbbwq.supabase.co/storage/v1/object/public/profile_uploads/artists/default_artist_avatar.png';
     ELSE
-      NEW.avatar_url := 'https://uasgdviuzvdtsythbbwq.supabase.co/storage/v1/object/public/profile_uploads/artists/default_artist_avatar.png';
+      NEW.avatar_url := 'https://uasgdviuzvdtsythbbwq.supabase.co/storage/v1/object/public/profile_uploads/users/default_user_avatar.png';
     END IF;
   END IF;
   RETURN NEW;

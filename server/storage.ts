@@ -23,6 +23,7 @@ export interface IStorage {
   toggleLike(userId: string, postId: string): Promise<boolean>;
   getPostLikeCount(postId: string): Promise<number>;
   isPostLikedByUser(userId: string, postId: string): Promise<boolean>;
+  getUserLikedPosts(userId: string): Promise<any[]>;
 
   // Comments
   createComment(postId: string, userId: string, body: string, artistTag?: string | null): Promise<any>;
@@ -165,7 +166,7 @@ export class DatabaseStorage implements IStorage {
                    WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
                  )`
               : sql`false`
-          } AS is_liked
+          } AS has_liked
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -179,6 +180,7 @@ export class DatabaseStorage implements IStorage {
           FROM comments c
           WHERE c.post_id = p.id
         ) c_counts ON TRUE
+        WHERE p.verification_status != 'under_review'
         ORDER BY p.created_at DESC
         LIMIT ${limit}
         OFFSET ${offset}
@@ -204,7 +206,7 @@ export class DatabaseStorage implements IStorage {
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
-        isLiked: !!row.is_liked,
+        hasLiked: !!row.has_liked,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -215,19 +217,36 @@ export class DatabaseStorage implements IStorage {
         },
       }));
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isConnectionError = errorMessage.includes('ENOTFOUND') || 
+                                errorMessage.includes('ECONNREFUSED') ||
+                                errorMessage.includes('timeout') ||
+                                errorMessage.includes('getaddrinfo');
+      
       console.error("[getPosts] Error:", error);
       console.error("[getPosts] Error details:", {
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
         limit,
         offset,
         currentUserId,
+        isConnectionError
       });
-      throw error;
+      
+      if (isConnectionError) {
+        console.error("[getPosts] ⚠️  Database connection failed. Possible causes:");
+        console.error("[getPosts] ⚠️  1. Supabase database may be paused (free tier pauses after inactivity)");
+        console.error("[getPosts] ⚠️  2. DATABASE_URL may be incorrect");
+        console.error("[getPosts] ⚠️  3. Network connectivity issues");
+        console.error("[getPosts] ⚠️  Check your Supabase dashboard and verify DATABASE_URL");
+      }
+      
+      // Return empty array instead of crashing
+      return [];
     }
   }
 
-  async getPost(id: string): Promise<any | undefined> {
+  async getPost(id: string, currentUserId?: string): Promise<any | undefined> {
     try {
       const result = await db.execute(sql`
         SELECT
@@ -250,10 +269,30 @@ export class DatabaseStorage implements IStorage {
           pr.avatar_url AS profile_avatar_url,
           pr.account_type AS profile_account_type,
           pr.verified_artist AS profile_verified_artist,
-          pr.moderator AS profile_moderator
+          pr.moderator AS profile_moderator,
+          COALESCE(pl_counts.likes_count, 0)    AS likes_count,
+          COALESCE(c_counts.comments_count, 0)  AS comments_count,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM post_likes pl2
+                   WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
+                 )`
+              : sql`false`
+          } AS has_liked
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS likes_count
+          FROM post_likes pl
+          WHERE pl.post_id = p.id
+        ) pl_counts ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS comments_count
+          FROM comments c
+          WHERE c.post_id = p.id
+        ) c_counts ON TRUE
         WHERE p.id = ${id}
         LIMIT 1
       `);
@@ -277,6 +316,9 @@ export class DatabaseStorage implements IStorage {
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
         createdAt: row.created_at,
+        likes: Number(row.likes_count ?? 0),
+        comments: Number(row.comments_count ?? 0),
+        hasLiked: !!row.has_liked,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -363,6 +405,84 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getUserLikedPosts(userId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.user_id,
+          p.title,
+          p.video_url,
+          p.genre,
+          p.description,
+          p.location,
+          p.dj_name,
+          p.verification_status,
+          p.is_verified_community,
+          p.verified_by_moderator,
+          p.verified_comment_id,
+          p.verified_by,
+          p.created_at,
+          pr.id         AS profile_id,
+          pr.username   AS profile_username,
+          pr.avatar_url AS profile_avatar_url,
+          pr.account_type AS profile_account_type,
+          pr.verified_artist AS profile_verified_artist,
+          pr.moderator AS profile_moderator,
+          COALESCE(pl_counts.likes_count, 0)    AS likes_count,
+          COALESCE(c_counts.comments_count, 0)  AS comments_count
+        FROM post_likes pl
+        JOIN posts p ON p.id = pl.post_id
+        JOIN profiles pr ON pr.id = p.user_id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS likes_count
+          FROM post_likes pl2
+          WHERE pl2.post_id = p.id
+        ) pl_counts ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS comments_count
+          FROM comments c
+          WHERE c.post_id = p.id
+        ) c_counts ON TRUE
+        WHERE pl.user_id = ${userId}
+        ORDER BY pl.created_at DESC
+      `);
+
+      const rows = (result as any).rows || [];
+
+      return rows.map((row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        title: row.title,
+        videoUrl: row.video_url,
+        genre: row.genre,
+        description: row.description,
+        location: row.location,
+        djName: row.dj_name,
+        verificationStatus: row.verification_status,
+        isVerifiedCommunity: row.is_verified_community,
+        verifiedByModerator: row.verified_by_moderator,
+        verifiedCommentId: row.verified_comment_id,
+        verifiedBy: row.verified_by,
+        createdAt: row.created_at,
+        likes: Number(row.likes_count ?? 0),
+        comments: Number(row.comments_count ?? 0),
+        hasLiked: true,
+        user: {
+          id: row.profile_id,
+          username: row.profile_username,
+          avatar_url: row.profile_avatar_url,
+          account_type: row.profile_account_type,
+          verified_artist: row.profile_verified_artist,
+          moderator: row.profile_moderator,
+        },
+      }));
+    } catch (error) {
+      console.error("[getUserLikedPosts] Error:", error);
+      return [];
+    }
+  }
+
   async getPostComments(postId: string, currentUserId?: string): Promise<any[]> {
     try {
       const result = await db.execute(sql`
@@ -391,10 +511,10 @@ export class DatabaseStorage implements IStorage {
         body: row.body,
         artistTag: row.artist_tag,
         createdAt: row.created_at,
-        user: {
+          user: {
           id: row.user_id,
           username: row.username,
-          avatarUrl: row.avatar_url,
+          avatar_url: row.avatar_url,
         },
       }));
     } catch (error) {
@@ -638,7 +758,7 @@ export class DatabaseStorage implements IStorage {
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
-        isLiked: !!row.is_liked,
+        hasLiked: !!row.has_liked,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -744,7 +864,19 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // UUID validation helper
+  private isValidUUID(uuid: string): boolean {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
+  }
+
   async getUserNotifications(userId: string): Promise<NotificationWithUser[]> {
+    // Validate UUID before querying
+    if (!this.isValidUUID(userId)) {
+      console.error("[getUserNotifications] Invalid UUID:", userId);
+      throw new Error("Invalid user ID format. Expected UUID.");
+    }
+    
     try {
       const result = await db.execute(sql`
         SELECT
@@ -810,6 +942,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markAllNotificationsAsRead(userId: string): Promise<boolean> {
+    // Validate UUID before querying
+    if (!this.isValidUUID(userId)) {
+      console.error("[markAllNotificationsAsRead] Invalid UUID:", userId);
+      throw new Error("Invalid user ID format. Expected UUID.");
+    }
+    
     try {
       await db.execute(sql`
         UPDATE notifications
@@ -817,7 +955,7 @@ export class DatabaseStorage implements IStorage {
         WHERE artist_id = ${userId}
           AND read = false
       `);
-      return true;
+    return true;
     } catch (error) {
       console.error("[markAllNotificationsAsRead] Error:", error);
       return false;
@@ -825,15 +963,42 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUnreadNotificationCount(userId: string): Promise<number> {
-    const result = await db.execute(sql`
-      SELECT COUNT(*)::int AS count
-      FROM notifications
-      WHERE artist_id = ${userId}
-        AND read = false
-    `);
+    // Validate UUID before querying
+    if (!this.isValidUUID(userId)) {
+      console.error("[getUnreadNotificationCount] Invalid UUID:", userId);
+      throw new Error("Invalid user ID format. Expected UUID.");
+    }
+    
+    try {
+      const result = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM notifications
+        WHERE artist_id = ${userId}
+          AND read = false
+      `);
 
-    const row = (result as any).rows?.[0];
-    return Number(row?.count ?? 0);
+      const row = (result as any).rows?.[0];
+      return Number(row?.count ?? 0);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isConnectionError = errorMessage.includes('ENOTFOUND') || 
+                                errorMessage.includes('ECONNREFUSED') ||
+                                errorMessage.includes('timeout') ||
+                                errorMessage.includes('getaddrinfo');
+      
+      console.error("[getUnreadNotificationCount] Error:", error);
+      
+      if (isConnectionError) {
+        console.error("[getUnreadNotificationCount] ⚠️  Database connection failed. Possible causes:");
+        console.error("[getUnreadNotificationCount] ⚠️  1. Supabase database may be paused (free tier pauses after inactivity)");
+        console.error("[getUnreadNotificationCount] ⚠️  2. DATABASE_URL may be incorrect");
+        console.error("[getUnreadNotificationCount] ⚠️  3. Network connectivity issues");
+        console.error("[getUnreadNotificationCount] ⚠️  Check your Supabase dashboard and verify DATABASE_URL");
+      }
+      
+      // Return 0 instead of crashing
+      return 0;
+    }
   }
 
   async createReport(data: { postId: string; reportedBy: string; reason: string }): Promise<any> {

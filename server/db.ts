@@ -35,7 +35,12 @@ try {
     ssl: sslConfig,
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000, // Increased timeout for paused databases
+  });
+  
+  // Handle pool errors gracefully
+  pool.on('error', (err) => {
+    console.error('[DB] Unexpected error on idle client:', err);
   });
 } catch (error) {
   console.error('Failed to create database pool:', error);
