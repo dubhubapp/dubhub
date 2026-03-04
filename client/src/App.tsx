@@ -13,6 +13,9 @@ import Submit from "@/pages/submit";
 import TrimVideo from "@/pages/trim-video";
 import SubmitMetadata from "@/pages/submit-metadata";
 import ReleaseTracker from "@/pages/release-tracker";
+import ReleaseDetail from "@/pages/release-detail";
+import ReleaseCreate from "@/pages/release-create";
+import ReleaseEdit from "@/pages/release-edit";
 import UserProfile from "@/pages/user-profile";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
@@ -205,6 +208,9 @@ function App() {
               <Route path="/submit" component={Submit} />
               <Route path="/trim-video" component={TrimVideo} />
               <Route path="/submit-metadata" component={SubmitMetadata} />
+              <Route path="/releases/new" component={ReleaseCreate} />
+              <Route path="/releases/:id/edit" component={ReleaseEdit} />
+              <Route path="/releases/:id" component={ReleaseDetail} />
               <Route path="/releases" component={ReleaseTracker} />
               <Route path="/leaderboard" component={Leaderboard} />
               <Route path="/profile" component={UserProfileWithSignOut} />

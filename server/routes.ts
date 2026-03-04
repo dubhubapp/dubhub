@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { supabase } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { insertCommentSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
@@ -26,23 +27,45 @@ function detectArtistMentions(text: string): string[] {
   return mentions;
 }
 
-// Helper function to process artist tags in comments
-async function processArtistTags(commentId: string, postId: string, userId: string, content: string) {
-  const mentions = detectArtistMentions(content);
-  
-  for (const mention of mentions) {
-    // Try to find verified artist by username
-    const artist = await storage.getUserByUsername(mention);
-    
-    if (artist && artist.verified_artist) {
-      // Create artist video tag
-      await storage.createArtistVideoTag({
-        postId,
-        artistId: artist.id,
-        taggedBy: userId,
-      });
+// Helper: process @mentions, create artist_video_tags, return list of tagged artist ids for notifications
+async function processArtistTags(
+  commentId: string,
+  postId: string,
+  userId: string,
+  content: string
+): Promise<{ artistId: string }[]> {
+  const tagged: { artistId: string }[] = [];
+  try {
+    const mentions = detectArtistMentions(content);
+    const seenArtistIds = new Set<string>();
+
+    for (const mention of mentions) {
+      const artist = await storage.getUserByUsername(mention);
+      if (!artist || !artist.id || !artist.verified_artist) continue;
+      if (seenArtistIds.has(artist.id)) continue;
+      seenArtistIds.add(artist.id);
+
+      try {
+        await storage.createArtistVideoTag({
+          postId,
+          artistId: artist.id,
+          taggedBy: userId,
+        });
+        tagged.push({ artistId: artist.id });
+        // Set comment.artist_tag to first tagged artist for artist confirmation flow
+        if (tagged.length === 1) {
+          await db.execute(sql`
+            UPDATE comments SET artist_tag = ${artist.id} WHERE id = ${commentId}
+          `);
+        }
+      } catch (tagError) {
+        console.error("[processArtistTags] Failed to create tag for artist", artist.id, tagError);
+      }
     }
+  } catch (err) {
+    console.error("[processArtistTags] Error processing mentions:", err);
   }
+  return tagged;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -477,24 +500,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get posts feed
+  // Get posts feed — decode JWT via optionalSupabaseUser; attach viewer_id and consistent owner/status fields
   app.get("/api/posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
-    console.log("[/api/posts] incoming request", {
-      query: req.query,
-    });
+    const currentUserId = req.dbUser?.id ?? null;
+    if (process.env.NODE_ENV === "development") {
+      console.log("[/api/posts] currentUserId from JWT:", currentUserId ?? "(none)");
+    }
     try {
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = parseInt(req.query.offset as string) || 0;
       const genre = req.query.genre as string;
-      const currentUserId = req.dbUser?.id || undefined;
-      
-      let posts = await storage.getPosts(limit, offset, currentUserId);
-      
+
+      let posts = await storage.getPosts(limit, offset, currentUserId ?? undefined);
+
       if (genre && genre !== "all") {
-        posts = posts.filter(post => post.genre?.toLowerCase() === genre.toLowerCase());
+        posts = posts.filter((post: any) => post.genre?.toLowerCase() === genre.toLowerCase());
       }
-      
-      res.json(posts);
+
+      const payload = posts.map((p: any) => ({
+        ...p,
+        user_id: p.userId,
+        viewer_id: currentUserId,
+        verification_status: p.verificationStatus,
+        current_user_tagged_as_artist: !!p.currentUserTaggedAsArtist,
+      }));
+
+      res.json(payload);
     } catch (error) {
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = parseInt(req.query.offset as string) || 0;
@@ -514,19 +545,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get single post by ID
+  // Eligible posts for release attachment (excludes posts already attached to any release; optional release_id for edit mode)
+  app.get("/api/posts/eligible-for-release", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist") return res.status(403).json({ message: "Artists only" });
+      const currentReleaseId = typeof req.query.release_id === "string" ? req.query.release_id : undefined;
+      const posts = await storage.getEligiblePostsForArtist(req.dbUser.id, currentReleaseId);
+      res.status(200).json(posts ?? []);
+    } catch (error) {
+      console.error("[/api/posts/eligible-for-release] Error:", error);
+      res.status(500).json({ message: "Failed to get eligible posts" });
+    }
+  });
+
+  // Get single post by ID — same shape as feed: user_id, viewer_id, verification_status
   app.get("/api/posts/:id", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const postId = req.params.id;
-      const currentUserId = req.dbUser?.id || undefined;
-      
-      const post = await storage.getPost(postId, currentUserId);
-      
+      const currentUserId = req.dbUser?.id ?? null;
+
+      const post = await storage.getPost(postId, currentUserId ?? undefined);
+
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
       }
-      
-      res.json(post);
+
+      const payload = {
+        ...post,
+        user_id: post.userId,
+        viewer_id: currentUserId,
+        verification_status: post.verificationStatus,
+        current_user_tagged_as_artist: !!post.currentUserTaggedAsArtist,
+      };
+      res.json(payload);
     } catch (error) {
       console.error("[/api/posts/:id] Error:", error);
       res.status(500).json({ message: "Failed to fetch post" });
@@ -808,25 +860,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
-      const { body, artistTag } = req.body;
+      const { body } = req.body;
       
       if (!body || !body.trim()) {
         return res.status(400).json({ message: "Comment body is required" });
       }
       
+      // Comment row: artist_tag is UUID (FK to artist_video_tags.id). We never store username here.
+      // @mentions are handled in processArtistTags and create artist_video_tags rows.
       const comment = await storage.createComment(
         postId,
         userId,
         body.trim(),
-        artistTag || null
+        null
       );
       
-      // Process artist mentions in the comment
-      await processArtistTags(comment.id, postId, userId, body.trim());
-      
-      // Note: Notifications for comments are handled by the database trigger
-      // No manual notification creation needed
-      
+      const commenterUsername = req.dbUser?.username ?? "Someone";
+      const taggedArtists = await processArtistTags(comment.id, postId, userId, body.trim());
+
+      for (const { artistId } of taggedArtists) {
+        try {
+          await storage.createNotification({
+            artistId,
+            triggeredBy: userId,
+            postId: postId,
+            message: `@${commenterUsername} tagged you in a comment. Open the post and tap "ID Track" to confirm or deny if it's your track.`,
+          });
+        } catch (notifErr) {
+          console.error("[Comment] Failed to create tag notification for artist", artistId, notifErr);
+        }
+      }
+
       res.status(201).json(comment);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1036,6 +1100,160 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Community verification error:", error);
       res.status(500).json({ message: "Failed to verify post" });
+    }
+  });
+
+  // Artist confirmation endpoint (tagged verified artists only)
+  app.post("/api/posts/:id/artist-confirm", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const postId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const artistId = req.dbUser.id;
+      const { commentId, title, collaborators } = req.body || {};
+
+      if (!commentId) {
+        return res.status(400).json({ message: "Comment ID is required" });
+      }
+
+      // Profile must be artist and verified
+      const profile = await storage.getUser(artistId);
+      if (!profile) {
+        return res.status(403).json({ code: "VERIFIED_ARTIST_REQUIRED", message: "Verified artist profile required to confirm tracks." });
+      }
+      if (profile.account_type !== "artist") {
+        return res.status(403).json({ code: "VERIFIED_ARTIST_REQUIRED", message: "Verified artist profile required to confirm tracks." });
+      }
+      if (!profile.verified_artist) {
+        return res.status(403).json({ code: "VERIFIED_ARTIST_REQUIRED", message: "Verified artist profile required to confirm tracks." });
+      }
+
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const commentResult = await db.execute(sql`
+        SELECT id, post_id, artist_tag FROM comments WHERE id = ${commentId} LIMIT 1
+      `);
+      const commentRows = (commentResult as any).rows || [];
+      if (commentRows.length === 0) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      const comment = commentRows[0];
+      if (comment.post_id !== post.id) {
+        return res.status(403).json({ message: "Comment does not belong to this post" });
+      }
+      // Artist must be tagged: either comment.artist_tag = artistId, or artist_video_tags has this post+artist
+      const tagCheck = await db.execute(sql`
+        SELECT 1 FROM artist_video_tags WHERE post_id = ${postId} AND artist_id = ${artistId} LIMIT 1
+      `);
+      const tagRows = (tagCheck as any).rows || [];
+      if (tagRows.length === 0 && comment.artist_tag !== artistId) {
+        return res.status(403).json({ message: "You must be tagged in a comment on this post to confirm" });
+      }
+
+      const username = profile.username || "Artist";
+      const body = title
+        ? (collaborators ? `✅ @${username} confirmed: ${title} — ${collaborators}` : `✅ @${username} confirmed: ${title}`)
+        : collaborators
+          ? `✅ @${username} confirmed — ${collaborators}`
+          : `✅ @${username} confirmed`;
+
+      const artistComment = await storage.createComment(postId, artistId, body, null);
+      const artistCommentId = artistComment?.id;
+
+      await db.execute(sql`
+        UPDATE posts
+        SET is_verified_artist = true,
+            artist_verified_by = ${artistId},
+            verified_comment_id = ${artistCommentId},
+            denied_by_artist = false,
+            denied_at = NULL,
+            verification_status = 'identified'
+        WHERE id = ${postId}
+      `);
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("[artist-confirm]", { postId, taggedCommentId: commentId, insertedArtistCommentId: artistCommentId, updatedVerifiedCommentId: artistCommentId });
+      }
+
+      res.json({
+        message: "Post confirmed by artist",
+        insertedArtistCommentId: artistCommentId,
+        verifiedCommentId: artistCommentId,
+        postId,
+      });
+    } catch (error) {
+      console.error("Artist confirm error:", error);
+      res.status(500).json({ message: "Failed to confirm post" });
+    }
+  });
+
+  // Artist deny endpoint (tagged verified artists only)
+  app.post("/api/posts/:id/artist-deny", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const postId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const artistId = req.dbUser.id;
+      const { commentId } = req.body || {};
+
+      if (!commentId) {
+        return res.status(400).json({ message: "Comment ID is required" });
+      }
+
+      const profile = await storage.getUser(artistId);
+      if (!profile) {
+        return res.status(403).json({ code: "VERIFIED_ARTIST_REQUIRED", message: "Verified artist profile required to confirm tracks." });
+      }
+      if (profile.account_type !== "artist") {
+        return res.status(403).json({ code: "VERIFIED_ARTIST_REQUIRED", message: "Verified artist profile required to confirm tracks." });
+      }
+      if (!profile.verified_artist) {
+        return res.status(403).json({ code: "VERIFIED_ARTIST_REQUIRED", message: "Verified artist profile required to confirm tracks." });
+      }
+
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const commentResult = await db.execute(sql`
+        SELECT id, post_id, artist_tag FROM comments WHERE id = ${commentId} LIMIT 1
+      `);
+      const commentRows = (commentResult as any).rows || [];
+      if (commentRows.length === 0) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      const comment = commentRows[0];
+      if (comment.post_id !== post.id) {
+        return res.status(403).json({ message: "Comment does not belong to this post" });
+      }
+      const tagCheck = await db.execute(sql`
+        SELECT 1 FROM artist_video_tags WHERE post_id = ${postId} AND artist_id = ${artistId} LIMIT 1
+      `);
+      const tagRows = (tagCheck as any).rows || [];
+      if (tagRows.length === 0 && comment.artist_tag !== artistId) {
+        return res.status(403).json({ message: "You must be tagged in a comment on this post to deny" });
+      }
+
+      await db.execute(sql`
+        UPDATE posts
+        SET denied_by_artist = true,
+            denied_at = NOW(),
+            is_verified_artist = false,
+            artist_verified_by = NULL,
+            verified_comment_id = NULL
+        WHERE id = ${postId}
+      `);
+
+      res.json({ message: "Post denied by artist" });
+    } catch (error) {
+      console.error("Artist deny error:", error);
+      res.status(500).json({ message: "Failed to deny post" });
     }
   });
 
@@ -2205,19 +2423,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get verified artists for autocomplete
+  // Eligible posts for release attachment (path cannot conflict with :id routes)
+  app.get("/api/artists/eligible-posts-for-release", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist") return res.status(403).json({ message: "Artists only" });
+      const posts = await storage.getEligiblePostsForArtist(req.dbUser.id);
+      res.status(200).json(posts ?? []);
+    } catch (error) {
+      console.error("[/api/artists/eligible-posts-for-release] Error:", error);
+      res.status(500).json({ message: "Failed to get eligible posts" });
+    }
+  });
+
+  // Get verified artists for autocomplete / collaborator invite search
   app.get("/api/artists/verified", async (req, res) => {
     try {
-      const result = await db.execute(sql`
-        SELECT 
-          id,
-          username,
-          avatar_url,
-          verified_artist
-        FROM profiles
-        WHERE account_type = 'artist' AND verified_artist = true
-        ORDER BY username ASC
-      `);
+      const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
+      const result = await db.execute(search
+        ? sql`
+            SELECT id, username, avatar_url, verified_artist
+            FROM profiles
+            WHERE account_type = 'artist' AND verified_artist = true
+              AND LOWER(username) LIKE ${"%" + search + "%"}
+            ORDER BY username ASC
+            LIMIT 20
+          `
+        : sql`
+            SELECT id, username, avatar_url, verified_artist
+            FROM profiles
+            WHERE account_type = 'artist' AND verified_artist = true
+            ORDER BY username ASC
+            LIMIT 100
+          `
+      );
       
       const artists = (result as any).rows || [];
       res.json(artists.map((artist: any) => ({
@@ -2231,6 +2470,339 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching verified artists:", error);
       res.status(500).json({ message: "Failed to get verified artists" });
+    }
+  });
+
+  // --- Releases (post-based) ---
+  const releaseArtworkUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (allowed.includes(file.mimetype)) cb(null, true);
+      else cb(new Error('Invalid file type. Only image files are allowed.'));
+    },
+  });
+
+  function releaseArtworkPublicUrl(artworkUrl: string | null | undefined): string | null {
+    if (!artworkUrl) return null;
+    if (artworkUrl.startsWith('http')) return artworkUrl;
+    const { data } = supabase.storage.from('release-artworks').getPublicUrl(artworkUrl);
+    return data?.publicUrl ?? null;
+  }
+
+  app.get("/api/releases/feed", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.dbUser?.id ?? null;
+      if (!userId) return res.json([]);
+      const view = req.query.view as "owned" | "collaborations" | "all" | undefined;
+      const feed = await storage.getReleasesFeed(userId, view);
+      if (process.env.NODE_ENV === "development") {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        (res as any).set("etag", false);
+      }
+      const withArtworkAndLinks = await Promise.all(
+        feed.map(async (r: any) => {
+          const links = await storage.getReleaseLinks(r.id);
+          return {
+            ...r,
+            artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
+            links: Array.isArray(links) ? links : [],
+          };
+        })
+      );
+      if (process.env.NODE_ENV === "development" && view === "owned") {
+        const withZeroLinks = withArtworkAndLinks.filter((r: any) => !r.links?.length);
+        console.log("[/api/releases/feed] owned: total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
+      }
+      res.json(withArtworkAndLinks);
+    } catch (error) {
+      console.error("[/api/releases/feed] Error:", error);
+      res.status(500).json({ message: "Failed to get releases feed" });
+    }
+  });
+
+  app.get("/api/releases/:id", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const userId = req.dbUser?.id ?? null;
+      const isOwner = userId && release.artistId === userId;
+      const isCollab = userId && (release.collaborators || []).some((c: any) => c.artistId === userId);
+      if (!release.isPublic && !isOwner && !isCollab) {
+        return res.status(404).json({ message: "Release not found" });
+      }
+      const artworkPath = release.artworkUrl || null;
+      const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
+      res.json({ ...release, artworkPath, artworkUrl });
+    } catch (error) {
+      console.error("[/api/releases/:id] Error:", error);
+      res.status(500).json({ message: "Failed to get release" });
+    }
+  });
+
+  app.post("/api/releases/upload-artwork", withSupabaseUser, releaseArtworkUpload.single('artwork'), async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
+      if (!req.file) return res.status(400).json({ message: "No artwork file provided" });
+      const { supabase } = await import('./supabaseClient');
+      const ext = req.file.originalname.split('.').pop()?.toLowerCase() || 'jpg';
+      const storagePath = `${req.dbUser.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('release-artworks').upload(storagePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        cacheControl: '3600',
+        upsert: false,
+      });
+      if (error) {
+        console.error("[/api/releases/upload-artwork] Supabase error:", error);
+        return res.status(500).json({ message: "Failed to upload artwork" });
+      }
+      res.json({ path: storagePath });
+    } catch (error) {
+      console.error("[/api/releases/upload-artwork] Error:", error);
+      res.status(500).json({ message: "Failed to upload artwork" });
+    }
+  });
+
+  app.post("/api/releases", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
+      const { title, release_date, artwork_url } = req.body;
+      if (!title || !release_date) return res.status(400).json({ message: "title and release_date are required" });
+      const releaseDate = new Date(release_date);
+      if (isNaN(releaseDate.getTime())) return res.status(400).json({ message: "Invalid release_date" });
+      const release = await storage.createRelease({
+        artistId: req.dbUser.id,
+        title: String(title).trim(),
+        releaseDate,
+        artworkUrl: artwork_url?.trim() || null,
+      });
+      const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
+      res.status(201).json({ ...release, artworkUrl });
+    } catch (error) {
+      console.error("[/api/releases] Error:", error);
+      res.status(500).json({ message: "Failed to create release" });
+    }
+  });
+
+  app.patch("/api/releases/:id", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
+      const { title, release_date, artwork_url } = req.body;
+      const updates: { title?: string; releaseDate?: Date; artworkUrl?: string | null } = {};
+      if (title !== undefined) updates.title = String(title).trim();
+      if (release_date !== undefined) {
+        const d = new Date(release_date);
+        if (!isNaN(d.getTime())) updates.releaseDate = d;
+      }
+      if (artwork_url !== undefined) updates.artworkUrl = artwork_url?.trim() || null;
+      const release = await storage.updateRelease(req.params.id, req.dbUser.id, updates);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const artworkPath = release.artworkUrl || null;
+      const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
+      res.json({ ...release, artworkPath, artworkUrl });
+    } catch (error) {
+      console.error("[/api/releases/:id] PATCH Error:", error);
+      res.status(500).json({ message: "Failed to update release" });
+    }
+  });
+
+  const RELEASE_LINK_PLATFORMS = ['spotify', 'apple_music', 'soundcloud', 'beatport', 'bandcamp', 'juno', 'deezer', 'amazon_music', 'tidal', 'youtube_music', 'free_download', 'dub_pack', 'other'] as const;
+  function normalizePlatformForDb(raw: string): string {
+    const s = String(raw).trim().toLowerCase();
+    if (s === 'youtube') return 'youtube_music';
+    if (s === 'apple') return 'apple_music';
+    return s;
+  }
+
+  app.post("/api/releases/:id/links", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Not your release" });
+      const { platform, url, link_type } = req.body;
+      if (!platform || !url) return res.status(400).json({ message: "platform and url are required" });
+      const normalized = normalizePlatformForDb(platform);
+      if (!RELEASE_LINK_PLATFORMS.includes(normalized as typeof RELEASE_LINK_PLATFORMS[number])) {
+        return res.status(400).json({
+          message: "Invalid platform",
+          allowed: [...RELEASE_LINK_PLATFORMS],
+        });
+      }
+      await storage.upsertReleaseLink(req.params.id, normalized, String(url).trim(), link_type?.trim() || null);
+      const links = await storage.getReleaseLinks(req.params.id);
+      res.json(links);
+    } catch (error) {
+      console.error("[/api/releases/:id/links] Error:", error);
+      res.status(500).json({ message: "Failed to upsert link" });
+    }
+  });
+
+  app.delete("/api/releases/:id/links/:platform", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Not your release" });
+      await storage.deleteReleaseLink(req.params.id, req.params.platform);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/releases/:id/links/:platform] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to delete link" });
+    }
+  });
+
+  app.post("/api/releases/:id/attach-posts", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const canManage = await storage.canManageRelease(req.params.id, req.dbUser.id);
+      if (!canManage) return res.status(403).json({ message: "Not authorized to manage this release" });
+      const { post_ids } = req.body;
+      const ids = Array.isArray(post_ids) ? post_ids : [];
+      const { attached, rejected, postAlreadyAttached } = await storage.attachPostsToRelease(req.params.id, req.dbUser.id, ids);
+      if (postAlreadyAttached && postAlreadyAttached.length > 0) {
+        return res.status(409).json({
+          code: "POST_ALREADY_ATTACHED",
+          message: "This post is already attached to another release.",
+          postIds: postAlreadyAttached,
+          attached,
+          rejected,
+        });
+      }
+      res.json({ attached, rejected });
+    } catch (error) {
+      console.error("[/api/releases/:id/attach-posts] Error:", error);
+      res.status(500).json({ message: "Failed to attach posts" });
+    }
+  });
+
+  app.delete("/api/releases/:id/attach-posts", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const canManage = await storage.canManageRelease(req.params.id, req.dbUser.id);
+      if (!canManage) return res.status(403).json({ message: "Not authorized to manage this release" });
+      const releaseDate = release.releaseDate ? new Date(release.releaseDate) : null;
+      if (releaseDate && releaseDate <= new Date()) {
+        return res.status(409).json({
+          code: "RELEASE_LOCKED",
+          message: "This release is already out. Attached posts can no longer be changed.",
+        });
+      }
+      const { post_ids } = req.body;
+      const ids = Array.isArray(post_ids) ? post_ids : [];
+      const result = await storage.detachPostsFromRelease(req.params.id, req.dbUser.id, ids);
+      if (result.locked) {
+        return res.status(409).json({
+          code: "RELEASE_LOCKED",
+          message: "This release is already out. Attached posts can no longer be changed.",
+        });
+      }
+      if (!result.ok) return res.status(400).json({ message: "Detach failed" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/releases/:id/attach-posts] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to detach posts" });
+    }
+  });
+
+  app.get("/api/releases/:id/collaborators", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const userId = req.dbUser.id;
+      const isOwner = release.artistId === userId;
+      const isCollab = (release.collaborators || []).some((c: any) => c.artistId === userId);
+      if (!isOwner && !isCollab) return res.status(403).json({ message: "Not authorized" });
+      const collaborators = await storage.getReleaseCollaborators(req.params.id);
+      res.json(collaborators);
+    } catch (error) {
+      console.error("[/api/releases/:id/collaborators] Error:", error);
+      res.status(500).json({ message: "Failed to get collaborators" });
+    }
+  });
+
+  app.post("/api/releases/:id/collaborators/invite", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const { artist_id } = req.body;
+      if (!artist_id) return res.status(400).json({ message: "artist_id is required" });
+      const result = await storage.inviteCollaborator(req.params.id, req.dbUser.id, String(artist_id));
+      if (!result.ok) return res.status(400).json({ message: result.error || "Invite failed" });
+      const collaborators = await storage.getReleaseCollaborators(req.params.id);
+      res.json({ ok: true, collaborators });
+    } catch (error) {
+      console.error("[/api/releases/:id/collaborators/invite] Error:", error);
+      res.status(500).json({ message: "Failed to invite" });
+    }
+  });
+
+  app.post("/api/releases/:id/collaborators/:collabId/accept", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const ok = await storage.acceptCollaborator(req.params.id, req.params.collabId, req.dbUser.id);
+      if (!ok) return res.status(403).json({ message: "Cannot accept" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/releases/:id/collaborators/:collabId/accept] Error:", error);
+      res.status(500).json({ message: "Failed to accept" });
+    }
+  });
+
+  app.post("/api/releases/:id/collaborators/:collabId/reject", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const ok = await storage.rejectCollaborator(req.params.id, req.params.collabId, req.dbUser.id);
+      if (!ok) return res.status(403).json({ message: "Cannot reject" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/releases/:id/collaborators/:collabId/reject] Error:", error);
+      res.status(500).json({ message: "Failed to reject" });
+    }
+  });
+
+  app.delete("/api/releases/:id/collaborators/:collabId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const ok = await storage.removeCollaborator(req.params.id, req.params.collabId, req.dbUser.id);
+      if (!ok) return res.status(403).json({ message: "Cannot remove collaborator" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/releases/:id/collaborators/:collabId] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to remove" });
+    }
+  });
+
+  app.post("/api/releases/:id/notify-likers", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const ok = await storage.notifyReleaseLikers(req.params.id, req.dbUser.id);
+      if (!ok) return res.status(400).json({ message: "Already notified or no likers" });
+      res.json({ message: "Notifications sent" });
+    } catch (error) {
+      console.error("[/api/releases/:id/notify-likers] Error:", error);
+      res.status(500).json({ message: "Failed to notify likers" });
+    }
+  });
+
+  // Admin: Run release-day morning notifications (for testing; also runs via cron)
+  app.post("/api/admin/run-release-day-notifications", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (!req.dbUser.moderator) return res.status(403).json({ message: "Moderator only" });
+      const count = await storage.notifyReleaseDayLikers();
+      res.json({ sent: count, message: `Release-day notifications sent: ${count}` });
+    } catch (error) {
+      console.error("[/api/admin/run-release-day-notifications] Error:", error);
+      res.status(500).json({ message: "Failed to run release-day notifications" });
     }
   });
 

@@ -12,10 +12,12 @@ export function BottomNavigation() {
   const profileText = "Profile";
   const isModerator = userType === "moderator";
 
-  // Get unread notification count
+  // Get unread notification count (refetch so badge updates when tagged etc.)
   const { data: unreadCountData } = useQuery<{ count: number }>({
     queryKey: ["/api/user", currentUser?.id, "notifications", "unread-count"],
     enabled: !!currentUser?.id,
+    staleTime: 0,
+    refetchInterval: 20000,
   });
 
   const unreadCount = unreadCountData?.count || 0;

@@ -8,6 +8,7 @@ import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
+import { ArtistVerificationDialog } from "./artist-verification-dialog";
 import { ReportModal } from "./report-modal";
 import { 
   DropdownMenu, 
@@ -24,7 +25,8 @@ interface VideoCardProps {
 }
 
 export function VideoCard({ post, isHighlighted = false, showStatusBadge = false }: VideoCardProps) {
-  console.log("[VideoCard] render", { id: post.id, user: post.user, likes: post.likes, comments: post.comments });
+  const showVerifyDebug =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "verify";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
@@ -32,6 +34,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   const [likes, setLikes] = useState(post.likes);
   const [showComments, setShowComments] = useState(false);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
+  const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -220,7 +223,19 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   });
 
   const getStatusBadge = () => {
-    // Show identified badge if moderator confirmed
+    // Artist verification takes precedence: if artist confirmed, show Artist Verified
+    const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
+    const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+    if (isArtistVerifiedPost && artistVerifiedBy) {
+      return (
+        <span className="bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-artist-verified">
+          <CheckCircle className="w-3 h-3 inline mr-1" />
+          Artist Verified
+        </span>
+      );
+    }
+    
+    // Show identified badge if moderator confirmed (fallback when no artist verification)
     if (post.verificationStatus === "identified") {
       return (
         <span className="bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-identified">
@@ -377,22 +392,78 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
         {/* Save button removed - functionality no longer supported */}
 
-        {/* Community Verify button - only show for post owner if not already verified */}
-        {currentUser && post.userId === currentUser.id && post.verificationStatus === "unverified" && (
-          <button 
-            className="flex flex-col items-center group"
-            onClick={() => setShowVerificationDialog(true)}
-            data-testid="button-community-verify"
-          >
-            <div className="w-12 h-12 rounded-full bg-blue-500/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-              <ShieldCheck className="w-6 h-6 text-blue-400" />
-            </div>
-            <span className="text-xs mt-1 font-medium text-blue-400">ID Track</span>
-          </button>
-        )}
+        {/* Mark comment as correct (owner) / ID Track (tagged artist): owner needs unverified + comments; artist can confirm/deny even if community verified */}
+        {(() => {
+          const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
+          const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
+          const status = post.verificationStatus ?? (post as any).verification_status;
+          const isUnverified = !status || status === "unverified";
+          const isOwner = currentUserId != null && postOwnerId != null && currentUserId === postOwnerId;
+          const commentCount = Number((post as any).comments ?? post.comments ?? (post as any).comments_count ?? 0);
+          const hasComments = commentCount >= 1;
+          const isTaggedArtist = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
+          const deniedByArtist = !!((post as any).deniedByArtist ?? (post as any).denied_by_artist);
+          const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
+          const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+          const alreadyArtistConfirmed = isArtistVerified && artistVerifiedBy === currentUserId;
+          const canVerifyOwner = isUnverified && isOwner && hasComments;
+          const canVerifyArtist = isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
+          const canVerify = canVerifyOwner || canVerifyArtist;
 
-        {/* Delete button - only show for post owner */}
-        {currentUser && post.userId === currentUser.id && (
+          if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+            (window as any).__VERIFY_DEBUG = (window as any).__VERIFY_DEBUG ?? {};
+            (window as any).__VERIFY_DEBUG[post.id] = {
+              currentUserId,
+              postOwnerId,
+              isOwner,
+              canVerify,
+              hasComments,
+              isTaggedArtist,
+              status,
+            };
+          }
+
+          const debugInfo = showVerifyDebug
+            ? { currentUserId, postOwnerId, isOwner, canVerify, hasComments, isTaggedArtist, status }
+            : null;
+
+          return (
+            <>
+              {showVerifyDebug && debugInfo && (
+                <div className="absolute top-2 left-2 right-2 z-20 rounded bg-black/80 text-xs text-green-400 p-2 font-mono">
+                  <div>viewer_id (currentUserId): {String(debugInfo.currentUserId ?? "null")}</div>
+                  <div>user_id (postOwnerId): {String(debugInfo.postOwnerId ?? "null")}</div>
+                  <div>isOwner: {String(debugInfo.isOwner)}</div>
+                  <div>canVerify: {String(debugInfo.canVerify)}</div>
+                  <div>hasComments: {String(debugInfo.hasComments)} | isTaggedArtist: {String(debugInfo.isTaggedArtist)} | status: {String(debugInfo.status)}</div>
+                </div>
+              )}
+              {canVerify ? (
+            <button
+              className="flex flex-col items-center group"
+              onClick={() => (isOwner ? setShowVerificationDialog(true) : setShowArtistVerificationDialog(true))}
+              data-testid={isOwner ? "button-community-verify" : "button-artist-verify"}
+              title={isOwner ? "Mark comment as correct" : "Confirm or deny track"}
+            >
+              <div className="w-12 h-12 rounded-full bg-blue-500/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
+                <ShieldCheck className="w-6 h-6 text-blue-400" />
+              </div>
+              <span className="text-xs mt-1 font-medium text-blue-400">
+                {isOwner ? "Mark correct" : "ID Track"}
+              </span>
+            </button>
+          ) : null}
+            </>
+          );
+        })()}
+
+        {/* Delete button - only show for post owner (use same owner check as verify) */}
+        {(() => {
+          const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
+          const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
+          const isOwner = currentUserId != null && postOwnerId != null && currentUserId === postOwnerId;
+          return isOwner;
+        })() && (
           <button 
             className="flex flex-col items-center group"
             onClick={() => {
@@ -538,11 +609,17 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         isOpen={showComments}
         onClose={() => setShowComments(false)}
       />
-      {/* Community Verification Dialog */}
+      {/* Community Verification Dialog (post owner only) */}
       <CommunityVerificationDialog 
         postId={post.id}
         isOpen={showVerificationDialog}
         onClose={() => setShowVerificationDialog(false)}
+      />
+      {/* Artist Verification Dialog (tagged artist only) */}
+      <ArtistVerificationDialog
+        postId={post.id}
+        isOpen={showArtistVerificationDialog}
+        onClose={() => setShowArtistVerificationDialog(false)}
       />
     </div>
   );

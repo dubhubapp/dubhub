@@ -66,12 +66,16 @@ export default function UserProfile(props: any = {}) {
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery<NotificationWithUser[]>({
     queryKey: ["/api/user", currentUser?.id, "notifications"],
     enabled: !!currentUser?.id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: unreadCountData, isError: unreadCountError } = useQuery<{ count: number }>({
     queryKey: ["/api/user", currentUser?.id, "notifications", "unread-count"],
     enabled: !!currentUser?.id,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const unreadCount = unreadCountData?.count || 0;
@@ -238,6 +242,30 @@ export default function UserProfile(props: any = {}) {
     },
   });
 
+  const respondToTagMutation = useMutation({
+    mutationFn: async ({ postId, status }: { postId: string; status: "confirmed" | "denied" }) => {
+      const res = await apiRequest("GET", `/api/posts/${postId}/artist-tags`);
+      const tags = (await res.json()) as { id: string; artist_id: string; status: string }[];
+      const myTag = tags.find((t) => t.artist_id === currentUser?.id && (t.status === "PENDING" || t.status === "pending"));
+      if (!myTag) throw new Error("Tag not found or already responded");
+      return apiRequest("POST", `/api/artist-tags/${myTag.id}/status`, { status });
+    },
+    onSuccess: (_, { status }) => {
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      }
+      toast({ title: status === "confirmed" ? "Track confirmed as yours" : "Tag declined" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const isTagNotification = (n: NotificationWithUser) =>
+    n.message?.includes("tagged you in a comment");
+
   // Mark all notifications as read when Notifications tab is opened
   useEffect(() => {
     if (activeTab === "notifications" && unreadCount > 0) {
@@ -250,8 +278,13 @@ export default function UserProfile(props: any = {}) {
     if (!notification.read) {
       markNotificationAsReadMutation.mutate(notification.id);
     }
-    // Navigate to the home feed with the post ID
-    navigate(`/?post=${notification.postId}`);
+    // Navigate to release detail when release_id is present, else to post
+    const releaseId = (notification as any).releaseId ?? notification.release?.id;
+    if (releaseId) {
+      navigate(`/releases/${releaseId}`);
+    } else if (notification.postId) {
+      navigate(`/?post=${notification.postId}`);
+    }
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -746,51 +779,66 @@ export default function UserProfile(props: any = {}) {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {notifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        notification.read
-                          ? 'border-gray-700 bg-surface hover:bg-gray-800'
-                          : 'border-primary/30 bg-primary/10 hover:bg-primary/20'
-                      }`}
-                      onClick={() => handleNotificationClick(notification)}
-                      data-testid={`notification-${notification.id}`}
-                    >
-                      {/* Video Thumbnail */}
-                      <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
-                        {notification.post?.videoUrl ? (
-                          <video
-                            src={notification.post.videoUrl}
-                            className="w-full h-full object-cover"
-                            muted
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Bell className="w-6 h-6 text-gray-600" />
+                  {notifications.map((notification) => {
+                    const isTag = isTagNotification(notification);
+                    return (
+                      <div
+                        key={notification.id}
+                        className={`flex gap-3 p-3 rounded-lg border transition-colors ${
+                          notification.read
+                            ? 'border-gray-700 bg-surface hover:bg-gray-800'
+                            : 'border-primary/30 bg-primary/10 hover:bg-primary/20'
+                        } cursor-pointer`}
+                        onClick={() => handleNotificationClick(notification)}
+                        data-testid={`notification-${notification.id}`}
+                      >
+                        {/* Thumbnail: release artwork takes precedence over post video */}
+                        <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
+                          {notification.release?.artworkUrl ? (
+                            <img
+                              src={notification.release.artworkUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : notification.post?.videoUrl ? (
+                            <video
+                              src={notification.post.videoUrl}
+                              className="w-full h-full object-cover"
+                              muted
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Bell className="w-6 h-6 text-gray-600" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Notification Content: for tag notifications message already includes @username */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground">
+                            {isTag ? (
+                              notification.message
+                            ) : (
+                              <>
+                                <span className="font-semibold">{notification.triggeredByUser?.username ?? "Someone"}</span>
+                                {' '}{notification.message}
+                              </>
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatTimeAgo(notification.createdAt)}
+                          </p>
+                        </div>
+
+                        {/* Unread Indicator */}
+                        {!notification.read && (
+                          <div className="flex items-center">
+                            <div className="w-2 h-2 bg-primary rounded-full"></div>
                           </div>
                         )}
                       </div>
-
-                      {/* Notification Content */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground">
-                          <span className="font-semibold">{notification.triggeredByUser.username}</span>
-                          {' '}{notification.message}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {formatTimeAgo(notification.createdAt)}
-                        </p>
-                      </div>
-
-                      {/* Unread Indicator */}
-                      {!notification.read && (
-                        <div className="flex items-center">
-                          <div className="w-2 h-2 bg-primary rounded-full"></div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>

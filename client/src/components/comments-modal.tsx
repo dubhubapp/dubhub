@@ -27,7 +27,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage: userProfileImage } = useUser();
+  const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser } = useUser();
 
   // Format time ago helper function
   const formatTimeAgo = (date: string | Date | null) => {
@@ -196,18 +196,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
   const addCommentMutation = useMutation({
     mutationFn: async (data: { content: string; parentId?: string }) => {
-      // Extract artist tag from content if present
       const artistTagMatch = data.content.match(/@(\w+)/);
       const artistTag = artistTagMatch ? artistTagMatch[1] : null;
-      
-      return apiRequest("POST", `/api/posts/${post.id}/comments`, {
+      const res = await apiRequest("POST", `/api/posts/${post.id}/comments`, {
         body: data.content,
         artistTag: artistTag,
       });
+      const created = await res.json();
+      return created as { id: string; post_id: string; user_id: string; body: string; artist_tag: string | null; created_at: string };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (data, variables) => {
       setNewComment("");
-      // If this was a reply, auto-expand the parent comment's replies
       if (variables.parentId) {
         setExpandedReplies(prev => {
           const newSet = new Set(prev);
@@ -215,7 +214,36 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           return newSet;
         });
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "comments"] });
+      const newCommentWithUser: CommentWithUser = {
+        id: data.id,
+        postId: post.id,
+        userId: data.user_id,
+        body: data.body,
+        artistTag: data.artist_tag ?? null,
+        createdAt: data.created_at as unknown as Date,
+        user: {
+          id: contextUser?.id ?? data.user_id,
+          username: contextUsername ?? "You",
+          avatarUrl: userProfileImage ?? null,
+        } as any,
+        replies: [],
+      };
+      queryClient.setQueryData<CommentWithUser[]>(
+        ["/api/posts", post.id, "comments"],
+        (old) => (old ? [...old, newCommentWithUser] : [newCommentWithUser])
+      );
+      const currentComments = Number((post as any).comments ?? post.comments ?? 0);
+      queryClient.setQueriesData<PostWithUser[]>(
+        { queryKey: ["/api/posts"], exact: false },
+        (old) => {
+          if (!old || !Array.isArray(old)) return old;
+          return old.map((p) => {
+            if (p.id !== post.id) return p;
+            return { ...p, comments: currentComments + 1 };
+          });
+        }
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({ title: "Comment added successfully!" });
     },
     onError: () => {
@@ -322,19 +350,30 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 break;
             }
             
-            // Always pin verified comments to the top (comments that match the verified comment ID)
+            const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+            const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
+
+            // verified_comment_id points to artist confirmation comment (authoritative). Pin it first.
+            // User's tagged comment: artist_tag === artist_verified_by gets secondary highlight (tagged suggestion)
             filteredComments.sort((a, b) => {
-              const aIsVerified = post.verifiedCommentId === a.id;
-              const bIsVerified = post.verifiedCommentId === b.id;
-              if (aIsVerified && !bIsVerified) return -1;
-              if (!aIsVerified && bIsVerified) return 1;
+              const aIsPinned = post.verifiedCommentId === a.id;
+              const bIsPinned = post.verifiedCommentId === b.id;
+              if (aIsPinned && !bIsPinned) return -1;
+              if (!aIsPinned && bIsPinned) return 1;
               return 0;
             });
-            
+
             return filteredComments.map((comment) => {
               const isVerifiedComment = post.verifiedCommentId === comment.id;
+              const isTaggedSuggestion = isArtistVerifiedPost && artistVerifiedBy && ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
+
+              const highlightClass = isVerifiedComment
+                ? (isArtistVerifiedPost ? "p-3 rounded-lg border-2 border-[#FFD700] bg-amber-50/50" : "p-3 rounded-lg border-2 border-green-500 bg-green-50/30")
+                : isTaggedSuggestion
+                  ? "p-3 rounded-lg border border-amber-300 bg-amber-50/30"
+                  : "";
               return (
-                <div key={comment.id} className={`flex space-x-3 ${isVerifiedComment ? 'p-3 rounded-lg border-2 border-green-500 bg-green-50/30' : ''}`}>
+                <div key={comment.id} className={`flex space-x-3 ${highlightClass}`}>
               <div className="relative flex-shrink-0">
                 <img
                   src={comment.user.avatar_url || undefined}
@@ -367,15 +406,28 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       </div>
                     )}
                   </div>
-                  {/* Community Identified Badge - Blue for pending moderator review */}
-                  {post.verificationStatus === "community" && post.verifiedCommentId === comment.id && (
+                  {/* Artist Verified Badge - only on verified_comment_id (artist confirmation), GOLD */}
+                  {isVerifiedComment && isArtistVerifiedPost && (
+                    <div className="flex items-center space-x-1 bg-[#D4AF37] px-2 py-0.5 rounded-full" data-testid={`badge-artist-verified-${comment.id}`}>
+                      <CheckCircle className="w-3 h-3 text-white" />
+                      <span className="text-xs text-white font-bold">Artist Verified</span>
+                    </div>
+                  )}
+                  {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge) */}
+                  {isTaggedSuggestion && !isVerifiedComment && (
+                    <div className="flex items-center space-x-1 bg-amber-100 px-2 py-0.5 rounded-full" data-testid={`badge-tagged-artist-${comment.id}`}>
+                      <span className="text-xs text-amber-800 font-medium">Tagged artist</span>
+                    </div>
+                  )}
+                  {/* Community Identified Badge - Blue for pending moderator review (only when no artist verification) */}
+                  {post.verificationStatus === "community" && post.verifiedCommentId === comment.id && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <div className="flex items-center space-x-1 bg-blue-500 px-2 py-0.5 rounded-full" data-testid={`badge-community-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Community Identified</span>
                     </div>
                   )}
-                  {/* Identified Track ID Badge - Green for moderator confirmed */}
-                  {isVerifiedComment && post.verificationStatus === "identified" && (
+                  {/* Identified Track ID Badge - Green for moderator confirmed (fallback when no artist verification) */}
+                  {isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <div className="flex items-center space-x-1 bg-green-500 px-2 py-0.5 rounded-full" data-testid={`badge-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Identified Track ID</span>

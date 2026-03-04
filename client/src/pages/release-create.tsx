@@ -1,0 +1,457 @@
+import { useState, useRef, useMemo, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { ArrowLeft, Upload, Plus, Trash2, Search, CheckSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useUser } from "@/lib/user-context";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabaseClient";
+import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
+
+export default function ReleaseCreate() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { currentUser, userType } = useUser();
+  const [title, setTitle] = useState("");
+  const [releaseDate, setReleaseDate] = useState("");
+  const [artworkPath, setArtworkPath] = useState<string | null>(null);
+  const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [linkPlatform, setLinkPlatform] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [attachWarningAccepted, setAttachWarningAccepted] = useState(false);
+  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [draftLinks, setDraftLinks] = useState<
+    { platform: string; url: string; linkType?: string | null }[]
+  >([]);
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: eligiblePosts = [] } = useQuery({
+    queryKey: ["/api/posts/eligible-for-release"],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return [];
+      const res = await fetch("/api/posts/eligible-for-release", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentUser?.id && userType === "artist",
+  });
+
+  type EligiblePost = {
+    id: string;
+    video_url?: string;
+    dj_name?: string;
+    title?: string;
+    verified_comment_body?: string;
+    created_at?: string;
+  };
+
+  const filteredEligiblePosts = useMemo(() => {
+    const posts = (eligiblePosts as EligiblePost[]) || [];
+    if (!searchTerm.trim()) return posts;
+    const q = searchTerm.trim().toLowerCase();
+    return posts.filter(
+      (p) =>
+        (p.dj_name || "").toLowerCase().includes(q) ||
+        (p.title || "").toLowerCase().includes(q) ||
+        (p.verified_comment_body || "").toLowerCase().includes(q)
+    );
+  }, [eligiblePosts, searchTerm]);
+
+  const handleArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setArtworkPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setUploading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
+      const form = new FormData();
+      form.append("artwork", file);
+      const res = await fetch("/api/releases/upload-artwork", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: form,
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t || "Upload failed");
+      }
+      const json = await res.json();
+      setArtworkPath(json.path ?? null);
+    } catch (err) {
+      toast({ title: "Artwork upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  useEffect(() => () => {
+    if (artworkPreviewUrl) URL.revokeObjectURL(artworkPreviewUrl);
+  }, [artworkPreviewUrl]);
+
+  async function attachPostsWithAuth(releaseId: string, postIds: string[]) {
+    if (postIds.length === 0) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+    const res = await fetch(`/api/releases/${releaseId}/attach-posts`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ post_ids: postIds }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast({
+        title: "Attach failed",
+        description: data.message || "Failed to attach posts",
+        variant: "destructive",
+      });
+      throw new Error(data.message || "Failed to attach posts");
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      toast({ title: "Title is required", variant: "destructive" });
+      return;
+    }
+    if (!releaseDate) {
+      toast({ title: "Release date is required", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      console.log("[ReleaseCreate] Creating release", {
+        title: title.trim(),
+        releaseDate,
+        selectedPostIds,
+        linkCount: draftLinks.length,
+      });
+      const res = await apiRequest("POST", "/api/releases", {
+        title: title.trim(),
+        release_date: releaseDate,
+        artwork_url: artworkPath || undefined,
+      });
+      const data = await res.json();
+      const releaseId = data.id as string;
+      console.log("[ReleaseCreate] Release created", { releaseId });
+
+      // Links
+      for (const link of draftLinks) {
+        await apiRequest("POST", `/api/releases/${releaseId}/links`, {
+          platform: normalizePlatformForApi(link.platform),
+          url: link.url.trim(),
+          link_type: link.linkType ?? null,
+        });
+      }
+      console.log("[ReleaseCreate] Links saved", {
+        releaseId,
+        saved: draftLinks.length,
+      });
+
+      // Attachments
+      if (selectedPostIds.length > 0) {
+        await attachPostsWithAuth(releaseId, selectedPostIds);
+        console.log("[ReleaseCreate] Attached posts", {
+          releaseId,
+          attached: selectedPostIds,
+        });
+      }
+
+      await queryClient.removeQueries({ queryKey: ["/api/releases/feed"] });
+      if (process.env.NODE_ENV === "development") {
+        console.log("[ReleaseCreate] Success: created release", releaseId, "removed feed cache");
+      }
+
+      toast({ title: "Release created" });
+      navigate("/releases");
+    } catch (error) {
+      console.error("[ReleaseCreate] Create failed", error);
+      toast({
+        title: "Failed to create release",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (userType !== "artist" || !currentUser) {
+    navigate("/releases");
+    return null;
+  }
+
+  return (
+    <div className="flex-1 bg-background overflow-y-auto pb-24">
+      <div className="p-4 max-w-md mx-auto">
+        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate("/releases")}>
+          <ArrowLeft className="w-4 h-4 mr-1" />
+          Back
+        </Button>
+        <h1 className="text-xl font-bold mb-4">Add Release</h1>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <section className="space-y-4">
+            <div>
+              <label className="text-sm font-medium block mb-1">Title *</label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Release title"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Release date *</label>
+              <Input
+                type="date"
+                value={releaseDate}
+                onChange={(e) => setReleaseDate(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Artwork</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleArtworkChange}
+              />
+              <div className="flex items-center gap-3">
+                {(artworkPreviewUrl || artworkPath) && (
+                  <div className="w-20 h-20 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                    <img
+                      src={
+                        artworkPreviewUrl
+                          ? artworkPreviewUrl
+                          : artworkPath?.startsWith("http")
+                          ? artworkPath
+                          : artworkPath
+                          ? supabase.storage.from("release-artworks").getPublicUrl(artworkPath).data.publicUrl
+                          : ""
+                      }
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  {uploading ? "Uploading…" : artworkPath ? "Change artwork" : "Upload artwork"}
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-medium text-muted-foreground">Links</h2>
+            <div className="space-y-2">
+              {sortLinksByPlatform(draftLinks).map((l) => (
+                <div key={`${l.platform}-${l.url}`} className="flex items-center gap-2">
+                  <span className="text-sm">
+                    {PLATFORM_OPTIONS.find((p) => p.value === l.platform)?.label ?? l.platform.replace("_", " ")}
+                  </span>
+                  <a
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary truncate flex-1"
+                  >
+                    {l.url}
+                  </a>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setDraftLinks((links) =>
+                        links.filter((link) => !(link.platform === l.platform && link.url === l.url))
+                      )
+                    }
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={linkPlatform}
+                onChange={(e) => setLinkPlatform(e.target.value)}
+                className="border rounded px-2 py-1.5 text-sm bg-background"
+              >
+                <option value="">Platform</option>
+                {PLATFORM_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <Input
+                placeholder="URL"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                size="sm"
+                type="button"
+                onClick={() => {
+                  if (!linkPlatform || !linkUrl.trim()) return;
+                  setDraftLinks((links) => [
+                    ...links,
+                    { platform: linkPlatform, url: linkUrl.trim(), linkType: null },
+                  ]);
+                  setLinkPlatform("");
+                  setLinkUrl("");
+                }}
+                disabled={!linkPlatform || !linkUrl.trim()}
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-sm font-medium text-muted-foreground mb-2">Attach posts</h2>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+              Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
+            </p>
+            <label className="flex items-center gap-2 mb-3">
+              <input
+                type="checkbox"
+                checked={attachWarningAccepted}
+                onChange={(e) => setAttachWarningAccepted(e.target.checked)}
+              />
+              <span className="text-sm">I confirm these posts are my verified IDs</span>
+            </label>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by DJ, title, or verified comment..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+
+            <div className="grid gap-3 max-h-80 overflow-y-auto">
+              {filteredEligiblePosts.map((p: EligiblePost) => (
+                <label
+                  key={p.id}
+                  className={`flex gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                    selectedPostIds.includes(p.id)
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50 bg-muted/30"
+                  } ${!attachWarningAccepted ? "opacity-60 pointer-events-none" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedPostIds.includes(p.id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      if (e.target.checked) setSelectedPostIds((s) => [...s, p.id]);
+                      else setSelectedPostIds((s) => s.filter((id) => id !== p.id));
+                    }}
+                    disabled={!attachWarningAccepted}
+                    className="mt-1"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex gap-3">
+                      <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-muted">
+                        <video
+                          src={
+                            p.video_url?.startsWith("/") || p.video_url?.startsWith("http")
+                              ? p.video_url || ""
+                              : `/${p.video_url || ""}`
+                          }
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover pointer-events-none"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          {p.dj_name || "DJ unknown"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          {p.verified_comment_body || "No verified comment found"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {eligiblePosts.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4">
+                No eligible posts (artist-verified by you).
+              </p>
+            )}
+            {eligiblePosts.length > 0 && filteredEligiblePosts.length === 0 && (
+              <p className="text-sm text-muted-foreground py-2">
+                No posts match your search.
+              </p>
+            )}
+
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-sm text-muted-foreground">
+                Selected ({selectedPostIds.length})
+              </span>
+              <Button
+                size="sm"
+                type="button"
+                disabled={!attachWarningAccepted}
+                onClick={() => {
+                  // No-op: attachments are applied on Create Release
+                }}
+              >
+                <CheckSquare className="w-4 h-4 mr-1" />
+                Attach on create
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => setSelectedPostIds([])}
+                disabled={selectedPostIds.length === 0}
+              >
+                Detach all
+              </Button>
+            </div>
+          </section>
+
+          <div className="pt-2 pb-8">
+            <Button type="submit" disabled={saving} className="w-full">
+              {saving ? "Creating…" : "Create Release"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

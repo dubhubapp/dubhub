@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 2025-12-10  
+Last updated: 26-02-2026  
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -75,15 +75,16 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 ---
 
 ## notifications
-| Column | Type | Nullable | Default | Notes |
-|--------|------|----------|---------|-------|
-| id | uuid | NO | gen_random_uuid() | Primary key |
-| artist_id | uuid | YES | – | Notification recipient |
-| post_id | uuid | YES | – | Related post |
-| triggered_by | uuid | YES | – | Who triggered |
-| message | text | YES | – | Notification text |
-| read | boolean | YES | false | Read flag |
-| created_at | timestamptz | YES | now() | Created |
+| Column       | Type        | Nullable | Default           | Notes                              |
+| ------------ | ----------- | -------- | ----------------- | ---------------------------------- |
+| id           | uuid        | NO       | gen_random_uuid() | Primary key                        |
+| artist_id    | uuid        | YES      | –                 | Notification recipient             |
+| post_id      | uuid        | YES      | –                 | Related post (FK → posts.id)       |
+| triggered_by | uuid        | YES      | –                 | Who triggered                      |
+| message      | text        | YES      | –                 | Notification text                  |
+| read         | boolean     | YES      | false             | Read flag                          |
+| created_at   | timestamptz | YES      | now()             | Created                            |
+| release_id   | uuid        | YES      | –                 | Related release (FK → releases.id) |
 
 ⚠️ **Important:** Notifications use:
 - `artist_id` → recipient  
@@ -93,35 +94,37 @@ NOT `user_id` or `from_user_id`.
 ---
 
 ## post_likes
-| Column | Type | Nullable | Default | Notes |
-|--------|------|----------|---------|-------|
-| id | uuid | NO | uuid_generate_v4() | Primary key |
-| post_id | uuid | YES | – | FK → posts.id |
-| user_id | uuid | YES | – | FK → profiles.id |
-| created_at | timestamptz | YES | now() | Created |
+| Column     | Type        | Nullable | Default            | Notes            |
+| ---------- | ----------- | -------- | ------------------ | ---------------- |
+| id         | uuid        | NO       | uuid_generate_v4() | Primary key      |
+| post_id    | uuid        | YES      | –                  | FK → posts.id    |
+| user_id    | uuid        | YES      | –                  | FK → profiles.id |
+| created_at | timestamptz | YES      | now()              | Created          |
 
 ---
 
 ## posts
-| Column | Type | Nullable | Default | Notes |
-|--------|------|----------|---------|-------|
-| id | uuid | NO | gen_random_uuid() | Primary key |
-| user_id | uuid | YES | – | FK → profiles.id |
-| title | text | YES | – | Title |
-| video_url | text | NO | – | Video source |
-| genre | text | YES | – | Genre |
-| description | text | YES | – | Description |
-| location | text | YES | – | Filming location |
-| dj_name | text | YES | – | DJ name |
-| created_at | timestamptz | YES | now() | Created |
-| is_verified_artist | boolean | YES | false | Artist verified |
-| is_verified_community | boolean | YES | false | Community verified |
-| verified_by_moderator | boolean | YES | false | Moderator verified |
-| verified_by | uuid | YES | – | Moderator ID |
-| verified_comment_id | uuid | YES | – | Comment used for verification |
-| verification_status | text | YES | 'unverified' | unverified / pending / verified |
-| denied_by_artist | boolean | YES | false | Denial flag |
-| denied_at | timestamptz | YES | – | Denial timestamp |
+| Column                | Type        | Nullable | Default           | Notes                                   |
+| --------------------- | ----------- | -------- | ----------------- | --------------------------------------- |
+| id                    | uuid        | NO       | gen_random_uuid() | Primary key                             |
+| user_id               | uuid        | YES      | –                 | FK → profiles.id                        |
+| title                 | text        | YES      | –                 | Title                                   |
+| video_url             | text        | NO       | –                 | Video source                            |
+| genre                 | text        | YES      | –                 | Genre                                   |
+| description           | text        | YES      | –                 | Description                             |
+| location              | text        | YES      | –                 | Filming location                        |
+| dj_name               | text        | YES      | –                 | DJ name                                 |
+| created_at            | timestamptz | YES      | now()             | Created                                 |
+| is_verified_artist    | boolean     | YES      | false             | Artist verified                         |
+| is_verified_community | boolean     | YES      | false             | Community verified                      |
+| verified_by_moderator | boolean     | YES      | false             | Moderator verified                      |
+| verified_by           | uuid        | YES      | –                 | Verifier (currently used by moderators) |
+| verified_comment_id   | uuid        | YES      | –                 | Comment used for verification           |
+| verification_status   | text        | YES      | 'unverified'      | unverified / pending / verified         |
+| denied_by_artist      | boolean     | YES      | false             | Denial flag                             |
+| denied_at             | timestamptz | YES      | –                 | Denial timestamp                        |
+| artist_verified_by    | uuid        | YES      | –                 | Artist who verified (FK → profiles.id)  |
+
 
 ---
 
@@ -143,7 +146,64 @@ NOT `user_id` or `from_user_id`.
 ---
 
 ## reports
-| Column | Type | Nullable | Default | Notes |
-|--------|------|----------|---------|-------|
-| id | uuid | NO | gen_random_uuid() | Primary key |
-| reporter_id | uuid | YES | – |_
+| Column                | Type        | Nullable | Default           | Notes                      |
+| --------------------- | ----------- | -------- | ----------------- | -------------------------- |
+| id                    | uuid        | NO       | gen_random_uuid() | Primary key                |
+| reporter_id           | uuid        | YES      | –                 | FK → profiles.id           |
+| reported_post_id      | uuid        | YES      | –                 | FK → posts.id              |
+| reported_user_id      | uuid        | YES      | –                 | FK → profiles.id           |
+| reason                | text        | NO       | –                 | Report reason              |
+| description           | text        | YES      | –                 | Optional description       |
+| status                | text        | NO       | 'open'            | open                       |
+| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id           |
+| resolution_action     | text        | YES      | –                 | Optional resolution action |
+| resolved_at           | timestamptz | YES      | –                 | Resolved timestamp         |
+| created_at            | timestamptz | YES      | now()             | Created                    |
+
+---
+
+## releases
+| Column                  | Type        | Nullable | Default           | Notes                                                            |
+| ----------------------- | ----------- | -------- | ----------------- | ---------------------------------------------------------------- |
+| id                      | uuid        | NO       | gen_random_uuid() | Primary key                                                      |
+| artist_id               | uuid        | NO       | –                 | FK → profiles.id (owner)                                         |
+| title                   | text        | NO       | –                 | Release title                                                    |
+| release_date            | timestamptz | NO       | –                 | Release date/time                                                |
+| artwork_url             | text        | YES      | –                 | Artwork path/URL (release-artworks bucket)                       |
+| notified_at             | timestamptz | YES      | –                 | When announcement notifications were sent                        |
+| created_at              | timestamptz | YES      | now()             | Created                                                          |
+| updated_at              | timestamptz | YES      | now()             | Updated                                                          |
+| release_day_notified_at | timestamptz | YES      | –                 | When release-day morning notifications were sent                 |
+| is_public               | boolean     | NO       | false             | Public visibility flag (true only after collaborator acceptance) |
+
+---
+
+## release_links
+| Column     | Type        | Nullable | Default           | Notes                                                                                           |
+| ---------- | ----------- | -------- | ----------------- | ----------------------------------------------------------------------------------------------- |
+| id         | uuid        | NO       | gen_random_uuid() | Primary key                                                                                     |
+| release_id | uuid        | NO       | –                 | FK → releases.id                                                                                |
+| platform   | text        | NO       | –                 | spotify / apple / soundcloud / beatport / bandcamp / youtube / free_download / dub_pack / other |
+| url        | text        | NO       | –                 | Platform link                                                                                   |
+| link_type  | text        | YES      | –                 | Optional: presave / listen / download                                                           |
+| created_at | timestamptz | YES      | now()             | Created                                                                                         |
+
+---
+
+## release_posts
+| Column     | Type        | Nullable | Default | Notes            |
+| ---------- | ----------- | -------- | ------- | ---------------- |
+| release_id | uuid        | NO       | –       | FK → releases.id |
+| post_id    | uuid        | NO       | –       | FK → posts.id (UNIQUE: a post can belong to only one release)    |
+| created_at | timestamptz | YES      | now()   | Created          |
+
+## release_collaborators
+| Column       | Type        | Nullable | Default           | Notes                                   |
+| ------------ | ----------- | -------- | ----------------- | --------------------------------------- |
+| id           | uuid        | NO       | gen_random_uuid() | Primary key                             |
+| release_id   | uuid        | NO       | –                 | FK → releases.id                        |
+| artist_id    | uuid        | NO       | –                 | FK → profiles.id (invited collaborator) |
+| status       | text        | NO       | 'PENDING'         | PENDING / ACCEPTED / REJECTED           |
+| invited_by   | uuid        | YES      | –                 | FK → profiles.id (release owner)        |
+| invited_at   | timestamptz | NO       | now()             | Invitation timestamp                    |
+| responded_at | timestamptz | YES      | –                 | Acceptance/rejection timestamp          |

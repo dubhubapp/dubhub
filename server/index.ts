@@ -1,8 +1,10 @@
 import "dotenv/config";
+import cron from "node-cron";
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { storage } from "./storage";
 
 const app = express();
 
@@ -59,6 +61,16 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // Release-day morning notifications: run hourly at minute 0 (9am Europe/London check is inside the job)
+  cron.schedule("0 * * * *", async () => {
+    try {
+      const count = await storage.notifyReleaseDayLikers();
+      if (count > 0) log(`[Cron] Release-day notifications sent: ${count}`);
+    } catch (err) {
+      console.error("[Cron] Release-day notifications error:", err);
+    }
+  });
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -42,7 +42,8 @@ export const posts = pgTable("posts", {
   isVerifiedArtist: boolean("is_verified_artist").default(false),
   verifiedByModerator: boolean("verified_by_moderator").default(false),
   verifiedCommentId: varchar("verified_comment_id"), // References comments.id (no FK to avoid circular ref)
-  verifiedBy: varchar("verified_by").references(() => profiles.id), // Commenter user ID who provided the ID
+  verifiedBy: varchar("verified_by").references(() => profiles.id), // Moderator verification: commenter who provided the ID
+  artistVerifiedBy: varchar("artist_verified_by").references(() => profiles.id), // Artist who verified (for releases)
   deniedByArtist: boolean("denied_by_artist").default(false),
   deniedAt: timestamp("denied_at"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -77,13 +78,53 @@ export const artistVideoTags = pgTable("artist_video_tags", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Releases (post-based; no tracks table) - defined before notifications for FK
+export const releases = pgTable("releases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  artistId: varchar("artist_id").notNull().references(() => profiles.id),
+  title: text("title").notNull(),
+  releaseDate: timestamp("release_date").notNull(),
+  artworkUrl: text("artwork_url"),
+  notifiedAt: timestamp("notified_at"),
+  releaseDayNotifiedAt: timestamp("release_day_notified_at"),
+  isPublic: boolean("is_public").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const releaseCollaborators = pgTable("release_collaborators", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  releaseId: varchar("release_id").notNull().references(() => releases.id, { onDelete: "cascade" }),
+  artistId: varchar("artist_id").notNull().references(() => profiles.id),
+  status: text("status").notNull().default("PENDING"),
+  invitedBy: varchar("invited_by").references(() => profiles.id),
+  invitedAt: timestamp("invited_at").notNull().defaultNow(),
+  respondedAt: timestamp("responded_at"),
+}, (t) => [unique("release_collaborators_release_artist").on(t.releaseId, t.artistId)]);
+
+export const releaseLinks = pgTable("release_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  releaseId: varchar("release_id").notNull().references(() => releases.id),
+  platform: text("platform").notNull(), // spotify | apple | soundcloud | beatport | bandcamp | youtube | free_download | dub_pack | other
+  url: text("url").notNull(),
+  linkType: text("link_type"), // presave | listen | download
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const releasePosts = pgTable("release_posts", {
+  releaseId: varchar("release_id").notNull().references(() => releases.id),
+  postId: varchar("post_id").notNull().references(() => posts.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [primaryKey({ columns: [t.releaseId, t.postId] })]);
+
 // Notifications - actual database schema uses artist_id, triggered_by (NO type column)
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   artistId: varchar("artist_id").notNull().references(() => profiles.id), // Who receives the notification
   triggeredBy: varchar("triggered_by").notNull().references(() => profiles.id), // Who caused the notification
-  postId: varchar("post_id").notNull().references(() => posts.id), // Related post
-  message: text("message").notNull(), // e.g., "liked your post", "commented on your post"
+  postId: varchar("post_id").references(() => posts.id), // Related post (nullable for release notifications)
+  releaseId: varchar("release_id").references(() => releases.id), // Related release (nullable)
+  message: text("message").notNull(),
   read: boolean("read").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -217,7 +258,8 @@ export const insertCommentVoteSchema = createInsertSchema(commentVotes).pick({
 export const insertNotificationSchema = z.object({
   artistId: z.string(), // Who receives the notification
   triggeredBy: z.string(), // Who triggered the notification
-  postId: z.string(),
+  postId: z.string().optional().nullable(),
+  releaseId: z.string().optional().nullable(),
   message: z.string(),
 });
 
@@ -250,6 +292,9 @@ export type UserReputation = typeof userReputation.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type ModeratorAction = typeof moderatorActions.$inferSelect;
 export type PostLike = typeof postLikes.$inferSelect;
+export type Release = typeof releases.$inferSelect;
+export type ReleaseLink = typeof releaseLinks.$inferSelect;
+export type ReleasePost = typeof releasePosts.$inferSelect;
 export type Interaction = typeof interactions.$inferSelect;
 export type Achievement = typeof achievements.$inferSelect;
 
@@ -269,6 +314,8 @@ export type PostWithUser = Post & {
   likes: number;
   comments: number;
   hasLiked?: boolean;
+  /** True when the current user (artist) is tagged in a comment on this post */
+  currentUserTaggedAsArtist?: boolean;
   verificationStatus?: string;
   isVerifiedCommunity?: boolean;
   verifiedByModerator?: boolean;
@@ -284,5 +331,6 @@ export type UserStats = {
 // NotificationWithUser - updated to use Post instead of Track
 export type NotificationWithUser = Notification & {
   triggeredByUser: Profile;
-  post: Post;
+  post: Post | null;
+  release?: { id: string; artworkUrl: string | null } | null;
 };

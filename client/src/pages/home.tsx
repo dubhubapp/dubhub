@@ -7,6 +7,7 @@ import { GenreFilter } from "@/components/genre-filter";
 import { Header } from "@/components/brand/Header";
 import type { PostWithUser } from "@shared/schema";
 import { supabase } from "@/lib/supabaseClient";
+import { useUser } from "@/lib/user-context";
 
 export default function Home() {
   console.log("[Home] component mounted");
@@ -22,10 +23,11 @@ export default function Home() {
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocationRef = useRef<string>(location);
 
+  const { currentUser } = useUser();
   const postsQuery = useQuery({
-    queryKey: ["/api/posts", { genre: selectedGenre, identification: identificationFilter }],
+    queryKey: ["/api/posts", { genre: selectedGenre, identification: identificationFilter }, currentUser?.id],
     queryFn: async () => {
-      // Get auth headers to include user session for hasLiked calculation
+      // Get auth headers so server can set hasLiked and currentUserTaggedAsArtist
       const { data: { session } } = await supabase.auth.getSession();
       const authHeaders: Record<string, string> = {};
       if (session?.access_token) {
@@ -58,7 +60,8 @@ export default function Home() {
       return allPosts;
     },
     placeholderData: (previousData) => previousData,
-    staleTime: 30000, // Keep data fresh for 30 seconds
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: posts = [], isLoading, isError, error } = postsQuery;

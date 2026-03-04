@@ -46,6 +46,27 @@ export interface IStorage {
 
   // Leaderboards
   getLeaderboard(userType: "user" | "artist"): Promise<any[]>;
+
+  // Releases
+  getReleasesFeed(userId: string, view?: "owned" | "collaborations" | "all"): Promise<any[]>;
+  getRelease(id: string): Promise<any | undefined>;
+  createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
+  updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
+  getReleaseLinks(releaseId: string): Promise<any[]>;
+  upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void>;
+  deleteReleaseLink(releaseId: string, platform: string): Promise<boolean>;
+  getReleasePostIds(releaseId: string): Promise<string[]>;
+  attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ attached: string[]; rejected: string[] }>;
+  detachPostsFromRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }>;
+  getEligiblePostsForArtist(artistId: string, currentReleaseId?: string): Promise<any[]>;
+  notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean>;
+  notifyReleaseDayLikers(): Promise<number>;
+  getReleaseCollaborators(releaseId: string): Promise<any[]>;
+  canManageRelease(releaseId: string, userId: string): Promise<boolean>;
+  inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string }>;
+  acceptCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean>;
+  rejectCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean>;
+  removeCollaborator(releaseId: string, collabId: string, ownerId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -147,9 +168,13 @@ export class DatabaseStorage implements IStorage {
           p.dj_name,
           p.verification_status,
           p.is_verified_community,
+          p.is_verified_artist,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
+          p.artist_verified_by,
+          p.denied_by_artist,
+          p.denied_at,
           p.created_at,
           pr.id         AS profile_id,
           pr.username   AS profile_username,
@@ -166,7 +191,15 @@ export class DatabaseStorage implements IStorage {
                    WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
                  )`
               : sql`false`
-          } AS has_liked
+          } AS has_liked,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM artist_video_tags avt
+                   WHERE avt.post_id = p.id AND avt.artist_id = ${currentUserId}
+                 )`
+              : sql`false`
+          } AS current_user_tagged_as_artist
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -200,13 +233,18 @@ export class DatabaseStorage implements IStorage {
         djName: row.dj_name,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
+        isVerifiedArtist: row.is_verified_artist,
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
+        artistVerifiedBy: row.artist_verified_by,
+        deniedByArtist: row.denied_by_artist,
+        deniedAt: row.denied_at,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
         hasLiked: !!row.has_liked,
+        currentUserTaggedAsArtist: !!row.current_user_tagged_as_artist,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -260,9 +298,13 @@ export class DatabaseStorage implements IStorage {
           p.dj_name,
           p.verification_status,
           p.is_verified_community,
+          p.is_verified_artist,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
+          p.artist_verified_by,
+          p.denied_by_artist,
+          p.denied_at,
           p.created_at,
           pr.id         AS profile_id,
           pr.username   AS profile_username,
@@ -279,7 +321,15 @@ export class DatabaseStorage implements IStorage {
                    WHERE pl2.post_id = p.id AND pl2.user_id = ${currentUserId}
                  )`
               : sql`false`
-          } AS has_liked
+          } AS has_liked,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM artist_video_tags avt
+                   WHERE avt.post_id = p.id AND avt.artist_id = ${currentUserId}
+                 )`
+              : sql`false`
+          } AS current_user_tagged_as_artist
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -312,13 +362,18 @@ export class DatabaseStorage implements IStorage {
         djName: row.dj_name,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
+        isVerifiedArtist: row.is_verified_artist,
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
+        artistVerifiedBy: row.artist_verified_by,
+        deniedByArtist: row.denied_by_artist,
+        deniedAt: row.denied_at,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
         hasLiked: !!row.has_liked,
+        currentUserTaggedAsArtist: !!row.current_user_tagged_as_artist,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -419,9 +474,13 @@ export class DatabaseStorage implements IStorage {
           p.dj_name,
           p.verification_status,
           p.is_verified_community,
+          p.is_verified_artist,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
+          p.artist_verified_by,
+          p.denied_by_artist,
+          p.denied_at,
           p.created_at,
           pr.id         AS profile_id,
           pr.username   AS profile_username,
@@ -833,7 +892,29 @@ export class DatabaseStorage implements IStorage {
       `);
 
       const rows = (result as any).rows || [];
-      return rows[0] || undefined;
+      const updatedTag = rows[0];
+      if (!updatedTag) return undefined;
+
+      const postId = updatedTag.post_id;
+      if (postId) {
+        if (status === "confirmed") {
+          await db.execute(sql`
+            UPDATE posts
+            SET is_verified_artist = true,
+                artist_verified_by = ${artistId}
+            WHERE id = ${postId}
+          `);
+        } else {
+          await db.execute(sql`
+            UPDATE posts
+            SET denied_by_artist = true,
+                denied_at = NOW()
+            WHERE id = ${postId}
+          `);
+        }
+      }
+
+      return updatedTag;
     } catch (error) {
       console.error("[updateArtistVideoTagStatus] Error:", error);
       return undefined;
@@ -846,9 +927,11 @@ export class DatabaseStorage implements IStorage {
   // Notification Methods
   async createNotification(notification: InsertNotification): Promise<Notification> {
     try {
+      const postId = notification.postId ?? null;
+      const releaseId = notification.releaseId ?? null;
       const result = await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
-        VALUES (${notification.artistId}, ${notification.triggeredBy}, ${notification.postId}, ${notification.message}, false, NOW())
+        INSERT INTO notifications (artist_id, triggered_by, post_id, release_id, message, read, created_at)
+        VALUES (${notification.artistId}, ${notification.triggeredBy}, ${postId}, ${releaseId}, ${notification.message}, false, NOW())
         RETURNING *
       `);
 
@@ -870,6 +953,17 @@ export class DatabaseStorage implements IStorage {
     return uuidRegex.test(uuid);
   }
 
+  private releaseArtworkPublicUrl(artworkUrl: string | null | undefined): string | null {
+    if (!artworkUrl) return null;
+    if (artworkUrl.startsWith("http")) return artworkUrl;
+    try {
+      const { data } = supabase.storage.from("release-artworks").getPublicUrl(artworkUrl);
+      return data?.publicUrl ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async getUserNotifications(userId: string): Promise<NotificationWithUser[]> {
     // Validate UUID before querying
     if (!this.isValidUUID(userId)) {
@@ -883,19 +977,20 @@ export class DatabaseStorage implements IStorage {
           n.id,
           n.artist_id,
           n.post_id,
+          n.release_id,
           n.triggered_by,
           n.message,
           n.read,
           n.created_at,
-          p.username       AS triggered_by_username,
+          p.username         AS triggered_by_username,
           p.avatar_url       AS triggered_by_avatar_url,
           po.title           AS post_title,
-          po.video_url       AS post_video_url
+          po.video_url       AS post_video_url,
+          r.artwork_url      AS release_artwork_url
         FROM notifications n
-        LEFT JOIN profiles p
-          ON p.id = n.triggered_by
-        LEFT JOIN posts po
-          ON po.id = n.post_id
+        LEFT JOIN profiles p ON p.id = n.triggered_by
+        LEFT JOIN posts po   ON po.id = n.post_id
+        LEFT JOIN releases r ON r.id = n.release_id
         WHERE n.artist_id = ${userId}
         ORDER BY n.created_at DESC
       `);
@@ -906,6 +1001,7 @@ export class DatabaseStorage implements IStorage {
         id: row.id,
         artistId: row.artist_id,
         postId: row.post_id,
+        releaseId: row.release_id,
         triggeredBy: row.triggered_by,
         message: row.message,
         read: row.read,
@@ -915,11 +1011,12 @@ export class DatabaseStorage implements IStorage {
           username: row.triggered_by_username,
           avatarUrl: row.triggered_by_avatar_url,
         },
-        post: {
-          id: row.post_id,
-          title: row.post_title,
-          videoUrl: row.post_video_url,
-        },
+        post: row.post_id
+          ? { id: row.post_id, title: row.post_title, videoUrl: row.post_video_url } as any
+          : null,
+        release: row.release_id
+          ? { id: row.release_id, artworkUrl: this.releaseArtworkPublicUrl(row.release_artwork_url) }
+          : null,
       }));
     } catch (error) {
       console.error("[getUserNotifications] Error:", error);
@@ -1073,6 +1170,592 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // --- Releases ---
+  // Feed returns releases; links are added by route. We do NOT join release_links - all owned
+  // releases are returned regardless of links/artwork.
+  async getReleasesFeed(userId: string, view?: "owned" | "collaborations" | "all"): Promise<any[]> {
+    if (!userId) return [];
+    try {
+      const whereClause = view === "owned"
+        ? sql`r.artist_id = ${userId}`
+        : view === "collaborations"
+        ? sql`EXISTS (SELECT 1 FROM release_collaborators rc WHERE rc.release_id = r.id AND rc.artist_id = ${userId})`
+        : sql`(r.artist_id = ${userId} OR EXISTS (SELECT 1 FROM release_collaborators rc WHERE rc.release_id = r.id AND rc.artist_id = ${userId}) OR (r.is_public = true AND r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+      const result = await db.execute(sql`
+        SELECT
+          r.id,
+          r.artist_id,
+          r.title,
+          r.release_date,
+          r.artwork_url,
+          r.notified_at,
+          r.created_at,
+          r.updated_at,
+          r.is_public,
+          pr.username AS artist_username,
+          rc.status AS collaborator_status,
+          (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+           FROM release_collaborators rc2
+           JOIN profiles pc ON pc.id = rc2.artist_id
+           WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+        FROM releases r
+        JOIN profiles pr ON pr.id = r.artist_id
+        LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
+        WHERE ${whereClause}
+        ORDER BY
+          (r.release_date > NOW()) DESC,
+          CASE WHEN r.release_date > NOW() THEN r.release_date END ASC NULLS LAST,
+          r.release_date DESC NULLS LAST
+      `);
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => {
+        let collaborators: { username: string; status: string }[] = [];
+        try {
+          const ac = row.accepted_collaborators;
+          collaborators = Array.isArray(ac) ? ac : (typeof ac === "string" ? JSON.parse(ac || "[]") : []);
+        } catch {}
+        return {
+          id: row.id,
+          artistId: row.artist_id,
+          title: row.title,
+          releaseDate: row.release_date,
+          artworkUrl: row.artwork_url,
+          notifiedAt: row.notified_at,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          isPublic: row.is_public ?? true,
+          artistUsername: row.artist_username,
+          collaboratorStatus: row.collaborator_status || null,
+          collaborators: (collaborators || []).map((c: any) => ({ ...c, status: "ACCEPTED" })),
+        };
+      });
+    } catch (error) {
+      console.error("[getReleasesFeed] Error:", error);
+      return [];
+    }
+  }
+
+  async getRelease(id: string): Promise<any | undefined> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          r.id,
+          r.artist_id,
+          r.title,
+          r.release_date,
+          r.artwork_url,
+          r.notified_at,
+          r.created_at,
+          r.updated_at,
+          r.is_public,
+          pr.username AS artist_username
+        FROM releases r
+        JOIN profiles pr ON pr.id = r.artist_id
+        WHERE r.id = ${id}
+        LIMIT 1
+      `);
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) return undefined;
+      const row = rows[0];
+      const links = await this.getReleaseLinks(id);
+      const postIds = await this.getReleasePostIds(id);
+      const collaborators = await this.getReleaseCollaborators(id);
+      return {
+        id: row.id,
+        artistId: row.artist_id,
+        title: row.title,
+        releaseDate: row.release_date,
+        artworkUrl: row.artwork_url,
+        notifiedAt: row.notified_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        isPublic: row.is_public ?? true,
+        artistUsername: row.artist_username,
+        links,
+        postIds,
+        collaborators,
+      };
+    } catch (error) {
+      console.error("[getRelease] Error:", error);
+      return undefined;
+    }
+  }
+
+  async createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any> {
+    const result = await db.execute(sql`
+      INSERT INTO releases (artist_id, title, release_date, artwork_url, is_public, created_at, updated_at)
+      VALUES (${data.artistId}, ${data.title}, ${data.releaseDate}, ${data.artworkUrl ?? null}, true, NOW(), NOW())
+      RETURNING *
+    `);
+    const rows = (result as any).rows || [];
+    if (rows.length === 0) throw new Error("Failed to create release");
+    const row = rows[0];
+    return {
+      id: row.id,
+      artistId: row.artist_id,
+      title: row.title,
+      releaseDate: row.release_date,
+      artworkUrl: row.artwork_url,
+      notifiedAt: row.notified_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async updateRelease(
+    id: string,
+    artistId: string,
+    data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }
+  ): Promise<any | undefined> {
+    try {
+      const current = await this.getRelease(id);
+      if (!current) return undefined;
+      const title = data.title !== undefined ? data.title : current.title;
+      const releaseDate = data.releaseDate !== undefined ? data.releaseDate : new Date(current.releaseDate);
+      const artworkUrl = data.artworkUrl !== undefined ? data.artworkUrl : current.artworkUrl;
+      await db.execute(sql`
+        UPDATE releases
+        SET title = ${title}, release_date = ${releaseDate}, artwork_url = ${artworkUrl}, updated_at = NOW()
+        WHERE id = ${id} AND artist_id = ${artistId}
+      `);
+      return this.getRelease(id);
+    } catch (error) {
+      console.error("[updateRelease] Error:", error);
+      return undefined;
+    }
+  }
+
+  async getReleaseLinks(releaseId: string): Promise<any[]> {
+    const result = await db.execute(sql`
+      SELECT id, release_id, platform, url, link_type, created_at
+      FROM release_links
+      WHERE release_id = ${releaseId}
+      ORDER BY platform
+    `);
+    const rows = (result as any).rows || [];
+    return rows.map((r: any) => ({
+      id: r.id,
+      releaseId: r.release_id,
+      platform: r.platform,
+      url: r.url,
+      linkType: r.link_type,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void> {
+    const existing = await db.execute(sql`
+      SELECT id FROM release_links WHERE release_id = ${releaseId} AND platform = ${platform} LIMIT 1
+    `);
+    const rows = (existing as any).rows || [];
+    if (rows.length > 0) {
+      await db.execute(sql`
+        UPDATE release_links SET url = ${url}, link_type = ${linkType ?? null} WHERE release_id = ${releaseId} AND platform = ${platform}
+      `);
+    } else {
+      await db.execute(sql`
+        INSERT INTO release_links (release_id, platform, url, link_type, created_at)
+        VALUES (${releaseId}, ${platform}, ${url}, ${linkType ?? null}, NOW())
+      `);
+    }
+  }
+
+  async deleteReleaseLink(releaseId: string, platform: string): Promise<boolean> {
+    await db.execute(sql`
+      DELETE FROM release_links WHERE release_id = ${releaseId} AND platform = ${platform}
+    `);
+    return true;
+  }
+
+  async getReleasePostIds(releaseId: string): Promise<string[]> {
+    const result = await db.execute(sql`
+      SELECT post_id FROM release_posts WHERE release_id = ${releaseId}
+    `);
+    const rows = (result as any).rows || [];
+    return rows.map((r: any) => r.post_id);
+  }
+
+  async attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ attached: string[]; rejected: string[]; postAlreadyAttached?: string[] }> {
+    const attached: string[] = [];
+    const rejected: string[] = [];
+    const postAlreadyAttached: string[] = [];
+    for (const postId of postIds) {
+      const check = await db.execute(sql`
+        SELECT p.id FROM posts p
+        WHERE p.id = ${postId}
+          AND p.is_verified_artist = true
+          AND p.artist_verified_by = ${artistId}
+          AND (p.denied_by_artist IS NOT TRUE)
+          AND (p.verification_status IS NULL OR p.verification_status != 'unverified')
+      `);
+      const rows = (check as any).rows || [];
+      if (rows.length === 0) {
+        rejected.push(postId);
+        continue;
+      }
+      const existing = await db.execute(sql`
+        SELECT release_id FROM release_posts WHERE post_id = ${postId} LIMIT 1
+      `);
+      const existingRows = (existing as any).rows || [];
+      if (existingRows.length > 0 && existingRows[0].release_id !== releaseId) {
+        postAlreadyAttached.push(postId);
+        rejected.push(postId);
+        continue;
+      }
+      if (existingRows.length > 0 && existingRows[0].release_id === releaseId) {
+        attached.push(postId);
+        continue;
+      }
+      try {
+        await db.execute(sql`
+          INSERT INTO release_posts (release_id, post_id, created_at)
+          VALUES (${releaseId}, ${postId}, NOW())
+          ON CONFLICT (release_id, post_id) DO NOTHING
+        `);
+        attached.push(postId);
+      } catch {
+        rejected.push(postId);
+      }
+    }
+    return { attached, rejected, postAlreadyAttached: postAlreadyAttached.length > 0 ? postAlreadyAttached : undefined };
+  }
+
+  async detachPostsFromRelease(releaseId: string, actorId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }> {
+    try {
+      const canManage = await this.canManageRelease(releaseId, actorId);
+      if (!canManage) return { ok: false };
+      const releaseRow = await db.execute(sql`
+        SELECT release_date FROM releases WHERE id = ${releaseId} LIMIT 1
+      `);
+      const rows = (releaseRow as any).rows || [];
+      if (rows.length === 0) return { ok: false };
+      const releaseDate = rows[0].release_date ? new Date(rows[0].release_date) : null;
+      if (releaseDate && releaseDate <= new Date()) {
+        return { ok: false, locked: true };
+      }
+      for (const postId of postIds) {
+        await db.execute(sql`
+          DELETE FROM release_posts WHERE release_id = ${releaseId} AND post_id = ${postId}
+        `);
+      }
+      return { ok: true };
+    } catch (error) {
+      console.error("[detachPostsFromRelease] Error:", error);
+      return { ok: false };
+    }
+  }
+
+  /**
+   * Posts eligible for release attachment.
+   * Excludes posts already attached to any release, unless currentReleaseId is set (edit mode),
+   * in which case posts attached only to that release are included so they appear in the editor.
+   */
+  async getEligiblePostsForArtist(artistId: string, currentReleaseId?: string): Promise<any[]> {
+    const result = currentReleaseId
+      ? await db.execute(sql`
+          SELECT
+            p.id,
+            p.user_id,
+            p.title,
+            p.video_url,
+            p.dj_name,
+            p.genre,
+            p.description,
+            p.verification_status,
+            p.is_verified_artist,
+            p.artist_verified_by,
+            p.verified_comment_id,
+            p.created_at,
+            c.body AS verified_comment_body
+          FROM posts p
+          LEFT JOIN comments c ON c.id = p.verified_comment_id
+          WHERE p.is_verified_artist = true
+            AND p.artist_verified_by = ${artistId}
+            AND (p.denied_by_artist IS NOT TRUE)
+            AND (p.verification_status IS NULL OR p.verification_status != 'unverified')
+            AND NOT EXISTS (
+              SELECT 1 FROM release_posts rp WHERE rp.post_id = p.id AND rp.release_id != ${currentReleaseId}
+            )
+          ORDER BY p.created_at DESC
+        `)
+      : await db.execute(sql`
+          SELECT
+            p.id,
+            p.user_id,
+            p.title,
+            p.video_url,
+            p.dj_name,
+            p.genre,
+            p.description,
+            p.verification_status,
+            p.is_verified_artist,
+            p.artist_verified_by,
+            p.verified_comment_id,
+            p.created_at,
+            c.body AS verified_comment_body
+          FROM posts p
+          LEFT JOIN comments c ON c.id = p.verified_comment_id
+          WHERE p.is_verified_artist = true
+            AND p.artist_verified_by = ${artistId}
+            AND (p.denied_by_artist IS NOT TRUE)
+            AND (p.verification_status IS NULL OR p.verification_status != 'unverified')
+            AND NOT EXISTS (
+              SELECT 1 FROM release_posts rp WHERE rp.post_id = p.id
+            )
+          ORDER BY p.created_at DESC
+        `);
+    return (result as any).rows || [];
+  }
+
+  async notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean> {
+    try {
+      const releaseResult = await db.execute(sql`
+        SELECT id, notified_at, artist_id, release_date, title FROM releases WHERE id = ${releaseId} AND artist_id = ${artistId} LIMIT 1
+      `);
+      const releaseRows = (releaseResult as any).rows || [];
+      if (releaseRows.length === 0) return false;
+      const r = releaseRows[0];
+      if (r.notified_at) return false;
+      const postIds = await this.getReleasePostIds(releaseId);
+      if (postIds.length === 0) return false;
+      const recipientsResult = await db.execute(sql`
+        SELECT DISTINCT user_id FROM (
+          SELECT pl.user_id FROM release_posts rp
+          JOIN post_likes pl ON pl.post_id = rp.post_id
+          WHERE rp.release_id = ${releaseId} AND pl.user_id IS NOT NULL
+          UNION
+          SELECT p.user_id FROM release_posts rp
+          JOIN posts p ON p.id = rp.post_id
+          WHERE rp.release_id = ${releaseId} AND p.user_id IS NOT NULL
+        ) sub
+        WHERE user_id != ${artistId}
+      `);
+      const recipientRows = (recipientsResult as any).rows || [];
+      const artistProfile = await this.getUser(artistId);
+      const artistUsername = artistProfile?.username ?? "Artist";
+      const releaseTitle = r.title ?? "Release";
+      const releaseDate = r.release_date ? new Date(r.release_date) : null;
+      const now = new Date();
+      const isFuture = releaseDate && releaseDate > now;
+      const releaseDateStr = releaseDate ? releaseDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+      const message = isFuture
+        ? `${artistUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
+        : `${artistUsername} released ${releaseTitle}`;
+      const firstPostId = postIds[0] ?? null;
+      for (const row of recipientRows) {
+        const recipientId = row.user_id;
+        if (!recipientId) continue;
+        await this.createNotification({
+          artistId: recipientId,
+          triggeredBy: artistId,
+          postId: firstPostId,
+          releaseId,
+          message,
+        });
+      }
+      await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
+      return true;
+    } catch (error) {
+      console.error("[notifyReleaseLikers] Error:", error);
+      return false;
+    }
+  }
+
+  async notifyReleaseDayLikers(): Promise<number> {
+    try {
+      const releasesResult = await db.execute(sql`
+        SELECT r.id, r.artist_id, r.title, r.release_date, r.release_day_notified_at, r.artwork_url
+        FROM releases r
+        WHERE r.release_day_notified_at IS NULL
+          AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
+          AND DATE(r.release_date AT TIME ZONE 'Europe/London') = (NOW() AT TIME ZONE 'Europe/London')::date
+          AND (NOW() AT TIME ZONE 'Europe/London')::time >= '09:00'::time
+      `);
+      const releases = (releasesResult as any).rows || [];
+      let totalSent = 0;
+      for (const r of releases) {
+        const recipientsResult = await db.execute(sql`
+          SELECT DISTINCT user_id FROM (
+            SELECT pl.user_id FROM release_posts rp
+            JOIN post_likes pl ON pl.post_id = rp.post_id
+            WHERE rp.release_id = ${r.id} AND pl.user_id IS NOT NULL
+            UNION
+            SELECT p.user_id FROM release_posts rp
+            JOIN posts p ON p.id = rp.post_id
+            WHERE rp.release_id = ${r.id} AND p.user_id IS NOT NULL
+          ) sub
+          WHERE user_id != ${r.artist_id}
+        `);
+        const recipientRows = (recipientsResult as any).rows || [];
+        const postIds = await this.getReleasePostIds(r.id);
+        const firstPostId = postIds[0] ?? null;
+        const artistProfile = await this.getUser(r.artist_id);
+        const artistUsername = artistProfile?.username ?? "Artist";
+        const message = `${artistUsername} released ${r.title}`;
+        for (const row of recipientRows) {
+          const recipientId = row.user_id;
+          if (!recipientId) continue;
+          await this.createNotification({
+            artistId: recipientId,
+            triggeredBy: r.artist_id,
+            postId: firstPostId,
+            releaseId: r.id,
+            message,
+          });
+          totalSent++;
+        }
+        await db.execute(sql`
+          UPDATE releases SET release_day_notified_at = NOW() WHERE id = ${r.id}
+        `);
+      }
+      return totalSent;
+    } catch (error) {
+      console.error("[notifyReleaseDayLikers] Error:", error);
+      return 0;
+    }
+  }
+
+  async getReleaseCollaborators(releaseId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT rc.id, rc.release_id, rc.artist_id, rc.status, rc.invited_by, rc.invited_at, rc.responded_at,
+               p.username, p.avatar_url
+        FROM release_collaborators rc
+        JOIN profiles p ON p.id = rc.artist_id
+        WHERE rc.release_id = ${releaseId}
+        ORDER BY rc.invited_at ASC
+      `);
+      const rows = (result as any).rows || [];
+      return rows.map((r: any) => ({
+        id: r.id,
+        releaseId: r.release_id,
+        artistId: r.artist_id,
+        status: r.status,
+        invitedBy: r.invited_by,
+        invitedAt: r.invited_at,
+        respondedAt: r.responded_at,
+        username: r.username,
+        avatarUrl: r.avatar_url,
+      }));
+    } catch (error) {
+      console.error("[getReleaseCollaborators] Error:", error);
+      return [];
+    }
+  }
+
+  async canManageRelease(releaseId: string, userId: string): Promise<boolean> {
+    try {
+      const releaseRow = await db.execute(sql`SELECT artist_id FROM releases WHERE id = ${releaseId} LIMIT 1`);
+      const relRows = (releaseRow as any).rows || [];
+      if (relRows.length === 0) return false;
+      if (relRows[0].artist_id === userId) return true;
+      const collabRow = await db.execute(sql`
+        SELECT 1 FROM release_collaborators WHERE release_id = ${releaseId} AND artist_id = ${userId} AND status = 'ACCEPTED' LIMIT 1
+      `);
+      return ((collabRow as any).rows || []).length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const release = await this.getRelease(releaseId);
+      if (!release || release.artistId !== ownerId) return { ok: false, error: "Not release owner" };
+      const artist = await this.getUser(artistId);
+      if (!artist || artist.account_type !== "artist" || !artist.verified_artist) {
+        return { ok: false, error: "Artist not found or not verified" };
+      }
+      await db.execute(sql`
+        INSERT INTO release_collaborators (release_id, artist_id, status, invited_by, invited_at)
+        VALUES (${releaseId}, ${artistId}, 'PENDING', ${ownerId}, NOW())
+        ON CONFLICT (release_id, artist_id) DO UPDATE SET status = 'PENDING', invited_by = ${ownerId}, invited_at = NOW(), responded_at = NULL
+      `);
+      await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
+      const ownerProfile = await this.getUser(ownerId);
+      const ownerUsername = ownerProfile?.username ?? "Artist";
+      await this.createNotification({
+        artistId,
+        triggeredBy: ownerId,
+        releaseId,
+        message: `@${ownerUsername} invited you as a collaborator on ${release.title}. Accept or reject.`,
+      } as any);
+      return { ok: true };
+    } catch (error) {
+      console.error("[inviteCollaborator] Error:", error);
+      return { ok: false, error: "Failed to invite" };
+    }
+  }
+
+  private async recomputeReleaseIsPublic(releaseId: string): Promise<void> {
+    const collabResult = await db.execute(sql`
+      SELECT status FROM release_collaborators WHERE release_id = ${releaseId}
+    `);
+    const rows = (collabResult as any).rows || [];
+    if (rows.length === 0) {
+      await db.execute(sql`UPDATE releases SET is_public = true WHERE id = ${releaseId}`);
+      return;
+    }
+    const allAccepted = rows.every((r: any) => r.status === "ACCEPTED");
+    await db.execute(sql`UPDATE releases SET is_public = ${allAccepted} WHERE id = ${releaseId}`);
+  }
+
+  async acceptCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean> {
+    try {
+      const collabRow = await db.execute(sql`
+        SELECT id FROM release_collaborators WHERE id = ${collabId} AND release_id = ${releaseId} AND artist_id = ${artistId} LIMIT 1
+      `);
+      if (((collabRow as any).rows || []).length === 0) return false;
+      const artist = await this.getUser(artistId);
+      if (!artist || artist.account_type !== "artist" || !artist.verified_artist) return false;
+      await db.execute(sql`
+        UPDATE release_collaborators SET status = 'ACCEPTED', responded_at = NOW() WHERE id = ${collabId}
+      `);
+      await this.recomputeReleaseIsPublic(releaseId);
+      return true;
+    } catch (error) {
+      console.error("[acceptCollaborator] Error:", error);
+      return false;
+    }
+  }
+
+  async rejectCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean> {
+    try {
+      const collabRow = await db.execute(sql`
+        SELECT id FROM release_collaborators WHERE id = ${collabId} AND release_id = ${releaseId} AND artist_id = ${artistId} LIMIT 1
+      `);
+      if (((collabRow as any).rows || []).length === 0) return false;
+      const artist = await this.getUser(artistId);
+      if (!artist || artist.account_type !== "artist" || !artist.verified_artist) return false;
+      await db.execute(sql`
+        UPDATE release_collaborators SET status = 'REJECTED', responded_at = NOW() WHERE id = ${collabId}
+      `);
+      await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
+      return true;
+    } catch (error) {
+      console.error("[rejectCollaborator] Error:", error);
+      return false;
+    }
+  }
+
+  async removeCollaborator(releaseId: string, collabId: string, ownerId: string): Promise<boolean> {
+    try {
+      const release = await this.getRelease(releaseId);
+      if (!release || release.artistId !== ownerId) return false;
+      const collabRow = await db.execute(sql`
+        SELECT status FROM release_collaborators WHERE id = ${collabId} AND release_id = ${releaseId} LIMIT 1
+      `);
+      const rows = (collabRow as any).rows || [];
+      if (rows.length === 0) return false;
+      if (rows[0].status === "ACCEPTED") return false;
+      await db.execute(sql`DELETE FROM release_collaborators WHERE id = ${collabId}`);
+      await this.recomputeReleaseIsPublic(releaseId);
+      return true;
+    } catch (error) {
+      console.error("[removeCollaborator] Error:", error);
+      return false;
+    }
+  }
 }
 
 export const storage = new DatabaseStorage();
