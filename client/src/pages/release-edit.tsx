@@ -1,9 +1,17 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Upload, Plus, Trash2, Search, CheckSquare, UserPlus } from "lucide-react";
+import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useUser } from "@/lib/user-context";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -32,7 +40,9 @@ export default function ReleaseEdit() {
   >([]);
   const [saving, setSaving] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
-  const [selectedArtistToInvite, setSelectedArtistToInvite] = useState<{ id: string; username: string } | null>(null);
+  const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: release, isLoading } = useQuery({
@@ -51,6 +61,7 @@ export default function ReleaseEdit() {
       setReleaseDate(release.releaseDate ? new Date(release.releaseDate).toISOString().slice(0, 10) : "");
       setArtworkPath(release.artworkPath ?? (release.artworkUrl && !String(release.artworkUrl).startsWith("http") ? release.artworkUrl : null));
       setSelectedPostIds((release.postIds as string[]) || []);
+      setStagedCollaborators([]);
       setDraftLinks(
         (release.links as any[] | undefined)?.map((l) => ({
           id: l.id,
@@ -214,7 +225,35 @@ export default function ReleaseEdit() {
       });
       console.log("[ReleaseEdit] Basic fields saved", { releaseId });
 
-      // 2) Links: clear existing then re-create from draft
+      // 2) Collaborators: send invites for staged (only when no existing collaborators)
+      if (stagedCollaborators.length > 0 && (release.collaborators || []).length === 0) {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[ReleaseEdit] Inviting collaborators, release", releaseId, "endpoint: POST /api/releases/" + releaseId + "/collaborators/invite", "ids:", stagedCollaborators.map((c) => c.id));
+        }
+        let inviteFailures = 0;
+        for (const c of stagedCollaborators) {
+          try {
+            await apiRequest("POST", `/api/releases/${releaseId}/collaborators/invite`, {
+              artist_id: c.id,
+            });
+          } catch {
+            inviteFailures++;
+          }
+        }
+        if (inviteFailures > 0) {
+          toast({
+            title: "Release updated, but collaborator invites failed.",
+            description: "You can retry from the release edit page.",
+            variant: "destructive",
+          });
+          await queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
+          setSaving(false);
+          return;
+        }
+        console.log("[ReleaseEdit] Collaborators invited", { releaseId, count: stagedCollaborators.length });
+      }
+
+      // 3) Links: clear existing then re-create from draft
       const existingLinks: { platform: string }[] = (release.links as any[]) || [];
       for (const l of existingLinks) {
         await apiRequest("DELETE", `/api/releases/${releaseId}/links/${l.platform}`);
@@ -236,7 +275,7 @@ export default function ReleaseEdit() {
       });
       }
 
-      // 3) Attachments: diff vs current (owner or accepted collaborator)
+      // 4) Attachments: diff vs current (owner or accepted collaborator)
       const currentAttached = new Set((release.postIds as string[]) || []);
       const toDetach = Array.from(currentAttached).filter((id) => !selectedPostIds.includes(id));
       const toAttach = selectedPostIds.filter((id) => !currentAttached.has(id));
@@ -320,6 +359,7 @@ export default function ReleaseEdit() {
 
   const releaseDateObj = release.releaseDate ? new Date(release.releaseDate as string | number) : null;
   const isReleaseLocked = !!releaseDateObj && releaseDateObj.getTime() <= Date.now();
+  const existingCollaboratorsCount = (release.collaborators || []).length;
 
   return (
     <div className="flex-1 bg-background overflow-y-auto pb-24">
@@ -440,64 +480,76 @@ export default function ReleaseEdit() {
         {isOwner && (
         <section className="mb-8">
           <h2 className="text-sm font-medium text-muted-foreground mb-2">Collaborators</h2>
-          <p className="text-xs text-muted-foreground mb-2">
-            Invite verified artists. Release stays private until all collaborators accept.
-          </p>
-          <div className="flex gap-2 mb-3">
-            <Input
-              placeholder="Search artist username..."
-              value={collabSearch}
-              onChange={(e) => setCollabSearch(e.target.value)}
-              className="flex-1"
-            />
-          </div>
-          {collabSearch && (
-            <div className="mb-2 max-h-32 overflow-y-auto border rounded-lg divide-y">
-              {(verifiedArtists as { id: string; username: string }[])
-                .filter((a) => !(release.collaborators || []).some((c: any) => c.artistId === a.id) && a.id !== release.artistId)
-                .slice(0, 5)
-                .map((artist) => (
-                  <button
-                    key={artist.id}
-                    type="button"
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between"
-                    onClick={() => {
-                      setSelectedArtistToInvite(artist);
-                      setCollabSearch("");
-                    }}
-                  >
-                    @{artist.username}
-                    <UserPlus className="w-4 h-4 text-primary" />
-                  </button>
-                ))}
-            </div>
+          {existingCollaboratorsCount > 0 ? (
+            <p className="text-xs text-muted-foreground mb-2">
+              Collaborator set is locked for this release once invitations have been sent.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mb-2">
+              Invite verified artists. Release stays private until all collaborators accept. Max 4.
+            </p>
           )}
-          {selectedArtistToInvite && (
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm">Invite @{selectedArtistToInvite.username}?</span>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  try {
-                    const res = await apiRequest("POST", `/api/releases/${releaseId}/collaborators/invite`, {
-                      artist_id: selectedArtistToInvite.id,
-                    });
-                    if (res.ok) {
-                      queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
-                      toast({ title: "Invite sent" });
-                      setSelectedArtistToInvite(null);
-                    }
-                  } catch {
-                    toast({ title: "Invite failed", variant: "destructive" });
-                  }
-                }}
-              >
-                Send invite
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelectedArtistToInvite(null)}>
-                Cancel
-              </Button>
-            </div>
+          {existingCollaboratorsCount === 0 && (
+            <>
+              <div className="flex gap-2 mb-3">
+                <Input
+                  placeholder="Search artist username..."
+                  value={collabSearch}
+                  onChange={(e) => setCollabSearch(e.target.value)}
+                  className="flex-1"
+                  disabled={saving}
+                />
+              </div>
+              {collabSearch && (
+                <div className="mb-2 max-h-32 overflow-y-auto border rounded-lg divide-y">
+                  {(verifiedArtists as { id: string; username: string }[])
+                    .filter(
+                      (a) =>
+                        a.id !== release.artistId &&
+                        !(release.collaborators || []).some((c: any) => c.artistId === a.id) &&
+                        !stagedCollaborators.some((s) => s.id === a.id) &&
+                        stagedCollaborators.length < 4
+                    )
+                    .slice(0, 5)
+                    .map((artist) => (
+                      <button
+                        key={artist.id}
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between"
+                        onClick={() => {
+                          if (stagedCollaborators.length >= 4) return;
+                          setStagedCollaborators((prev) =>
+                            prev.some((p) => p.id === artist.id) ? prev : [...prev, { id: artist.id, username: artist.username }]
+                          );
+                          setCollabSearch("");
+                        }}
+                      >
+                        @{artist.username}
+                        <UserPlus className="w-4 h-4 text-primary" />
+                      </button>
+                    ))}
+                </div>
+              )}
+              {stagedCollaborators.length > 0 && (
+                <div className="mb-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">Pending invite:</p>
+                  {stagedCollaborators.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-muted">
+                      <span className="text-sm">@{c.username}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => setStagedCollaborators((prev) => prev.filter((p) => p.id !== c.id))}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
           <div className="space-y-2">
             {(release.collaborators || []).map((c: any) => (
@@ -548,9 +600,14 @@ export default function ReleaseEdit() {
             </p>
           )}
           {!isReleaseLocked && (
-          <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-            Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
-          </p>
+          <>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+              Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Selected posts will be attached when you save changes.
+            </p>
+          </>
           )}
           <label className="flex items-center gap-2 mb-3">
             <input
@@ -627,16 +684,6 @@ export default function ReleaseEdit() {
             </span>
             <Button
               size="sm"
-              disabled={!attachWarningAccepted}
-              onClick={() => {
-                // No-op: selection is applied on Save Changes
-              }}
-            >
-              <CheckSquare className="w-4 h-4 mr-1" />
-              Attach on save
-            </Button>
-            <Button
-              size="sm"
               variant="outline"
               onClick={() => {
                 setSelectedPostIds([]);
@@ -648,7 +695,7 @@ export default function ReleaseEdit() {
           </div>
         </section>
 
-        <div className="pt-6 pb-8">
+        <div className="pt-6 pb-8 space-y-3">
           <Button
             className="w-full"
             size="lg"
@@ -657,7 +704,72 @@ export default function ReleaseEdit() {
           >
             {saving ? "Saving…" : "Save Changes"}
           </Button>
+          {isOwner && (
+            <Button
+              variant="destructive"
+              className="w-full"
+              size="lg"
+              onClick={() => setShowDeleteModal(true)}
+              disabled={saving}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Release
+            </Button>
+          )}
         </div>
+
+        <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete release?</DialogTitle>
+              <DialogDescription>
+                This will permanently remove the release and all its data (links, collaborators, attachments). You can’t undo this.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteModal(false)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  if (!releaseId || !release || release.artistId !== currentUser?.id) return;
+                  setDeleting(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const headers: Record<string, string> = {};
+                    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+                    const res = await fetch(`/api/releases/${releaseId}`, {
+                      method: "DELETE",
+                      credentials: "include",
+                      headers,
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.message || "Failed to delete");
+                    }
+                    await queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
+                    await queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
+                    toast({ title: "Release deleted" });
+                    setShowDeleteModal(false);
+                    navigate("/releases");
+                  } catch (e) {
+                    toast({
+                      title: "Could not delete release",
+                      description: e instanceof Error ? e.message : "Unknown error",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

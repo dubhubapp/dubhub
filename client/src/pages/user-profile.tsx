@@ -266,6 +266,18 @@ export default function UserProfile(props: any = {}) {
   const isTagNotification = (n: NotificationWithUser) =>
     n.message?.includes("tagged you in a comment");
 
+  const isCollaboratorAcceptance = (n: NotificationWithUser) => {
+    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id;
+    return !!releaseId && (n.message?.includes("accepted your collaboration invite") ?? false);
+  };
+
+  const isCollaboratorRejection = (n: NotificationWithUser) => {
+    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id;
+    return !!releaseId && (n.message?.includes("rejected your collaboration invite") ?? false);
+  };
+
+  const isCollaboratorResponse = (n: NotificationWithUser) => isCollaboratorAcceptance(n) || isCollaboratorRejection(n);
+
   // Mark all notifications as read when Notifications tab is opened
   useEffect(() => {
     if (activeTab === "notifications" && unreadCount > 0) {
@@ -279,7 +291,7 @@ export default function UserProfile(props: any = {}) {
       markNotificationAsReadMutation.mutate(notification.id);
     }
     // Navigate to release detail when release_id is present, else to post
-    const releaseId = (notification as any).releaseId ?? notification.release?.id;
+    const releaseId = (notification as any).releaseId ?? (notification as any).release_id ?? notification.release?.id;
     if (releaseId) {
       navigate(`/releases/${releaseId}`);
     } else if (notification.postId) {
@@ -781,14 +793,25 @@ export default function UserProfile(props: any = {}) {
                 <div className="space-y-3">
                   {notifications.map((notification) => {
                     const isTag = isTagNotification(notification);
+                    const isAcceptance = isCollaboratorAcceptance(notification);
+                    const isRejection = isCollaboratorRejection(notification);
+                    const isCollabResponse = isCollaboratorResponse(notification);
+                    const baseClass = "flex gap-3 p-3 rounded-lg border transition-colors cursor-pointer";
+                    const styleClass = isCollabResponse
+                      ? isAcceptance
+                        ? notification.read
+                          ? "border-green-600/40 bg-green-500/5 hover:bg-green-500/10"
+                          : "border-green-500/60 bg-green-500/15 hover:bg-green-500/25 ring-1 ring-green-500/20"
+                        : notification.read
+                          ? "border-amber-600/40 bg-amber-500/5 hover:bg-amber-500/10"
+                          : "border-amber-500/60 bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-500/20"
+                      : notification.read
+                        ? "border-gray-700 bg-surface hover:bg-gray-800"
+                        : "border-primary/30 bg-primary/10 hover:bg-primary/20";
                     return (
                       <div
                         key={notification.id}
-                        className={`flex gap-3 p-3 rounded-lg border transition-colors ${
-                          notification.read
-                            ? 'border-gray-700 bg-surface hover:bg-gray-800'
-                            : 'border-primary/30 bg-primary/10 hover:bg-primary/20'
-                        } cursor-pointer`}
+                        className={`${baseClass} ${styleClass}`}
                         onClick={() => handleNotificationClick(notification)}
                         data-testid={`notification-${notification.id}`}
                       >
@@ -813,10 +836,10 @@ export default function UserProfile(props: any = {}) {
                           )}
                         </div>
 
-                        {/* Notification Content: for tag notifications message already includes @username */}
+                        {/* Notification Content: tag and acceptance include @username in message */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-foreground">
-                            {isTag ? (
+                          <p className={`text-sm ${isCollabResponse ? "font-medium text-foreground" : "text-foreground"}`}>
+                            {isTag || isCollabResponse ? (
                               notification.message
                             ) : (
                               <>
@@ -830,12 +853,18 @@ export default function UserProfile(props: any = {}) {
                           </p>
                         </div>
 
-                        {/* Unread Indicator */}
-                        {!notification.read && (
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-primary rounded-full"></div>
-                          </div>
-                        )}
+                        {/* Acceptance/rejection icon + unread indicator */}
+                        <div className="flex items-center gap-2">
+                          {isAcceptance && (
+                            <CheckCircle className="w-5 h-5 flex-shrink-0 text-green-500" aria-hidden />
+                          )}
+                          {isRejection && (
+                            <X className="w-5 h-5 flex-shrink-0 text-amber-500" aria-hidden />
+                          )}
+                          {!notification.read && (
+                            <div className={`w-2 h-2 rounded-full ${isCollabResponse ? (isAcceptance ? "bg-green-500" : "bg-amber-500") : "bg-primary"}`}></div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

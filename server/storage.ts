@@ -1,5 +1,5 @@
 import { type Notification, type InsertNotification, type NotificationWithUser } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, desc, asc, and, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
@@ -48,7 +48,7 @@ export interface IStorage {
   getLeaderboard(userType: "user" | "artist"): Promise<any[]>;
 
   // Releases
-  getReleasesFeed(userId: string, view?: "owned" | "collaborations" | "all"): Promise<any[]>;
+  getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations"): Promise<any[]>;
   getRelease(id: string): Promise<any | undefined>;
   createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
   updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
@@ -60,13 +60,16 @@ export interface IStorage {
   detachPostsFromRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }>;
   getEligiblePostsForArtist(artistId: string, currentReleaseId?: string): Promise<any[]>;
   notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean>;
+  notifyPostAttachmentRecipients(releaseId: string, actorId: string, newlyAttachedPostIds: string[]): Promise<void>;
   notifyReleaseDayLikers(): Promise<number>;
   getReleaseCollaborators(releaseId: string): Promise<any[]>;
   canManageRelease(releaseId: string, userId: string): Promise<boolean>;
-  inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string }>;
+  inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string; code?: string }>;
+  inviteCollaboratorsBatch(releaseId: string, ownerId: string, artistIds: string[]): Promise<{ ok: boolean; error?: string; code?: string }>;
   acceptCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean>;
   rejectCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean>;
   removeCollaborator(releaseId: string, collabId: string, ownerId: string): Promise<boolean>;
+  deleteRelease(releaseId: string, ownerId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1171,68 +1174,82 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- Releases ---
-  // Feed returns releases; links are added by route. We do NOT join release_links - all owned
-  // releases are returned regardless of links/artwork.
-  async getReleasesFeed(userId: string, view?: "owned" | "collaborations" | "all"): Promise<any[]> {
+  // Feed returns releases; links are added by route. Views: upcoming (release_date >= now), past (release_date < now), collaborations (user is collaborator).
+  async getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations"): Promise<any[]> {
     if (!userId) return [];
+    const v = view || "upcoming";
     try {
-      const whereClause = view === "owned"
-        ? sql`r.artist_id = ${userId}`
-        : view === "collaborations"
-        ? sql`EXISTS (SELECT 1 FROM release_collaborators rc WHERE rc.release_id = r.id AND rc.artist_id = ${userId})`
-        : sql`(r.artist_id = ${userId} OR EXISTS (SELECT 1 FROM release_collaborators rc WHERE rc.release_id = r.id AND rc.artist_id = ${userId}) OR (r.is_public = true AND r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
-      const result = await db.execute(sql`
-        SELECT
-          r.id,
-          r.artist_id,
-          r.title,
-          r.release_date,
-          r.artwork_url,
-          r.notified_at,
-          r.created_at,
-          r.updated_at,
-          r.is_public,
-          pr.username AS artist_username,
-          rc.status AS collaborator_status,
-          (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
-           FROM release_collaborators rc2
-           JOIN profiles pc ON pc.id = rc2.artist_id
-           WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
-        FROM releases r
-        JOIN profiles pr ON pr.id = r.artist_id
-        LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-        WHERE ${whereClause}
-        ORDER BY
-          (r.release_date > NOW()) DESC,
-          CASE WHEN r.release_date > NOW() THEN r.release_date END ASC NULLS LAST,
-          r.release_date DESC NULLS LAST
-      `);
+      if (v === "collaborations") {
+        const result = await db.execute(sql`
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public,
+                 pr.username AS artist_username, rc.status AS collaborator_status,
+                 (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+                  FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
+                  WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+          FROM releases r
+          JOIN profiles pr ON pr.id = r.artist_id
+          LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
+          WHERE EXISTS (SELECT 1 FROM release_collaborators rcx WHERE rcx.release_id = r.id AND rcx.artist_id = ${userId})
+          ORDER BY r.release_date > NOW() DESC, r.release_date ASC NULLS LAST
+        `);
+        return this.mapReleasesFeedRows((result as any).rows || []);
+      }
+      const baseWhere = sql`(r.artist_id = ${userId} OR EXISTS (SELECT 1 FROM release_collaborators rc0 WHERE rc0.release_id = r.id AND rc0.artist_id = ${userId}) OR (r.is_public = true AND r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+      const result = v === "upcoming"
+        ? await db.execute(sql`
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public,
+                   pr.username AS artist_username, rc.status AS collaborator_status,
+                   (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+                    FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
+                    WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+            FROM releases r
+            JOIN profiles pr ON pr.id = r.artist_id
+            LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
+            WHERE ${baseWhere} AND r.release_date >= NOW()
+            ORDER BY r.release_date ASC NULLS LAST
+          `)
+        : await db.execute(sql`
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public,
+                   pr.username AS artist_username, rc.status AS collaborator_status,
+                   (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+                    FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
+                    WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+            FROM releases r
+            JOIN profiles pr ON pr.id = r.artist_id
+            LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
+            WHERE ${baseWhere} AND r.release_date < NOW()
+            ORDER BY r.release_date DESC NULLS LAST
+          `);
       const rows = (result as any).rows || [];
-      return rows.map((row: any) => {
-        let collaborators: { username: string; status: string }[] = [];
-        try {
-          const ac = row.accepted_collaborators;
-          collaborators = Array.isArray(ac) ? ac : (typeof ac === "string" ? JSON.parse(ac || "[]") : []);
-        } catch {}
-        return {
-          id: row.id,
-          artistId: row.artist_id,
-          title: row.title,
-          releaseDate: row.release_date,
-          artworkUrl: row.artwork_url,
-          notifiedAt: row.notified_at,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          isPublic: row.is_public ?? true,
-          artistUsername: row.artist_username,
-          collaboratorStatus: row.collaborator_status || null,
-          collaborators: (collaborators || []).map((c: any) => ({ ...c, status: "ACCEPTED" })),
-        };
-      });
+      return this.mapReleasesFeedRows(rows);
     } catch (error) {
       console.error("[getReleasesFeed] Error:", error);
       return [];
     }
+  }
+
+  private mapReleasesFeedRows(rows: any[]): any[] {
+    return rows.map((row: any) => {
+      let collaborators: { username: string; status: string }[] = [];
+      try {
+        const ac = row.accepted_collaborators;
+        collaborators = Array.isArray(ac) ? ac : (typeof ac === "string" ? JSON.parse(ac || "[]") : []);
+      } catch {}
+      return {
+        id: row.id,
+        artistId: row.artist_id,
+        title: row.title,
+        releaseDate: row.release_date,
+        artworkUrl: row.artwork_url,
+        notifiedAt: row.notified_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        isPublic: row.is_public ?? true,
+        artistUsername: row.artist_username,
+        collaboratorStatus: row.collaborator_status || null,
+        collaborators: (collaborators || []).map((c: any) => ({ ...c, status: "ACCEPTED" })),
+      };
+    });
   }
 
   async getRelease(id: string): Promise<any | undefined> {
@@ -1375,8 +1392,9 @@ export class DatabaseStorage implements IStorage {
     return rows.map((r: any) => r.post_id);
   }
 
-  async attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ attached: string[]; rejected: string[]; postAlreadyAttached?: string[] }> {
+  async attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ attached: string[]; newlyAttached: string[]; rejected: string[]; postAlreadyAttached?: string[] }> {
     const attached: string[] = [];
+    const newlyAttached: string[] = [];
     const rejected: string[] = [];
     const postAlreadyAttached: string[] = [];
     for (const postId of postIds) {
@@ -1413,11 +1431,12 @@ export class DatabaseStorage implements IStorage {
           ON CONFLICT (release_id, post_id) DO NOTHING
         `);
         attached.push(postId);
+        newlyAttached.push(postId);
       } catch {
         rejected.push(postId);
       }
     }
-    return { attached, rejected, postAlreadyAttached: postAlreadyAttached.length > 0 ? postAlreadyAttached : undefined };
+    return { attached, newlyAttached, rejected, postAlreadyAttached: postAlreadyAttached.length > 0 ? postAlreadyAttached : undefined };
   }
 
   async detachPostsFromRelease(releaseId: string, actorId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }> {
@@ -1561,6 +1580,48 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async notifyPostAttachmentRecipients(releaseId: string, actorId: string, newlyAttachedPostIds: string[]): Promise<void> {
+    if (newlyAttachedPostIds.length === 0) return;
+    try {
+      const release = await this.getRelease(releaseId);
+      if (!release) return;
+      const ownerId = release.artistId;
+      const ownerProfile = await this.getUser(ownerId);
+      const ownerUsername = ownerProfile?.username ?? "Artist";
+      const releaseTitle = release.title ?? "Release";
+      const releaseDate = release.releaseDate ? new Date(release.releaseDate) : null;
+      const isFuture = releaseDate && releaseDate > new Date();
+      const releaseDateStr = releaseDate ? releaseDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+      const message = isFuture
+        ? `@${ownerUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
+        : `@${ownerUsername} released ${releaseTitle}`;
+      const firstPostId = newlyAttachedPostIds[0] ?? null;
+      const inList = sql.join(newlyAttachedPostIds.map((id) => sql`${id}`), sql`, `);
+      const recipientsResult = await db.execute(sql`
+        SELECT DISTINCT user_id FROM (
+          SELECT pl.user_id FROM post_likes pl WHERE pl.post_id IN (${inList}) AND pl.user_id IS NOT NULL
+          UNION
+          SELECT p.user_id FROM posts p WHERE p.id IN (${inList}) AND p.user_id IS NOT NULL
+        ) sub
+        WHERE user_id IS NOT NULL AND user_id != ${actorId}
+      `);
+      const recipientRows = (recipientsResult as any).rows || [];
+      for (const row of recipientRows) {
+        const recipientId = row.user_id;
+        if (!recipientId) continue;
+        await this.createNotification({
+          artistId: recipientId,
+          triggeredBy: actorId,
+          postId: firstPostId,
+          releaseId,
+          message,
+        } as any);
+      }
+    } catch (error) {
+      console.error("[notifyPostAttachmentRecipients] Error:", error);
+    }
+  }
+
   async notifyReleaseDayLikers(): Promise<number> {
     try {
       const releasesResult = await db.execute(sql`
@@ -1658,7 +1719,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string }> {
+  async inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string; code?: string }> {
     try {
       const release = await this.getRelease(releaseId);
       if (!release || release.artistId !== ownerId) return { ok: false, error: "Not release owner" };
@@ -1666,10 +1727,17 @@ export class DatabaseStorage implements IStorage {
       if (!artist || artist.account_type !== "artist" || !artist.verified_artist) {
         return { ok: false, error: "Artist not found or not verified" };
       }
+      const existing = await db.execute(sql`
+        SELECT artist_id FROM release_collaborators WHERE release_id = ${releaseId}
+      `);
+      const rows = (existing as any).rows || [];
+      const total = rows.length;
+      const alreadyLinked = rows.some((r: any) => r.artist_id === artistId);
+      if (alreadyLinked) return { ok: false, error: "Collaborator already invited or linked", code: "COLLABORATOR_ALREADY_LINKED" };
+      if (total >= 4) return { ok: false, error: "Maximum 4 collaborators per release", code: "MAX_COLLABORATORS" };
       await db.execute(sql`
         INSERT INTO release_collaborators (release_id, artist_id, status, invited_by, invited_at)
         VALUES (${releaseId}, ${artistId}, 'PENDING', ${ownerId}, NOW())
-        ON CONFLICT (release_id, artist_id) DO UPDATE SET status = 'PENDING', invited_by = ${ownerId}, invited_at = NOW(), responded_at = NULL
       `);
       await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
       const ownerProfile = await this.getUser(ownerId);
@@ -1684,6 +1752,41 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[inviteCollaborator] Error:", error);
       return { ok: false, error: "Failed to invite" };
+    }
+  }
+
+  async inviteCollaboratorsBatch(releaseId: string, ownerId: string, artistIds: string[]): Promise<{ ok: boolean; error?: string; code?: string }> {
+    try {
+      if (!artistIds.length) return { ok: true };
+      const release = await this.getRelease(releaseId);
+      if (!release || release.artistId !== ownerId) return { ok: false, error: "Not release owner" };
+      const existing = await db.execute(sql`SELECT artist_id FROM release_collaborators WHERE release_id = ${releaseId}`);
+      const rows = (existing as any).rows || [];
+      if (rows.length > 0) return { ok: false, error: "Collaborator set is locked once invitations have been sent", code: "COLLABORATOR_SET_LOCKED" };
+      const uniqueIds = Array.from(new Set(artistIds));
+      if (uniqueIds.length > 4) return { ok: false, error: "Maximum 4 collaborators per release", code: "MAX_COLLABORATORS" };
+      const ownerProfile = await this.getUser(ownerId);
+      const ownerUsername = ownerProfile?.username ?? "Artist";
+      for (const artistId of uniqueIds) {
+        const artist = await this.getUser(artistId);
+        if (!artist || artist.account_type !== "artist" || !artist.verified_artist) continue;
+        if (artistId === ownerId) continue;
+        await db.execute(sql`
+          INSERT INTO release_collaborators (release_id, artist_id, status, invited_by, invited_at)
+          VALUES (${releaseId}, ${artistId}, 'PENDING', ${ownerId}, NOW())
+        `);
+        await this.createNotification({
+          artistId,
+          triggeredBy: ownerId,
+          releaseId,
+          message: `@${ownerUsername} invited you as a collaborator on ${release.title}. Accept or reject.`,
+        } as any);
+      }
+      await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
+      return { ok: true };
+    } catch (error) {
+      console.error("[inviteCollaboratorsBatch] Error:", error);
+      return { ok: false, error: "Failed to invite collaborators" };
     }
   }
 
@@ -1712,6 +1815,17 @@ export class DatabaseStorage implements IStorage {
         UPDATE release_collaborators SET status = 'ACCEPTED', responded_at = NOW() WHERE id = ${collabId}
       `);
       await this.recomputeReleaseIsPublic(releaseId);
+      const release = await this.getRelease(releaseId);
+      if (release?.artistId && release.artistId !== artistId) {
+        const collabUsername = artist.username ?? "Artist";
+        await this.createNotification({
+          artistId: release.artistId,
+          triggeredBy: artistId,
+          postId: null,
+          releaseId,
+          message: `@${collabUsername} accepted your collaboration invite for ${release.title}`,
+        } as any);
+      }
       return true;
     } catch (error) {
       console.error("[acceptCollaborator] Error:", error);
@@ -1731,6 +1845,17 @@ export class DatabaseStorage implements IStorage {
         UPDATE release_collaborators SET status = 'REJECTED', responded_at = NOW() WHERE id = ${collabId}
       `);
       await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
+      const release = await this.getRelease(releaseId);
+      if (release?.artistId && release.artistId !== artistId) {
+        const collabUsername = artist.username ?? "Artist";
+        await this.createNotification({
+          artistId: release.artistId,
+          triggeredBy: artistId,
+          postId: null,
+          releaseId,
+          message: `@${collabUsername} rejected your collaboration invite for ${release.title}`,
+        } as any);
+      }
       return true;
     } catch (error) {
       console.error("[rejectCollaborator] Error:", error);
@@ -1754,6 +1879,29 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[removeCollaborator] Error:", error);
       return false;
+    }
+  }
+
+  async deleteRelease(releaseId: string, ownerId: string): Promise<boolean> {
+    const releaseRow = await db.execute(sql`SELECT artist_id FROM releases WHERE id = ${releaseId} LIMIT 1`);
+    const relRows = (releaseRow as any).rows || [];
+    if (relRows.length === 0 || relRows[0].artist_id !== ownerId) return false;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM notifications WHERE release_id = $1", [releaseId]);
+      await client.query("DELETE FROM release_collaborators WHERE release_id = $1", [releaseId]);
+      await client.query("DELETE FROM release_posts WHERE release_id = $1", [releaseId]);
+      await client.query("DELETE FROM release_links WHERE release_id = $1", [releaseId]);
+      await client.query("DELETE FROM releases WHERE id = $1 AND artist_id = $2", [releaseId, ownerId]);
+      await client.query("COMMIT");
+      return true;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("[deleteRelease] Error:", error);
+      return false;
+    } finally {
+      client.release();
     }
   }
 }

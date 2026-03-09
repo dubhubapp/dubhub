@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Upload, Plus, Trash2, Search, CheckSquare } from "lucide-react";
+import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/user-context";
@@ -29,7 +29,22 @@ export default function ReleaseCreate() {
     { platform: string; url: string; linkType?: string | null }[]
   >([]);
   const [saving, setSaving] = useState(false);
+  const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
+  const [collabSearch, setCollabSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: verifiedArtists = [] } = useQuery({
+    queryKey: ["/api/artists/verified", collabSearch],
+    queryFn: async () => {
+      const url = collabSearch
+        ? `/api/artists/verified?search=${encodeURIComponent(collabSearch)}`
+        : "/api/artists/verified";
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentUser?.id && userType === "artist",
+  });
 
   const { data: eligiblePosts = [] } = useQuery({
     queryKey: ["/api/posts/eligible-for-release"],
@@ -148,10 +163,48 @@ export default function ReleaseCreate() {
         artwork_url: artworkPath || undefined,
       });
       const data = await res.json();
-      const releaseId = data.id as string;
-      console.log("[ReleaseCreate] Release created", { releaseId });
+      const releaseId = (data.id ?? data.release_id) as string;
+      if (process.env.NODE_ENV === "development") {
+        console.log("[ReleaseCreate] Release created, id:", releaseId, "response keys:", Object.keys(data));
+      }
+      if (!releaseId) {
+        toast({ title: "Release created but could not get release ID", variant: "destructive" });
+        return;
+      }
 
-      // Links
+      // 2) Collaborators: invite each staged artist (using single invite endpoint)
+      if (stagedCollaborators.length > 0) {
+        let inviteFailures = 0;
+        for (const c of stagedCollaborators) {
+          try {
+            if (process.env.NODE_ENV === "development") {
+              console.log("[ReleaseCreate] Inviting collaborator:", c.id, "@" + c.username, "to release", releaseId, "POST /api/releases/" + releaseId + "/collaborators/invite");
+            }
+            await apiRequest("POST", `/api/releases/${releaseId}/collaborators/invite`, {
+              artist_id: c.id,
+            });
+          } catch (e) {
+            inviteFailures++;
+            if (process.env.NODE_ENV === "development") {
+              console.warn("[ReleaseCreate] Invite failed for", c.id, e);
+            }
+          }
+        }
+        if (inviteFailures > 0) {
+          toast({
+            title: "Release created, but collaborator invites failed.",
+            description: "You can retry inviting from the release edit page.",
+            variant: "destructive",
+          });
+          navigate(`/releases/${releaseId}/edit`);
+          return;
+        }
+        if (process.env.NODE_ENV === "development") {
+          console.log("[ReleaseCreate] Collaborators invited", { releaseId, count: stagedCollaborators.length });
+        }
+      }
+
+      // 3) Links
       for (const link of draftLinks) {
         await apiRequest("POST", `/api/releases/${releaseId}/links`, {
           platform: normalizePlatformForApi(link.platform),
@@ -159,18 +212,12 @@ export default function ReleaseCreate() {
           link_type: link.linkType ?? null,
         });
       }
-      console.log("[ReleaseCreate] Links saved", {
-        releaseId,
-        saved: draftLinks.length,
-      });
+      console.log("[ReleaseCreate] Links saved", { releaseId, saved: draftLinks.length });
 
-      // Attachments
+      // 4) Attachments
       if (selectedPostIds.length > 0) {
         await attachPostsWithAuth(releaseId, selectedPostIds);
-        console.log("[ReleaseCreate] Attached posts", {
-          releaseId,
-          attached: selectedPostIds,
-        });
+        console.log("[ReleaseCreate] Attached posts", { releaseId, attached: selectedPostIds });
       }
 
       await queryClient.removeQueries({ queryKey: ["/api/releases/feed"] });
@@ -267,6 +314,76 @@ export default function ReleaseCreate() {
           </section>
 
           <section className="space-y-3">
+            <h2 className="text-sm font-medium text-muted-foreground">Collaborators</h2>
+            <p className="text-xs text-muted-foreground">
+              Invite verified artists. Release stays private until all collaborators accept.
+            </p>
+            <div className="flex gap-2 mb-2">
+              <Input
+                placeholder="Search artist username..."
+                value={collabSearch}
+                onChange={(e) => setCollabSearch(e.target.value)}
+                className="flex-1"
+              />
+            </div>
+            {collabSearch && (
+              <div className="mb-2 max-h-32 overflow-y-auto border rounded-lg divide-y">
+                {(verifiedArtists as { id: string; username: string }[])
+                  .filter(
+                    (a) =>
+                      a.id !== currentUser?.id &&
+                      !stagedCollaborators.some((s) => s.id === a.id) &&
+                      stagedCollaborators.length < 4
+                  )
+                  .slice(0, 5)
+                  .map((artist) => (
+                    <button
+                      key={artist.id}
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between"
+                      onClick={() => {
+                        if (stagedCollaborators.length >= 4) return;
+                        setStagedCollaborators((prev) =>
+                          prev.some((p) => p.id === artist.id)
+                            ? prev
+                            : [...prev, { id: artist.id, username: artist.username }]
+                        );
+                        setCollabSearch("");
+                      }}
+                    >
+                      @{artist.username}
+                      <UserPlus className="w-4 h-4 text-primary" />
+                    </button>
+                  ))}
+              </div>
+            )}
+            {stagedCollaborators.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Pending invite (max 4):</p>
+                {stagedCollaborators.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between py-1.5 px-2 rounded bg-muted"
+                  >
+                    <span className="text-sm">@{c.username}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() =>
+                        setStagedCollaborators((prev) => prev.filter((p) => p.id !== c.id))
+                      }
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
             <h2 className="text-sm font-medium text-muted-foreground">Links</h2>
             <div className="space-y-2">
               {sortLinksByPlatform(draftLinks).map((l) => (
@@ -338,6 +455,9 @@ export default function ReleaseCreate() {
             <h2 className="text-sm font-medium text-muted-foreground mb-2">Attach posts</h2>
             <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
               Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Selected posts will be attached when you create this release.
             </p>
             <label className="flex items-center gap-2 mb-3">
               <input
@@ -422,17 +542,6 @@ export default function ReleaseCreate() {
               <span className="text-sm text-muted-foreground">
                 Selected ({selectedPostIds.length})
               </span>
-              <Button
-                size="sm"
-                type="button"
-                disabled={!attachWarningAccepted}
-                onClick={() => {
-                  // No-op: attachments are applied on Create Release
-                }}
-              >
-                <CheckSquare className="w-4 h-4 mr-1" />
-                Attach on create
-              </Button>
               <Button
                 size="sm"
                 type="button"

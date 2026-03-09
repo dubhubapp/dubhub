@@ -1,9 +1,11 @@
+import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, ExternalLink, Bell, Edit2, Check, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Edit2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { apiRequest } from "@/lib/queryClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate, isUpcoming } from "./release-tracker";
 import { formatReleaseTitleLine } from "@/lib/release-display";
@@ -25,23 +27,19 @@ export default function ReleaseDetail() {
   const { data: release, isLoading, error } = useQuery({
     queryKey: ["/api/releases", id],
     queryFn: async () => {
-      const res = await fetch(`/api/releases/${id}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch release");
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/releases/${id}`, { credentials: "include", headers });
+      if (!res.ok) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[ReleaseDetail] Fetch failed for release", id, "status:", res.status);
+        }
+        throw new Error("Failed to fetch release");
+      }
       return res.json();
     },
     enabled: !!id && id !== "new",
-  });
-
-  const notifyMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/releases/${id}/notify-likers`),
-    onSuccess: () => {
-      toast({ title: "Notifications sent to likers and uploaders" });
-      queryClient.invalidateQueries({ queryKey: ["/api/releases", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
-    },
-    onError: (e: Error) => {
-      toast({ title: "Could not notify", description: e.message, variant: "destructive" });
-    },
   });
 
   const isOwner = release && currentUser?.id && release.artistId === currentUser.id;
@@ -49,6 +47,16 @@ export default function ReleaseDetail() {
   const isPendingCollab = myCollab?.status === "PENDING";
   const isAcceptedCollab = myCollab?.status === "ACCEPTED";
   const canManage = isOwner || isAcceptedCollab;
+
+  const hasToastedNotFound = useRef(false);
+  useEffect(() => {
+    if (!isLoading && (error || !release) && id && id !== "new") {
+      if (!hasToastedNotFound.current) {
+        hasToastedNotFound.current = true;
+        toast({ title: "Release not found", variant: "destructive" });
+      }
+    }
+  }, [isLoading, error, release, id, toast]);
 
   if (!id || id === "new") {
     navigate("/releases");
@@ -199,19 +207,6 @@ export default function ReleaseDetail() {
               <Edit2 className="w-4 h-4 mr-2" />
               {isOwner ? "Edit release" : "Manage attachments"}
             </Button>
-            {isOwner && !release.notifiedAt && release.postIds?.length > 0 && (
-              <Button
-                className="w-full justify-start"
-                onClick={() => notifyMutation.mutate()}
-                disabled={notifyMutation.isPending}
-              >
-                <Bell className="w-4 h-4 mr-2" />
-                {notifyMutation.isPending ? "Sending…" : "Notify likers"}
-              </Button>
-            )}
-            {release.notifiedAt && (
-              <p className="text-xs text-muted-foreground">Likers were notified</p>
-            )}
           </div>
         )}
       </div>

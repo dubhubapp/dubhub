@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Calendar, Plus, Music, ExternalLink, Disc3 } from "lucide-react";
@@ -39,13 +39,32 @@ function isUpcoming(d: string) {
   return new Date(d) > new Date();
 }
 
-type FeedView = "owned" | "collaborations" | "all";
+type FeedView = "upcoming" | "collaborations" | "past";
+
+function getViewFromSearch(search: string): FeedView {
+  const v = new URLSearchParams(search).get("view");
+  return v === "past" || v === "collaborations" ? v : "upcoming";
+}
 
 export default function ReleaseTracker() {
   const [, navigate] = useLocation();
   const { currentUser, userType } = useUser();
   const isArtist = userType === "artist";
-  const [feedView, setFeedView] = useState<FeedView>(isArtist ? "owned" : "all");
+  // View from URL so bookmark/refresh work; state so tab clicks re-render (wouter often omits query from location)
+  const [feedView, setFeedViewState] = useState<FeedView>(() =>
+    typeof window !== "undefined" ? getViewFromSearch(window.location.search) : "upcoming"
+  );
+
+  useEffect(() => {
+    const onPop = () => setFeedViewState(getViewFromSearch(window.location.search));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const setFeedView = (v: FeedView) => {
+    setFeedViewState(v);
+    navigate(`/releases?view=${v}`);
+  };
 
   const { data: feed = [], isLoading } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", feedView],
@@ -53,10 +72,11 @@ export default function ReleaseTracker() {
       const { data: { session } } = await supabase.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-      const url = feedView !== "all"
-        ? `/api/releases/feed?view=${encodeURIComponent(feedView)}`
-        : "/api/releases/feed";
-      const res = await fetch(url, { headers, credentials: "include", cache: "no-store" });
+      const res = await fetch(`/api/releases/feed?view=${encodeURIComponent(feedView)}`, {
+        headers,
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch releases");
       return res.json();
     },
@@ -95,9 +115,9 @@ export default function ReleaseTracker() {
           )}
         </div>
 
-        {isArtist && currentUser?.id && (
+        {currentUser?.id && (
           <div className="flex gap-1 p-1 mb-4 rounded-lg bg-muted">
-            {(["owned", "collaborations", "all"] as FeedView[]).map((v) => (
+            {(["upcoming", "collaborations", "past"] as FeedView[]).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -106,7 +126,7 @@ export default function ReleaseTracker() {
                   feedView === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {v === "owned" ? "My Releases" : v === "collaborations" ? "Collaborations" : "All"}
+                {v === "upcoming" ? "Upcoming" : v === "collaborations" ? "Collaborations" : "Past"}
               </button>
             ))}
           </div>
@@ -121,16 +141,22 @@ export default function ReleaseTracker() {
           <div className="text-center text-muted-foreground py-12">
             <Disc3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="mb-2">
-              {feedView === "owned" ? "No releases yet" : feedView === "collaborations" ? "No collaborations" : "No releases yet"}
+              {feedView === "upcoming"
+                ? "No upcoming releases"
+                : feedView === "collaborations"
+                ? "No collaborations"
+                : "No past releases"}
             </p>
             <p className="text-sm">
-              {feedView === "owned"
-                ? "Create your first release to get started."
+              {feedView === "upcoming"
+                ? isArtist
+                  ? "Create a release or like verified artist posts to see upcoming releases here."
+                  : "Like posts that are verified by artists to see their releases here."
                 : feedView === "collaborations"
                 ? "You'll see releases you're invited to collaborate on here."
-                : "Like posts that are verified by artists to see their releases here."}
+                : "Past releases from you and artists you follow will appear here."}
             </p>
-            {isArtist && feedView === "owned" && (
+            {isArtist && feedView === "upcoming" && (
               <Button className="mt-4" onClick={() => navigate("/releases/new")}>
                 Add your first release
               </Button>

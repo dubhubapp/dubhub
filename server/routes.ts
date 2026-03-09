@@ -2495,7 +2495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.dbUser?.id ?? null;
       if (!userId) return res.json([]);
-      const view = req.query.view as "owned" | "collaborations" | "all" | undefined;
+      const view = (req.query.view as "upcoming" | "past" | "collaborations") || "upcoming";
       const feed = await storage.getReleasesFeed(userId, view);
       if (process.env.NODE_ENV === "development") {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -2511,9 +2511,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         })
       );
-      if (process.env.NODE_ENV === "development" && view === "owned") {
+      if (process.env.NODE_ENV === "development") {
         const withZeroLinks = withArtworkAndLinks.filter((r: any) => !r.links?.length);
-        console.log("[/api/releases/feed] owned: total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
+        console.log("[/api/releases/feed]", view, "total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
       }
       res.json(withArtworkAndLinks);
     } catch (error) {
@@ -2538,6 +2538,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/releases/:id] Error:", error);
       res.status(500).json({ message: "Failed to get release" });
+    }
+  });
+
+  app.delete("/api/releases/:id", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Only the release owner can delete it" });
+      const ok = await storage.deleteRelease(req.params.id, req.dbUser.id);
+      if (!ok) return res.status(500).json({ message: "Failed to delete release" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/releases/:id] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to delete release" });
     }
   });
 
@@ -2665,7 +2680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!canManage) return res.status(403).json({ message: "Not authorized to manage this release" });
       const { post_ids } = req.body;
       const ids = Array.isArray(post_ids) ? post_ids : [];
-      const { attached, rejected, postAlreadyAttached } = await storage.attachPostsToRelease(req.params.id, req.dbUser.id, ids);
+      const { attached, newlyAttached, rejected, postAlreadyAttached } = await storage.attachPostsToRelease(req.params.id, req.dbUser.id, ids);
       if (postAlreadyAttached && postAlreadyAttached.length > 0) {
         return res.status(409).json({
           code: "POST_ALREADY_ATTACHED",
@@ -2674,6 +2689,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           attached,
           rejected,
         });
+      }
+      if (newlyAttached.length > 0) {
+        await storage.notifyPostAttachmentRecipients(req.params.id, req.dbUser.id, newlyAttached);
       }
       res.json({ attached, rejected });
     } catch (error) {
@@ -2735,13 +2753,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       const { artist_id } = req.body;
       if (!artist_id) return res.status(400).json({ message: "artist_id is required" });
+      if (process.env.NODE_ENV === "development") {
+        console.log("[POST /api/releases/:id/collaborators/invite] releaseId:", req.params.id, "artist_id:", artist_id);
+      }
       const result = await storage.inviteCollaborator(req.params.id, req.dbUser.id, String(artist_id));
-      if (!result.ok) return res.status(400).json({ message: result.error || "Invite failed" });
+      if (!result.ok) {
+        const status = ["COLLABORATOR_ALREADY_LINKED", "MAX_COLLABORATORS", "COLLABORATOR_SET_LOCKED"].includes(result.code || "") ? 409 : 400;
+        return res.status(status).json({ message: result.error || "Invite failed", code: result.code });
+      }
       const collaborators = await storage.getReleaseCollaborators(req.params.id);
       res.json({ ok: true, collaborators });
     } catch (error) {
       console.error("[/api/releases/:id/collaborators/invite] Error:", error);
       res.status(500).json({ message: "Failed to invite" });
+    }
+  });
+
+  app.post("/api/releases/:id/collaborators/invite-batch", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const { artist_ids } = req.body;
+      const ids = Array.isArray(artist_ids) ? artist_ids.map(String).filter(Boolean) : [];
+      const result = await storage.inviteCollaboratorsBatch(req.params.id, req.dbUser.id, ids);
+      if (!result.ok) {
+        const status = result.code === "COLLABORATOR_SET_LOCKED" || result.code === "MAX_COLLABORATORS" ? 409 : 400;
+        return res.status(status).json({ message: result.error || "Invite failed", code: result.code });
+      }
+      const collaborators = await storage.getReleaseCollaborators(req.params.id);
+      res.json({ ok: true, collaborators });
+    } catch (error) {
+      console.error("[/api/releases/:id/collaborators/invite-batch] Error:", error);
+      res.status(500).json({ message: "Failed to invite collaborators" });
     }
   });
 
