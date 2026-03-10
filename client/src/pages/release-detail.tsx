@@ -63,6 +63,18 @@ export default function ReleaseDetail() {
     return null;
   }
 
+  const releasesBackUrl = (() => {
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const params = new URLSearchParams(search);
+    const scope = params.get("scope");
+    const view = params.get("view");
+    const q = new URLSearchParams();
+    if (scope) q.set("scope", scope);
+    if (view) q.set("view", view);
+    const qs = q.toString();
+    return qs ? `/releases?${qs}` : "/releases";
+  })();
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -75,7 +87,7 @@ export default function ReleaseDetail() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4">
         <p className="text-muted-foreground">Release not found</p>
-        <Button variant="outline" onClick={() => navigate("/releases")}>
+        <Button variant="outline" onClick={() => navigate(releasesBackUrl)}>
           Back to Releases
         </Button>
       </div>
@@ -87,7 +99,7 @@ export default function ReleaseDetail() {
   return (
     <div className="flex-1 bg-background overflow-y-auto pb-24">
       <div className="p-4 max-w-md mx-auto">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate("/releases")}>
+        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate(releasesBackUrl)}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>

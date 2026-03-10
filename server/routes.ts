@@ -1027,10 +1027,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/user/:id/posts", async (req, res) => {
+  app.get("/api/user/:id/posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const userId = req.params.id;
-      const currentUserId = (req as any).dbUser?.id || undefined;
+      const currentUserId = req.dbUser?.id ?? undefined;
       const userPosts = await storage.getUserPostsWithDetails(userId, currentUserId);
       res.json(userPosts);
     } catch (error) {
@@ -2496,7 +2496,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.dbUser?.id ?? null;
       if (!userId) return res.json([]);
       const view = (req.query.view as "upcoming" | "past" | "collaborations") || "upcoming";
-      const feed = await storage.getReleasesFeed(userId, view);
+      const scope = (req.query.scope as "my" | "saved") || "my";
+      const feed = await storage.getReleasesFeed(userId, view, scope);
       if (process.env.NODE_ENV === "development") {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
         (res as any).set("etag", false);
@@ -2513,7 +2514,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       if (process.env.NODE_ENV === "development") {
         const withZeroLinks = withArtworkAndLinks.filter((r: any) => !r.links?.length);
-        console.log("[/api/releases/feed]", view, "total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
+        console.log("[/api/releases/feed]", scope, view, "total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
       }
       res.json(withArtworkAndLinks);
     } catch (error) {
@@ -2690,8 +2691,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rejected,
         });
       }
-      if (newlyAttached.length > 0) {
-        await storage.notifyPostAttachmentRecipients(req.params.id, req.dbUser.id, newlyAttached);
+      if (attached.length > 0) {
+        await storage.maybeNotifyReleasePublic(req.params.id);
       }
       res.json({ attached, rejected });
     } catch (error) {
@@ -2840,8 +2841,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (!req.dbUser.moderator) return res.status(403).json({ message: "Moderator only" });
-      const count = await storage.notifyReleaseDayLikers();
-      res.json({ sent: count, message: `Release-day notifications sent: ${count}` });
+      const result = await storage.notifyReleaseDayLikers();
+      res.json({ sent: result.count, releaseIds: result.releaseIds, message: `Release-day notifications sent: ${result.count}` });
     } catch (error) {
       console.error("[/api/admin/run-release-day-notifications] Error:", error);
       res.status(500).json({ message: "Failed to run release-day notifications" });

@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
@@ -16,6 +16,9 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import { useLocation } from "wouter";
+import { formatReleaseTitleLine } from "@/lib/release-display";
+import { formatDate, isUpcoming } from "@/pages/release-tracker";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -25,6 +28,15 @@ interface VideoCardProps {
 }
 
 export function VideoCard({ post, isHighlighted = false, showStatusBadge = false }: VideoCardProps) {
+  const [, navigate] = useLocation();
+  const releasePreview = (post as any).releasePreview as {
+    id: string;
+    title: string;
+    artworkUrl: string | null;
+    releaseDate: string;
+    ownerUsername: string;
+    collaborators: { username: string; status: string }[];
+  } | null | undefined;
   const showVerifyDebug =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "verify";
   const { toast } = useToast();
@@ -535,6 +547,53 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               <span>{post.createdAt ? formatTimeAgo(post.createdAt) : 'Recently'}</span>
             </div>
           </div>
+          {releasePreview && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/releases/${releasePreview.id}`);
+              }}
+              className="mt-3 w-full flex items-center gap-3 p-2 rounded-lg bg-black/40 hover:bg-black/50 transition-colors text-left"
+            >
+              <div className="w-12 h-12 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+                {releasePreview.artworkUrl ? (
+                  <img src={releasePreview.artworkUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <Music className="w-6 h-6 text-gray-500" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-white truncate">
+                  {formatReleaseTitleLine(
+                    releasePreview.ownerUsername,
+                    releasePreview.title,
+                    releasePreview.collaborators
+                  )}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {formatDate(releasePreview.releaseDate)}
+                  <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${
+                    isUpcoming(releasePreview.releaseDate)
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "bg-green-500/20 text-green-600 dark:text-green-400"
+                  }`}>
+                    {isUpcoming(releasePreview.releaseDate) ? "Upcoming" : "Released"}
+                  </span>
+                </p>
+                <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                  {hasLiked ? (
+                    <>
+                      <Check className="w-3 h-3 text-green-400 flex-shrink-0" />
+                      This track is in your Releases
+                    </>
+                  ) : (
+                    "Like this post to add this track to your Releases"
+                  )}
+                </p>
+              </div>
+            </button>
+          )}
         </div>
       </div>
       {/* 3-dot menu in bottom right */}

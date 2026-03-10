@@ -62,11 +62,19 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Release-day morning notifications: run hourly at minute 0 (9am Europe/London check is inside the job)
-  cron.schedule("0 * * * *", async () => {
+  // Release-day morning notifications: 9am Europe/London check is inside the job
+  const isDev = process.env.NODE_ENV !== "production";
+  const cronExpr = isDev ? "* * * * *" : "*/5 * * * *"; // Dev: every 1 min; Prod: every 5 min
+  cron.schedule(cronExpr, async () => {
     try {
-      const count = await storage.notifyReleaseDayLikers();
-      if (count > 0) log(`[Cron] Release-day notifications sent: ${count}`);
+      if (isDev) log("[Cron] Release-day job running");
+      const result = await storage.notifyReleaseDayLikers();
+      if (result.count > 0) {
+        log(`[Cron] Release-day notifications sent: ${result.count} for release(s) ${result.releaseIds.join(", ")}`);
+      }
+      if (isDev && result.releaseIds.length === 0) {
+        log("[Cron] Release-day job: 0 releases eligible (date/time Europe/London, 9am+)");
+      }
     } catch (err) {
       console.error("[Cron] Release-day notifications error:", err);
     }

@@ -278,6 +278,12 @@ export default function UserProfile(props: any = {}) {
 
   const isCollaboratorResponse = (n: NotificationWithUser) => isCollaboratorAcceptance(n) || isCollaboratorRejection(n);
 
+  // Release-related (upcoming announcement + release-day) — exclude collab accept/reject
+  const isReleaseNotification = (n: NotificationWithUser) => {
+    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id;
+    return !!releaseId && !isCollaboratorResponse(n);
+  };
+
   // Mark all notifications as read when Notifications tab is opened
   useEffect(() => {
     if (activeTab === "notifications" && unreadCount > 0) {
@@ -796,6 +802,7 @@ export default function UserProfile(props: any = {}) {
                     const isAcceptance = isCollaboratorAcceptance(notification);
                     const isRejection = isCollaboratorRejection(notification);
                     const isCollabResponse = isCollaboratorResponse(notification);
+                    const isRelease = isReleaseNotification(notification);
                     const baseClass = "flex gap-3 p-3 rounded-lg border transition-colors cursor-pointer";
                     const styleClass = isCollabResponse
                       ? isAcceptance
@@ -805,6 +812,10 @@ export default function UserProfile(props: any = {}) {
                         : notification.read
                           ? "border-amber-600/40 bg-amber-500/5 hover:bg-amber-500/10"
                           : "border-amber-500/60 bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-500/20"
+                      : isRelease
+                        ? notification.read
+                          ? "border-amber-400/50 bg-amber-500/10 hover:bg-amber-500/15"
+                          : "border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-400/30"
                       : notification.read
                         ? "border-gray-700 bg-surface hover:bg-gray-800"
                         : "border-primary/30 bg-primary/10 hover:bg-primary/20";
@@ -838,7 +849,7 @@ export default function UserProfile(props: any = {}) {
 
                         {/* Notification Content: tag and acceptance include @username in message */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${isCollabResponse ? "font-medium text-foreground" : "text-foreground"}`}>
+                          <p className={`text-sm ${(isCollabResponse || isRelease) ? "font-medium text-foreground" : "text-foreground"}`}>
                             {isTag || isCollabResponse ? (
                               notification.message
                             ) : (
@@ -862,7 +873,7 @@ export default function UserProfile(props: any = {}) {
                             <X className="w-5 h-5 flex-shrink-0 text-amber-500" aria-hidden />
                           )}
                           {!notification.read && (
-                            <div className={`w-2 h-2 rounded-full ${isCollabResponse ? (isAcceptance ? "bg-green-500" : "bg-amber-500") : "bg-primary"}`}></div>
+                            <div className={`w-2 h-2 rounded-full ${isCollabResponse ? (isAcceptance ? "bg-green-500" : "bg-amber-500") : isRelease ? "bg-amber-400" : "bg-primary"}`}></div>
                           )}
                         </div>
                       </div>

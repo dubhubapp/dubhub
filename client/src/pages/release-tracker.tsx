@@ -39,10 +39,47 @@ function isUpcoming(d: string) {
   return new Date(d) > new Date();
 }
 
-type FeedView = "upcoming" | "collaborations" | "past";
+function getMonthYearKey(d: string): string {
+  const date = new Date(d);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
 
-function getViewFromSearch(search: string): FeedView {
+function formatMonthYear(d: string): string {
+  const date = new Date(d);
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function groupReleasesByMonth<T extends { releaseDate: string }>(
+  items: T[],
+  ascending: boolean
+): { key: string; label: string; items: T[] }[] {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = getMonthYearKey(item.releaseDate);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(item);
+  }
+  const keys = Array.from(map.keys()).sort((a, b) =>
+    ascending ? a.localeCompare(b) : b.localeCompare(a)
+  );
+  return keys.map((key) => {
+    const itemsInGroup = map.get(key)!;
+    return { key, label: formatMonthYear(itemsInGroup[0].releaseDate), items: itemsInGroup };
+  });
+}
+
+type FeedView = "upcoming" | "collaborations" | "past";
+type FeedScope = "my" | "saved";
+
+function getScopeFromSearch(search: string, isArtist: boolean): FeedScope {
+  if (!isArtist) return "saved";
+  const s = new URLSearchParams(search).get("scope");
+  return s === "saved" ? "saved" : "my";
+}
+
+function getViewFromSearch(search: string, scope: FeedScope): FeedView {
   const v = new URLSearchParams(search).get("view");
+  if (scope === "saved") return v === "past" ? "past" : "upcoming";
   return v === "past" || v === "collaborations" ? v : "upcoming";
 }
 
@@ -50,29 +87,56 @@ export default function ReleaseTracker() {
   const [, navigate] = useLocation();
   const { currentUser, userType } = useUser();
   const isArtist = userType === "artist";
-  // View from URL so bookmark/refresh work; state so tab clicks re-render (wouter often omits query from location)
+  const [scope, setScopeState] = useState<FeedScope>(() =>
+    typeof window !== "undefined" ? getScopeFromSearch(window.location.search, isArtist) : (isArtist ? "my" : "saved")
+  );
   const [feedView, setFeedViewState] = useState<FeedView>(() =>
-    typeof window !== "undefined" ? getViewFromSearch(window.location.search) : "upcoming"
+    typeof window !== "undefined" ? getViewFromSearch(window.location.search, scope) : "upcoming"
   );
 
   useEffect(() => {
-    const onPop = () => setFeedViewState(getViewFromSearch(window.location.search));
+    const onPop = () => {
+      const s = getScopeFromSearch(window.location.search, isArtist);
+      setScopeState(s);
+      setFeedViewState(getViewFromSearch(window.location.search, s));
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [isArtist]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const s = getScopeFromSearch(window.location.search, isArtist);
+    setScopeState(s);
+    setFeedViewState(getViewFromSearch(window.location.search, s));
+  }, [currentUser?.id, isArtist]);
+
+  const setScope = (s: FeedScope) => {
+    setScopeState(s);
+    const nextView: FeedView = s === "saved" ? "upcoming" : feedView;
+    setFeedViewState(nextView);
+    navigate(`/releases?scope=${s}&view=${nextView}`);
+  };
 
   const setFeedView = (v: FeedView) => {
     setFeedViewState(v);
-    navigate(`/releases?view=${v}`);
+    const params = new URLSearchParams();
+    if (isArtist) params.set("scope", scope);
+    params.set("view", v);
+    navigate(`/releases?${params}`);
   };
 
+  const effectiveScope: FeedScope = isArtist ? scope : "saved";
+  const effectiveView: FeedView = effectiveScope === "saved" && feedView === "collaborations" ? "upcoming" : feedView;
+
   const { data: feed = [], isLoading } = useQuery<ReleaseFeedItem[]>({
-    queryKey: ["/api/releases/feed", feedView],
+    queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-      const res = await fetch(`/api/releases/feed?view=${encodeURIComponent(feedView)}`, {
+      const params = new URLSearchParams({ view: effectiveView, scope: effectiveScope });
+      const res = await fetch(`/api/releases/feed?${params}`, {
         headers,
         credentials: "include",
         cache: "no-store",
@@ -116,19 +180,40 @@ export default function ReleaseTracker() {
         </div>
 
         {currentUser?.id && (
-          <div className="flex gap-1 p-1 mb-4 rounded-lg bg-muted">
-            {(["upcoming", "collaborations", "past"] as FeedView[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setFeedView(v)}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                  feedView === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {v === "upcoming" ? "Upcoming" : v === "collaborations" ? "Collaborations" : "Past"}
-              </button>
-            ))}
+          <div className="space-y-3 mb-4">
+            {isArtist && (
+              <div className="flex gap-1 p-1 rounded-lg bg-muted">
+                {(["my", "saved"] as FeedScope[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setScope(s)}
+                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+                      scope === s ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {s === "my" ? "My Releases" : "Saved Releases"}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1 p-1 rounded-lg bg-muted">
+              {(effectiveScope === "my"
+                ? (["upcoming", "collaborations", "past"] as FeedView[])
+                : (["upcoming", "past"] as FeedView[])
+              ).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setFeedView(v)}
+                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+                    feedView === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {v === "upcoming" ? "Upcoming" : v === "collaborations" ? "Collaborations" : "Past"}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -149,89 +234,108 @@ export default function ReleaseTracker() {
             </p>
             <p className="text-sm">
               {feedView === "upcoming"
-                ? isArtist
-                  ? "Create a release or like verified artist posts to see upcoming releases here."
+                ? effectiveScope === "my"
+                  ? "Create a release or accept collaboration invites to see upcoming releases here."
                   : "Like posts that are verified by artists to see their releases here."
                 : feedView === "collaborations"
                 ? "You'll see releases you're invited to collaborate on here."
-                : "Past releases from you and artists you follow will appear here."}
+                : effectiveScope === "my"
+                ? "Past releases from you and collaborations will appear here."
+                : "Past releases from liked posts will appear here."}
             </p>
-            {isArtist && feedView === "upcoming" && (
+            {isArtist && feedView === "upcoming" && effectiveScope === "my" && (
               <Button className="mt-4" onClick={() => navigate("/releases/new")}>
                 Add your first release
               </Button>
             )}
           </div>
         ) : (
-          <div className="space-y-4">
-            {feed.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => navigate(`/releases/${r.id}`)}
-                className="w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4"
-              >
-                <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-                  {r.artworkUrl ? (
-                    <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <Music className="w-10 h-10 text-muted-foreground" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold truncate">
-                    {formatReleaseTitleLine(r.artistUsername, r.title, r.collaborators)}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">{formatDate(r.releaseDate)}</p>
-                  {getBannerFromLinks(r.links, isUpcoming(r.releaseDate)) && (
-                    <p className="text-xs text-primary mt-1">
-                      {getBannerFromLinks(r.links, isUpcoming(r.releaseDate))}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-1 mt-2 items-center">
-                    <span
-                      className={`inline-block text-xs px-2 py-0.5 rounded ${
-                        isUpcoming(r.releaseDate)
-                          ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                          : "bg-green-500/20 text-green-600 dark:text-green-400"
-                      }`}
+          <div className="space-y-6">
+            {groupReleasesByMonth(
+              feed,
+              effectiveView === "upcoming" || effectiveView === "collaborations"
+            ).map(({ key: monthKey, label: monthLabel, items }) => (
+              <section key={monthKey}>
+                <h2 className="text-sm font-semibold text-muted-foreground mb-3 sticky top-0 bg-background/95 backdrop-blur py-1 -mx-1 px-1">
+                  {monthLabel}
+                </h2>
+                <div className="space-y-4">
+                  {items.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        const params = new URLSearchParams();
+                        if (isArtist) params.set("scope", scope);
+                        params.set("view", feedView);
+                        navigate(`/releases/${r.id}?${params}`);
+                      }}
+                      className="w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4"
                     >
-                      {isUpcoming(r.releaseDate) ? "Upcoming" : "Released"}
-                    </span>
-                    {r.collaboratorStatus && (
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ${
-                          r.collaboratorStatus === "ACCEPTED"
-                            ? "bg-green-500/20 text-green-600 dark:text-green-400"
-                            : r.collaboratorStatus === "REJECTED"
-                            ? "bg-red-500/20 text-red-600 dark:text-red-400"
-                            : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                        }`}
-                      >
-                        {r.collaboratorStatus}
-                      </span>
-                    )}
-                  </div>
-                  {r.links && r.links.length > 0 && (
-                    <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                      {sortLinksByPlatform(r.links).map((link) => (
-                        <a
-                          key={link.id}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
-                          title={getPlatformLabel(link.platform)}
-                        >
-                          <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                          <span>{getLinkCtaLabel(link.platform, isUpcoming(r.releaseDate))}</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ))}
-                    </div>
-                  )}
+                      <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+                        {r.artworkUrl ? (
+                          <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <Music className="w-10 h-10 text-muted-foreground" />
+                      )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold truncate">
+                          {formatReleaseTitleLine(r.artistUsername, r.title, r.collaborators)}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">{formatDate(r.releaseDate)}</p>
+                        {getBannerFromLinks(r.links, isUpcoming(r.releaseDate)) && (
+                          <p className="text-xs text-primary mt-1">
+                            {getBannerFromLinks(r.links, isUpcoming(r.releaseDate))}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-1 mt-2 items-center">
+                          <span
+                            className={`inline-block text-xs px-2 py-0.5 rounded ${
+                              isUpcoming(r.releaseDate)
+                                ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                                : "bg-green-500/20 text-green-600 dark:text-green-400"
+                            }`}
+                          >
+                            {isUpcoming(r.releaseDate) ? "Upcoming" : "Released"}
+                          </span>
+                          {r.collaboratorStatus && (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded ${
+                                r.collaboratorStatus === "ACCEPTED"
+                                  ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                                  : r.collaboratorStatus === "REJECTED"
+                                  ? "bg-red-500/20 text-red-600 dark:text-red-400"
+                                  : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                              }`}
+                            >
+                              {r.collaboratorStatus}
+                            </span>
+                          )}
+                        </div>
+                        {r.links && r.links.length > 0 && (
+                          <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                            {sortLinksByPlatform(r.links).map((link) => (
+                              <a
+                                key={link.id}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
+                                title={getPlatformLabel(link.platform)}
+                              >
+                                <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
+                                <span>{getLinkCtaLabel(link.platform, isUpcoming(r.releaseDate))}</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </button>
+              </section>
             ))}
           </div>
         )}
