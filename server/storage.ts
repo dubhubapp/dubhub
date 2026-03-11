@@ -49,6 +49,7 @@ export interface IStorage {
 
   // Releases
   getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]>;
+  getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
   getRelease(id: string): Promise<any | undefined>;
   createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
   updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
@@ -228,7 +229,11 @@ export class DatabaseStorage implements IStorage {
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
            WHERE rc2.release_id = (SELECT rp.release_id FROM release_posts rp JOIN releases r ON r.id = rp.release_id WHERE rp.post_id = p.id AND r.is_public = true LIMIT 1)
-           AND rc2.status = 'ACCEPTED') AS rel_collaborators
+           AND rc2.status = 'ACCEPTED') AS rel_collaborators,
+          (SELECT r.is_coming_soon FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -291,7 +296,8 @@ export class DatabaseStorage implements IStorage {
               id: row.rel_id,
               title: row.rel_title,
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
-              releaseDate: row.rel_release_date,
+              releaseDate: row.rel_release_date ?? null,
+              isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
                 .filter((c: any) => c && c.username)
@@ -560,7 +566,11 @@ export class DatabaseStorage implements IStorage {
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
            WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true LIMIT 1)
-           AND rc2.status = 'ACCEPTED') AS rel_collaborators
+           AND rc2.status = 'ACCEPTED') AS rel_collaborators,
+          (SELECT r.is_coming_soon FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_is_coming_soon
         FROM post_likes pl
         JOIN posts p ON p.id = pl.post_id
         JOIN profiles pr ON pr.id = p.user_id
@@ -604,6 +614,7 @@ export class DatabaseStorage implements IStorage {
               title: row.rel_title,
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
               releaseDate: row.rel_release_date,
+              isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
                 .filter((c: any) => c && c.username)
@@ -838,7 +849,11 @@ export class DatabaseStorage implements IStorage {
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
            WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true LIMIT 1)
-           AND rc2.status = 'ACCEPTED') AS rel_collaborators
+           AND rc2.status = 'ACCEPTED') AS rel_collaborators,
+          (SELECT r.is_coming_soon FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr ON pr.id = p.user_id
         WHERE p.user_id = ${artistId}
@@ -869,7 +884,8 @@ export class DatabaseStorage implements IStorage {
               id: row.rel_id,
               title: row.rel_title,
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
-              releaseDate: row.rel_release_date,
+              releaseDate: row.rel_release_date ?? null,
+              isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
                 .filter((c: any) => c && c.username)
@@ -942,7 +958,11 @@ export class DatabaseStorage implements IStorage {
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
            WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true LIMIT 1)
-           AND rc2.status = 'ACCEPTED') AS rel_collaborators
+           AND rc2.status = 'ACCEPTED') AS rel_collaborators,
+          (SELECT r.is_coming_soon FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr ON pr.id = p.user_id
         WHERE p.user_id = ${userId}
@@ -980,7 +1000,8 @@ export class DatabaseStorage implements IStorage {
               id: row.rel_id,
               title: row.rel_title,
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
-              releaseDate: row.rel_release_date,
+              releaseDate: row.rel_release_date ?? null,
+              isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
               collaborators,
             }
@@ -1348,7 +1369,7 @@ export class DatabaseStorage implements IStorage {
     try {
       if (v === "collaborations") {
         const result = await db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
                  pr.username AS artist_username, rc.status AS collaborator_status,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -1364,10 +1385,16 @@ export class DatabaseStorage implements IStorage {
       const savedWhere = sql`(r.is_public = true AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
       const baseWhere = scopeVal === "saved"
         ? savedWhere
-        : sql`(r.artist_id = ${userId} OR EXISTS (SELECT 1 FROM release_collaborators rc0 WHERE rc0.release_id = r.id AND rc0.artist_id = ${userId}) OR ${savedWhere})`;
+        : sql`(r.artist_id = ${userId} OR EXISTS (
+                 SELECT 1
+                 FROM release_collaborators rc0
+                 WHERE rc0.release_id = r.id
+                   AND rc0.artist_id = ${userId}
+                   AND rc0.status = 'ACCEPTED'
+               ))`;
       const result = v === "upcoming"
         ? await db.execute(sql`
-            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public,
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
                    pr.username AS artist_username, rc.status AS collaborator_status,
                    (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                     FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -1375,11 +1402,11 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             JOIN profiles pr ON pr.id = r.artist_id
             LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-            WHERE ${baseWhere} AND r.release_date >= NOW()
+            WHERE ${baseWhere} AND (r.release_date >= NOW() OR (r.release_date IS NULL AND r.is_coming_soon = true))
             ORDER BY r.release_date ASC NULLS LAST
           `)
         : await db.execute(sql`
-            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public,
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
                    pr.username AS artist_username, rc.status AS collaborator_status,
                    (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                     FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -1387,13 +1414,63 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             JOIN profiles pr ON pr.id = r.artist_id
             LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-            WHERE ${baseWhere} AND r.release_date < NOW()
+            WHERE ${baseWhere} AND r.release_date IS NOT NULL AND r.release_date < NOW()
             ORDER BY r.release_date DESC NULLS LAST
           `);
       const rows = (result as any).rows || [];
+      if (process.env.NODE_ENV === "development" && scopeVal === "my") {
+        try {
+          console.log("[getReleasesFeed][dev] artist My Releases", {
+            userId,
+            view: v,
+            count: rows.length,
+            releases: rows.map((row: any) => ({
+              id: row.id,
+              artistId: row.artist_id,
+              isOwner: row.artist_id === userId,
+              collaboratorStatus: row.collaborator_status ?? null,
+              isPublic: row.is_public,
+            })),
+          });
+        } catch {
+          // ignore logging errors
+        }
+      }
       return this.mapReleasesFeedRows(rows);
     } catch (error) {
       console.error("[getReleasesFeed] Error:", error);
+      return [];
+    }
+  }
+
+  async getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]> {
+    if (!artistId) return [];
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          r.id,
+          r.title,
+          r.release_date,
+          r.artwork_url,
+          r.is_coming_soon
+        FROM releases r
+        WHERE r.artist_id = ${artistId}
+          AND r.is_public = true
+          AND (
+            r.release_date >= NOW()
+            OR (r.release_date IS NULL AND r.is_coming_soon = true)
+          )
+          ${excludePostId
+            ? sql`AND NOT EXISTS (
+                 SELECT 1 FROM release_posts rp
+                 WHERE rp.release_id = r.id AND rp.post_id = ${excludePostId}
+               )`
+            : sql``}
+        ORDER BY r.release_date ASC NULLS LAST
+      `);
+      return (result as any).rows || [];
+    } catch (error) {
+      console.error("[getUpcomingReleasesForArtist] Error:", error);
       return [];
     }
   }
@@ -1409,12 +1486,13 @@ export class DatabaseStorage implements IStorage {
         id: row.id,
         artistId: row.artist_id,
         title: row.title,
-        releaseDate: row.release_date,
+        releaseDate: row.release_date ?? null,
         artworkUrl: row.artwork_url,
         notifiedAt: row.notified_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         isPublic: row.is_public ?? true,
+        isComingSoon: row.is_coming_soon ?? false,
         artistUsername: row.artist_username,
         collaboratorStatus: row.collaborator_status || null,
         collaborators: (collaborators || []).map((c: any) => ({ ...c, status: "ACCEPTED" })),
@@ -1435,6 +1513,7 @@ export class DatabaseStorage implements IStorage {
           r.created_at,
           r.updated_at,
           r.is_public,
+          r.is_coming_soon,
           pr.username AS artist_username
         FROM releases r
         JOIN profiles pr ON pr.id = r.artist_id
@@ -1451,12 +1530,13 @@ export class DatabaseStorage implements IStorage {
         id: row.id,
         artistId: row.artist_id,
         title: row.title,
-        releaseDate: row.release_date,
+        releaseDate: row.release_date ?? null,
         artworkUrl: row.artwork_url,
         notifiedAt: row.notified_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         isPublic: row.is_public ?? true,
+        isComingSoon: row.is_coming_soon ?? false,
         artistUsername: row.artist_username,
         links,
         postIds,
@@ -1468,10 +1548,10 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any> {
+  async createRelease(data: { artistId: string; title: string; releaseDate: Date | null; artworkUrl?: string | null; isComingSoon?: boolean }): Promise<any> {
     const result = await db.execute(sql`
-      INSERT INTO releases (artist_id, title, release_date, artwork_url, is_public, created_at, updated_at)
-      VALUES (${data.artistId}, ${data.title}, ${data.releaseDate}, ${data.artworkUrl ?? null}, true, NOW(), NOW())
+      INSERT INTO releases (artist_id, title, release_date, artwork_url, is_public, is_coming_soon, created_at, updated_at)
+      VALUES (${data.artistId}, ${data.title}, ${data.releaseDate}, ${data.artworkUrl ?? null}, true, ${data.isComingSoon ?? false}, NOW(), NOW())
       RETURNING *
     `);
     const rows = (result as any).rows || [];
@@ -1492,17 +1572,20 @@ export class DatabaseStorage implements IStorage {
   async updateRelease(
     id: string,
     artistId: string,
-    data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }
+    data: { title?: string; releaseDate?: Date | null; artworkUrl?: string | null; isComingSoon?: boolean }
   ): Promise<any | undefined> {
     try {
       const current = await this.getRelease(id);
       if (!current) return undefined;
       const title = data.title !== undefined ? data.title : current.title;
-      const releaseDate = data.releaseDate !== undefined ? data.releaseDate : new Date(current.releaseDate);
+      const releaseDate = data.releaseDate !== undefined
+        ? data.releaseDate
+        : (current.releaseDate ? new Date(current.releaseDate) : null);
       const artworkUrl = data.artworkUrl !== undefined ? data.artworkUrl : current.artworkUrl;
+      const isComingSoon = data.isComingSoon !== undefined ? data.isComingSoon : !!current.isComingSoon;
       await db.execute(sql`
         UPDATE releases
-        SET title = ${title}, release_date = ${releaseDate}, artwork_url = ${artworkUrl}, updated_at = NOW()
+        SET title = ${title}, release_date = ${releaseDate}, artwork_url = ${artworkUrl}, is_coming_soon = ${isComingSoon}, updated_at = NOW()
         WHERE id = ${id} AND artist_id = ${artistId}
       `);
       return this.getRelease(id);
@@ -1755,10 +1838,16 @@ export class DatabaseStorage implements IStorage {
    * Triggered when is_public becomes true; uses notified_at to prevent duplicates.
    * Recipients = likers + uploaders of ALL attached posts; excludes owner.
    */
+  private getReleaseStatus(isComingSoon: boolean, releaseDate: Date | null): "upcoming" | "released" {
+    if (isComingSoon) return "upcoming";
+    if (releaseDate && releaseDate > new Date()) return "upcoming";
+    return "released";
+  }
+
   async maybeNotifyReleasePublic(releaseId: string): Promise<void> {
     try {
       const releaseRow = await db.execute(sql`
-        SELECT id, artist_id, title, release_date, is_public, notified_at FROM releases WHERE id = ${releaseId} LIMIT 1
+        SELECT id, artist_id, title, release_date, is_coming_soon, is_public, notified_at FROM releases WHERE id = ${releaseId} LIMIT 1
       `);
       const rows = (releaseRow as any).rows || [];
       if (rows.length === 0) return;
@@ -1780,11 +1869,15 @@ export class DatabaseStorage implements IStorage {
       const ownerUsername = ownerProfile?.username ?? "Artist";
       const releaseTitle = r.title ?? "Release";
       const releaseDate = r.release_date ? new Date(r.release_date) : null;
-      const isFuture = releaseDate && releaseDate > new Date();
+      const isComingSoon = !!r.is_coming_soon;
+      const status = this.getReleaseStatus(isComingSoon, releaseDate);
       const releaseDateStr = releaseDate ? releaseDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
-      const message = isFuture
-        ? `@${ownerUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
-        : `@${ownerUsername} released ${releaseTitle}`;
+      const message =
+        status === "upcoming"
+          ? isComingSoon && !releaseDate
+            ? `@${ownerUsername} announced ${releaseTitle} (coming soon)`
+            : `@${ownerUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
+          : `@${ownerUsername} released ${releaseTitle}`;
       const firstPostId = postIds[0] ?? null;
       for (const row of recipientRows) {
         const recipientId = row.user_id;
@@ -1809,6 +1902,8 @@ export class DatabaseStorage implements IStorage {
         SELECT r.id, r.artist_id, r.title, r.release_date, r.release_day_notified_at, r.artwork_url
         FROM releases r
         WHERE r.release_day_notified_at IS NULL
+          AND r.is_coming_soon = false
+          AND r.release_date IS NOT NULL
           AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
           AND DATE(r.release_date AT TIME ZONE 'Europe/London') = (NOW() AT TIME ZONE 'Europe/London')::date
           AND (NOW() AT TIME ZONE 'Europe/London')::time >= '09:00'::time

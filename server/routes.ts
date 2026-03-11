@@ -1049,6 +1049,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Artist: upcoming releases for attach flow (verified artists only)
+  app.get("/api/artists/me/upcoming-releases", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist" || !req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artists only" });
+      }
+      const postId = typeof req.query.post_id === "string" ? (req.query.post_id as string) : undefined;
+      const releases = await storage.getUpcomingReleasesForArtist(req.dbUser.id, postId);
+      res.json(releases);
+    } catch (error) {
+      console.error("[/api/artists/me/upcoming-releases] Error:", error);
+      res.status(500).json({ message: "Failed to load upcoming releases" });
+    }
+  });
+
 
   // Community verification endpoint
   app.post("/api/posts/:id/community-verify", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
@@ -2585,15 +2601,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
-      const { title, release_date, artwork_url } = req.body;
-      if (!title || !release_date) return res.status(400).json({ message: "title and release_date are required" });
-      const releaseDate = new Date(release_date);
-      if (isNaN(releaseDate.getTime())) return res.status(400).json({ message: "Invalid release_date" });
+      const { title, release_date, artwork_url, is_coming_soon } = req.body;
+      const coming = !!is_coming_soon;
+      if (!title) return res.status(400).json({ message: "title is required" });
+      let releaseDate: Date | null = null;
+      if (!coming) {
+        if (!release_date) return res.status(400).json({ message: "release_date is required unless coming soon" });
+        const d = new Date(release_date);
+        if (isNaN(d.getTime())) return res.status(400).json({ message: "Invalid release_date" });
+        releaseDate = d;
+      }
       const release = await storage.createRelease({
         artistId: req.dbUser.id,
         title: String(title).trim(),
         releaseDate,
         artworkUrl: artwork_url?.trim() || null,
+        isComingSoon: coming,
       });
       const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
       res.status(201).json({ ...release, artworkUrl });
@@ -2607,13 +2630,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
-      const { title, release_date, artwork_url } = req.body;
-      const updates: { title?: string; releaseDate?: Date; artworkUrl?: string | null } = {};
+      const { title, release_date, artwork_url, is_coming_soon } = req.body;
+      const updates: { title?: string; releaseDate?: Date | null; artworkUrl?: string | null; isComingSoon?: boolean } = {};
       if (title !== undefined) updates.title = String(title).trim();
       if (release_date !== undefined) {
-        const d = new Date(release_date);
-        if (!isNaN(d.getTime())) updates.releaseDate = d;
+        if (!release_date) {
+          updates.releaseDate = null;
+        } else {
+          const d = new Date(release_date);
+          if (!isNaN(d.getTime())) updates.releaseDate = d;
+        }
       }
+      if (is_coming_soon !== undefined) updates.isComingSoon = !!is_coming_soon;
       if (artwork_url !== undefined) updates.artworkUrl = artwork_url?.trim() || null;
       const release = await storage.updateRelease(req.params.id, req.dbUser.id, updates);
       if (!release) return res.status(404).json({ message: "Release not found" });

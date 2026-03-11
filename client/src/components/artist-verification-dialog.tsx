@@ -9,6 +9,8 @@ import { CheckCircle, User } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
+import { useUser } from "@/lib/user-context";
+import { formatDate } from "@/pages/release-tracker";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -19,14 +21,34 @@ interface ArtistVerificationDialogProps {
 export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { verifiedArtist } = useUser();
+  const [step, setStep] = useState<"verify" | "attach">("verify");
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [collaborators, setCollaborators] = useState("");
+  const [attachOptions, setAttachOptions] = useState<
+    { id: string; title: string; release_date: string; artwork_url: string | null }[]
+  >([]);
+  const [selectedReleaseId, setSelectedReleaseId] = useState<string>("");
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
     enabled: isOpen,
   });
+
+  const resetState = () => {
+    setStep("verify");
+    setSelectedCommentId("");
+    setTitle("");
+    setCollaborators("");
+    setAttachOptions([]);
+    setSelectedReleaseId("");
+  };
+
+  const handleClose = () => {
+    resetState();
+    onClose();
+  };
 
   const confirmMutation = useMutation({
     mutationFn: async () => {
@@ -39,7 +61,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
         ...(collaborators.trim() && { collaborators: collaborators.trim() }),
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
@@ -48,7 +70,27 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
         title: "Track Confirmed",
         description: "You have confirmed this track.",
       });
-      onClose();
+      // Only prompt verified artists for attach flow
+      if (!verifiedArtist) {
+        handleClose();
+        return;
+      }
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/artists/me/upcoming-releases${postId ? `?post_id=${encodeURIComponent(postId)}` : ""}`
+        );
+        const releases = await res.json();
+        if (Array.isArray(releases) && releases.length > 0) {
+          setAttachOptions(releases);
+          setStep("attach");
+        } else {
+          handleClose();
+        }
+      } catch (error) {
+        console.error("[ArtistVerificationDialog] Failed to load upcoming releases", error);
+        handleClose();
+      }
     },
     onError: (error: Error & { body?: { code?: string; message?: string } }) => {
       const body = (error as any)?.body;
@@ -66,6 +108,40 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
           variant: "destructive",
         });
       }
+    },
+  });
+
+  const attachMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedReleaseId) throw new Error("Please select a release");
+      const res = await apiRequest("POST", `/api/releases/${selectedReleaseId}/attach-posts`, {
+        post_ids: [postId],
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      toast({
+        title: "Post attached",
+        description: "This post has been attached to your release.",
+      });
+      handleClose();
+    },
+    onError: (error: Error & { body?: { code?: string; message?: string } }) => {
+      const body = (error as any)?.body;
+      const code = body?.code;
+      let description = body?.message || error.message || "Failed to attach post to release.";
+      if (code === "POST_ALREADY_ATTACHED") {
+        description = "This post is already attached to another release.";
+      } else if (code === "RELEASE_LOCKED") {
+        description = "This release is locked and can no longer accept new posts.";
+      }
+      toast({
+        title: "Attach failed",
+        description,
+        variant: "destructive",
+      });
     },
   });
 
@@ -112,16 +188,18 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
   const handleDeny = () => denyMutation.mutate();
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-background/95 backdrop-blur-md">
-        <DialogHeader>
-          <DialogTitle>Artist Verification</DialogTitle>
-          <DialogDescription>
-            You were tagged on this post. Select the comment that correctly identifies the track, then confirm or deny.
-          </DialogDescription>
-        </DialogHeader>
+        {step === "verify" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Artist Verification</DialogTitle>
+              <DialogDescription>
+                You were tagged on this post. Select the comment that correctly identifies the track, then confirm or deny.
+              </DialogDescription>
+            </DialogHeader>
 
-        {isLoading ? (
+            {isLoading ? (
           <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
@@ -180,7 +258,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
             <div className="flex justify-end gap-2 pt-4 border-t border-border">
               <Button
                 variant="outline"
-                onClick={onClose}
+                onClick={handleClose}
                 data-testid="button-cancel-artist-verification"
               >
                 Cancel
@@ -202,6 +280,60 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
               </Button>
             </div>
           </div>
+        )}
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Attach this post to an existing release?</DialogTitle>
+              <DialogDescription>
+                You have upcoming releases. Attach this post so listeners see it on your Releases tab.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <RadioGroup value={selectedReleaseId} onValueChange={setSelectedReleaseId}>
+                {attachOptions.map((rel) => (
+                  <div
+                    key={rel.id}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/40 transition-colors"
+                  >
+                    <RadioGroupItem value={rel.id} id={rel.id} />
+                    <Label htmlFor={rel.id} className="flex-1 cursor-pointer flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-md bg-muted overflow-hidden flex items-center justify-center">
+                        {rel.artwork_url ? (
+                          <img src={rel.artwork_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No artwork</span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{rel.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatDate(rel.release_date as any)}
+                        </p>
+                      </div>
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+              <div className="flex justify-end gap-2 pt-4 border-t border-border">
+                <Button
+                  variant="outline"
+                  onClick={handleClose}
+                  data-testid="button-attach-skip"
+                >
+                  Skip
+                </Button>
+                <Button
+                  onClick={() => attachMutation.mutate()}
+                  disabled={!selectedReleaseId || attachMutation.isPending}
+                  data-testid="button-attach-confirm"
+                >
+                  {attachMutation.isPending ? "Attaching..." : "Attach to release"}
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

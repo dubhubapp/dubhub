@@ -27,6 +27,7 @@ export default function ReleaseEdit() {
   const { currentUser, userType } = useUser();
   const [title, setTitle] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
+  const [comingSoon, setComingSoon] = useState(false);
   const [artworkPath, setArtworkPath] = useState<string | null>(null);
   const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -59,6 +60,7 @@ export default function ReleaseEdit() {
     if (release) {
       setTitle(release.title ?? "");
       setReleaseDate(release.releaseDate ? new Date(release.releaseDate).toISOString().slice(0, 10) : "");
+      setComingSoon(!!release.isComingSoon);
       setArtworkPath(release.artworkPath ?? (release.artworkUrl && !String(release.artworkUrl).startsWith("http") ? release.artworkUrl : null));
       setSelectedPostIds((release.postIds as string[]) || []);
       setStagedCollaborators([]);
@@ -220,8 +222,9 @@ export default function ReleaseEdit() {
       // 1) Basic release fields (owner only)
       await apiRequest("PATCH", `/api/releases/${releaseId}`, {
         title: title.trim(),
-        release_date: releaseDate,
+        release_date: comingSoon ? null : releaseDate,
         artwork_url: artworkPath?.trim() || null,
+        is_coming_soon: comingSoon,
       });
       console.log("[ReleaseEdit] Basic fields saved", { releaseId });
 
@@ -375,9 +378,31 @@ export default function ReleaseEdit() {
         {isOwner && (
         <section className="mb-8">
           <h2 className="text-sm font-medium text-muted-foreground mb-2">Details</h2>
-          <div className="space-y-3">
+            <div className="space-y-3">
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-            <Input type="date" value={releaseDate} onChange={(e) => setReleaseDate(e.target.value)} />
+            <div>
+              <label className="text-sm font-medium block mb-1">Release date</label>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  id="edit-coming-soon"
+                  type="checkbox"
+                  checked={comingSoon}
+                  onChange={(e) => setComingSoon(e.target.checked)}
+                  disabled={isReleaseLocked}
+                />
+                <label htmlFor="edit-coming-soon" className="text-sm">
+                  Coming soon (date TBC - you can update this later)
+                </label>
+              </div>
+              {!comingSoon && (
+                <Input
+                  type="date"
+                  value={releaseDate}
+                  onChange={(e) => setReleaseDate(e.target.value)}
+                  disabled={isReleaseLocked}
+                />
+              )}
+            </div>
             <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleArtworkChange} />
             <div className="flex items-center gap-3">
               {(artworkPreviewUrl || artworkPath || release?.artworkUrl) && (
@@ -750,6 +775,7 @@ export default function ReleaseEdit() {
                     }
                     await queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
                     await queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
+                    await queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });
                     toast({ title: "Release deleted" });
                     setShowDeleteModal(false);
                     navigate("/releases");

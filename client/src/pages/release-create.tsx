@@ -17,6 +17,7 @@ export default function ReleaseCreate() {
   const { currentUser, userType } = useUser();
   const [title, setTitle] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
+  const [comingSoon, setComingSoon] = useState(false);
   const [artworkPath, setArtworkPath] = useState<string | null>(null);
   const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -145,8 +146,8 @@ export default function ReleaseCreate() {
       toast({ title: "Title is required", variant: "destructive" });
       return;
     }
-    if (!releaseDate) {
-      toast({ title: "Release date is required", variant: "destructive" });
+    if (!comingSoon && !releaseDate) {
+      toast({ title: "Release date is required unless Coming soon", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -159,8 +160,9 @@ export default function ReleaseCreate() {
       });
       const res = await apiRequest("POST", "/api/releases", {
         title: title.trim(),
-        release_date: releaseDate,
+        release_date: comingSoon ? null : releaseDate,
         artwork_url: artworkPath || undefined,
+        is_coming_soon: comingSoon,
       });
       const data = await res.json();
       const releaseId = (data.id ?? data.release_id) as string;
@@ -266,12 +268,25 @@ export default function ReleaseCreate() {
             </div>
             <div>
               <label className="text-sm font-medium block mb-1">Release date *</label>
-              <Input
-                type="date"
-                value={releaseDate}
-                onChange={(e) => setReleaseDate(e.target.value)}
-                required
-              />
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  id="coming-soon"
+                  type="checkbox"
+                  checked={comingSoon}
+                  onChange={(e) => setComingSoon(e.target.checked)}
+                />
+                <label htmlFor="coming-soon" className="text-sm">
+                  Coming soon (date TBC - you can update this later)
+                </label>
+              </div>
+              {!comingSoon && (
+                <Input
+                  type="date"
+                  value={releaseDate}
+                  onChange={(e) => setReleaseDate(e.target.value)}
+                  required
+                />
+              )}
             </div>
             <div>
               <label className="text-sm font-medium block mb-1">Artwork</label>

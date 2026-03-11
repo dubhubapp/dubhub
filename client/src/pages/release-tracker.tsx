@@ -17,12 +17,13 @@ export type ReleaseFeedItem = {
   id: string;
   artistId: string;
   title: string;
-  releaseDate: string;
+  releaseDate: string | null;
   artworkUrl: string | null;
   notifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   artistUsername: string;
+  isComingSoon?: boolean;
   links?: { id: string; platform: string; url: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   collaborators?: { username: string; status: string }[];
@@ -30,12 +31,14 @@ export type ReleaseFeedItem = {
 
 export { PLATFORM_ICONS, PLATFORM_LABELS, getPlatformIcon, getPlatformLabel } from "@/lib/platforms";
 
-function formatDate(d: string) {
+function formatDate(d: string | null) {
+  if (!d) return "";
   const date = new Date(d);
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function isUpcoming(d: string) {
+function isUpcoming(d: string | null) {
+  if (!d) return false;
   return new Date(d) > new Date();
 }
 
@@ -49,12 +52,13 @@ function formatMonthYear(d: string): string {
   return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-function groupReleasesByMonth<T extends { releaseDate: string }>(
+function groupReleasesByMonth<T extends { releaseDate: string | null }>(
   items: T[],
   ascending: boolean
 ): { key: string; label: string; items: T[] }[] {
   const map = new Map<string, T[]>();
   for (const item of items) {
+    if (!item.releaseDate) continue;
     const key = getMonthYearKey(item.releaseDate);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(item);
@@ -64,7 +68,7 @@ function groupReleasesByMonth<T extends { releaseDate: string }>(
   );
   return keys.map((key) => {
     const itemsInGroup = map.get(key)!;
-    return { key, label: formatMonthYear(itemsInGroup[0].releaseDate), items: itemsInGroup };
+    return { key, label: formatMonthYear(itemsInGroup[0].releaseDate!), items: itemsInGroup };
   });
 }
 
@@ -252,7 +256,7 @@ export default function ReleaseTracker() {
         ) : (
           <div className="space-y-6">
             {groupReleasesByMonth(
-              feed,
+              feed.filter((r) => r.releaseDate && !r.isComingSoon),
               effectiveView === "upcoming" || effectiveView === "collaborations"
             ).map(({ key: monthKey, label: monthLabel, items }) => (
               <section key={monthKey}>
@@ -280,25 +284,35 @@ export default function ReleaseTracker() {
                       )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold truncate">
-                          {formatReleaseTitleLine(r.artistUsername, r.title, r.collaborators)}
-                        </h3>
-                        <p className="text-xs text-muted-foreground mt-1">{formatDate(r.releaseDate)}</p>
-                        {getBannerFromLinks(r.links, isUpcoming(r.releaseDate)) && (
+                        <p className="text-xs font-semibold text-foreground">
+                          {formatReleaseTitleLine(r.artistUsername, "", r.collaborators).replace(" — ", "")}
+                        </p>
+                        <p className="text-sm text-foreground mt-0.5 line-clamp-2 break-words">
+                          {r.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {r.isComingSoon ? "Coming soon..." : formatDate(r.releaseDate)}
+                        </p>
+                        {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null)) && (
                           <p className="text-xs text-primary mt-1">
-                            {getBannerFromLinks(r.links, isUpcoming(r.releaseDate))}
+                            {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null))}
                           </p>
                         )}
                         <div className="flex flex-wrap gap-1 mt-2 items-center">
-                          <span
+                          {(() => {
+                            const upcoming = r.isComingSoon || isUpcoming(r.releaseDate);
+                            return (
+                              <span
                             className={`inline-block text-xs px-2 py-0.5 rounded ${
-                              isUpcoming(r.releaseDate)
+                              upcoming
                                 ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
                                 : "bg-green-500/20 text-green-600 dark:text-green-400"
                             }`}
                           >
-                            {isUpcoming(r.releaseDate) ? "Upcoming" : "Released"}
+                            {upcoming ? "Upcoming" : "Released"}
                           </span>
+                            );
+                          })()}
                           {r.collaboratorStatus && (
                             <span
                               className={`text-xs px-2 py-0.5 rounded ${
@@ -325,7 +339,7 @@ export default function ReleaseTracker() {
                                 title={getPlatformLabel(link.platform)}
                               >
                                 <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                                <span>{getLinkCtaLabel(link.platform, isUpcoming(r.releaseDate))}</span>
+                                <span>{getLinkCtaLabel(link.platform, r.isComingSoon || isUpcoming(r.releaseDate || null))}</span>
                                 <ExternalLink className="w-3 h-3" />
                               </a>
                             ))}
@@ -337,6 +351,88 @@ export default function ReleaseTracker() {
                 </div>
               </section>
             ))}
+            {feed.some((r) => r.isComingSoon) && (
+              <section>
+                <h2 className="text-sm font-semibold text-muted-foreground mb-3">
+                  Coming soon...
+                </h2>
+                <div className="space-y-4">
+                  {feed
+                    .filter((r) => r.isComingSoon)
+                    .map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          const params = new URLSearchParams();
+                          if (isArtist) params.set("scope", scope);
+                          params.set("view", feedView);
+                          navigate(`/releases/${r.id}?${params}`);
+                        }}
+                        className="w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4"
+                      >
+                        <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+                          {r.artworkUrl ? (
+                            <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <Music className="w-10 h-10 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-foreground">
+                            {formatReleaseTitleLine(r.artistUsername, "", r.collaborators).replace(" — ", "")}
+                          </p>
+                          <p className="text-sm text-foreground mt-0.5 line-clamp-2 break-words">
+                            {r.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Coming soon...</p>
+                          {getBannerFromLinks(r.links, true) && (
+                            <p className="text-xs text-primary mt-1">
+                              {getBannerFromLinks(r.links, true)}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap gap-1 mt-2 items-center">
+                            <span className="inline-block text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                              Upcoming
+                            </span>
+                            {r.collaboratorStatus && (
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded ${
+                                  r.collaboratorStatus === "ACCEPTED"
+                                    ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                                    : r.collaboratorStatus === "REJECTED"
+                                    ? "bg-red-500/20 text-red-600 dark:text-red-400"
+                                    : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                                }`}
+                              >
+                                {r.collaboratorStatus}
+                              </span>
+                            )}
+                          </div>
+                          {r.links && r.links.length > 0 && (
+                            <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                              {sortLinksByPlatform(r.links).map((link) => (
+                                <a
+                                  key={link.id}
+                                  href={link.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
+                                  title={getPlatformLabel(link.platform)}
+                                >
+                                  <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
+                                  <span>{getLinkCtaLabel(link.platform, true)}</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>

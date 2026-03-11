@@ -7,11 +7,12 @@ import { useUser } from "@/lib/user-context";
 import { apiRequest } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
-import { formatDate, isUpcoming } from "./release-tracker";
+import { formatDate } from "./release-tracker";
 import { formatReleaseTitleLine } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
+import { isReleaseUpcoming } from "@/lib/release-status";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 
@@ -94,7 +95,7 @@ export default function ReleaseDetail() {
     );
   }
 
-  const upcoming = isUpcoming(release.releaseDate);
+  const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
 
   return (
     <div className="flex-1 bg-background overflow-y-auto pb-24">
@@ -126,7 +127,9 @@ export default function ReleaseDetail() {
                 release.collaborators
               )}
             </h1>
-            <p className="text-sm mt-1">{formatDate(release.releaseDate)}</p>
+            <p className="text-sm mt-1">
+              {release.isComingSoon ? "Coming soon..." : formatDate(release.releaseDate)}
+            </p>
             <span
               className={`inline-block mt-2 text-xs px-2 py-0.5 rounded ${
                 upcoming ? "bg-amber-500/20 text-amber-600" : "bg-green-500/20 text-green-600"

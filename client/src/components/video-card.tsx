@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { formatReleaseTitleLine } from "@/lib/release-display";
-import { formatDate, isUpcoming } from "@/pages/release-tracker";
+import { formatDate } from "@/pages/release-tracker";
+import { isReleaseUpcoming } from "@/lib/release-status";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -33,7 +34,8 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     id: string;
     title: string;
     artworkUrl: string | null;
-    releaseDate: string;
+    releaseDate: string | null;
+    isComingSoon?: boolean;
     ownerUsername: string;
     collaborators: { username: string; status: string }[];
   } | null | undefined;
@@ -572,13 +574,21 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                   )}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {formatDate(releasePreview.releaseDate)}
-                  <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${
-                    isUpcoming(releasePreview.releaseDate)
-                      ? "bg-amber-500/20 text-amber-400"
-                      : "bg-green-500/20 text-green-600 dark:text-green-400"
-                  }`}>
-                    {isUpcoming(releasePreview.releaseDate) ? "Upcoming" : "Released"}
+                  {releasePreview.isComingSoon
+                    ? "Coming soon..."
+                    : releasePreview.releaseDate
+                    ? formatDate(releasePreview.releaseDate)
+                    : ""}
+                  <span
+                    className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${
+                      isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "bg-green-500/20 text-green-600 dark:text-green-400"
+                    }`}
+                  >
+                    {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
+                      ? "Upcoming"
+                      : "Released"}
                   </span>
                 </p>
                 <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
