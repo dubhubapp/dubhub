@@ -163,18 +163,19 @@ NOT `user_id` or `from_user_id`.
 ---
 
 ## releases
-| Column                  | Type        | Nullable | Default           | Notes                                                            |
-| ----------------------- | ----------- | -------- | ----------------- | ---------------------------------------------------------------- |
-| id                      | uuid        | NO       | gen_random_uuid() | Primary key                                                      |
-| artist_id               | uuid        | NO       | –                 | FK → profiles.id (owner)                                         |
-| title                   | text        | NO       | –                 | Release title                                                    |
-| release_date            | timestamptz | NO       | –                 | Release date/time                                                |
-| artwork_url             | text        | YES      | –                 | Artwork path/URL (release-artworks bucket)                       |
-| notified_at             | timestamptz | YES      | –                 | When announcement notifications were sent                        |
-| created_at              | timestamptz | YES      | now()             | Created                                                          |
-| updated_at              | timestamptz | YES      | now()             | Updated                                                          |
-| release_day_notified_at | timestamptz | YES      | –                 | When release-day morning notifications were sent                 |
-| is_public               | boolean     | NO       | false             | Public visibility flag (true only after collaborator acceptance) |
+| Column                  | Type        | Nullable | Default           | Notes                                            |
+| ----------------------- | ----------- | -------- | ----------------- | ------------------------------------------------ |
+| id                      | uuid        | NO       | gen_random_uuid() | Primary key                                      |
+| artist_id               | uuid        | NO       | –                 | FK → profiles.id (owner)                         |
+| title                   | text        | NO       | –                 | Release title                                    |
+| release_date            | timestamptz | YES      | –                 | Release date/time (nullable when coming soon)    |
+| artwork_url             | text        | YES      | –                 | Artwork path/URL (release-artworks bucket)       |
+| notified_at             | timestamptz | YES      | –                 | When announcement notifications were sent        |
+| created_at              | timestamptz | YES      | now()             | Created                                          |
+| updated_at              | timestamptz | YES      | now()             | Updated                                          |
+| release_day_notified_at | timestamptz | YES      | –                 | When release-day morning notifications were sent |
+| is_public               | boolean     | NO       | false             | Public visibility flag                           |
+| is_coming_soon          | boolean     | NO       | false             | True when release has no confirmed date yet      |
 
 ---
 

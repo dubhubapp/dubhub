@@ -340,16 +340,16 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
   return (
     <div 
-      className={`h-screen w-full relative snap-start flex-shrink-0 transition-all duration-300 ${
+      className={`min-h-screen h-screen w-full relative snap-start snap-always flex-shrink-0 transition-all duration-300 ${
         isHighlighted ? 'ring-4 ring-primary ring-inset' : ''
       }`}
       data-post-id={post.id}
     >
-      {/* Video background */}
-      <div className="absolute inset-0">
+      {/* Video background - object-contain preserves full frame; muted required for autoplay, unmute on tap */}
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
         <video 
           ref={videoRef}
-          className="w-full h-full object-cover cursor-pointer"
+          className="w-full h-full object-contain cursor-pointer"
           autoPlay 
           muted 
           loop 
@@ -359,6 +359,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
             e.preventDefault();
             const video = videoRef.current;
             if (video) {
+              video.muted = false; // Unmute on user interaction (browsers require this for autoplay)
               if (video.paused) {
                 video.play();
                 setIsPlaying(true);
@@ -373,14 +374,14 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         </video>
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
       </div>
-      {/* Top overlay with status */}
-      <div className="absolute top-20 left-4 right-20 z-10">
+      {/* Top overlay with status - pt-safe for notch */}
+      <div className="absolute top-20 left-4 right-20 z-20">
         <div className="flex gap-2 mb-4">
           {getStatusBadge()}
         </div>
       </div>
       {/* Right side actions */}
-      <div className="absolute right-4 bottom-32 z-10 flex flex-col items-center space-y-6">
+      <div className="absolute right-4 bottom-36 z-20 flex flex-col items-center space-y-6">
         {/* Like button */}
         <button 
           className="flex flex-col items-center group"
@@ -495,9 +496,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
           </button>
         )}
       </div>
-      {/* Bottom content overlay */}
-      <div className="absolute bottom-4 left-4 right-20 z-10">
-        <div className="space-y-3">
+      {/* Bottom content overlay - right-20 leaves room for action buttons; bottom clears BottomNavigation */}
+      <div className="absolute left-0 right-20 z-20 px-4 pt-16 pb-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none"
+        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="pointer-events-auto max-h-[50vh] overflow-y-auto space-y-3">
           <div className="flex items-center space-x-3">
             {/* User avatar with verification */}
             <div className="relative">
@@ -606,8 +609,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
           )}
         </div>
       </div>
-      {/* 3-dot menu in bottom right */}
-      <div className="absolute bottom-4 right-4 z-10">
+      {/* 3-dot menu - positioned above fixed BottomNavigation (5rem) + safe-area */}
+      <div 
+        className="absolute right-4 z-30"
+        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button 

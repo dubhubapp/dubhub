@@ -186,8 +186,8 @@ export default function Home() {
 
   return (
     <div className="flex-1 relative bg-background overflow-hidden">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-white/10 backdrop-blur-xl transition-all duration-300 h-16">
+      {/* Header - z-40 so it stays above scrolling post overlays (z-20/z-30); post content scrolls underneath */}
+      <div className="absolute top-0 left-0 right-0 z-40 bg-white/10 backdrop-blur-xl transition-all duration-300 h-16">
         <Header title="dub hub" className="py-4" />
       </div>
 
@@ -202,7 +202,7 @@ export default function Home() {
       
       <div
         ref={videoFeedRef}
-        className="h-full overflow-y-auto snap-y snap-mandatory scrollbar-hide pt-16"
+        className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide"
       >
         {posts.map((post) => (
           <VideoCard 

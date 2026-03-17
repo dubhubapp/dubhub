@@ -21,6 +21,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: true, // Listen on 0.0.0.0 so dev server is accessible from local network (e.g. http://192.168.1.xxx:5173)
     port: 5173,
     proxy: {
       "/api": {
