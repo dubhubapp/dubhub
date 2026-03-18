@@ -101,6 +101,13 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
           description: "Verified artist profile required to confirm tracks.",
           variant: "destructive",
         });
+      } else if (code === "ARTIST_ALREADY_VERIFIED") {
+        toast({
+          title: "Already verified",
+          description: body?.message || "This post has already been verified by an artist.",
+          variant: "destructive",
+        });
+        handleClose();
       } else {
         toast({
           title: "Confirmation Failed",
@@ -174,6 +181,13 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
           description: "Verified artist profile required to confirm tracks.",
           variant: "destructive",
         });
+      } else if (code === "ARTIST_ALREADY_VERIFIED") {
+        toast({
+          title: "Already verified",
+          description: body?.message || "This post has already been verified by an artist.",
+          variant: "destructive",
+        });
+        handleClose();
       } else {
         toast({
           title: "Denial Failed",

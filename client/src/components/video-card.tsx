@@ -421,9 +421,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
           const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
           const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
           const alreadyArtistConfirmed = isArtistVerified && artistVerifiedBy === currentUserId;
+          const alreadyArtistVerifiedBySomeone = isArtistVerified && !!artistVerifiedBy;
           const canVerifyOwner = isUnverified && isOwner && hasComments;
           const canVerifyArtist = isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
-          const canVerify = canVerifyOwner || canVerifyArtist;
+          // Once a post is artist-verified by anyone, no more artist confirmations/denials should be possible
+          const canVerify = !alreadyArtistVerifiedBySomeone && (canVerifyOwner || canVerifyArtist);
 
           if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
             (window as any).__VERIFY_DEBUG = (window as any).__VERIFY_DEBUG ?? {};

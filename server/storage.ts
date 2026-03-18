@@ -647,7 +647,9 @@ export class DatabaseStorage implements IStorage {
           c.artist_tag,
           c.created_at,
           p.username,
-          p.avatar_url
+          p.avatar_url,
+          p.account_type,
+          p.verified_artist
         FROM comments c
         LEFT JOIN profiles p
           ON p.id = c.user_id
@@ -664,10 +666,12 @@ export class DatabaseStorage implements IStorage {
         body: row.body,
         artistTag: row.artist_tag,
         createdAt: row.created_at,
-          user: {
+        user: {
           id: row.user_id,
           username: row.username,
           avatar_url: row.avatar_url,
+          account_type: row.account_type,
+          verified_artist: row.verified_artist,
         },
       }));
     } catch (error) {

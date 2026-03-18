@@ -39,10 +39,11 @@ export default function ModeratorPage() {
   // Get current user for authenticated requests
   const { currentUser } = useUser();
   
-  // Mark moderator notifications as read when Reports tab is opened
+  // Mark moderator notifications as read when relevant tab is opened
   useEffect(() => {
     const markReportNotificationsAsRead = async () => {
-      if (!currentUser?.id || activeTab !== "reports") return;
+      if (!currentUser?.id) return;
+      if (activeTab !== "reports" && activeTab !== "pending") return;
       
       try {
         // Get all notifications for the moderator using authenticated user's UUID
@@ -50,17 +51,24 @@ export default function ModeratorPage() {
         if (!response.ok) return;
         const notifications = await response.json();
         
-        // Mark all unread report-related notifications as read
-        const reportNotifications = notifications.filter((n: any) => 
-          n.message && n.message.includes("report") && !n.read
-        );
+        // Mark all unread report-related or community-verification notifications as read,
+        // depending on which tab is currently active.
+        const shouldMarkReportNotifications = activeTab === "reports";
+        const shouldMarkCommunityNotifications = activeTab === "pending";
+
+        const notificationsToMark = notifications.filter((n: any) => {
+          if (!n.message || n.read) return false;
+          if (shouldMarkReportNotifications && n.message.includes("report")) return true;
+          if (shouldMarkCommunityNotifications && n.message.includes("community verification")) return true;
+          return false;
+        });
         
-        for (const notification of reportNotifications) {
+        for (const notification of notificationsToMark) {
           await apiRequest("PATCH", `/api/notifications/${notification.id}/read`);
         }
         
         // Invalidate queries to update the badge count instantly
-        if (reportNotifications.length > 0) {
+        if (notificationsToMark.length > 0) {
           queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
         }
       } catch (error) {
@@ -68,7 +76,7 @@ export default function ModeratorPage() {
       }
     };
 
-    if (userType === "moderator" && currentUser?.id && activeTab === "reports") {
+    if (userType === "moderator" && currentUser?.id && (activeTab === "reports" || activeTab === "pending")) {
       markReportNotificationsAsRead();
     }
   }, [userType, currentUser, activeTab, queryClient]);
@@ -300,7 +308,14 @@ export default function ModeratorPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="pending" data-testid="tab-pending">Pending Verifications</TabsTrigger>
+            <TabsTrigger value="pending" data-testid="tab-pending">
+              Pending Verifications
+              {pendingVerifications.length > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold rounded-full bg-red-500 text-white">
+                  {pendingVerifications.length}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
           </TabsList>
 

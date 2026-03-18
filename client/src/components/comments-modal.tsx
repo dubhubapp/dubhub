@@ -119,28 +119,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     enabled: isOpen,
   });
 
-  // Function to get karma display for a user
-  const { data: userKarma } = useQuery<Record<string, number>>({
-    queryKey: ["/api/users/karma"],
-    queryFn: async () => {
-      // Get karma for all users who have commented
-      const userIds = Array.from(new Set(comments.flatMap(c => [c.userId, ...(c.replies?.map(r => r.userId) || [])])));
-      const karmaData: Record<string, number> = {};
-      
-      for (const userId of userIds) {
-        try {
-          const response = await apiRequest("GET", `/api/user/${userId}/karma`);
-          const data = await response.json() as { karma: number };
-          karmaData[userId] = data.karma || 0;
-        } catch {
-          karmaData[userId] = 0;
-        }
-      }
-      
-      return karmaData;
-    },
-    enabled: isOpen && comments.length > 0,
-  });
+  // Note: karma display has been removed from the comments UI to avoid stray numeric artifacts near names.
 
   // Handle comment input changes and artist mention detection
   const handleCommentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -353,22 +332,51 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
             const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
 
-            // verified_comment_id points to artist confirmation comment (authoritative). Pin it first.
-            // User's tagged comment: artist_tag === artist_verified_by gets secondary highlight (tagged suggestion)
+            // Derive the artist confirmation comment heuristically:
+            // - Same artist who verified the post
+            // - Body starts with the system confirmation prefix we use when creating the comment
+            const artistConfirmationCommentId = isArtistVerifiedPost && artistVerifiedBy
+              ? filteredComments.find((c) => {
+                  const userId = (c as any).userId ?? (c as any).user?.id;
+                  const body = (c as any).body ?? "";
+                  return (
+                    userId === artistVerifiedBy &&
+                    typeof body === "string" &&
+                    body.trim().startsWith("✅ @")
+                  );
+                })?.id ?? null
+              : null;
+
+            // Sort so that:
+            // 1) The artist/system confirmation comment appears first (if present)
+            // 2) The artist-selected community comment (verifiedCommentId) appears next
             filteredComments.sort((a, b) => {
+              const aIsArtistConfirmation = artistConfirmationCommentId && a.id === artistConfirmationCommentId;
+              const bIsArtistConfirmation = artistConfirmationCommentId && b.id === artistConfirmationCommentId;
+              if (aIsArtistConfirmation && !bIsArtistConfirmation) return -1;
+              if (!aIsArtistConfirmation && bIsArtistConfirmation) return 1;
+
               const aIsPinned = post.verifiedCommentId === a.id;
               const bIsPinned = post.verifiedCommentId === b.id;
               if (aIsPinned && !bIsPinned) return -1;
               if (!aIsPinned && bIsPinned) return 1;
+
               return 0;
             });
 
             return filteredComments.map((comment) => {
-              const isVerifiedComment = post.verifiedCommentId === comment.id;
-              const isTaggedSuggestion = isArtistVerifiedPost && artistVerifiedBy && ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
+              const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment
+              const isArtistConfirmationComment = !!artistConfirmationCommentId && comment.id === artistConfirmationCommentId; // system/artist confirmation comment
+              // Only treat tagged comments specially before artist verification; once verified, rely solely on the selected + confirmation comments
+              const isTaggedSuggestion =
+                !isArtistVerifiedPost &&
+                artistVerifiedBy &&
+                ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
 
-              const highlightClass = isVerifiedComment
-                ? (isArtistVerifiedPost ? "p-3 rounded-lg border-2 border-[#FFD700] bg-amber-50/50" : "p-3 rounded-lg border-2 border-green-500 bg-green-50/30")
+              const highlightClass = isArtistConfirmationComment
+                ? "p-3 rounded-lg border-2 border-[#FFD700] bg-amber-50/70"
+                : isVerifiedComment
+                ? "p-3 rounded-lg border-2 border-green-500 bg-green-50/40"
                 : isTaggedSuggestion
                   ? "p-3 rounded-lg border border-amber-300 bg-amber-50/30"
                   : "";
@@ -380,11 +388,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   alt={comment.user.username}
                   className="w-8 h-8 rounded-full"
                 />
-                {comment.user.account_type === 'artist' && comment.user.verified_artist && (
-                  <div title="Verified Artist Profile">
-                    <CheckCircle className="absolute -bottom-1 -right-1 w-3 h-3 text-[#FFD700] bg-white rounded-full" />
-                  </div>
-                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-2">
@@ -406,15 +409,15 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       </div>
                     )}
                   </div>
-                  {/* Artist Verified Badge - only on verified_comment_id (artist confirmation), GOLD */}
-                  {isVerifiedComment && isArtistVerifiedPost && (
+                  {/* Artist Verified Badge - on the artist/system confirmation comment, GOLD */}
+                  {isArtistConfirmationComment && isArtistVerifiedPost && (
                     <div className="flex items-center space-x-1 bg-[#D4AF37] px-2 py-0.5 rounded-full" data-testid={`badge-artist-verified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Artist Verified</span>
                     </div>
                   )}
-                  {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge) */}
-                  {isTaggedSuggestion && !isVerifiedComment && (
+                  {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge, only pre-artist verification) */}
+                  {isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
                     <div className="flex items-center space-x-1 bg-amber-100 px-2 py-0.5 rounded-full" data-testid={`badge-tagged-artist-${comment.id}`}>
                       <span className="text-xs text-amber-800 font-medium">Tagged artist</span>
                     </div>
@@ -433,20 +436,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       <span className="text-xs text-white font-bold">Identified Track ID</span>
                     </div>
                   )}
-                  {/* Karma Score */}
-                  {userKarma?.[comment.userId] && userKarma[comment.userId] > 0 && (
-                    <div className="flex items-center space-x-1 bg-blue-50 px-2 py-0.5 rounded-full">
-                      <Award className="w-3 h-3 text-blue-600" />
-                      <span className="text-xs text-blue-600 font-medium">
-                        {userKarma[comment.userId]}
-                      </span>
-                    </div>
-                  )}
-                  {/* Verified by Artist Badge */}
-                  {comment.isVerifiedByArtist && (
+                  {/* Artist ID Badge - on the artist-selected community comment when artist verification is present */}
+                  {isVerifiedComment && isArtistVerifiedPost && (
                     <div className="flex items-center space-x-1 bg-green-50 px-2 py-0.5 rounded-full">
                       <CheckCircle className="w-3 h-3 text-green-600" />
-                      <span className="text-xs text-green-600 font-medium">Verified by Artist</span>
+                      <span className="text-xs text-green-600 font-medium">Artist ID</span>
                     </div>
                   )}
                   {/* Denied Tag Badge */}
@@ -464,7 +458,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
                 <div className="flex items-center space-x-4 mt-2">
-                  {/* Voting buttons */}
+                  {/* Voting buttons (no numeric count to avoid stray 0s) */}
                   <div className="flex items-center space-x-2">
                     <button 
                       className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-1 ${
@@ -475,12 +469,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     >
                       <ChevronUp className="w-4 h-4" />
                     </button>
-                    <span className={`text-sm font-medium ${
-                      (comment.voteScore || 0) > 0 ? "text-green-600" : 
-                      (comment.voteScore || 0) < 0 ? "text-red-600" : "text-gray-500"
-                    }`} data-testid={`vote-score-${comment.id}`}>
-                      {comment.voteScore || 0}
-                    </span>
                     <button 
                       className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-1 ${
                         comment.userVote === "downvote" ? "text-red-600 bg-red-50" : "text-gray-500"
@@ -554,15 +542,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                 </div>
                               )}
                             </div>
-                            {/* Karma Score for Reply */}
-                            {userKarma?.[reply.userId] && userKarma[reply.userId] > 0 && (
-                              <div className="flex items-center space-x-1 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                                <Award className="w-2.5 h-2.5 text-blue-600" />
-                                <span className="text-xs text-blue-600 font-medium">
-                                  {userKarma[reply.userId]}
-                                </span>
-                              </div>
-                            )}
                             {/* Verified by Artist Badge for Reply */}
                             {reply.isVerifiedByArtist && (
                               <div className="flex items-center space-x-1 bg-green-50 px-1.5 py-0.5 rounded-full">
@@ -585,7 +564,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             {highlightArtistMentions(reply.body, reply.tagStatus)}
                           </p>
                           <div className="flex items-center space-x-3 mt-1">
-                            {/* Voting buttons for replies */}
+                            {/* Voting buttons for replies (no numeric count to avoid stray 0s) */}
                             <div className="flex items-center space-x-1">
                               <button 
                                 className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-0.5 ${
@@ -596,12 +575,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                               >
                                 <ChevronUp className="w-3 h-3" />
                               </button>
-                              <span className={`text-xs font-medium ${
-                                (reply.voteScore || 0) > 0 ? "text-green-600" : 
-                                (reply.voteScore || 0) < 0 ? "text-red-600" : "text-gray-500"
-                              }`} data-testid={`vote-score-${reply.id}`}>
-                                {reply.voteScore || 0}
-                              </span>
                               <button 
                                 className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-0.5 ${
                                   reply.userVote === "downvote" ? "text-red-600 bg-red-50" : "text-gray-500"
@@ -740,17 +713,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 
                 <p className="text-gray-600 mb-2">@{selectedUser.username}</p>
                 
-                {/* Karma Score */}
-                <div className="flex items-center justify-center space-x-2 mb-3">
-                  {userKarma?.[selectedUser.id] && userKarma[selectedUser.id] > 0 && (
-                    <div className="flex items-center space-x-1 bg-blue-50 px-3 py-1 rounded-full">
-                      <Award className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm text-blue-600 font-medium">
-                        {userKarma[selectedUser.id]} karma
-                      </span>
-                    </div>
-                  )}
-                </div>
+                {/* Karma Score removed from popup for now to keep identity UI clean */}
                 
                 {selectedUser.verified_artist && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">

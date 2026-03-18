@@ -399,7 +399,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new user in Neon database (called after Supabase sign-up)
+  // Ensure user profile exists in Supabase (called after Supabase sign-up)
   app.post("/api/users", async (req, res) => {
     try {
       console.log('[/api/users] Received request:', JSON.stringify(req.body));
@@ -412,44 +412,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Check if user already exists
-      console.log('[/api/users] Checking if user exists:', id);
+      // Check if Supabase profile already exists for this auth user
+      console.log('[/api/users] Checking if Supabase profile exists:', id);
       const existingUser = await storage.getUser(id);
       if (existingUser) {
-        console.log('[/api/users] User already exists:', existingUser.id);
-        return res.status(409).json({ 
-          message: "User already exists in database",
-          user: existingUser 
+        console.log('[/api/users] Supabase profile already exists, returning existing profile:', existingUser.id);
+        // Idempotent: return existing Supabase profile as success
+        return res.status(200).json({
+          user: existingUser
         });
       }
 
-      // Create user in Neon database
-      console.log('[/api/users] Creating new user:', { id, username, displayName, userType });
-      const user = await storage.createUser({
-        id,
+      // If we reach here, the Supabase auth user exists but profile is missing.
+      // Profile creation is normally handled by the `handle_new_user` trigger.
+      // We don't attempt a second insert here to avoid conflicting with trigger logic.
+      console.warn('[/api/users] Supabase profile not found for auth user. This indicates trigger misconfiguration.', {
+        userId: id,
         username,
-        displayName,
         userType,
-        profileImage: null,
       });
-
-      console.log('[/api/users] User created successfully:', user.id);
-      res.status(201).json(user);
+      return res.status(404).json({
+        message: "User profile not found in Supabase. Please contact support.",
+      });
     } catch (error: any) {
       console.error('[/api/users] ERROR:', error);
       console.error('[/api/users] ERROR stack:', error.stack);
-      
-      // Provide specific error messages
-      if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
-        console.error('[/api/users] Duplicate username error');
-        return res.status(409).json({ 
-          message: "Username already exists in database" 
-        });
-      }
-      
-      console.error('[/api/users] Generic database error');
       res.status(500).json({ 
-        message: "Database error saving new user",
+        message: "Error checking Supabase profile for new user",
         details: error.message || 'Unknown error',
         errorType: error.constructor.name
       });
@@ -1109,8 +1098,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             verified_by = ${comment.user_id}
         WHERE id = ${postId}
       `);
-      
-      // Note: Notifications are handled by database triggers
+
+      // Notify all moderators that a community verification now needs review
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        SELECT
+          p.id,
+          ${userId},
+          ${postId},
+          'New community verification requires review',
+          false,
+          NOW()
+        FROM profiles p
+        WHERE p.moderator = true
+      `);
       
       res.json({ message: "Post verified by community" });
     } catch (error) {
@@ -1149,6 +1150,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
       }
+      // Once a post has been artist-verified, block any further artist confirmations
+      if ((post as any).isVerifiedArtist || (post as any).is_verified_artist) {
+        return res.status(400).json({
+          code: "ARTIST_ALREADY_VERIFIED",
+          message: "This post has already been verified by an artist.",
+        });
+      }
 
       const commentResult = await db.execute(sql`
         SELECT id, post_id, artist_tag FROM comments WHERE id = ${commentId} LIMIT 1
@@ -1184,7 +1192,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE posts
         SET is_verified_artist = true,
             artist_verified_by = ${artistId},
-            verified_comment_id = ${artistCommentId},
+            -- Pin the exact comment the artist selected, not the helper comment we insert
+            verified_comment_id = ${commentId},
             denied_by_artist = false,
             denied_at = NULL,
             verification_status = 'identified'
@@ -1192,13 +1201,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
 
       if (process.env.NODE_ENV === "development") {
-        console.log("[artist-confirm]", { postId, taggedCommentId: commentId, insertedArtistCommentId: artistCommentId, updatedVerifiedCommentId: artistCommentId });
+        console.log("[artist-confirm]", {
+          postId,
+          selectedCommentId: commentId,
+          insertedArtistCommentId: artistCommentId,
+          updatedVerifiedCommentId: commentId,
+        });
       }
 
       res.json({
         message: "Post confirmed by artist",
         insertedArtistCommentId: artistCommentId,
-        verifiedCommentId: artistCommentId,
+        verifiedCommentId: commentId,
         postId,
       });
     } catch (error) {
@@ -1235,6 +1249,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const post = await storage.getPost(postId);
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
+      }
+      // Once a post has been artist-verified, block further deny actions as well
+      if ((post as any).isVerifiedArtist || (post as any).is_verified_artist) {
+        return res.status(400).json({
+          code: "ARTIST_ALREADY_VERIFIED",
+          message: "This post has already been verified by an artist.",
+        });
       }
 
       const commentResult = await db.execute(sql`
@@ -1282,17 +1303,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ORDER BY created_at DESC
       `);
       
-      const posts = (result as any).rows || [];
+      const rows = (result as any).rows || [];
       
       const postsWithUserAndComment = await Promise.all(
-        posts.map(async (post: any) => {
-          const user = await storage.getUser(post.user_id);
-          
+        rows.map(async (row: any) => {
+          // Use the same mapping as the main feed so VideoCard / thumbnails work correctly
+          const basePost = await storage.getPost(row.id);
+          if (!basePost) {
+            return null;
+          }
+
           // Get the verified comment if it exists
           let verifiedComment = null;
-          if (post.verified_comment_id) {
+          if (row.verified_comment_id) {
             const commentResult = await db.execute(sql`
-              SELECT * FROM comments WHERE id = ${post.verified_comment_id} LIMIT 1
+              SELECT * FROM comments WHERE id = ${row.verified_comment_id} LIMIT 1
             `);
             const commentRows = (commentResult as any).rows || [];
             if (commentRows.length > 0) {
@@ -1306,16 +1331,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           return {
-            ...post,
-            user,
+            ...basePost,
+            // Keep a snake_case alias for any legacy front-end fallbacks
+            verified_comment_id: basePost.verifiedCommentId,
             verifiedComment,
-            likes: 0,
-            comments: 0,
           };
         })
       );
       
-      res.json(postsWithUserAndComment);
+      res.json(postsWithUserAndComment.filter(Boolean));
     } catch (error) {
       console.error("[/api/moderator/pending-verifications] Error:", error);
       res.status(500).json({ message: "Failed to get pending verifications" });

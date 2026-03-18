@@ -168,79 +168,26 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         // Log successful user creation
         console.log('[SignUp] User created in Supabase, profile will be auto-created by trigger');
         
-        // DO NOT verify profile immediately - trigger creates it asynchronously
+        // DO NOT verify profile immediately - trigger creates it asynchronously in Supabase
         // Any profile fetch here could fail due to RLS or timing, and we don't want that to block signup
-        // The /api/users endpoint will handle checking if profile exists
+        // A separate backend endpoint can be used to verify profile existence if needed
         // Profile is automatically created by Supabase trigger (handle_new_user)
-        // No need to manually insert into profiles table
         console.log('[SignUp] User created in Supabase, profile auto-created by trigger');
 
-        // Create user in Neon database (critical - must succeed)
-        // If this fails, we have an orphaned Supabase user, so we need robust error handling
-        console.log('[SignUp] Creating Neon user with ID:', data.user.id);
+        // Call backend helper to ensure the Supabase profile exists / is readable
+        // This is a best-effort sync and MUST NOT block a successful signup flow
+        console.log('[SignUp] Calling backend to verify Supabase profile for user ID:', data.user.id);
         try {
-          const response = await apiRequest('POST', '/api/users', {
+          await apiRequest('POST', '/api/users', {
             id: data.user.id,
             username: trimmedUsername, // Send original username with casing preserved
             displayName: trimmedUsername, // Use same username for display
             userType: accountType,
           });
-          console.log('[SignUp] User created in Neon database successfully');
-        } catch (neonError: any) {
-          console.error('[SignUp] Neon database user creation error:', neonError);
-          console.error('[SignUp] Error message:', neonError.message);
-          
-          // Parse error message from API response
-          let errorMessage = '';
-          let errorCode = '';
-          let isUsernameConflict = false;
-          
-          try {
-            // Error format from apiRequest: "statusCode: responseText"
-            const errorText = neonError.message || '';
-            const colonIndex = errorText.indexOf(':');
-            if (colonIndex !== -1) {
-              const statusCode = errorText.substring(0, colonIndex).trim();
-              const responseText = errorText.substring(colonIndex + 1).trim();
-              
-              // Try to parse JSON response
-              const jsonResponse = JSON.parse(responseText);
-              errorMessage = jsonResponse.message || '';
-              errorCode = jsonResponse.code || statusCode;
-              
-              // Check if this is a username conflict
-              // Only show username error for actual conflicts
-              isUsernameConflict = 
-                errorCode === '23505' || // PostgreSQL unique violation
-                errorMessage?.toLowerCase().includes('duplicate') ||
-                errorMessage?.toLowerCase().includes('profiles_username') ||
-                errorMessage?.toLowerCase().includes('already exists') ||
-                errorMessage?.toLowerCase().includes("name's taken");
-              
-              console.log('[SignUp] Parsed error:', { errorMessage, errorCode, isUsernameConflict });
-            }
-          } catch (parseError) {
-            // If parsing fails, check raw error message
-            const rawMessage = neonError.message || '';
-            isUsernameConflict = 
-              rawMessage.includes('23505') ||
-              rawMessage.toLowerCase().includes('duplicate') ||
-              rawMessage.toLowerCase().includes('profiles_username') ||
-              rawMessage.toLowerCase().includes('already exists');
-            errorMessage = rawMessage;
-            console.error('[SignUp] Error parsing API error response:', parseError);
-          }
-          
-          // Only show username error for actual conflicts
-          if (isUsernameConflict) {
-            setErrorMessage('Username already taken, please choose another.');
-          } else {
-            // For other errors, show the actual error message
-            setErrorMessage(errorMessage || 'Failed to create account. Please try again.');
-          }
-          
-          // Don't show success toast or verification modal if Neon creation failed
-          return;
+          console.log('[SignUp] Backend confirmed Supabase profile for user.');
+        } catch (profileSyncError: any) {
+          // This endpoint is best-effort only. Log and continue.
+          console.error('[SignUp] Backend profile verification error (non-blocking):', profileSyncError?.message || profileSyncError);
         }
 
         // Add user to MailerLite (non-blocking - don't fail sign-up if this fails)
@@ -486,21 +433,17 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               </div>
             )}
             <div className="flex flex-col gap-2">
-              <Button 
-                onClick={() => {
-                  setShowVerificationModal(false);
-                  onToggleMode();
-                }}
+              <Button
+                asChild
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                Go to Sign In
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={() => setShowVerificationModal(false)}
-                className="w-full border-border text-foreground hover:bg-muted"
-              >
-                I'll verify later
+                <a
+                  href="https://www.instagram.com/dubhub.uk/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  DM us here!
+                </a>
               </Button>
             </div>
           </div>
