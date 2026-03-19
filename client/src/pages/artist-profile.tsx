@@ -126,6 +126,30 @@ export default function ArtistProfile() {
     return `${Math.floor(hours / 24)}d ago`;
   };
 
+  const formatPlayedDate = (value: string | Date | null | undefined) => {
+    if (!value) return "";
+    if (typeof value === "string") {
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (match) {
+        const yyyy = Number(match[1]);
+        const mm = Number(match[2]) - 1;
+        const dd = Number(match[3]);
+        return new Date(yyyy, mm, dd).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      }
+      return value;
+    }
+
+    return value.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  };
+
   if (isLoading) {
     return (
       <div className="flex-1 bg-dark flex items-center justify-center">
@@ -253,7 +277,8 @@ export default function ArtistProfile() {
                       <p className="text-sm text-gray-300 mb-2">{track.description}</p>
                       <div className="flex items-center space-x-4 text-xs text-gray-500 mb-3">
                         {track.location && <span>{track.location}</span>}
-                        {track.djName && <span>DJ: {track.djName}</span>}
+                        {track.playedDate && <span>Played: {formatPlayedDate(track.playedDate)}</span>}
+                        {track.djName && <span>Played by: {track.djName}</span>}
                         {track.genre && <span>{track.genre}</span>}
                       </div>
                       

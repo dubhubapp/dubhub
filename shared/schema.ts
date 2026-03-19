@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey, unique, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -36,6 +36,7 @@ export const posts = pgTable("posts", {
   description: text("description"),
   genre: text("genre"),
   djName: text("dj_name"),
+  playedDate: date("played_date"),
   location: text("location"),
   verificationStatus: text("verification_status").default("unverified"), // "unverified" | "community" | "identified"
   isVerifiedCommunity: boolean("is_verified_community").default(false),
@@ -221,6 +222,7 @@ export const insertPostSchema = z.object({
   description: z.string().optional(),
   genre: z.string().optional(),
   djName: z.string().optional(),
+  playedDate: z.string().optional(),
   location: z.string().optional(),
 });
 

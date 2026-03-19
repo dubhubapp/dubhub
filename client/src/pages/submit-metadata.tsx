@@ -16,10 +16,24 @@ import { useLocation } from "wouter";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
 
-const submitFormSchema = insertPostSchema.omit({ userId: true, videoUrl: true }).extend({
-  eventDate: z.string().optional(),
-  eventTime: z.string().optional(),
-});
+const getTodayInputValue = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const todayInputValue = getTodayInputValue();
+
+const submitFormSchema = insertPostSchema
+  .omit({ userId: true, videoUrl: true })
+  .extend({
+    // Block future dates (matches <input type="date"> YYYY-MM-DD format).
+    playedDate: z.string().optional().refine((v) => !v || v <= todayInputValue, {
+      message: "Date cannot be in the future",
+    }),
+  });
 
 type SubmitFormData = z.infer<typeof submitFormSchema>;
 
@@ -143,8 +157,7 @@ export default function SubmitMetadata() {
       genre: "",
       djName: "",
       location: "",
-      eventDate: "",
-      eventTime: "",
+      playedDate: "",
     },
   });
 
@@ -242,6 +255,7 @@ export default function SubmitMetadata() {
         description: data.formData.description || null,
         location: data.formData.location || null,
         dj_name: data.formData.djName || null,
+        played_date: data.formData.playedDate || null,
       };
       
       console.log("Submitting post with data:", { ...submitData, video_url: submitData.video_url.substring(0, 50) + "..." });
@@ -448,37 +462,19 @@ export default function SubmitMetadata() {
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <FormField
                   control={form.control}
-                  name="eventDate"
+                  name="playedDate"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-sm font-medium text-gray-300">Date</FormLabel>
                       <FormControl>
                         <Input 
                           type="date" 
+                          max={todayInputValue}
                           className="bg-surface border-gray-600 text-white"
                           data-testid="input-date"
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="eventTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm font-medium text-gray-300">Time</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="time" 
-                          className="bg-surface border-gray-600 text-white"
-                          data-testid="input-time"
                           {...field} 
                         />
                       </FormControl>
@@ -513,7 +509,7 @@ export default function SubmitMetadata() {
                 name="djName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">DJ</FormLabel>
+                    <FormLabel className="text-sm font-medium text-gray-300">Played by</FormLabel>
                     <FormControl>
                       <Input 
                         placeholder="e.g., DJ Name"

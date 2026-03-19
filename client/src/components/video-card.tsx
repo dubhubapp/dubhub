@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
@@ -38,6 +38,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     releaseDate: string | null;
     isComingSoon?: boolean;
     ownerUsername: string;
+    ownerArtistId?: string | null;
     collaborators: { username: string; status: string }[];
   } | null | undefined;
   const showVerifyDebug =
@@ -49,6 +50,16 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
   const [hasLiked, setHasLiked] = useState(post.hasLiked || false);
   const [likes, setLikes] = useState(post.likes);
+
+  const postOwnerId =
+    (post as any).user_id ?? post.userId ?? post.user?.id ?? null;
+  const isPostUploader = !!contextUser?.id && postOwnerId === contextUser.id;
+
+  const isPostIdentified = post.verificationStatus === "identified" || post.verificationStatus === "community";
+  const isReleaseOwner =
+    !!contextUser?.id &&
+    !!releasePreview?.ownerArtistId &&
+    releasePreview.ownerArtistId === contextUser.id;
   const [showComments, setShowComments] = useState(false);
   // Freeze the post snapshot used by the comments modal to avoid mismatched post IDs
   const [commentsPost, setCommentsPost] = useState<PostWithUser | null>(null);
@@ -335,6 +346,32 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     return `${Math.floor(hours / 24)}d ago`;
   };
 
+  const formatPlayedDate = (value: string | Date | null | undefined) => {
+    if (!value) return "";
+    if (typeof value === "string") {
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (match) {
+        const yyyy = Number(match[1]);
+        const mm = Number(match[2]) - 1;
+        const dd = Number(match[3]);
+        return new Date(yyyy, mm, dd).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      }
+
+      return value;
+    }
+
+    return value.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  };
+
   // Check if artist is verified
   const isVerifiedArtist = post.user.account_type === 'artist' && post.user.verified_artist === true;
 
@@ -552,11 +589,22 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
           </div>
           
           <div className="space-y-2">
-            <p className="text-sm font-medium text-white">{post.description}</p>
+            {post.title && (
+              <p className="text-sm font-semibold text-white truncate">{post.title}</p>
+            )}
+            {post.description && (
+              <p className="text-sm font-medium text-white">{post.description}</p>
+            )}
             <div className="flex items-center space-x-2 text-xs text-gray-300">
-              {post.djName && <span>Mixed by: {post.djName}</span>}
-              {post.djName && <span>•</span>}
-              <span>{post.createdAt ? formatTimeAgo(post.createdAt) : 'Recently'}</span>
+              {post.djName && <span>Played by: {post.djName}</span>}
+              {(post.djName && (post.playedDate || post.createdAt)) && <span>•</span>}
+              <span>
+                {post.playedDate
+                  ? `Played on: ${formatPlayedDate(post.playedDate)}`
+                  : post.createdAt
+                    ? formatTimeAgo(post.createdAt)
+                    : "Recently"}
+              </span>
             </div>
           </div>
           {releasePreview && (
@@ -564,7 +612,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                navigate(`/releases/${releasePreview.id}`);
+                navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
               }}
               className="mt-3 w-full flex items-center gap-3 p-2 rounded-lg bg-black/40 hover:bg-black/50 transition-colors text-left"
             >
@@ -602,7 +650,17 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                   </span>
                 </p>
                 <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
-                  {hasLiked ? (
+                  {isReleaseOwner ? (
+                    <>
+                      <Edit2 className="w-3 h-3 text-primary flex-shrink-0" />
+                      Edit release
+                    </>
+                  ) : isPostUploader && isPostIdentified ? (
+                    <>
+                      <Check className="w-3 h-3 text-green-400 flex-shrink-0" />
+                      Your post has been ID&apos;d and has been added to your Releases
+                    </>
+                  ) : hasLiked ? (
                     <>
                       <Check className="w-3 h-3 text-green-400 flex-shrink-0" />
                       This track is in your Releases

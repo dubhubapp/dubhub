@@ -599,10 +599,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const userId = req.dbUser.id;
       
-      const { title, video_url, genre, description, location, dj_name } = req.body;
+      const { title, video_url, genre, description, location, dj_name, played_date } = req.body;
       
       if (!title || !video_url) {
         return res.status(400).json({ message: "Title and video_url are required" });
+      }
+
+      // played_date is YYYY-MM-DD (date only) and must not be in the future.
+      let normalizedPlayedDate: string | null = played_date ? String(played_date) : null;
+      if (normalizedPlayedDate) {
+        const playedDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!playedDateRegex.test(normalizedPlayedDate)) {
+          return res.status(400).json({ message: "played_date must be YYYY-MM-DD" });
+        }
+
+        const today = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
+        if (normalizedPlayedDate > today) {
+          return res.status(400).json({ message: "played_date cannot be in the future" });
+        }
       }
       
       const post = await storage.createPost({
@@ -613,6 +627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: description || null,
         location: location || null,
         dj_name: dj_name || null,
+        played_date: normalizedPlayedDate,
       });
       
       res.status(201).json(post);

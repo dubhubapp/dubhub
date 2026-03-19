@@ -23,7 +23,7 @@ export interface IStorage {
     }
   ): Promise<any[]>;
   getPost(id: string): Promise<any | undefined>;
-  createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string }): Promise<any>;
+  createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
   deletePost(id: string): Promise<boolean>;
   getPostsByArtist(artistId: string): Promise<any[]>;
   getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<any[]>;
@@ -227,6 +227,7 @@ export class DatabaseStorage implements IStorage {
           p.description,
           p.location,
           p.dj_name,
+          p.played_date,
           p.verification_status,
           p.is_verified_community,
           p.is_verified_artist,
@@ -282,6 +283,10 @@ export class DatabaseStorage implements IStorage {
            JOIN profiles pr2 ON pr2.id = r.artist_id
            WHERE rp.post_id = p.id AND r.is_public = true
            LIMIT 1) AS rel_owner_username,
+          (SELECT r.artist_id FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
@@ -328,6 +333,7 @@ export class DatabaseStorage implements IStorage {
         description: row.description,
         location: row.location,
         djName: row.dj_name,
+        playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
         isVerifiedArtist: row.is_verified_artist,
@@ -358,6 +364,7 @@ export class DatabaseStorage implements IStorage {
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
+              ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
                 .filter((c: any) => c && c.username)
                 .map((c: any) => ({ username: c.username, status: c.status || "ACCEPTED" })),
@@ -406,6 +413,7 @@ export class DatabaseStorage implements IStorage {
           p.description,
           p.location,
           p.dj_name,
+          p.played_date,
           p.verification_status,
           p.is_verified_community,
           p.is_verified_artist,
@@ -470,6 +478,7 @@ export class DatabaseStorage implements IStorage {
         description: row.description,
         location: row.location,
         djName: row.dj_name,
+        playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
         isVerifiedArtist: row.is_verified_artist,
@@ -582,6 +591,7 @@ export class DatabaseStorage implements IStorage {
           p.description,
           p.location,
           p.dj_name,
+          p.played_date,
           p.verification_status,
           p.is_verified_community,
           p.is_verified_artist,
@@ -621,6 +631,10 @@ export class DatabaseStorage implements IStorage {
            JOIN profiles pr2 ON pr2.id = r.artist_id
            WHERE rp.post_id = p.id AND r.is_public = true
            LIMIT 1) AS rel_owner_username,
+          (SELECT r.artist_id FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
@@ -658,6 +672,7 @@ export class DatabaseStorage implements IStorage {
         description: row.description,
         location: row.location,
         djName: row.dj_name,
+        playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
         verifiedByModerator: row.verified_by_moderator,
@@ -675,6 +690,7 @@ export class DatabaseStorage implements IStorage {
               releaseDate: row.rel_release_date,
               isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
+              ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
                 .filter((c: any) => c && c.username)
                 .map((c: any) => ({ username: c.username, status: c.status || "ACCEPTED" })),
@@ -887,10 +903,10 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string }): Promise<any> {
+  async createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any> {
     try {
       const result = await db.execute(sql`
-        INSERT INTO posts (user_id, title, video_url, genre, description, location, dj_name, created_at)
+        INSERT INTO posts (user_id, title, video_url, genre, description, location, dj_name, played_date, created_at)
         VALUES (
           ${data.userId},
           ${data.title},
@@ -899,6 +915,7 @@ export class DatabaseStorage implements IStorage {
           ${data.description ?? null},
           ${data.location ?? null},
           ${data.dj_name ?? null},
+          ${data.played_date ?? null},
           NOW()
         )
         RETURNING *
@@ -949,6 +966,7 @@ export class DatabaseStorage implements IStorage {
           p.description,
           p.location,
           p.dj_name,
+          p.played_date,
           p.created_at,
           pr.id         AS profile_id,
           pr.username   AS profile_username,
@@ -976,6 +994,10 @@ export class DatabaseStorage implements IStorage {
            JOIN profiles pr2 ON pr2.id = r.artist_id
            WHERE rp.post_id = p.id AND r.is_public = true
            LIMIT 1) AS rel_owner_username,
+          (SELECT r.artist_id FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
@@ -1001,6 +1023,7 @@ export class DatabaseStorage implements IStorage {
         description: row.description,
         location: row.location,
         djName: row.dj_name,
+        playedDate: row.played_date,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
@@ -1018,6 +1041,7 @@ export class DatabaseStorage implements IStorage {
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
+              ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
                 .filter((c: any) => c && c.username)
                 .map((c: any) => ({ username: c.username, status: c.status || "ACCEPTED" })),
@@ -1042,6 +1066,7 @@ export class DatabaseStorage implements IStorage {
           p.description,
           p.location,
           p.dj_name,
+          p.played_date,
           p.verification_status,
           p.is_verified_community,
           p.verified_by_moderator,
@@ -1085,6 +1110,10 @@ export class DatabaseStorage implements IStorage {
            JOIN profiles pr2 ON pr2.id = r.artist_id
            WHERE rp.post_id = p.id AND r.is_public = true
            LIMIT 1) AS rel_owner_username,
+          (SELECT r.artist_id FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
@@ -1117,6 +1146,7 @@ export class DatabaseStorage implements IStorage {
         description: row.description,
         location: row.location,
         djName: row.dj_name,
+        playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
         verifiedByModerator: row.verified_by_moderator,
@@ -1134,6 +1164,7 @@ export class DatabaseStorage implements IStorage {
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
               ownerUsername: row.rel_owner_username,
+              ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators,
             }
           : null,

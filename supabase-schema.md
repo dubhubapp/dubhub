@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 26-02-2026  
+Last updated: 19-03-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -135,6 +135,7 @@ NOT `user_id` or `from_user_id`.
 | description           | text        | YES      | –                 | Description                             |
 | location              | text        | YES      | –                 | Filming location                        |
 | dj_name               | text        | YES      | –                 | DJ name                                 |
+| played_date          | date        | YES      | –                 | Played date (date only)               |
 | created_at            | timestamptz | YES      | now()             | Created                                 |
 | is_verified_artist    | boolean     | YES      | false             | Artist verified                         |
 | is_verified_community | boolean     | YES      | false             | Community verified                      |
