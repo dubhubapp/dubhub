@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { CheckCircle, User } from "lucide-react";
+import { CheckCircle, Clock3, User } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
 import { useUser } from "@/lib/user-context";
 import { formatDate } from "@/pages/release-tracker";
+import { goldAvatarGlowShadowClass } from "./verified-artist";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -21,7 +22,7 @@ interface ArtistVerificationDialogProps {
 export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { verifiedArtist } = useUser();
+  const { verifiedArtist, currentUser } = useUser();
   const [step, setStep] = useState<"verify" | "attach">("verify");
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [title, setTitle] = useState("");
@@ -200,6 +201,58 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
 
   const handleConfirm = () => confirmMutation.mutate();
   const handleDeny = () => denyMutation.mutate();
+  const sortedComments = [...comments].sort((a, b) => {
+    const toTime = (value: unknown) => {
+      if (!value) return 0;
+      if (value instanceof Date) return value.getTime();
+      const t = new Date(value as any).getTime();
+      return Number.isNaN(t) ? 0 : t;
+    };
+
+    return toTime(a.createdAt) - toTime(b.createdAt);
+  });
+  const oldestCommentId = sortedComments[0]?.id ?? null;
+  const reviewingArtistId = currentUser?.id ?? null;
+  const reviewingArtistUsername = currentUser?.username ?? null;
+  const escapeRegExp = (value: string) =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const getTaggedArtistIdFromComment = (comment: CommentWithUser) => {
+    const taggedArtistId = (comment as any)?.taggedArtist?.id as string | undefined;
+    const artistTagId = (comment as any)?.artistTag as string | undefined;
+    const artistTagAltId = (comment as any)?.artist_tag as string | undefined;
+    return taggedArtistId ?? artistTagId ?? artistTagAltId ?? null;
+  };
+
+  const isCommentTaggedByReviewingArtist = (comment: CommentWithUser) => {
+    const taggedArtistId = getTaggedArtistIdFromComment(comment);
+    if (reviewingArtistId && taggedArtistId === reviewingArtistId) return true;
+
+    // Fallback: detect @username in the comment body.
+    // This keeps "First Tag" robust even if the backend doesn't populate tagged-artist objects.
+    if (reviewingArtistUsername && typeof comment.body === "string") {
+      const re = new RegExp(`@${escapeRegExp(reviewingArtistUsername)}\\b`, "i");
+      return re.test(comment.body);
+    }
+
+    return false;
+  };
+
+  const firstTaggedCommentId =
+    reviewingArtistId
+      ? sortedComments.find((comment) => isCommentTaggedByReviewingArtist(comment))?.id ?? null
+      : null;
+  const formatCommentTimestamp = (value: Date | string | null | undefined) => {
+    if (!value) return "Unknown time";
+    const date = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) return "Unknown time";
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -223,20 +276,92 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
           </div>
         ) : (
           <div className="space-y-4">
+            <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <p className="text-sm font-medium text-foreground">
+                Confirm or deny the first or most relevant comment that tagged you.
+              </p>
+            </div>
             <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
-              {comments.map((comment) => (
-                <div key={comment.id} className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors">
+              {sortedComments.map((comment, index) => {
+                const isSelected = selectedCommentId === comment.id;
+                const isOldest = comment.id === oldestCommentId;
+                const isFirstTag = comment.id === firstTaggedCommentId;
+                const selectionRingClass = isFirstTag
+                  ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
+                  : isOldest
+                    ? "ring-2 ring-[#3B82F6]/95 ring-offset-2 ring-offset-background shadow-[0_0_24px_rgba(59,130,246,0.65)]"
+                    : "";
+                const highlightClass = isFirstTag
+                  ? "border-[#FFD700]/80 bg-amber-500/10 shadow-[0_0_22px_rgba(255,215,0,0.55)]"
+                  : isOldest
+                  ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
+                  : "border-border hover:bg-accent/50";
+                return (
+                <div
+                  key={comment.id}
+                  className={`flex items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
+                    isSelected
+                        ? selectionRingClass
+                        : ""
+                  } ${
+                    isSelected && !isOldest && !isFirstTag
+                      ? "bg-white/8 border-white/95 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)] ring-0"
+                      : ""
+                  }`}
+                >
                   <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} />
                   <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                        <User className="w-4 h-4 text-primary" />
-                      </div>
+                    <div className="mb-2 flex items-center gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">@{comment.user.username}</span>
-                        {comment.user.verified_artist && (
-                          <CheckCircle className="w-4 h-4 text-primary" />
+                        <div
+                          className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center border ${
+                            comment.user.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary/20"
+                          }`}
+                        >
+                          {comment.user.avatar_url ? (
+                            <img
+                              src={comment.user.avatar_url}
+                              alt={comment.user.username}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <User className="w-4 h-4 text-primary" />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">@{comment.user.username}</span>
+                          {comment.user.verified_artist && (
+                            <CheckCircle className="w-4 h-4 text-primary" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {isOldest && (
+                          <span
+                            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                              isSelected && !isFirstTag
+                                ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
+                                : "border-[#3B82F6] bg-[#3B82F6] text-white"
+                            }`}
+                          >
+                            Oldest Comment
+                          </span>
                         )}
+                        {isFirstTag && (
+                          <span
+                            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                              isSelected
+                                ? "border-[#FFD700]/90 bg-[#FFD700]/35 text-white shadow-[0_0_16px_rgba(255,215,0,0.55)]"
+                                : "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]"
+                            }`}
+                          >
+                            First Tag
+                          </span>
+                        )}
+                      </div>
+                      <div className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                       </div>
                     </div>
                     <p className="text-sm text-foreground">{comment.body}</p>
@@ -247,7 +372,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                     )}
                   </Label>
                 </div>
-              ))}
+              )})}
             </RadioGroup>
 
             <div className="space-y-2">

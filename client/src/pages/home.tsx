@@ -288,9 +288,6 @@ export default function Home() {
                 >
                   Newest
                 </button>
-                <span className="text-[10px] text-white/70 max-w-[180px] truncate">
-                  Top: {debugTopThree[0]?.title ?? "—"} ({debugTopThree[0]?.likes ?? 0} likes) {debugTopThree[0]?.createdAt ?? ""}
-                </span>
               </div>
             }
           />
@@ -350,9 +347,6 @@ export default function Home() {
               >
                 Newest
               </button>
-              <span className="text-[10px] text-white/70 max-w-[180px] truncate">
-                Top: {debugTopThree[0]?.title ?? "—"} ({debugTopThree[0]?.likes ?? 0} likes) {debugTopThree[0]?.createdAt ?? ""}
-              </span>
             </div>
           }
         />
