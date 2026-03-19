@@ -3,6 +3,7 @@ import { db, pool } from "./db";
 import { eq, desc, asc, and, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
+import { logEvent } from "./events";
 
 export interface IStorage {
   // Users
@@ -55,11 +56,13 @@ export interface IStorage {
 
   // Leaderboards
   getLeaderboard(userType: "user" | "artist"): Promise<any[]>;
+  getArtistStats(artistId: string): Promise<any>;
 
   // Releases
   getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]>;
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
   getRelease(id: string): Promise<any | undefined>;
+  getReleaseStats(releaseId: string): Promise<any | undefined>;
   createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
   updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
   getReleaseLinks(releaseId: string): Promise<any[]>;
@@ -541,7 +544,15 @@ export class DatabaseStorage implements IStorage {
         WHERE post_id = ${postId} AND user_id = ${userId}
       `);
       const insertedLikeRows = (insertedLikeResult as any).rows || [];
-      
+
+      if (insertedLikeRows.length > 0) {
+        void logEvent({
+          event_type: "post_liked",
+          user_id: userId,
+          post_id: postId,
+        });
+      }
+
       // Return true if like exists (idempotent - always returns success if like exists)
       return insertedLikeRows.length > 0;
     }
@@ -841,7 +852,17 @@ export class DatabaseStorage implements IStorage {
         throw new Error("Failed to insert comment");
       }
 
-      return rows[0];
+      const createdComment = rows[0];
+      void logEvent({
+        event_type: "comment_created",
+        user_id: userId,
+        post_id: postId,
+        metadata: {
+          is_reply: !!parentId,
+        },
+      });
+
+      return createdComment;
     } catch (error) {
       console.error("[createComment] Error inserting comment:", error);
       throw error;
@@ -926,7 +947,14 @@ export class DatabaseStorage implements IStorage {
         throw new Error("Failed to insert post");
       }
 
-      return rows[0];
+      const createdPost = rows[0];
+      void logEvent({
+        event_type: "post_uploaded",
+        user_id: data.userId,
+        post_id: createdPost.id,
+      });
+
+      return createdPost;
     } catch (error) {
       console.error("[createPost] Error:", error);
       throw error;
@@ -1254,6 +1282,11 @@ export class DatabaseStorage implements IStorage {
                 artist_verified_by = ${artistId}
             WHERE id = ${postId}
           `);
+          void logEvent({
+            event_type: "artist_confirmed_id",
+            user_id: artistId,
+            post_id: postId,
+          });
         } else {
           await db.execute(sql`
             UPDATE posts
@@ -1261,6 +1294,11 @@ export class DatabaseStorage implements IStorage {
                 denied_at = NOW()
             WHERE id = ${postId}
           `);
+          void logEvent({
+            event_type: "artist_denied_id",
+            user_id: artistId,
+            post_id: postId,
+          });
         }
       }
 
@@ -1520,6 +1558,80 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getArtistStats(artistId: string): Promise<any> {
+    try {
+      const result = await db.execute(sql`
+        WITH owned_releases AS (
+          SELECT r.id
+          FROM releases r
+          WHERE r.artist_id = ${artistId}
+        ),
+        owned_release_posts AS (
+          SELECT DISTINCT p.id, p.user_id
+          FROM owned_releases r
+          JOIN release_posts rp ON rp.release_id = r.id
+          JOIN posts p ON p.id = rp.post_id
+        ),
+        likes_count AS (
+          SELECT COUNT(*)::int AS count
+          FROM post_likes pl
+          JOIN owned_release_posts orp ON orp.id = pl.post_id
+        ),
+        comments_count AS (
+          SELECT COUNT(*)::int AS count
+          FROM comments c
+          JOIN owned_release_posts orp ON orp.id = c.post_id
+        )
+        SELECT
+          (SELECT COUNT(*)::int FROM posts p WHERE p.artist_verified_by = ${artistId}) AS confirmed_tracks,
+          (SELECT COUNT(*)::int FROM releases r WHERE r.artist_id = ${artistId}) AS releases_created,
+          (
+            SELECT COUNT(*)::int
+            FROM releases r
+            WHERE r.artist_id = ${artistId}
+              AND (
+                r.release_date > NOW()
+                OR r.is_coming_soon = true
+              )
+          ) AS upcoming_releases,
+          (SELECT COUNT(*)::int FROM owned_release_posts) AS posts_featuring_tracks,
+          (SELECT count FROM likes_count) AS total_likes_across_posts,
+          (SELECT count FROM comments_count) AS total_comments_across_posts,
+          (SELECT COUNT(DISTINCT orp.user_id)::int FROM owned_release_posts orp) AS unique_uploaders,
+          (
+            SELECT COUNT(DISTINCT rc.release_id)::int
+            FROM release_collaborators rc
+            WHERE rc.artist_id = ${artistId}
+              AND rc.status = 'ACCEPTED'
+          ) AS collaborations
+      `);
+
+      const row = (result as any).rows?.[0] || {};
+      return {
+        confirmedTracks: Number(row.confirmed_tracks ?? 0),
+        releasesCreated: Number(row.releases_created ?? 0),
+        upcomingReleases: Number(row.upcoming_releases ?? 0),
+        postsFeaturingTracks: Number(row.posts_featuring_tracks ?? 0),
+        totalLikesAcrossPosts: Number(row.total_likes_across_posts ?? 0),
+        totalCommentsAcrossPosts: Number(row.total_comments_across_posts ?? 0),
+        uniqueUploaders: Number(row.unique_uploaders ?? 0),
+        collaborations: Number(row.collaborations ?? 0),
+      };
+    } catch (error) {
+      console.error("[getArtistStats] Error:", error);
+      return {
+        confirmedTracks: 0,
+        releasesCreated: 0,
+        upcomingReleases: 0,
+        postsFeaturingTracks: 0,
+        totalLikesAcrossPosts: 0,
+        totalCommentsAcrossPosts: 0,
+        uniqueUploaders: 0,
+        collaborations: 0,
+      };
+    }
+  }
+
   // --- Releases ---
   // Feed returns releases; links are added by route.
   // scope: "my" = owned + collaborator + saved; "saved" = only public releases from liked/uploaded (user/artist Saved Releases)
@@ -1710,6 +1822,80 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getReleaseStats(releaseId: string): Promise<any | undefined> {
+    try {
+      const result = await db.execute(sql`
+        WITH release_base AS (
+          SELECT id, created_at, release_date
+          FROM releases
+          WHERE id = ${releaseId}
+          LIMIT 1
+        ),
+        attached_posts AS (
+          SELECT p.id, p.user_id, p.created_at
+          FROM release_posts rp
+          JOIN posts p ON p.id = rp.post_id
+          WHERE rp.release_id = ${releaseId}
+        ),
+        likes_by_post AS (
+          SELECT pl.post_id, COUNT(*)::int AS likes_count
+          FROM post_likes pl
+          GROUP BY pl.post_id
+        ),
+        comments_by_post AS (
+          SELECT c.post_id, COUNT(*)::int AS comments_count
+          FROM comments c
+          GROUP BY c.post_id
+        )
+        SELECT
+          rb.id AS release_id,
+          COUNT(ap.id)::int AS posts_featuring_track,
+          COALESCE(SUM(lbp.likes_count), 0)::int AS total_likes,
+          COALESCE(SUM(cbp.comments_count), 0)::int AS total_comments,
+          COUNT(DISTINCT ap.user_id)::int AS unique_uploaders,
+          MIN(ap.created_at) AS first_clip_at,
+          MAX(ap.created_at) AS latest_clip_at,
+          CASE
+            WHEN MIN(ap.created_at) IS NULL THEN NULL
+            ELSE (rb.created_at::date - MIN(ap.created_at)::date)::int
+          END AS days_to_announcement,
+          CASE
+            WHEN MIN(ap.created_at) IS NULL OR rb.release_date IS NULL THEN NULL
+            ELSE (rb.release_date::date - MIN(ap.created_at)::date)::int
+          END AS days_to_release
+        FROM release_base rb
+        LEFT JOIN attached_posts ap ON TRUE
+        LEFT JOIN likes_by_post lbp ON lbp.post_id = ap.id
+        LEFT JOIN comments_by_post cbp ON cbp.post_id = ap.id
+        GROUP BY rb.id, rb.created_at, rb.release_date
+      `);
+
+      const rows = (result as any).rows || [];
+      if (rows.length === 0) return undefined;
+      const row = rows[0];
+
+      return {
+        postsFeaturingTrack: Number(row.posts_featuring_track ?? 0),
+        totalLikes: Number(row.total_likes ?? 0),
+        totalComments: Number(row.total_comments ?? 0),
+        uniqueUploaders: Number(row.unique_uploaders ?? 0),
+        firstClipAt: row.first_clip_at ?? null,
+        latestClipAt: row.latest_clip_at ?? null,
+        daysToAnnouncement:
+          row.days_to_announcement === null || row.days_to_announcement === undefined
+            ? null
+            : Number(row.days_to_announcement),
+        daysToRelease:
+          row.days_to_release === null || row.days_to_release === undefined
+            ? null
+            : Number(row.days_to_release),
+      };
+    } catch (error) {
+      console.error("[getReleaseStats] Error:", error);
+      return undefined;
+    }
+  }
+
   async createRelease(data: { artistId: string; title: string; releaseDate: Date | null; artworkUrl?: string | null; isComingSoon?: boolean }): Promise<any> {
     const result = await db.execute(sql`
       INSERT INTO releases (artist_id, title, release_date, artwork_url, is_public, is_coming_soon, created_at, updated_at)
@@ -1719,6 +1905,24 @@ export class DatabaseStorage implements IStorage {
     const rows = (result as any).rows || [];
     if (rows.length === 0) throw new Error("Failed to create release");
     const row = rows[0];
+
+    void logEvent({
+      event_type: "release_created",
+      user_id: data.artistId,
+      release_id: row.id,
+      metadata: {
+        is_coming_soon: row.is_coming_soon ?? false,
+      },
+    });
+
+    if (row.is_public) {
+      void logEvent({
+        event_type: "release_published",
+        user_id: data.artistId,
+        release_id: row.id,
+      });
+    }
+
     return {
       id: row.id,
       artistId: row.artist_id,
@@ -1739,6 +1943,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const current = await this.getRelease(id);
       if (!current) return undefined;
+      const canUpdate = current.artistId === artistId;
       const title = data.title !== undefined ? data.title : current.title;
       const releaseDate = data.releaseDate !== undefined
         ? data.releaseDate
@@ -1750,6 +1955,13 @@ export class DatabaseStorage implements IStorage {
         SET title = ${title}, release_date = ${releaseDate}, artwork_url = ${artworkUrl}, is_coming_soon = ${isComingSoon}, updated_at = NOW()
         WHERE id = ${id} AND artist_id = ${artistId}
       `);
+      if (canUpdate) {
+        void logEvent({
+          event_type: "release_updated",
+          user_id: artistId,
+          release_id: id,
+        });
+      }
       return this.getRelease(id);
     } catch (error) {
       console.error("[updateRelease] Error:", error);
@@ -2250,6 +2462,16 @@ export class DatabaseStorage implements IStorage {
       nowPublic = allAccepted;
     }
     if (!wasPublic && nowPublic) {
+      const releaseRow = await db.execute(sql`
+        SELECT artist_id FROM releases WHERE id = ${releaseId} LIMIT 1
+      `);
+      const releaseRows = (releaseRow as any).rows || [];
+      const ownerId = releaseRows[0]?.artist_id ?? null;
+      void logEvent({
+        event_type: "release_published",
+        user_id: ownerId,
+        release_id: releaseId,
+      });
       await this.maybeNotifyReleasePublic(releaseId);
     }
   }

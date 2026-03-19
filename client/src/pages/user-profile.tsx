@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, LogOut, Edit2, Camera, Check, X, Upload, MessageCircle, Heart, Bookmark, User, CheckCircle } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, LogOut, Edit2, Camera, Check, X, Upload, MessageCircle, Heart, Bookmark, User, CheckCircle, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ export default function UserProfile(props: any = {}) {
   const { onSignOut } = props;
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage, displayName, username, updateProfileImage, updateDisplayName, currentUser, verifiedArtist } = useUser();
+  const { profileImage, displayName, username, updateProfileImage, updateDisplayName, currentUser, verifiedArtist, userType } = useUser();
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
   const [activeTab, setActiveTab] = useState("profile");
@@ -36,6 +36,23 @@ export default function UserProfile(props: any = {}) {
     retry: false,
   });
 
+  type ArtistStats = {
+    confirmedTracks: number;
+    releasesCreated: number;
+    upcomingReleases: number;
+    postsFeaturingTracks: number;
+    totalLikesAcrossPosts: number;
+    totalCommentsAcrossPosts: number;
+    uniqueUploaders: number;
+    collaborations: number;
+  };
+
+  const { data: artistStats } = useQuery<ArtistStats>({
+    queryKey: ["/api/artists", currentUser?.id, "stats"],
+    enabled: !!currentUser?.id && userType === "artist",
+    retry: false,
+  });
+
   // Karma system
   const { data: karmaData, isLoading: reputationLoading, isError: karmaError } = useQuery<{karma: number}>({
     queryKey: ["/api/user", currentUser?.id, "karma"],
@@ -43,10 +60,6 @@ export default function UserProfile(props: any = {}) {
     retry: false,
   });
   const userReputation = karmaData ? { reputation: karmaData.karma, confirmedIds: userStats?.confirmedIDs || 0 } : { reputation: 0, confirmedIds: userStats?.confirmedIDs || 0 };
-
-  // Genre stats removed - no longer supported
-  const genreStats: { genre: string; count: number }[] = [];
-  const genreStatsLoading = false;
 
   // Query for user's liked posts
   const { data: likedPosts = [], isLoading: likedLoading } = useQuery<PostWithUser[]>({
@@ -97,6 +110,36 @@ export default function UserProfile(props: any = {}) {
       );
     }
   }, [userPosts, postFilter]);
+
+  const genreStats = useMemo(() => {
+    const genreCounts = new Map<string, number>();
+    for (const post of userPosts) {
+      const rawGenre = typeof post.genre === "string" ? post.genre : "";
+      const normalized = rawGenre.trim().toLowerCase();
+      const genreKey = normalized || "other";
+      genreCounts.set(genreKey, (genreCounts.get(genreKey) || 0) + 1);
+    }
+
+    return Array.from(genreCounts.entries())
+      .map(([genre, count]) => ({
+        genre: genre === "dnb" ? "DNB" : genre === "ukg" ? "UKG" : genre.charAt(0).toUpperCase() + genre.slice(1),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
+  }, [userPosts]);
+
+  const hasAnyArtistImpact =
+    !!artistStats &&
+    (
+      artistStats.confirmedTracks > 0 ||
+      artistStats.releasesCreated > 0 ||
+      artistStats.upcomingReleases > 0 ||
+      artistStats.postsFeaturingTracks > 0 ||
+      artistStats.totalLikesAcrossPosts > 0 ||
+      artistStats.totalCommentsAcrossPosts > 0 ||
+      artistStats.uniqueUploaders > 0 ||
+      artistStats.collaborations > 0
+    );
 
   const handleSignOut = async () => {
     try {
@@ -345,7 +388,7 @@ export default function UserProfile(props: any = {}) {
     );
   }
 
-  if (statsLoading || reputationLoading || genreStatsLoading) {
+  if (statsLoading || reputationLoading) {
     return (
       <div className="flex-1 bg-dark flex items-center justify-center">
         <div className="text-center">
@@ -540,33 +583,101 @@ export default function UserProfile(props: any = {}) {
             </TabsList>
 
             <TabsContent value="profile" className="space-y-6 mt-6">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-2xl font-bold text-primary mb-1" data-testid="stat-total-ids">
-                {userStats?.totalIDs || 0}
-              </div>
-              <div className="text-xs text-gray-400">Total IDs</div>
-            </div>
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-2xl font-bold text-green-500 mb-1" data-testid="stat-confirmed">
-                {userStats?.confirmedIDs || 0}
-              </div>
-              <div className="text-xs text-gray-400">Confirmed</div>
-            </div>
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-2xl font-bold text-accent mb-1" data-testid="stat-saved">
-                {userStats?.savedTracks || 0}
-              </div>
-              <div className="text-xs text-gray-400">Saved</div>
-            </div>
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-2xl font-bold text-secondary mb-1" data-testid="stat-likes">
-                {userStats?.totalLikes || 0}
-              </div>
-              <div className="text-xs text-gray-400">Likes</div>
-            </div>
-          </div>
+              {userType === "artist" && artistStats ? (
+                <div className="bg-surface rounded-xl p-4 mb-6">
+                  <h3 className="font-semibold mb-4 text-center">Your impact</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border-2 border-green-500/35 bg-green-500/5 p-3 shadow-[0_0_12px_rgba(34,197,94,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-green-300 mb-1.5">
+                        <BadgeCheck className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]" />
+                        <span>Confirmed tracks</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.confirmedTracks.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-indigo-500/35 bg-indigo-500/5 p-3 shadow-[0_0_12px_rgba(99,102,241,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 mb-1.5">
+                        <Calendar className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]" />
+                        <span>Releases</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.releasesCreated.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-amber-500/35 bg-amber-500/5 p-3 shadow-[0_0_12px_rgba(245,158,11,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-amber-300 mb-1.5">
+                        <CalendarClock className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]" />
+                        <span>Upcoming releases</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.upcomingReleases.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-purple-500/35 bg-purple-500/5 p-3 shadow-[0_0_12px_rgba(168,85,247,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-purple-300 mb-1.5">
+                        <Radio className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]" />
+                        <span>Featured clips</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.postsFeaturingTracks.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-pink-500/35 bg-pink-500/5 p-3 shadow-[0_0_12px_rgba(236,72,153,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-pink-300 mb-1.5">
+                        <Heart className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]" />
+                        <span>Track saves</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.totalLikesAcrossPosts.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-cyan-500/35 bg-cyan-500/5 p-3 shadow-[0_0_12px_rgba(6,182,212,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-cyan-300 mb-1.5">
+                        <MessageCircle className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]" />
+                        <span>Comments</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.totalCommentsAcrossPosts.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-blue-500/35 bg-blue-500/5 p-3 shadow-[0_0_12px_rgba(59,130,246,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-blue-300 mb-1.5">
+                        <Users className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]" />
+                        <span>Uploaders</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.uniqueUploaders.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-lg border-2 border-emerald-500/35 bg-emerald-500/5 p-3 shadow-[0_0_12px_rgba(16,185,129,0.12)]">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-300 mb-1.5">
+                        <Headphones className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]" />
+                        <span>Collaborations</span>
+                      </div>
+                      <div className="text-xl font-bold text-center">{artistStats.collaborations.toLocaleString()}</div>
+                    </div>
+                  </div>
+                  {!hasAnyArtistImpact && (
+                    <p className="text-xs text-gray-400 mt-3 text-center">
+                      Your impact stats will grow as tracks are confirmed and clips get linked to your releases.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-surface rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-primary mb-1" data-testid="stat-total-ids">
+                      {userStats?.totalIDs || 0}
+                    </div>
+                    <div className="text-xs text-gray-400">Total IDs</div>
+                  </div>
+                  <div className="bg-surface rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-green-500 mb-1" data-testid="stat-confirmed">
+                      {userStats?.confirmedIDs || 0}
+                    </div>
+                    <div className="text-xs text-gray-400">Confirmed</div>
+                  </div>
+                  <div className="bg-surface rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-accent mb-1" data-testid="stat-saved">
+                      {userStats?.savedTracks || 0}
+                    </div>
+                    <div className="text-xs text-gray-400">Saved</div>
+                  </div>
+                  <div className="bg-surface rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-secondary mb-1" data-testid="stat-likes">
+                      {userStats?.totalLikes || 0}
+                    </div>
+                    <div className="text-xs text-gray-400">Likes</div>
+                  </div>
+                </div>
+              )}
 
           {/* Reputation Section */}
           <div className="mb-6">

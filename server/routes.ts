@@ -13,6 +13,38 @@ import FormData from "form-data";
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { getPlatformTrendMetrics } from "./internalAnalytics";
+
+// Internal analytics is founder/business intelligence only.
+// Keep this allowlist intentionally small and explicit.
+const INTERNAL_ANALYTICS_ALLOWLIST_USER_IDS: string[] = [
+  // "00000000-0000-0000-0000-000000000000",
+];
+const INTERNAL_ANALYTICS_ALLOWLIST_USERNAMES: string[] = [
+  // "founder_username",
+];
+
+const INTERNAL_ANALYTICS_ALLOWLIST_USER_ID_SET = new Set(
+  INTERNAL_ANALYTICS_ALLOWLIST_USER_IDS
+    .map((id) => String(id).trim().toLowerCase())
+    .filter((id) => id.length > 0)
+);
+const INTERNAL_ANALYTICS_ALLOWLIST_USERNAME_SET = new Set(
+  INTERNAL_ANALYTICS_ALLOWLIST_USERNAMES
+    .map((username) => String(username).trim().toLowerCase())
+    .filter((username) => username.length > 0)
+);
+
+function canAccessInternalAnalytics(user: AuthenticatedRequest["dbUser"] | undefined): boolean {
+  if (!user) return false;
+
+  const normalizedUserId = String(user.id ?? "").trim().toLowerCase();
+  const normalizedUsername = String(user.username ?? "").trim().toLowerCase();
+  return (
+    (!!normalizedUserId && INTERNAL_ANALYTICS_ALLOWLIST_USER_ID_SET.has(normalizedUserId)) ||
+    (!!normalizedUsername && INTERNAL_ANALYTICS_ALLOWLIST_USERNAME_SET.has(normalizedUsername))
+  );
+}
 
 // Helper function to detect artist mentions in comment text
 function detectArtistMentions(text: string): string[] {
@@ -1162,6 +1194,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/artists/:id/stats", async (req, res) => {
+    try {
+      const artistId = req.params.id;
+      const artist = await storage.getUser(artistId);
+      if (!artist || artist.account_type !== "artist") {
+        return res.status(404).json({ message: "Artist not found" });
+      }
+
+      const stats = await storage.getArtistStats(artistId);
+      res.json(stats);
+    } catch (error) {
+      console.error("[/api/artists/:id/stats] Error:", error);
+      res.status(500).json({ message: "Failed to get artist stats" });
+    }
+  });
+
   // Get user's uploaded posts (for profile page)
   app.get("/api/user/:id/liked-posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
@@ -1501,6 +1549,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/moderator/pending-verifications] Error:", error);
       res.status(500).json({ message: "Failed to get pending verifications" });
+    }
+  });
+
+  /**
+   * Internal platform trends endpoint.
+   * Founder/internal-only and intended for internal analytics/reporting usage.
+   */
+  app.get("/api/internal/analytics/trends", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!canAccessInternalAnalytics(req.dbUser)) {
+        return res.status(403).json({ message: "Access denied. Internal analytics allowlist required." });
+      }
+
+      const monthsRaw = typeof req.query.months === "string" ? Number(req.query.months) : 12;
+      const months = Number.isFinite(monthsRaw) && monthsRaw > 0 ? Math.floor(monthsRaw) : 12;
+      const metrics = await getPlatformTrendMetrics(months);
+      res.json(metrics);
+    } catch (error) {
+      console.error("[/api/internal/analytics/trends] Error:", error);
+      res.status(500).json({ message: "Failed to get internal trend metrics" });
     }
   });
 
@@ -2737,6 +2805,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/releases/:id] Error:", error);
       res.status(500).json({ message: "Failed to get release" });
+    }
+  });
+
+  app.get("/api/releases/:id/stats", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+
+      const userId = req.dbUser?.id ?? null;
+      const isOwner = userId && release.artistId === userId;
+      const isCollab = userId && (release.collaborators || []).some((c: any) => c.artistId === userId);
+      if (!release.isPublic && !isOwner && !isCollab) {
+        return res.status(404).json({ message: "Release not found" });
+      }
+
+      const stats = await storage.getReleaseStats(req.params.id);
+      if (!stats) return res.status(404).json({ message: "Release not found" });
+
+      res.json(stats);
+    } catch (error) {
+      console.error("[/api/releases/:id/stats] Error:", error);
+      res.status(500).json({ message: "Failed to get release stats" });
     }
   });
 

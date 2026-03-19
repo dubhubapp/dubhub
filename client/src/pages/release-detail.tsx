@@ -15,6 +15,23 @@ import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { isReleaseUpcoming } from "@/lib/release-status";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
+type ReleaseStats = {
+  postsFeaturingTrack: number;
+  totalLikes: number;
+  totalComments: number;
+  uniqueUploaders: number;
+  firstClipAt: string | null;
+  latestClipAt: string | null;
+  daysToAnnouncement: number | null;
+  daysToRelease: number | null;
+};
+
+function formatMonthYear(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
 
 export default function ReleaseDetail() {
   const [, params] = useRoute("/releases/:id");
@@ -41,6 +58,22 @@ export default function ReleaseDetail() {
       return res.json();
     },
     enabled: !!id && id !== "new",
+  });
+
+  const { data: stats } = useQuery<ReleaseStats>({
+    queryKey: ["/api/releases", id, "stats"],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/releases/${id}/stats`, { credentials: "include", headers });
+      if (!res.ok) {
+        throw new Error("Failed to fetch release stats");
+      }
+      return res.json();
+    },
+    enabled: !!id && id !== "new",
+    retry: false,
   });
 
   const isOwner = release && currentUser?.id && release.artistId === currentUser.id;
@@ -96,6 +129,8 @@ export default function ReleaseDetail() {
   }
 
   const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
+  const firstClipLabel = formatMonthYear(stats?.firstClipAt ?? null);
+  const latestClipLabel = formatMonthYear(stats?.latestClipAt ?? null);
 
   return (
     <div className="flex-1 bg-background overflow-y-auto pb-24">
@@ -171,6 +206,26 @@ export default function ReleaseDetail() {
           <p className="text-sm text-muted-foreground mb-4">
             {release.postIds.length} attached post{release.postIds.length !== 1 ? "s" : ""}
           </p>
+        )}
+
+        {stats && (
+          <div className="mb-6 rounded-xl border bg-card p-4">
+            <h2 className="text-sm font-medium text-muted-foreground mb-3">Release stats</h2>
+            <div className="space-y-1.5 text-sm">
+              {stats.postsFeaturingTrack > 0 ? (
+                <p>{stats.postsFeaturingTrack} clip{stats.postsFeaturingTrack !== 1 ? "s" : ""} featuring this track</p>
+              ) : (
+                <p className="text-muted-foreground">No clips featuring this track yet</p>
+              )}
+              <p>{stats.totalLikes} people saved this track</p>
+              <p>{stats.totalComments} comment{stats.totalComments !== 1 ? "s" : ""}</p>
+              <p>{stats.uniqueUploaders} uploader{stats.uniqueUploaders !== 1 ? "s" : ""}</p>
+              {firstClipLabel && <p>First clip: {firstClipLabel}</p>}
+              {latestClipLabel && <p>Latest clip: {latestClipLabel}</p>}
+              {stats.daysToAnnouncement !== null && <p>Announced after: {stats.daysToAnnouncement} days</p>}
+              {stats.daysToRelease !== null && <p>Released after: {stats.daysToRelease} days</p>}
+            </div>
+          </div>
         )}
 
         {isPendingCollab && isArtist && (

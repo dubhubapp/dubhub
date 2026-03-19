@@ -7,12 +7,24 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
 
 type FilterMode = "pending" | "confirmed" | "all";
+type ArtistStats = {
+  confirmedTracks: number;
+  releasesCreated: number;
+  upcomingReleases: number;
+  postsFeaturingTracks: number;
+  totalLikesAcrossPosts: number;
+  totalCommentsAcrossPosts: number;
+  uniqueUploaders: number;
+  collaborations: number;
+};
 
 export default function ArtistProfile() {
   const { toast } = useToast();
+  const { currentUser, userType } = useUser();
   const queryClient = useQueryClient();
   const [filterMode, setFilterMode] = useState<FilterMode>("pending");
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -33,6 +45,17 @@ export default function ArtistProfile() {
       }
       return posts;
     },
+  });
+
+  const { data: artistStats } = useQuery<ArtistStats>({
+    queryKey: ["/api/artists", currentUser?.id, "stats"],
+    queryFn: async () => {
+      const response = await fetch(`/api/artists/${currentUser?.id}/stats`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch artist stats");
+      return response.json();
+    },
+    enabled: userType === "artist" && !!currentUser?.id,
+    retry: false,
   });
 
   const confirmMutation = useMutation({
@@ -161,12 +184,17 @@ export default function ArtistProfile() {
     );
   }
 
-  // Mock artist stats
-  const artistStats = {
-    tagged: 47,
-    confirmed: 31,
-    releases: 12,
-  };
+  const hasAnyImpact =
+    !!artistStats &&
+    (
+      artistStats.confirmedTracks > 0 ||
+      artistStats.releasesCreated > 0 ||
+      artistStats.postsFeaturingTracks > 0 ||
+      artistStats.totalLikesAcrossPosts > 0 ||
+      artistStats.totalCommentsAcrossPosts > 0 ||
+      artistStats.uniqueUploaders > 0 ||
+      artistStats.collaborations > 0
+    );
 
   return (
     <div className="flex-1 bg-dark overflow-y-auto">
@@ -194,21 +222,29 @@ export default function ArtistProfile() {
             </div>
           </div>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-lg font-bold text-primary">{artistStats.tagged}</div>
-              <div className="text-xs text-gray-400">Tagged</div>
+          {userType === "artist" && artistStats && (
+            <div className="bg-surface rounded-xl p-4 mb-6">
+              <h2 className="text-sm font-medium text-gray-300 mb-3">Your impact</h2>
+              <div className="space-y-1.5 text-sm">
+                <p>{artistStats.confirmedTracks.toLocaleString()} confirmed track{artistStats.confirmedTracks !== 1 ? "s" : ""}</p>
+                <p>
+                  {artistStats.releasesCreated.toLocaleString()} release{artistStats.releasesCreated !== 1 ? "s" : ""}
+                  {" "}
+                  ({artistStats.upcomingReleases.toLocaleString()} upcoming)
+                </p>
+                <p>{artistStats.postsFeaturingTracks.toLocaleString()} clip{artistStats.postsFeaturingTracks !== 1 ? "s" : ""} featuring your tracks</p>
+                <p>{artistStats.totalLikesAcrossPosts.toLocaleString()} people saved your tracks</p>
+                <p>{artistStats.totalCommentsAcrossPosts.toLocaleString()} comment{artistStats.totalCommentsAcrossPosts !== 1 ? "s" : ""}</p>
+                <p>{artistStats.uniqueUploaders.toLocaleString()} uploader{artistStats.uniqueUploaders !== 1 ? "s" : ""}</p>
+                <p>{artistStats.collaborations.toLocaleString()} collaboration{artistStats.collaborations !== 1 ? "s" : ""}</p>
+                {!hasAnyImpact && (
+                  <p className="text-xs text-gray-400 pt-1">
+                    Your stats will grow as tracks are confirmed and clips get linked to your releases.
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-lg font-bold text-green-500">{artistStats.confirmed}</div>
-              <div className="text-xs text-gray-400">Confirmed</div>
-            </div>
-            <div className="bg-surface rounded-xl p-4 text-center">
-              <div className="text-lg font-bold text-accent">{artistStats.releases}</div>
-              <div className="text-xs text-gray-400">Releases</div>
-            </div>
-          </div>
+          )}
 
           {/* Filter Tabs */}
           <div className="flex space-x-1 bg-surface rounded-lg p-1 mb-6">
