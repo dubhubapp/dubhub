@@ -13,6 +13,7 @@ import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
+import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "@/components/verified-artist";
 
 interface UserProfileProps {
   onSignOut?: () => void;
@@ -427,10 +428,16 @@ export default function UserProfile(props: any = {}) {
                 <img 
                   src={userData.profileImage}
                   alt="User Profile" 
-                  className="w-20 h-20 rounded-full mx-auto border-3 border-primary"
+                  className={`w-20 h-20 rounded-full mx-auto border-2 ${
+                    verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                  }`}
                 />
               ) : (
-                <div className="w-20 h-20 rounded-full mx-auto border-3 border-primary bg-gray-700 flex items-center justify-center">
+                <div
+                  className={`w-20 h-20 rounded-full mx-auto border-2 ${
+                    verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                  } bg-gray-700 flex items-center justify-center`}
+                >
                   <User className="w-10 h-10 text-gray-400" />
                 </div>
               )}
@@ -484,15 +491,23 @@ export default function UserProfile(props: any = {}) {
             </div>
             {userData.username && (
               <div className="flex items-center justify-center space-x-1">
-                <p className="text-gray-400 text-sm">@{userData.username}</p>
+                <p className={`text-sm font-semibold ${verifiedArtist ? "text-[#FFD700]" : "text-gray-400"}`}>
+                  @{userData.username}
+                </p>
                 {verifiedArtist && (
-                  <div title="Verified Artist Profile">
-                    <CheckCircle className="w-4 h-4 text-[#FFD700]" />
-                  </div>
+                  <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />
                 )}
               </div>
             )}
-            <p className="text-xs text-gray-500 mt-1">Member since {userData.memberSince}</p>
+            <p
+              className={`text-xs mt-1 inline-flex items-center rounded-full px-3 py-0.5 border ${
+                verifiedArtist
+                  ? "text-white border-white/70 shadow-[0_0_12px_rgba(255,255,255,0.7)]"
+                  : "text-gray-500 border-transparent"
+              }`}
+            >
+              Member since {userData.memberSince}
+            </p>
           </div>
 
           {/* Tabs */}

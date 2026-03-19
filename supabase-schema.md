@@ -37,14 +37,35 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 ---
 
 ## comments
-| Column | Type | Nullable | Default | Notes |
-|--------|------|----------|---------|-------|
-| id | uuid | NO | gen_random_uuid() | Primary key |
-| post_id | uuid | YES | – | FK → posts.id |
-| user_id | uuid | YES | – | FK → profiles.id |
-| body | text | NO | – | Comment body |
-| artist_tag | uuid | YES | – | Optional tagged artist |
-| created_at | timestamptz | YES | now() | Created |
+| Column     | Type        | Nullable | Default           | Notes                                              |
+|------------|-------------|----------|-------------------|----------------------------------------------------|
+| id         | uuid        | NO       | gen_random_uuid() | Primary key                                        |
+| post_id    | uuid        | YES      | –                 | FK → posts.id                                      |
+| user_id    | uuid        | YES      | –                 | FK → profiles.id                                   |
+| body       | text        | NO       | –                 | Comment body                                       |
+| artist_tag | uuid        | YES      | –                 | Optional tagged artist                             |
+| parent_id  | uuid        | YES      | –                 | Self-FK → comments.id (nullable for top-level comments, used for threaded replies) |
+| created_at | timestamptz | YES      | now()             | Created                                            |
+
+⚠️ **Important:**  
+- `parent_id = NULL` → top-level comment  
+- `parent_id = <comment id>` → reply to that comment  
+- Threaded replies are built from this self-referencing relationship.
+
+---
+
+## comment_votes
+| Column     | Type        | Nullable | Default           | Notes |
+|------------|-------------|----------|-------------------|-------|
+| id         | uuid        | NO       | gen_random_uuid() | Primary key |
+| user_id    | uuid        | NO       | –                 | FK → profiles.id |
+| comment_id | uuid        | NO       | –                 | FK → comments.id |
+| vote_type  | text        | NO       | 'upvote'          | Currently only supports 'upvote' (comment likes) |
+| created_at | timestamptz | NO       | now()             | Created |
+| updated_at | timestamptz | NO       | now()             | Updated |
+
+⚠️ **Uniqueness:**  
+- One like per `user_id` + `comment_id` + `vote_type`.
 
 ---
 

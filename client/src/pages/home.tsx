@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
@@ -13,8 +13,9 @@ export default function Home() {
   console.log("[Home] component mounted");
   console.log("[Home] render checkpoint 1");
   
-  const [selectedGenre, setSelectedGenre] = useState("all");
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
+  const [sortMode, setSortMode] = useState<"hottest" | "newest">("hottest");
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
@@ -24,8 +25,11 @@ export default function Home() {
   const lastLocationRef = useRef<string>(location);
 
   const { currentUser } = useUser();
+
+  const genresKey = [...selectedGenres].sort().join(",");
+
   const postsQuery = useQuery({
-    queryKey: ["/api/posts", { genre: selectedGenre, identification: identificationFilter }, currentUser?.id],
+    queryKey: ["/api/posts", { genresKey, identification: identificationFilter, sortMode }, currentUser?.id],
     queryFn: async () => {
       // Get auth headers so server can set hasLiked and currentUserTaggedAsArtist
       const { data: { session } } = await supabase.auth.getSession();
@@ -35,29 +39,18 @@ export default function Home() {
       }
       
       const params = new URLSearchParams();
-      if (selectedGenre !== "all") {
-        params.append("genre", selectedGenre);
+      if (selectedGenres.length > 0) {
+        params.append("genres", selectedGenres.join(","));
       }
+      params.append("identification", identificationFilter);
+      params.append("sort", sortMode);
+
       const response = await fetch(`/api/posts?${params}`, {
         headers: authHeaders,
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch posts");
-      const allPosts = await response.json() as PostWithUser[];
-      
-      // Filter by identification status
-      if (identificationFilter === "identified") {
-        return allPosts.filter(post => 
-          post.verificationStatus === "identified" || 
-          post.verificationStatus === "community"
-        );
-      } else if (identificationFilter === "unidentified") {
-        return allPosts.filter(post => 
-          post.verificationStatus === "unverified"
-        );
-      }
-      
-      return allPosts;
+      return (await response.json()) as PostWithUser[];
     },
     placeholderData: (previousData) => previousData,
     staleTime: 0,
@@ -65,6 +58,102 @@ export default function Home() {
   });
 
   const { data: posts = [], isLoading, isError, error } = postsQuery;
+
+  // Client-side fallback: ensures UI toggles (sort + filters) update immediately,
+  // even if the backend response/order hasn't caught up yet.
+  const uiPosts = useMemo(() => {
+    const getLikes = (post: PostWithUser) => {
+      const raw =
+        (post as any).likes ??
+        (post as any).likes_count ??
+        (post as any).likesCount ??
+        (post as any).likeCount ??
+        (post as any).like_count ??
+        0;
+      const n = typeof raw === "string" ? Number(raw) : raw;
+      return Number.isFinite(n) ? (n as number) : 0;
+    };
+
+    const identificationWhere = (post: PostWithUser) => {
+      if (identificationFilter === "identified") {
+        return (
+          post.verificationStatus === "identified" ||
+          post.verificationStatus === "community" ||
+          post.isVerifiedArtist ||
+          post.isVerifiedCommunity ||
+          post.verifiedByModerator
+        );
+      }
+      if (identificationFilter === "unidentified") {
+        return (
+          post.verificationStatus === "unverified" &&
+          !post.isVerifiedArtist &&
+          !post.isVerifiedCommunity &&
+          !post.verifiedByModerator
+        );
+      }
+      return true; // "all" => both
+    };
+
+    const genreWhere = (post: PostWithUser) => {
+      if (selectedGenres.length === 0) return true;
+      return selectedGenres.includes((post.genre ?? "").toString().trim().toLowerCase());
+    };
+
+    const normalizeCreatedAt = (value: any) => {
+      const d = value instanceof Date ? value : new Date(value);
+      const t = d.getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    const filtered = posts.filter((p) => identificationWhere(p) && genreWhere(p));
+
+    if (sortMode === "newest") {
+      return [...filtered].sort((a, b) => normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt));
+    }
+
+    // Hottest: primary by likes, secondary by recency.
+    return [...filtered].sort((a, b) => {
+      const likeDiff = getLikes(b) - getLikes(a);
+      if (likeDiff !== 0) return likeDiff;
+      return normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt);
+    });
+  }, [posts, identificationFilter, selectedGenres, sortMode]);
+
+  const debugTopThree = useMemo(() => {
+    return uiPosts.slice(0, 3).map((p) => {
+      const created = p.createdAt ? new Date(p.createdAt as any) : null;
+      const rawLikes =
+        (p as any).likes ??
+        (p as any).likes_count ??
+        (p as any).likesCount ??
+        (p as any).likeCount ??
+        (p as any).like_count ??
+        0;
+      const likesNum = typeof rawLikes === "string" ? Number(rawLikes) : rawLikes;
+      const likes = Number.isFinite(likesNum) ? (likesNum as number) : 0;
+      const createdStr =
+        created && Number.isFinite(created.getTime())
+          ? created.toISOString().slice(0, 10)
+          : String(p.createdAt ?? "");
+      return { id: p.id, title: p.title, likes, createdAt: createdStr };
+    });
+  }, [uiPosts]);
+
+  useEffect(() => {
+    console.log("[Home][SortDebug]", {
+      sortMode,
+      identificationFilter,
+      selectedGenres,
+      top: debugTopThree,
+    });
+    if (videoFeedRef.current) {
+      // Jump to top so reordering is immediately visible.
+      videoFeedRef.current.scrollTo({ top: 0, behavior: "auto" });
+      setHighlightedPostId(null);
+      lastScrolledPostId.current = null;
+    }
+  }, [sortMode, debugTopThree, identificationFilter, selectedGenres]);
 
   // Handle scroll to specific post from notification OR scroll to top after new post
   useEffect(() => {
@@ -83,7 +172,7 @@ export default function Home() {
     }
     
     // Handle scroll to top after new post submission
-    if (newPost && posts.length > 0) {
+    if (newPost && uiPosts.length > 0) {
       setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         // Clear the query parameter
@@ -93,9 +182,9 @@ export default function Home() {
     }
     
     // Only process if we have a postId, it's different from the last one we scrolled to, and posts are loaded
-    if (postId && postId !== lastScrolledPostId.current && posts.length > 0 && videoFeedRef.current) {
+    if (postId && postId !== lastScrolledPostId.current && uiPosts.length > 0 && videoFeedRef.current) {
       // Find the post in the list
-      const postIndex = posts.findIndex(p => p.id === postId);
+      const postIndex = uiPosts.findIndex(p => p.id === postId);
       
       if (postIndex !== -1) {
         // Mark that we've scrolled to this post
@@ -120,7 +209,7 @@ export default function Home() {
         }, 3000);
       }
     }
-  }, [posts, location, navigate]);
+  }, [uiPosts, location, navigate]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -161,15 +250,54 @@ export default function Home() {
     );
   }
 
-  if (posts.length === 0) {
+  if (uiPosts.length === 0) {
     return (
       <div className="flex-1 relative bg-background">
         <div className="absolute top-0 left-0 right-0 z-20 bg-white/10 backdrop-blur-xl h-16">
-          <Header title="dub hub" className="py-4" />
+          <Header
+            title="dub hub"
+            className="py-4"
+            rightContent={
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-white/90">Sort</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    console.log("[Home][SortDebug] click hottest (before):", sortMode);
+                    setSortMode("hottest");
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                    sortMode === "hottest"
+                      ? "bg-white/20 text-white border-white/30"
+                      : "bg-white/10 text-white border-white/20 hover:bg-white/20"
+                  }`}
+                >
+                  Hottest
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    console.log("[Home][SortDebug] click newest (before):", sortMode);
+                    setSortMode("newest");
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                    sortMode === "newest"
+                      ? "bg-white/20 text-white border-white/30"
+                      : "bg-white/10 text-white border-white/20 hover:bg-white/20"
+                  }`}
+                >
+                  Newest
+                </button>
+                <span className="text-[10px] text-white/70 max-w-[180px] truncate">
+                  Top: {debugTopThree[0]?.title ?? "—"} ({debugTopThree[0]?.likes ?? 0} likes) {debugTopThree[0]?.createdAt ?? ""}
+                </span>
+              </div>
+            }
+          />
         </div>
         <GenreFilter 
-          selectedGenre={selectedGenre} 
-          onGenreChange={setSelectedGenre}
+          selectedGenres={selectedGenres}
+          onGenresChange={setSelectedGenres}
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           isCollapsed={true}
@@ -188,13 +316,52 @@ export default function Home() {
     <div className="flex-1 relative bg-background overflow-hidden">
       {/* Header - z-40 so it stays above scrolling post overlays (z-20/z-30); post content scrolls underneath */}
       <div className="absolute top-0 left-0 right-0 z-40 bg-white/10 backdrop-blur-xl transition-all duration-300 h-16">
-        <Header title="dub hub" className="py-4" />
+        <Header
+          title="dub hub"
+          className="py-4"
+          rightContent={
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-white/90">Sort</span>
+              <button
+                type="button"
+                onClick={() => {
+                  console.log("[Home][SortDebug] click hottest (before):", sortMode);
+                  setSortMode("hottest");
+                }}
+                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                  sortMode === "hottest"
+                    ? "bg-white/20 text-white border-white/30"
+                    : "bg-white/10 text-white border-white/20 hover:bg-white/20"
+                }`}
+              >
+                Hottest
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  console.log("[Home][SortDebug] click newest (before):", sortMode);
+                  setSortMode("newest");
+                }}
+                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                  sortMode === "newest"
+                    ? "bg-white/20 text-white border-white/30"
+                    : "bg-white/10 text-white border-white/20 hover:bg-white/20"
+                }`}
+              >
+                Newest
+              </button>
+              <span className="text-[10px] text-white/70 max-w-[180px] truncate">
+                Top: {debugTopThree[0]?.title ?? "—"} ({debugTopThree[0]?.likes ?? 0} likes) {debugTopThree[0]?.createdAt ?? ""}
+              </span>
+            </div>
+          }
+        />
       </div>
 
       {/* Collapsible filter dropdown */}
       <GenreFilter
-        selectedGenre={selectedGenre}
-        onGenreChange={setSelectedGenre}
+        selectedGenres={selectedGenres}
+        onGenresChange={setSelectedGenres}
         identificationFilter={identificationFilter}
         onIdentificationChange={setIdentificationFilter}
         isCollapsed={true}
@@ -204,7 +371,7 @@ export default function Home() {
         ref={videoFeedRef}
         className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide"
       >
-        {posts.map((post) => (
+        {uiPosts.map((post) => (
           <VideoCard 
             key={post.id} 
             post={post}

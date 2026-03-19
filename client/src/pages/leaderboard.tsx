@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Trophy, Medal, Award, TrendingUp, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { useUser } from "@/lib/user-context";
 import { supabase } from '@/lib/supabaseClient';
+import { GoldVerifiedTick } from "@/components/verified-artist";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -14,6 +15,7 @@ interface LeaderboardEntry {
   avatar_url: string | null;
   score: number;
   correct_ids: number;
+  verified_artist?: boolean;
   reputation: number;
   created_at: string;
   account_type: string;
@@ -95,6 +97,7 @@ export default function Leaderboard() {
 
   const LeaderboardEntry = ({ entry, rank }: { entry: LeaderboardEntry; rank: number }) => {
     const isCurrentUser = entry.user_id === currentUserId;
+    const isVerifiedArtist = entry.account_type === "artist" && entry.verified_artist === true;
     const level = getLevel(entry.reputation);
     const levelProgress = getLevelProgress(entry.reputation);
 
@@ -165,8 +168,12 @@ export default function Leaderboard() {
         {/* User Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-semibold text-lg truncate" data-testid={`username-${entry.user_id}`}>
+            <span
+              className={`flex items-center gap-2 font-semibold text-lg truncate ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+              data-testid={`username-${entry.user_id}`}
+            >
               {entry.username}
+              {isVerifiedArtist && <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />}
             </span>
             {isCurrentUser && (
               <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">

@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { GoldVerifiedArtistPill, GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
@@ -44,9 +45,13 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
+  const debugComments =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
   const [hasLiked, setHasLiked] = useState(post.hasLiked || false);
   const [likes, setLikes] = useState(post.likes);
   const [showComments, setShowComments] = useState(false);
+  // Freeze the post snapshot used by the comments modal to avoid mismatched post IDs
+  const [commentsPost, setCommentsPost] = useState<PostWithUser | null>(null);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -242,10 +247,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
     if (isArtistVerifiedPost && artistVerifiedBy) {
       return (
-        <span className="bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-artist-verified">
-          <CheckCircle className="w-3 h-3 inline mr-1" />
-          Artist Verified
-        </span>
+        <GoldVerifiedArtistPill data-testid="badge-artist-verified" size="sm" />
       );
     }
     
@@ -397,7 +399,17 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         {/* Comment button */}
         <button 
           className="flex flex-col items-center group"
-          onClick={() => setShowComments(true)}
+          onClick={() => {
+            if (debugComments) {
+              console.log("[CommentsOpen] click", {
+                feedPostId: post.id,
+                handlerPostId: post.id,
+                showCommentsBefore: showComments,
+              });
+            }
+            setCommentsPost(post);
+            setShowComments(true);
+          }}
         >
           <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
             <MessageCircle className="w-6 h-6 text-white" />
@@ -514,20 +526,15 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                 }
                 alt="User Profile" 
                 className={`w-10 h-10 rounded-full border-2 ${
-                  isVerifiedArtist 
-                    ? "border-[#FFD700]" 
-                    : post.genre === "DnB" 
-                      ? "border-primary" 
-                      : post.genre === "UKG" 
-                        ? "border-secondary" 
+                  isVerifiedArtist
+                    ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                    : post.genre === "DnB"
+                      ? "border-primary"
+                      : post.genre === "UKG"
+                        ? "border-secondary"
                         : "border-green-600"
                 }`}
               />
-              {isVerifiedArtist && (
-                <div title="Verified Artist Profile">
-                  <CheckCircle className="absolute -bottom-1 -right-1 w-4 h-4 text-[#FFD700] bg-black rounded-full" />
-                </div>
-              )}
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -536,9 +543,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                     @{post.user.username}
                   </p>
                   {isVerifiedArtist && (
-                    <div title="Verified Artist Profile">
-                      <CheckCircle className="w-4 h-4 text-[#FFD700]" />
-                    </div>
+                    <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />
                   )}
                 </div>
               </div>
@@ -681,11 +686,19 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         postId={post.id}
       />
       {/* Comments Modal */}
-      <CommentsModal 
-        post={post}
-        isOpen={showComments}
-        onClose={() => setShowComments(false)}
-      />
+      {commentsPost && (
+        <CommentsModal
+          post={commentsPost}
+          isOpen={showComments}
+          onClose={() => {
+            if (debugComments) {
+              console.log("[CommentsOpen] close", { modalPostId: commentsPost.id });
+            }
+            setShowComments(false);
+            setCommentsPost(null);
+          }}
+        />
+      )}
       {/* Community Verification Dialog (post owner only) */}
       <CommunityVerificationDialog 
         postId={post.id}

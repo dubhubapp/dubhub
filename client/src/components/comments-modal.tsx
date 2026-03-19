@@ -1,7 +1,7 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, CheckCircle, Award, XCircle, ChevronUp, ChevronDown, Filter, Flag } from "lucide-react";
+import { X, Send, Heart, CheckCircle, Award, XCircle, Filter, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { ReportModal } from "./report-modal";
+import { GoldVerifiedArtistPill, GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -28,6 +29,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser } = useUser();
+  const debugComments =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (debugComments) {
+      console.log("[CommentsModal] opened", {
+        modalPostId: post.id,
+        queryKey: ["/api/posts", post.id, "comments"],
+      });
+    }
+  }, [isOpen, post.id, debugComments]);
 
   // Format time ago helper function
   const formatTimeAgo = (date: string | Date | null) => {
@@ -78,7 +91,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   // Handle user profile popup
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [showUserPopup, setShowUserPopup] = useState(false);
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const REPLY_BATCH_SIZE = 3;
+  // Per-parent-thread visible reply count (0 = collapsed)
+  const [visibleReplyCountByParent, setVisibleReplyCountByParent] = useState<Record<string, number>>({});
   const [replyingTo, setReplyingTo] = useState<{id: string, username: string} | null>(null);
   const [commentFilter, setCommentFilter] = useState<'all' | 'newest' | 'top'>('all');
 
@@ -105,9 +120,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const { data: comments = [] } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", post.id, "comments"],
     queryFn: async () => {
-      const response = await fetch(`/api/posts/${post.id}/comments`);
-      if (!response.ok) throw new Error("Failed to fetch comments");
+      if (debugComments) {
+        console.log("[CommentsModal] fetching", { modalPostId: post.id, url: `/api/posts/${post.id}/comments` });
+      }
+      const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
       const data = await response.json();
+      if (debugComments) {
+        console.log("[CommentsModal] fetched", {
+          modalPostId: post.id,
+          payloadType: Array.isArray(data) ? "array" : typeof data,
+          rootCount: Array.isArray(data) ? data.length : null,
+        });
+      }
       return data as CommentWithUser[];
     },
     enabled: isOpen,
@@ -175,24 +199,15 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
   const addCommentMutation = useMutation({
     mutationFn: async (data: { content: string; parentId?: string }) => {
-      const artistTagMatch = data.content.match(/@(\w+)/);
-      const artistTag = artistTagMatch ? artistTagMatch[1] : null;
       const res = await apiRequest("POST", `/api/posts/${post.id}/comments`, {
         body: data.content,
-        artistTag: artistTag,
+        parentId: data.parentId ?? null,
       });
       const created = await res.json();
       return created as { id: string; post_id: string; user_id: string; body: string; artist_tag: string | null; created_at: string };
     },
     onSuccess: (data, variables) => {
       setNewComment("");
-      if (variables.parentId) {
-        setExpandedReplies(prev => {
-          const newSet = new Set(prev);
-          newSet.add(variables.parentId!);
-          return newSet;
-        });
-      }
       const newCommentWithUser: CommentWithUser = {
         id: data.id,
         postId: post.id,
@@ -200,6 +215,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         body: data.body,
         artistTag: data.artist_tag ?? null,
         createdAt: data.created_at as unknown as Date,
+        parentId: (variables.parentId as string | undefined) ?? null,
         user: {
           id: contextUser?.id ?? data.user_id,
           username: contextUsername ?? "You",
@@ -207,10 +223,53 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         } as any,
         replies: [],
       };
-      queryClient.setQueryData<CommentWithUser[]>(
-        ["/api/posts", post.id, "comments"],
-        (old) => (old ? [...old, newCommentWithUser] : [newCommentWithUser])
-      );
+      // If this is a reply, attach to parent comment; otherwise append as top-level
+      if (variables.parentId) {
+        queryClient.setQueryData<CommentWithUser[]>(
+          ["/api/posts", post.id, "comments"],
+          (old) => {
+            if (!old) return old;
+            const attachReply = (items: CommentWithUser[]): CommentWithUser[] =>
+              items.map((c) => {
+                if (c.id === variables.parentId) {
+                  const existingReplies = c.replies || [];
+                  return { ...c, replies: [...existingReplies, newCommentWithUser] };
+                }
+                if (c.replies && c.replies.length > 0) {
+                  return { ...c, replies: attachReply(c.replies) };
+                }
+                return c;
+              });
+            return attachReply(old);
+          }
+        );
+
+        // Exception: if the user just replied, reveal the whole parent thread so
+        // the reply is immediately visible.
+        const key = ["/api/posts", post.id, "comments"] as const;
+        const latest = queryClient.getQueryData<CommentWithUser[]>(key);
+        const findInTree = (items: CommentWithUser[], id: string): CommentWithUser | null => {
+          for (const c of items) {
+            if (c.id === id) return c;
+            if (c.replies?.length) {
+              const found = findInTree(c.replies, id);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        const parent = findInTree(latest || [], variables.parentId);
+        const total = parent?.replies?.length ?? 0;
+        setVisibleReplyCountByParent((prev) => ({
+          ...prev,
+          [variables.parentId as string]: Math.max(prev[variables.parentId as string] ?? 0, total),
+        }));
+      } else {
+        queryClient.setQueryData<CommentWithUser[]>(
+          ["/api/posts", post.id, "comments"],
+          (old) => (old ? [...old, newCommentWithUser] : [newCommentWithUser])
+        );
+      }
       const currentComments = Number((post as any).comments ?? post.comments ?? 0);
       queryClient.setQueriesData<PostWithUser[]>(
         { queryKey: ["/api/posts"], exact: false },
@@ -230,24 +289,50 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     },
   });
 
-  // Voting functionality removed - no longer supported by backend
-  // const voteMutation = ...
-  // const removeVoteMutation = ...
-  // const handleVote = ...
-  
-  const handleVote = (_commentId: string, _voteType: "upvote" | "downvote", _currentVote: "upvote" | "downvote" | null) => {
-    // Voting disabled - functionality removed
+  // Comment like toggle
+  const handleToggleCommentLike = async (commentId: string) => {
+    try {
+      // Optimistic UI update
+      queryClient.setQueryData<CommentWithUser[]>(
+        ["/api/posts", post.id, "comments"],
+        (old) => {
+          if (!old) return old;
+
+          const updateTree = (items: CommentWithUser[]): CommentWithUser[] =>
+            items.map((c) => {
+              if (c.id === commentId) {
+                const currentlyLiked = c.userVote === "upvote";
+                const currentCount = c.voteScore || 0;
+                return {
+                  ...c,
+                  voteScore: currentlyLiked ? Math.max(0, currentCount - 1) : currentCount + 1,
+                  userVote: currentlyLiked ? null : "upvote",
+                };
+              }
+              if (c.replies && c.replies.length > 0) {
+                return { ...c, replies: updateTree(c.replies) };
+              }
+              return c;
+            });
+
+          return updateTree(old);
+        }
+      );
+
+      await apiRequest("POST", `/api/comments/${commentId}/like`, {});
+      // Optionally re-fetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "comments"] });
+    } catch (err) {
+      console.error("Failed to toggle comment like:", err);
+    }
   };
 
-  const toggleReplies = (commentId: string) => {
-    setExpandedReplies(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(commentId)) {
-        newSet.delete(commentId);
-      } else {
-        newSet.add(commentId);
-      }
-      return newSet;
+  const sortedRepliesChronological = (replies: CommentWithUser[] | undefined) => {
+    if (!replies || replies.length === 0) return [];
+    return [...replies].sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateA - dateB; // oldest -> newest
     });
   };
 
@@ -386,7 +471,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <img
                   src={comment.user.avatar_url || undefined}
                   alt={comment.user.username}
-                  className="w-8 h-8 rounded-full"
+                  className={`w-8 h-8 rounded-full border-2 ${
+                    comment.user.account_type === "artist" && comment.user.verified_artist
+                      ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                      : "border-transparent"
+                  }`}
                 />
               </div>
               <div className="flex-1 min-w-0">
@@ -403,18 +492,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     >
                       {comment.user.username}
                     </span>
-                    {comment.user.account_type === 'artist' && comment.user.verified_artist && (
-                      <div title="Verified Artist Profile">
-                        <CheckCircle className="w-3 h-3 text-[#FFD700]" />
-                      </div>
+                    {comment.user.account_type === "artist" && comment.user.verified_artist && (
+                      <GoldVerifiedTick className="w-3 h-3 -mt-0.5" />
                     )}
                   </div>
                   {/* Artist Verified Badge - on the artist/system confirmation comment, GOLD */}
                   {isArtistConfirmationComment && isArtistVerifiedPost && (
-                    <div className="flex items-center space-x-1 bg-[#D4AF37] px-2 py-0.5 rounded-full" data-testid={`badge-artist-verified-${comment.id}`}>
-                      <CheckCircle className="w-3 h-3 text-white" />
-                      <span className="text-xs text-white font-bold">Artist Verified</span>
-                    </div>
+                    <GoldVerifiedArtistPill
+                      data-testid={`badge-artist-verified-${comment.id}`}
+                      size="xs"
+                    />
                   )}
                   {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge, only pre-artist verification) */}
                   {isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
@@ -458,27 +545,20 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
                 <div className="flex items-center space-x-4 mt-2">
-                  {/* Voting buttons (no numeric count to avoid stray 0s) */}
-                  <div className="flex items-center space-x-2">
-                    <button 
-                      className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-1 ${
-                        comment.userVote === "upvote" ? "text-green-600 bg-green-50" : "text-gray-500"
-                      }`}
-                      onClick={() => handleVote(comment.id, "upvote", comment.userVote || null)}
-                      data-testid={`button-upvote-${comment.id}`}
-                    >
-                      <ChevronUp className="w-4 h-4" />
-                    </button>
-                    <button 
-                      className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-1 ${
-                        comment.userVote === "downvote" ? "text-red-600 bg-red-50" : "text-gray-500"
-                      }`}
-                      onClick={() => handleVote(comment.id, "downvote", comment.userVote || null)}
-                      data-testid={`button-downvote-${comment.id}`}
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {/* Comment likes (separate from post likes) */}
+                  <button
+                    className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-1 text-xs ${
+                      comment.userVote === "upvote" ? "text-pink-600 bg-pink-50" : "text-gray-500"
+                    }`}
+                    onClick={() => handleToggleCommentLike(comment.id)}
+                    data-testid={`button-like-${comment.id}`}
+                  >
+                    <Heart
+                      className="w-3 h-3"
+                      fill={comment.userVote === "upvote" ? "currentColor" : "none"}
+                    />
+                    <span>{comment.voteScore ?? 0}</span>
+                  </button>
                   <button 
                     className="text-xs text-gray-500 hover:text-gray-700"
                     onClick={() => {
@@ -501,30 +581,81 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     Report
                   </button>
                   {/* Toggle replies button */}
-                  {comment.replies && comment.replies.length > 0 && (
-                    <button 
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                      onClick={() => toggleReplies(comment.id)}
-                      data-testid={`toggle-replies-${comment.id}`}
-                    >
-                      {expandedReplies.has(comment.id) 
-                        ? `Hide ${comment.replies.length} replies` 
-                        : `Show ${comment.replies.length} replies`
-                      }
-                    </button>
-                  )}
+                  {comment.replies && comment.replies.length > 0 && (() => {
+                    const totalReplies = comment.replies.length;
+                    const visibleCount = visibleReplyCountByParent[comment.id] ?? 0;
+
+                    if (visibleCount === 0) {
+                      return (
+                        <button
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          onClick={() =>
+                            setVisibleReplyCountByParent((prev) => ({
+                              ...prev,
+                              [comment.id]: Math.min(REPLY_BATCH_SIZE, totalReplies),
+                            }))
+                          }
+                          data-testid={`toggle-replies-${comment.id}`}
+                        >
+                          Show replies ({totalReplies})
+                        </button>
+                      );
+                    }
+
+                    if (visibleCount < totalReplies) {
+                      return (
+                        <button
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          onClick={() =>
+                            setVisibleReplyCountByParent((prev) => ({
+                              ...prev,
+                              [comment.id]: Math.min(totalReplies, visibleCount + REPLY_BATCH_SIZE),
+                            }))
+                          }
+                          data-testid={`show-more-replies-${comment.id}`}
+                        >
+                          Show more replies
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        onClick={() =>
+                          setVisibleReplyCountByParent((prev) => ({
+                            ...prev,
+                            [comment.id]: 0,
+                          }))
+                        }
+                        data-testid={`hide-replies-${comment.id}`}
+                      >
+                        Hide replies
+                      </button>
+                    );
+                  })()}
                 </div>
                 
-                {/* Show replies if any and expanded */}
-                {comment.replies && comment.replies.length > 0 && expandedReplies.has(comment.id) && (
+                {/* Show replies progressively */}
+                {comment.replies &&
+                  comment.replies.length > 0 &&
+                  (visibleReplyCountByParent[comment.id] ?? 0) > 0 && (
                   <div className="ml-8 mt-3 space-y-3 border-l-2 border-gray-100 pl-3">
-                    {comment.replies.map((reply) => (
-                      <div key={reply.id} className="flex space-x-2">
-                        <img
-                          src={reply.user.avatar_url || undefined}
-                          alt={reply.user.username}
-                          className="w-6 h-6 rounded-full"
-                        />
+                    {sortedRepliesChronological(comment.replies)
+                      .slice(0, visibleReplyCountByParent[comment.id] ?? 0)
+                      .map((reply) => (
+                        <div key={reply.id} className="flex space-x-2">
+                        <div className="relative flex-shrink-0">
+                          <img
+                            src={reply.user.avatar_url || undefined}
+                            alt={reply.user.username}
+                            className={`w-6 h-6 rounded-full border-2 ${
+                              reply.user.account_type === "artist" && reply.user.verified_artist
+                                ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                                : "border-transparent"
+                            }`}
+                          />
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2">
                             <div className="flex items-center space-x-1">
@@ -536,10 +667,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                               >
                                 {reply.user.username}
                               </span>
-                              {reply.user.account_type === 'artist' && reply.user.verified_artist && (
-                                <div title="Verified Artist Profile">
-                                  <CheckCircle className="w-3 h-3 text-[#FFD700]" />
-                                </div>
+                              {reply.user.account_type === "artist" && reply.user.verified_artist && (
+                                <GoldVerifiedTick className="w-3 h-3 -mt-0.5" />
                               )}
                             </div>
                             {/* Verified by Artist Badge for Reply */}
@@ -564,27 +693,20 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             {highlightArtistMentions(reply.body, reply.tagStatus)}
                           </p>
                           <div className="flex items-center space-x-3 mt-1">
-                            {/* Voting buttons for replies (no numeric count to avoid stray 0s) */}
-                            <div className="flex items-center space-x-1">
-                              <button 
-                                className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-0.5 ${
-                                  reply.userVote === "upvote" ? "text-green-600 bg-green-50" : "text-gray-500"
-                                }`}
-                                onClick={() => handleVote(reply.id, "upvote", reply.userVote || null)}
-                                data-testid={`button-upvote-${reply.id}`}
-                              >
-                                <ChevronUp className="w-3 h-3" />
-                              </button>
-                              <button 
-                                className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full p-0.5 ${
-                                  reply.userVote === "downvote" ? "text-red-600 bg-red-50" : "text-gray-500"
-                                }`}
-                                onClick={() => handleVote(reply.id, "downvote", reply.userVote || null)}
-                                data-testid={`button-downvote-${reply.id}`}
-                              >
-                                <ChevronDown className="w-3 h-3" />
-                              </button>
-                            </div>
+                            {/* Comment likes for replies */}
+                            <button
+                              className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-xs ${
+                                reply.userVote === "upvote" ? "text-pink-600 bg-pink-50" : "text-gray-500"
+                              }`}
+                              onClick={() => handleToggleCommentLike(reply.id)}
+                              data-testid={`button-like-${reply.id}`}
+                            >
+                              <Heart
+                                className="w-3 h-3"
+                                fill={reply.userVote === "upvote" ? "currentColor" : "none"}
+                              />
+                              <span>{reply.voteScore ?? 0}</span>
+                            </button>
                             <button 
                               className="text-xs text-gray-500 hover:text-gray-700"
                               onClick={() => {
@@ -598,7 +720,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                           </div>
                         </div>
                       </div>
-                    ))}
+                      ))}
                   </div>
                 )}
                 </div>
@@ -698,10 +820,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <img
                     src={selectedUser.avatar_url || selectedUser.profileImage || undefined}
                     alt={selectedUser.username}
-                    className="w-20 h-20 rounded-full mx-auto"
+                    className={`w-20 h-20 rounded-full mx-auto border-2 ${
+                      selectedUser.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-transparent"
+                    }`}
                   />
                   {selectedUser.verified_artist && (
-                    <CheckCircle className="absolute bottom-0 right-2 w-6 h-6 text-yellow-400 bg-white rounded-full" />
+                    <GoldVerifiedTick
+                      withBackground
+                      backgroundClassName="bg-white rounded-full"
+                      className="absolute bottom-0 right-2 w-6 h-6"
+                    />
                   )}
                 </div>
                 

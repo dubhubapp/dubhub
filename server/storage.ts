@@ -12,7 +12,16 @@ export interface IStorage {
   updateUser(id: string, updates: any): Promise<any | undefined>;
 
   // Posts
-  getPosts(limit?: number, offset?: number, currentUserId?: string): Promise<any[]>;
+  getPosts(
+    limit?: number,
+    offset?: number,
+    currentUserId?: string,
+    options?: {
+      genres?: string[];
+      identification?: "all" | "identified" | "unidentified";
+      sortMode?: "hottest" | "newest";
+    }
+  ): Promise<any[]>;
   getPost(id: string): Promise<any | undefined>;
   createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string }): Promise<any>;
   deletePost(id: string): Promise<boolean>;
@@ -26,7 +35,7 @@ export interface IStorage {
   getUserLikedPosts(userId: string): Promise<any[]>;
 
   // Comments
-  createComment(postId: string, userId: string, body: string, artistTag?: string | null): Promise<any>;
+  createComment(postId: string, userId: string, body: string, artistTag?: string | null, parentId?: string | null): Promise<any>;
   getPostComments(postId: string, currentUserId?: string): Promise<any[]>;
 
   // Artist Tagging
@@ -157,9 +166,57 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getPosts(limit = 10, offset = 0, currentUserId?: string): Promise<any[]> {
+  async getPosts(
+    limit = 10,
+    offset = 0,
+    currentUserId?: string,
+    options?: {
+      genres?: string[];
+      identification?: "all" | "identified" | "unidentified";
+      sortMode?: "hottest" | "newest";
+    }
+  ): Promise<any[]> {
     console.log("[getPosts] called", { limit, offset, currentUserId });
     try {
+      const selectedGenres = options?.genres ?? [];
+      const identificationFilter = options?.identification ?? "all";
+      const sortMode = options?.sortMode ?? "hottest";
+
+      const normalizedGenres = selectedGenres
+        .map((g) => (g ?? "").toString().trim().toLowerCase())
+        .filter((g) => !!g && g !== "all");
+
+      const genreWhere =
+        normalizedGenres.length > 0
+          ? sql`lower(p.genre) IN (${sql.join(normalizedGenres.map((g) => sql`${g}`), sql`, `)})`
+          : sql`TRUE`;
+
+      const identifiedWhere = sql`(
+        p.verification_status IN ('identified', 'community')
+        OR COALESCE(p.is_verified_artist, false) = true
+        OR COALESCE(p.is_verified_community, false) = true
+        OR COALESCE(p.verified_by_moderator, false) = true
+      )`;
+
+      const unidentifiedWhere = sql`(
+        COALESCE(p.verification_status, 'unverified') = 'unverified'
+        AND COALESCE(p.is_verified_artist, false) = false
+        AND COALESCE(p.is_verified_community, false) = false
+        AND COALESCE(p.verified_by_moderator, false) = false
+      )`;
+
+      const identificationWhere =
+        identificationFilter === "identified"
+          ? identifiedWhere
+          : identificationFilter === "unidentified"
+            ? unidentifiedWhere
+            : sql`TRUE`;
+
+      const orderBy =
+        sortMode === "newest"
+          ? sql`ORDER BY p.created_at DESC, p.id DESC`
+          : sql`ORDER BY likes_count DESC, p.created_at DESC, p.id DESC`;
+
       const result = await db.execute(sql`
         SELECT
           p.id,
@@ -247,8 +304,10 @@ export class DatabaseStorage implements IStorage {
           FROM comments c
           WHERE c.post_id = p.id
         ) c_counts ON TRUE
-        WHERE p.verification_status != 'under_review'
-        ORDER BY p.created_at DESC
+        WHERE COALESCE(p.verification_status, 'unverified') != 'under_review'
+          AND ${genreWhere}
+          AND ${identificationWhere}
+        ${orderBy}
         LIMIT ${limit}
         OFFSET ${offset}
       `);
@@ -638,33 +697,80 @@ export class DatabaseStorage implements IStorage {
 
   async getPostComments(postId: string, currentUserId?: string): Promise<any[]> {
     try {
-      const result = await db.execute(sql`
-        SELECT
-          c.id,
-          c.post_id,
-          c.user_id,
-          c.body,
-          c.artist_tag,
-          c.created_at,
-          p.username,
-          p.avatar_url,
-          p.account_type,
-          p.verified_artist
-        FROM comments c
-        LEFT JOIN profiles p
-          ON p.id = c.user_id
-        WHERE c.post_id = ${postId}
-        ORDER BY c.created_at DESC
-      `);
+      // Comment likes are stored in comment_votes. If that table hasn't been created
+      // in the connected DB yet, we still want comments to load (likes will be 0).
+      const commentVotesRegResult = await pool.query<{
+        regclass: string | null;
+      }>(`SELECT to_regclass('public.comment_votes') AS "regclass"`);
+
+      const hasCommentVotes = !!commentVotesRegResult.rows?.[0]?.regclass;
+
+      const result = hasCommentVotes
+        ? await db.execute(sql`
+            SELECT
+              c.id,
+              c.post_id,
+              c.user_id,
+              c.body,
+              c.artist_tag,
+              c.parent_id,
+              c.created_at,
+              p.username,
+              p.avatar_url,
+              p.account_type,
+              p.verified_artist,
+              COALESCE(cv_counts.likes_count, 0)    AS likes_count,
+              ${
+                currentUserId
+                  ? sql`EXISTS (
+                       SELECT 1 FROM comment_votes cv2
+                       WHERE cv2.comment_id = c.id AND cv2.user_id = ${currentUserId} AND cv2.vote_type = 'upvote'
+                     )`
+                  : sql`false`
+              } AS has_liked
+            FROM comments c
+            LEFT JOIN profiles p
+              ON p.id = c.user_id
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS likes_count
+              FROM comment_votes cv
+              WHERE cv.comment_id = c.id
+                AND cv.vote_type = 'upvote'
+            ) cv_counts ON TRUE
+            WHERE c.post_id = ${postId}
+            ORDER BY c.created_at DESC
+          `)
+        : await db.execute(sql`
+            SELECT
+              c.id,
+              c.post_id,
+              c.user_id,
+              c.body,
+              c.artist_tag,
+              c.parent_id,
+              c.created_at,
+              p.username,
+              p.avatar_url,
+              p.account_type,
+              p.verified_artist,
+              0::int AS likes_count,
+              false AS has_liked
+            FROM comments c
+            LEFT JOIN profiles p
+              ON p.id = c.user_id
+            WHERE c.post_id = ${postId}
+            ORDER BY c.created_at DESC
+          `);
 
       const rows = (result as any).rows || [];
 
-      return rows.map((row: any) => ({
+      const flatComments: any[] = rows.map((row: any) => ({
         id: row.id,
         postId: row.post_id,
         userId: row.user_id,
         body: row.body,
         artistTag: row.artist_tag,
+        parentId: row.parent_id,
         createdAt: row.created_at,
         user: {
           id: row.user_id,
@@ -673,7 +779,27 @@ export class DatabaseStorage implements IStorage {
           account_type: row.account_type,
           verified_artist: row.verified_artist,
         },
+        voteScore: Number(row.likes_count ?? 0),
+        userVote: row.has_liked ? "upvote" : null,
+        replies: [] as any[],
       }));
+
+      const byId = new Map<string, any>();
+      flatComments.forEach((c: any) => byId.set(c.id, c));
+
+      const roots: any[] = [];
+      flatComments.forEach((c: any) => {
+        if (c.parentId && byId.has(c.parentId)) {
+          const parent = byId.get(c.parentId);
+          parent.replies = parent.replies || [];
+          parent.replies.push(c);
+        } else {
+          // If parent is missing or parentId is null, treat as top-level
+          roots.push(c);
+        }
+      });
+
+      return roots;
     } catch (error) {
       console.error("[getPostComments] Error fetching comments:", error);
       return [];
@@ -684,12 +810,13 @@ export class DatabaseStorage implements IStorage {
     postId: string,
     userId: string,
     body: string,
-    artistTag?: string | null
+    artistTag?: string | null,
+    parentId?: string | null
   ): Promise<any> {
     try {
       const result = await db.execute(sql`
-        INSERT INTO comments (post_id, user_id, body, artist_tag, created_at)
-        VALUES (${postId}, ${userId}, ${body}, ${artistTag ?? null}, NOW())
+        INSERT INTO comments (post_id, user_id, body, artist_tag, parent_id, created_at)
+        VALUES (${postId}, ${userId}, ${body}, ${artistTag ?? null}, ${parentId ?? null}, NOW())
         RETURNING *
       `);
 

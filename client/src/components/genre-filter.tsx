@@ -2,15 +2,14 @@
 import { useState } from "react";
 
 interface GenreFilterProps {
-  selectedGenre: string;
-  onGenreChange: (genre: string) => void;
+  selectedGenres: string[];
+  onGenresChange: (genres: string[]) => void;
   identificationFilter: "all" | "identified" | "unidentified";
   onIdentificationChange: (filter: "all" | "identified" | "unidentified") => void;
   isCollapsed?: boolean;
 }
 
 const genres = [
-  { id: "all", label: "All", color: "bg-gray-100 text-gray-800" },
   { id: "dnb", label: "DnB", color: "text-white", bgColor: "#8f57b3" },
   { id: "ukg", label: "UKG", color: "text-white", bgColor: "#77c961" },
   { id: "dubstep", label: "Dubstep", color: "text-white", bgColor: "#b0271d" },
@@ -21,25 +20,45 @@ const genres = [
   { id: "other", label: "Other", color: "text-white", bgColor: "#7e7e7e" },
 ];
 
+function getGenreLabel(genreId: string) {
+  return genres.find((g) => g.id === genreId)?.label ?? "Unknown";
+}
+
 export function GenreFilter({ 
-  selectedGenre, 
-  onGenreChange, 
+  selectedGenres,
+  onGenresChange,
   identificationFilter, 
   onIdentificationChange,
   isCollapsed = false 
 }: GenreFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const selectedGenreLabel = genres.find(g => g.id === selectedGenre)?.label || "All";
+  const isAllSelected = selectedGenres.length === 0;
+  const selectedGenreLabels = selectedGenres.map(getGenreLabel);
+  const collapsedLabel =
+    isAllSelected
+      ? "All"
+      : selectedGenreLabels.length <= 2
+        ? selectedGenreLabels.join(" + ")
+        : `${selectedGenreLabels[0]} + ${selectedGenreLabels.length - 1} more`;
+
+  const toggleGenre = (genreId: string) => {
+    const isSelected = selectedGenres.includes(genreId);
+    if (isSelected) {
+      onGenresChange(selectedGenres.filter((g) => g !== genreId));
+    } else {
+      onGenresChange([...selectedGenres, genreId]);
+    }
+  };
 
   if (isCollapsed) {
     return (
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20">
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className="bg-white/10 backdrop-blur-lg rounded-full px-4 py-2 text-white hover:bg-white/20 transition-colors flex items-center space-x-2 border border-white/20"
         >
-          <span className="text-sm font-medium">{selectedGenreLabel}</span>
+          <span className="text-sm font-medium">{collapsedLabel}</span>
           <svg 
             className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} 
             fill="none" 
@@ -55,17 +74,27 @@ export function GenreFilter({
             {/* Genres Section */}
             <div className="p-4 border-b border-white/20">
               <h3 className="text-sm font-semibold text-white mb-3">Genres</h3>
+              <div className="flex flex-wrap gap-2 justify-center mb-3">
+                <button
+                  type="button"
+                  onClick={() => onGenresChange([])}
+                  className={`px-3 py-2 text-xs rounded-full transition-colors ${
+                    isAllSelected
+                      ? "bg-gray-100 text-gray-800"
+                      : "bg-white/20 text-white hover:bg-white/30"
+                  }`}
+                >
+                  All
+                </button>
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 {genres.map((genre) => {
-                  const isSelected = selectedGenre === genre.id;
+                  const isSelected = selectedGenres.includes(genre.id);
                   return (
                     <button
                       type="button"
                       key={genre.id}
-                      onClick={() => {
-                        onGenreChange(genre.id);
-                        setIsOpen(false);
-                      }}
+                      onClick={() => toggleGenre(genre.id)}
                       className={`px-3 py-2 text-xs rounded-full transition-colors ${
                         isSelected
                           ? `${genre.color || "text-white"}`
@@ -88,7 +117,6 @@ export function GenreFilter({
                   type="button"
                   onClick={() => {
                     onIdentificationChange(identificationFilter === "identified" ? "all" : "identified");
-                    setIsOpen(false);
                   }}
                   className={`px-4 py-2 text-xs rounded-full transition-colors ${
                     identificationFilter === "identified"
@@ -102,7 +130,6 @@ export function GenreFilter({
                   type="button"
                   onClick={() => {
                     onIdentificationChange(identificationFilter === "unidentified" ? "all" : "unidentified");
-                    setIsOpen(false);
                   }}
                   className={`px-4 py-2 text-xs rounded-full transition-colors ${
                     identificationFilter === "unidentified"
@@ -122,15 +149,30 @@ export function GenreFilter({
 
   return (
     <div className="p-4 space-y-4">
+      {/* All + Genre Pills */}
+      <div className="flex flex-wrap gap-2 justify-center">
+        <button
+          type="button"
+          onClick={() => onGenresChange([])}
+          className={`px-4 py-2 text-sm rounded-full transition-colors ${
+            isAllSelected
+              ? "bg-gray-100 text-gray-800"
+              : "bg-white/20 text-white hover:bg-white/30"
+          }`}
+        >
+          All
+        </button>
+      </div>
+
       {/* Genre Pills */}
       <div className="flex flex-wrap gap-2 justify-center">
         {genres.slice(0, 5).map((genre) => {
-          const isSelected = selectedGenre === genre.id;
+          const isSelected = selectedGenres.includes(genre.id);
           return (
             <button
               type="button"
               key={genre.id}
-              onClick={() => onGenreChange(genre.id)}
+              onClick={() => toggleGenre(genre.id)}
               className={`px-4 py-2 text-sm rounded-full transition-colors ${
                 isSelected
                   ? `${genre.color || "text-white"}`
@@ -147,12 +189,12 @@ export function GenreFilter({
       {/* Second row of genres */}
       <div className="flex flex-wrap gap-2 justify-center">
         {genres.slice(5).map((genre) => {
-          const isSelected = selectedGenre === genre.id;
+          const isSelected = selectedGenres.includes(genre.id);
           return (
             <button
               type="button"
               key={genre.id}
-              onClick={() => onGenreChange(genre.id)}
+              onClick={() => toggleGenre(genre.id)}
               className={`px-4 py-2 text-sm rounded-full transition-colors ${
                 isSelected
                   ? `${genre.color || "text-white"}`

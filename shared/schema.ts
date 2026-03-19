@@ -57,13 +57,14 @@ export const postLikes = pgTable("post_likes", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-// Comments table - updated to use postId and body
+// Comments table - updated to use postId, body, and optional parentId for threaded replies
 export const comments = pgTable("comments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => profiles.id),
   postId: varchar("post_id").notNull().references(() => posts.id),
   body: text("body").notNull(),
   artistTag: varchar("artist_tag"), // UUID reference to artist_video_tags.id
+  parentId: varchar("parent_id"), // Nullable parent comment id for threaded replies
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -162,9 +163,9 @@ export const interactions = pgTable("interactions", {
 
 export const commentVotes = pgTable("comment_votes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").notNull().references(() => profiles.id),
   commentId: varchar("comment_id").notNull().references(() => comments.id),
-  voteType: text("vote_type").notNull(), // "upvote" | "downvote"
+  voteType: text("vote_type").notNull(), // "upvote" only (used as like)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -227,6 +228,7 @@ export const insertPostSchema = z.object({
 export const insertCommentSchema = z.object({
   body: z.string(),
   artistTag: z.string().optional().nullable(), // UUID of artist_video_tags.id
+  parentId: z.string().optional().nullable(),
 });
 
 export const insertArtistVideoTagSchema = createInsertSchema(artistVideoTags).pick({
@@ -304,8 +306,8 @@ export type CommentWithUser = Comment & {
   tagStatus?: "pending" | "confirmed" | "denied"; // Status of the artist tag
   replies?: CommentWithUser[];
   isVerifiedByArtist?: boolean; // Whether this comment was verified by the artist
-  voteScore?: number; // Net votes (upvotes - downvotes)
-  userVote?: "upvote" | "downvote" | null; // Current user's vote on this comment
+  voteScore?: number; // Used as like count for this comment
+  userVote?: "upvote" | null; // "upvote" when liked by current user, null otherwise
 };
 
 // PostWithUser type (replaces TrackWithUser)

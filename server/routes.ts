@@ -27,7 +27,7 @@ function detectArtistMentions(text: string): string[] {
   return mentions;
 }
 
-// Helper: process @mentions, create artist_video_tags, return list of tagged artist ids for notifications
+  // Helper: process @mentions, create artist_video_tags, return list of tagged artist ids for notifications
 async function processArtistTags(
   commentId: string,
   postId: string,
@@ -498,13 +498,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = parseInt(req.query.offset as string) || 0;
-      const genre = req.query.genre as string;
+      const genresQuery = req.query.genres ?? req.query.genre;
+      const selectedGenres: string[] =
+        typeof genresQuery === "string"
+          ? genresQuery.split(",").map((g) => g.trim()).filter(Boolean)
+          : Array.isArray(genresQuery)
+            ? genresQuery.map((g) => (g ?? "").toString()).flatMap((g) => g.split(",")).map((x) => x.trim()).filter(Boolean)
+            : [];
 
-      let posts = await storage.getPosts(limit, offset, currentUserId ?? undefined);
+      const identificationFilter =
+        req.query.identification === "identified" || req.query.identification === "unidentified" || req.query.identification === "all"
+          ? (req.query.identification as "all" | "identified" | "unidentified")
+          : "all";
 
-      if (genre && genre !== "all") {
-        posts = posts.filter((post: any) => post.genre?.toLowerCase() === genre.toLowerCase());
-      }
+      const sortMode =
+        req.query.sort === "newest" || req.query.sort === "hottest"
+          ? (req.query.sort as "newest" | "hottest")
+          : "hottest";
+
+      const posts = await storage.getPosts(limit, offset, currentUserId ?? undefined, {
+        genres: selectedGenres,
+        identification: identificationFilter,
+        sortMode,
+      });
 
       const payload = posts.map((p: any) => ({
         ...p,
@@ -849,7 +865,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
-      const { body } = req.body;
+      const { body, parentId } = req.body;
       
       if (!body || !body.trim()) {
         return res.status(400).json({ message: "Comment body is required" });
@@ -861,12 +877,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         postId,
         userId,
         body.trim(),
-        null
+        null,
+        parentId ?? null
       );
       
       const commenterUsername = req.dbUser?.username ?? "Someone";
       const taggedArtists = await processArtistTags(comment.id, postId, userId, body.trim());
 
+      // Track who we've notified to avoid duplicates
+      const notified = new Set<string>();
+
+      // Artist tag notifications
       for (const { artistId } of taggedArtists) {
         try {
           await storage.createNotification({
@@ -875,8 +896,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
             postId: postId,
             message: `@${commenterUsername} tagged you in a comment. Open the post and tap "ID Track" to confirm or deny if it's your track.`,
           });
+          notified.add(artistId);
         } catch (notifErr) {
           console.error("[Comment] Failed to create tag notification for artist", artistId, notifErr);
+        }
+      }
+
+      // Load post to find owner/uploader
+      let postOwnerId: string | undefined;
+      try {
+        const post = await storage.getPost(postId);
+        postOwnerId = (post as any)?.user?.id;
+      } catch (postErr) {
+        console.error("[Comment] Failed to load post for owner notifications:", postErr);
+      }
+
+      // Reply notifications: notify parent comment author when someone replies
+      if (comment.parent_id) {
+        try {
+          const parentResult = await db.execute(sql`
+            SELECT user_id FROM comments WHERE id = ${comment.parent_id} LIMIT 1
+          `);
+          const parentRows = (parentResult as any).rows || [];
+          if (parentRows.length > 0) {
+            const parentAuthorId = parentRows[0].user_id as string;
+            if (parentAuthorId && parentAuthorId !== userId && !notified.has(parentAuthorId)) {
+              await storage.createNotification({
+                artistId: parentAuthorId,
+                triggeredBy: userId,
+                postId: postId,
+                message: `@${commenterUsername} replied to your comment.`,
+              });
+              notified.add(parentAuthorId);
+            }
+          }
+        } catch (parentErr) {
+          console.error("[Comment] Failed to create reply notification:", parentErr);
+        }
+      }
+
+      // Post owner notifications for any new comment or reply
+      if (postOwnerId && postOwnerId !== userId && !notified.has(postOwnerId)) {
+        try {
+          await storage.createNotification({
+            artistId: postOwnerId,
+            triggeredBy: userId,
+            postId: postId,
+            message: `@${commenterUsername} commented on your post.`,
+          });
+          notified.add(postOwnerId);
+        } catch (ownerErr) {
+          console.error("[Comment] Failed to create post owner notification:", ownerErr);
         }
       }
 
@@ -887,6 +957,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error creating comment:", error);
       res.status(500).json({ message: "Failed to create comment" });
+    }
+  });
+
+  // Toggle like on a comment (separate from post likes)
+  app.post("/api/comments/:id/like", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const commentId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const userId = req.dbUser.id;
+
+      // Check if like exists
+      const existing = await db.execute(sql`
+        SELECT id FROM comment_votes
+        WHERE comment_id = ${commentId}
+          AND user_id = ${userId}
+          AND vote_type = 'upvote'
+        LIMIT 1
+      `);
+      const rows = (existing as any).rows || [];
+
+      if (rows.length > 0) {
+        // Unlike: delete existing like
+        await db.execute(sql`
+          DELETE FROM comment_votes
+          WHERE id = ${rows[0].id}
+        `);
+      } else {
+        // Like: insert new row
+        await db.execute(sql`
+          INSERT INTO comment_votes (user_id, comment_id, vote_type, created_at, updated_at)
+          VALUES (${userId}, ${commentId}, 'upvote', NOW(), NOW())
+        `);
+      }
+
+      // Return updated like count and current like state
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM comment_votes
+        WHERE comment_id = ${commentId}
+          AND vote_type = 'upvote'
+      `);
+      const likeCountRow = (countResult as any).rows?.[0];
+      const likeCount = Number(likeCountRow?.count ?? 0);
+
+      const likedResult = await db.execute(sql`
+        SELECT 1 FROM comment_votes
+        WHERE comment_id = ${commentId}
+          AND user_id = ${userId}
+          AND vote_type = 'upvote'
+        LIMIT 1
+      `);
+      const isLiked = ((likedResult as any).rows || []).length > 0;
+
+      res.json({ liked: isLiked, likes: likeCount });
+    } catch (error) {
+      console.error('[/api/comments/:id/like] Error:', error);
+      res.status(500).json({ message: "Failed to toggle comment like" });
     }
   });
 
@@ -919,6 +1048,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!updatedTag) {
         return res.status(404).json({ message: "Tag not found or you don't have permission to update it" });
+      }
+
+      // If artist denies this tag, mute further notifications for this post/artist combination
+      if (status === "denied" && updatedTag && updatedTag.post_id && updatedTag.artist_id) {
+        try {
+          await db.execute(sql`
+            UPDATE artist_video_tags
+            SET status = 'DENIED'
+            WHERE post_id = ${updatedTag.post_id}
+              AND artist_id = ${updatedTag.artist_id}
+          `);
+        } catch (muteErr) {
+          console.error("[/api/artist-tags/:id/status] Failed to mute future notifications after denial:", muteErr);
+        }
       }
 
       res.json(updatedTag);
