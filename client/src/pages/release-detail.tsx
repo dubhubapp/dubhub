@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, ExternalLink, Edit2, Check, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { apiRequest } from "@/lib/queryClient";
@@ -13,6 +13,7 @@ import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { isReleaseUpcoming } from "@/lib/release-status";
+import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -31,6 +32,56 @@ function formatMonthYear(value: string | null): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+function formatDurationLabel(totalMinutes: number): string {
+  if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return "0 days";
+
+  if (totalMinutes < 60) {
+    const mins = Math.max(1, Math.round(totalMinutes));
+    return `${mins} min${mins === 1 ? "" : "s"}`;
+  }
+
+  if (totalMinutes < 24 * 60) {
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = Math.round(totalMinutes % 60);
+    if (mins === 0) return `${hours} hour${hours === 1 ? "" : "s"}`;
+    return `${hours} hour${hours === 1 ? "" : "s"} ${mins} min${mins === 1 ? "" : "s"}`;
+  }
+
+  const days = Math.floor(totalMinutes / (24 * 60));
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** Help copy for Release stats (same info pattern as profile StatsCardSection). */
+const RELEASE_STATS_HELP = {
+  section:
+    "Engagement for this release: clips that feature it, saves, comments, who posted, and key dates.",
+  featuredClips: "Community posts that include this track.",
+  trackSaves: "Total likes across posts featuring this release.",
+  comments: "Comments on posts featuring this release.",
+  uploaders: "Different accounts that posted a clip of this track.",
+  firstClip: "Month of the earliest community clip featuring this release.",
+  latestClip: "Month of the most recent clip featuring this release.",
+  announcedAfter:
+    "How long after the first clip this release was announced (or added), based on available dates.",
+  releasedAfter: "How long after the first clip the release date was, based on available dates.",
+} as const;
+
+function formatDurationBetween(start: string | null | undefined, end: string | null | undefined, fallbackDays?: number | null): string {
+  if (start && end) {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
+      const diffMs = endDate.getTime() - startDate.getTime();
+      if (diffMs >= 0) {
+        return formatDurationLabel(diffMs / (1000 * 60));
+      }
+    }
+  }
+
+  const safeDays = Number(fallbackDays ?? 0);
+  return `${safeDays} day${safeDays === 1 ? "" : "s"}`;
 }
 
 export default function ReleaseDetail() {
@@ -131,6 +182,90 @@ export default function ReleaseDetail() {
   const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
   const firstClipLabel = formatMonthYear(stats?.firstClipAt ?? null);
   const latestClipLabel = formatMonthYear(stats?.latestClipAt ?? null);
+  const announcedAfterLabel =
+    stats?.daysToAnnouncement !== null && stats?.daysToAnnouncement !== undefined
+      ? formatDurationBetween(stats?.firstClipAt, release?.createdAt, stats.daysToAnnouncement)
+      : null;
+  const releasedAfterLabel =
+    stats?.daysToRelease !== null && stats?.daysToRelease !== undefined
+      ? formatDurationBetween(stats?.firstClipAt, release?.releaseDate, stats.daysToRelease)
+      : null;
+  const releaseStatsCards: StatsCardItem[] = stats
+    ? [
+        {
+          label: "Featured clips",
+          value: stats.postsFeaturingTrack.toLocaleString(),
+          Icon: Radio,
+          toneClassName: "border-purple-500/35 bg-purple-500/5 shadow-[0_0_12px_rgba(168,85,247,0.12)] text-purple-300 [&_svg]:drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]",
+          info: RELEASE_STATS_HELP.featuredClips,
+        },
+        {
+          label: "Track saves",
+          value: stats.totalLikes.toLocaleString(),
+          Icon: Heart,
+          toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
+          info: RELEASE_STATS_HELP.trackSaves,
+        },
+        {
+          label: "Comments",
+          value: stats.totalComments.toLocaleString(),
+          Icon: MessageCircle,
+          toneClassName: "border-cyan-500/35 bg-cyan-500/5 shadow-[0_0_12px_rgba(6,182,212,0.12)] text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
+          info: RELEASE_STATS_HELP.comments,
+        },
+        {
+          label: "Uploaders",
+          value: stats.uniqueUploaders.toLocaleString(),
+          Icon: Users,
+          toneClassName: "border-blue-500/35 bg-blue-500/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-blue-300 [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
+          info: RELEASE_STATS_HELP.uploaders,
+        },
+        ...(firstClipLabel
+          ? [
+              {
+                label: "First clip",
+                value: firstClipLabel,
+                Icon: CalendarDays,
+                toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+                info: RELEASE_STATS_HELP.firstClip,
+              } satisfies StatsCardItem,
+            ]
+          : []),
+        ...(latestClipLabel
+          ? [
+              {
+                label: "Latest clip",
+                value: latestClipLabel,
+                Icon: CalendarDays,
+                toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+                info: RELEASE_STATS_HELP.latestClip,
+              } satisfies StatsCardItem,
+            ]
+          : []),
+        ...(announcedAfterLabel
+          ? [
+              {
+                label: "Announced After",
+                value: announcedAfterLabel,
+                Icon: Clock4,
+                toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
+                info: RELEASE_STATS_HELP.announcedAfter,
+              } satisfies StatsCardItem,
+            ]
+          : []),
+        ...(releasedAfterLabel
+          ? [
+              {
+                label: "Released After",
+                value: releasedAfterLabel,
+                Icon: Clock4,
+                toneClassName: "border-indigo-500/35 bg-indigo-500/5 shadow-[0_0_12px_rgba(99,102,241,0.12)] text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
+                info: RELEASE_STATS_HELP.releasedAfter,
+              } satisfies StatsCardItem,
+            ]
+          : []),
+      ]
+    : [];
 
   return (
     <div className="flex-1 bg-background overflow-y-auto pb-24">
@@ -209,23 +344,17 @@ export default function ReleaseDetail() {
         )}
 
         {stats && (
-          <div className="mb-6 rounded-xl border bg-card p-4">
-            <h2 className="text-sm font-medium text-muted-foreground mb-3">Release stats</h2>
-            <div className="space-y-1.5 text-sm">
-              {stats.postsFeaturingTrack > 0 ? (
-                <p>{stats.postsFeaturingTrack} clip{stats.postsFeaturingTrack !== 1 ? "s" : ""} featuring this track</p>
-              ) : (
-                <p className="text-muted-foreground">No clips featuring this track yet</p>
-              )}
-              <p>{stats.totalLikes} people saved this track</p>
-              <p>{stats.totalComments} comment{stats.totalComments !== 1 ? "s" : ""}</p>
-              <p>{stats.uniqueUploaders} uploader{stats.uniqueUploaders !== 1 ? "s" : ""}</p>
-              {firstClipLabel && <p>First clip: {firstClipLabel}</p>}
-              {latestClipLabel && <p>Latest clip: {latestClipLabel}</p>}
-              {stats.daysToAnnouncement !== null && <p>Announced after: {stats.daysToAnnouncement} days</p>}
-              {stats.daysToRelease !== null && <p>Released after: {stats.daysToRelease} days</p>}
-            </div>
-          </div>
+          <StatsCardSection
+            title="Release stats"
+            titleInfo={RELEASE_STATS_HELP.section}
+            items={releaseStatsCards}
+            className="mb-6"
+            helperText={
+              stats.postsFeaturingTrack === 0
+                ? "No clips featuring this track yet."
+                : undefined
+            }
+          />
         )}
 
         {isPendingCollab && isArtist && (

@@ -1194,6 +1194,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /** Genre counts for posts where this user's comment is the verified/correct ID (one row per post). */
+  app.get("/api/user/:id/identified-posts-genres", async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const result = await db.execute(sql`
+        SELECT
+          COALESCE(NULLIF(TRIM(LOWER(p.genre)), ''), 'other') AS genre_key,
+          COUNT(*)::int AS count
+        FROM posts p
+        INNER JOIN comments c ON c.id = p.verified_comment_id
+        WHERE c.user_id = ${userId}
+          AND p.verified_comment_id IS NOT NULL
+        GROUP BY COALESCE(NULLIF(TRIM(LOWER(p.genre)), ''), 'other')
+        ORDER BY count DESC, genre_key ASC
+      `);
+      const rows =
+        (result as unknown as { rows?: { genre_key: string; count: number }[] }).rows ?? [];
+      const genres = rows.map((row) => ({
+        genreKey: String(row.genre_key ?? "other"),
+        count: Number(row.count ?? 0),
+      }));
+      res.json({ genres });
+    } catch (error) {
+      console.error("[/api/user/:id/identified-posts-genres] Error:", error);
+      res.status(500).json({
+        message: "Failed to get identified posts genres",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   app.get("/api/artists/:id/stats", async (req, res) => {
     try {
       const artistId = req.params.id;

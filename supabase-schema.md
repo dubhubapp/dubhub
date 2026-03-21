@@ -230,3 +230,21 @@ NOT `user_id` or `from_user_id`.
 | invited_by   | uuid        | YES      | –                 | FK → profiles.id (release owner)        |
 | invited_at   | timestamptz | NO       | now()             | Invitation timestamp                    |
 | responded_at | timestamptz | YES      | –                 | Acceptance/rejection timestamp          |
+
+---
+
+## events
+| Column     | Type        | Nullable | Default           | Notes |
+|------------|-------------|----------|-------------------|-------|
+| id         | uuid        | NO       | gen_random_uuid() | Primary key |
+| event_type | text        | NO       | –                 | Event name (e.g. post_uploaded, post_liked, comment_created, artist_confirmed_id, artist_denied_id, release_created, release_published, release_updated) |
+| user_id    | uuid        | YES      | –                 | FK → profiles.id |
+| post_id    | uuid        | YES      | –                 | FK → posts.id |
+| release_id | uuid        | YES      | –                 | FK → releases.id |
+| metadata   | jsonb       | YES      | –                 | Optional lightweight event context |
+| created_at | timestamptz | NO       | now()             | Created |
+
+Notes:
+- Events are append-only analytics records.
+- Events should be written from backend actions only, not frontend UI.
+- Events are for analytics/trend tracking and should not be treated as the source of truth for product state.

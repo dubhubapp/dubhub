@@ -14,9 +14,126 @@ import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/sche
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "@/components/verified-artist";
+import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
+import { StatInfoPopover } from "@/components/stat-info-popover";
+
+/** Concise copy for profile stat sections and cards (popover help). */
+const PROFILE_HELP = {
+  sectionImpact:
+    "How your music shows up on Dub Hub: confirmed tracks, releases, clips that feature your songs, and engagement from the community.",
+  sectionUserActivity:
+    "Your personal activity: uploads, confirmed IDs on your posts, saves, and likes you’ve given others.",
+  sectionOverview:
+    "A quick snapshot of your account: posts you’ve shared, IDs confirmed on your uploads, saves, and likes you’ve given.",
+  reputation:
+    "Reputation reflects correct IDs and participation. Higher levels can unlock badges and recognition as the system evolves.",
+  tracksPosted:
+    "Genres for every clip you’ve posted. Each upload counts once toward the genre totals.",
+  tracksIdentified:
+    "Shows genres for tracks you correctly identified. Excludes your own tracks and IDs on your own posts.",
+  totalIDs: "Total clips or tracks you’ve uploaded to the community.",
+  confirmedOverview: "Your uploads that have been identified or verified.",
+  saved: "Tracks you’ve bookmarked (when saves are available).",
+  likesGiven: "Posts you’ve liked.",
+  artistConfirmedTracks: "Tracks on your artist profile that are confirmed as yours.",
+  artistReleases: "Releases you’ve created on your artist profile.",
+  artistUpcoming: "Scheduled releases that aren’t out yet.",
+  artistFeaturedClips: "Community posts that feature your music.",
+  artistTrackSaves: "Total likes across posts featuring your tracks.",
+  artistComments: "Comments on posts that feature your tracks.",
+  artistUploaders: "Different people who posted clips of your tracks.",
+  artistCollaborations: "Collaborative releases you’re credited on.",
+} as const;
 
 interface UserProfileProps {
   onSignOut?: () => void;
+}
+
+function formatGenreDisplayLabel(genreKey: string): string {
+  const g = genreKey.toLowerCase();
+  if (g === "dnb") return "DNB";
+  if (g === "ukg") return "UKG";
+  return g.charAt(0).toUpperCase() + g.slice(1);
+}
+
+function getGenreChipColors(genre: string) {
+  switch (genre.toLowerCase()) {
+    case "dnb":
+      return { bg: "bg-purple-600/20", text: "text-purple-400" };
+    case "ukg":
+      return { bg: "bg-green-600/20", text: "text-green-400" };
+    case "dubstep":
+      return { bg: "bg-red-600/20", text: "text-red-400" };
+    case "bassline":
+      return { bg: "bg-blue-600/20", text: "text-blue-400" };
+    case "house":
+      return { bg: "bg-yellow-600/20", text: "text-yellow-400" };
+    case "techno":
+      return { bg: "bg-pink-600/20", text: "text-pink-400" };
+    case "trance":
+      return { bg: "bg-cyan-600/20", text: "text-cyan-400" };
+    case "other":
+      return { bg: "bg-gray-600/20", text: "text-gray-400" };
+    default:
+      return { bg: "bg-gray-600/20", text: "text-gray-400" };
+  }
+}
+
+type GenreStatRow = { genre: string; count: number };
+
+function GenreBreakdownSection({
+  title,
+  titleInfo,
+  stats,
+  emptyMessage,
+  isLoading,
+  testIdPrefix,
+}: {
+  title: string;
+  titleInfo: string;
+  stats: GenreStatRow[];
+  emptyMessage: string;
+  isLoading?: boolean;
+  testIdPrefix: string;
+}) {
+  return (
+    <div className="mb-6">
+      <div className="mb-4 flex items-center gap-1.5">
+        <h3 className="font-semibold">{title}</h3>
+        <StatInfoPopover
+          label={title}
+          content={titleInfo}
+          side="bottom"
+          align="start"
+          className="text-gray-400 hover:text-gray-200"
+        />
+      </div>
+      {isLoading ? (
+        <p className="text-gray-400 text-sm" data-testid={`${testIdPrefix}-loading`}>
+          Loading genre breakdown…
+        </p>
+      ) : stats.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {stats.map((genreStat) => {
+            const colorSet = getGenreChipColors(genreStat.genre);
+            return (
+              <span
+                key={`${genreStat.genre}-${genreStat.count}`}
+                className={`${colorSet.bg} ${colorSet.text} px-3 py-1 rounded-full text-sm`}
+                data-testid={`${testIdPrefix}-genre-${genreStat.genre.toLowerCase()}`}
+              >
+                {genreStat.genre} ({genreStat.count})
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-gray-400 text-sm" data-testid={`${testIdPrefix}-empty`}>
+          {emptyMessage}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export default function UserProfile(props: any = {}) {
@@ -27,6 +144,7 @@ export default function UserProfile(props: any = {}) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
   const [activeTab, setActiveTab] = useState("profile");
+  const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [, navigate] = useLocation();
@@ -77,6 +195,14 @@ export default function UserProfile(props: any = {}) {
     enabled: !!currentUser?.id,
   });
 
+  type IdentifiedGenresResponse = { genres: { genreKey: string; count: number }[] };
+
+  const { data: identifiedGenresData, isLoading: identifiedGenresLoading } = useQuery<IdentifiedGenresResponse>({
+    queryKey: ["/api/user", currentUser?.id, "identified-posts-genres"],
+    enabled: !!currentUser?.id,
+    retry: false,
+  });
+
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery<NotificationWithUser[]>({
     queryKey: ["/api/user", currentUser?.id, "notifications"],
     enabled: !!currentUser?.id,
@@ -122,11 +248,21 @@ export default function UserProfile(props: any = {}) {
 
     return Array.from(genreCounts.entries())
       .map(([genre, count]) => ({
-        genre: genre === "dnb" ? "DNB" : genre === "ukg" ? "UKG" : genre.charAt(0).toUpperCase() + genre.slice(1),
+        genre: formatGenreDisplayLabel(genre),
         count,
       }))
       .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
   }, [userPosts]);
+
+  const identifiedGenreStats = useMemo(() => {
+    const rows = identifiedGenresData?.genres ?? [];
+    return rows
+      .map((row) => ({
+        genre: formatGenreDisplayLabel(row.genreKey),
+        count: row.count,
+      }))
+      .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
+  }, [identifiedGenresData]);
 
   const hasAnyArtistImpact =
     !!artistStats &&
@@ -140,6 +276,98 @@ export default function UserProfile(props: any = {}) {
       artistStats.uniqueUploaders > 0 ||
       artistStats.collaborations > 0
     );
+
+  const artistImpactItems: StatsCardItem[] = artistStats
+    ? [
+        {
+          label: "Confirmed tracks",
+          value: artistStats.confirmedTracks.toLocaleString(),
+          Icon: BadgeCheck,
+          toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
+          info: PROFILE_HELP.artistConfirmedTracks,
+        },
+        {
+          label: "Releases",
+          value: artistStats.releasesCreated.toLocaleString(),
+          Icon: Calendar,
+          toneClassName: "border-indigo-500/35 bg-indigo-500/5 shadow-[0_0_12px_rgba(99,102,241,0.12)] text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
+          info: PROFILE_HELP.artistReleases,
+        },
+        {
+          label: "Upcoming releases",
+          value: artistStats.upcomingReleases.toLocaleString(),
+          Icon: CalendarClock,
+          toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+          info: PROFILE_HELP.artistUpcoming,
+        },
+        {
+          label: "Featured clips",
+          value: artistStats.postsFeaturingTracks.toLocaleString(),
+          Icon: Radio,
+          toneClassName: "border-purple-500/35 bg-purple-500/5 shadow-[0_0_12px_rgba(168,85,247,0.12)] text-purple-300 [&_svg]:drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]",
+          info: PROFILE_HELP.artistFeaturedClips,
+        },
+        {
+          label: "Track saves",
+          value: artistStats.totalLikesAcrossPosts.toLocaleString(),
+          Icon: Heart,
+          toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
+          info: PROFILE_HELP.artistTrackSaves,
+        },
+        {
+          label: "Comments",
+          value: artistStats.totalCommentsAcrossPosts.toLocaleString(),
+          Icon: MessageCircle,
+          toneClassName: "border-cyan-500/35 bg-cyan-500/5 shadow-[0_0_12px_rgba(6,182,212,0.12)] text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
+          info: PROFILE_HELP.artistComments,
+        },
+        {
+          label: "Uploaders",
+          value: artistStats.uniqueUploaders.toLocaleString(),
+          Icon: Users,
+          toneClassName: "border-blue-500/35 bg-blue-500/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-blue-300 [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
+          info: PROFILE_HELP.artistUploaders,
+        },
+        {
+          label: "Collaborations",
+          value: artistStats.collaborations.toLocaleString(),
+          Icon: Headphones,
+          toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
+          info: PROFILE_HELP.artistCollaborations,
+        },
+      ]
+    : [];
+
+  const userOverviewItems: StatsCardItem[] = [
+    {
+      label: "Total IDs",
+      value: Number(userStats?.totalIDs || 0).toLocaleString(),
+      Icon: Upload,
+      toneClassName: "border-primary/35 bg-primary/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-primary [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
+      info: PROFILE_HELP.totalIDs,
+    },
+    {
+      label: "Confirmed",
+      value: Number(userStats?.confirmedIDs || 0).toLocaleString(),
+      Icon: CheckCircle,
+      toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
+      info: PROFILE_HELP.confirmedOverview,
+    },
+    {
+      label: "Saved",
+      value: Number(userStats?.savedTracks || 0).toLocaleString(),
+      Icon: Bookmark,
+      toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+      info: PROFILE_HELP.saved,
+    },
+    {
+      label: "Likes",
+      value: Number(userStats?.totalLikes || 0).toLocaleString(),
+      Icon: Heart,
+      toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
+      info: PROFILE_HELP.likesGiven,
+    },
+  ];
 
   const handleSignOut = async () => {
     try {
@@ -584,107 +812,87 @@ export default function UserProfile(props: any = {}) {
 
             <TabsContent value="profile" className="space-y-6 mt-6">
               {userType === "artist" && artistStats ? (
-                <div className="bg-surface rounded-xl p-4 mb-6">
-                  <h3 className="font-semibold mb-4 text-center">Your impact</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border-2 border-green-500/35 bg-green-500/5 p-3 shadow-[0_0_12px_rgba(34,197,94,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-green-300 mb-1.5">
-                        <BadgeCheck className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]" />
-                        <span>Confirmed tracks</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.confirmedTracks.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-indigo-500/35 bg-indigo-500/5 p-3 shadow-[0_0_12px_rgba(99,102,241,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 mb-1.5">
-                        <Calendar className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]" />
-                        <span>Releases</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.releasesCreated.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-amber-500/35 bg-amber-500/5 p-3 shadow-[0_0_12px_rgba(245,158,11,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-amber-300 mb-1.5">
-                        <CalendarClock className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]" />
-                        <span>Upcoming releases</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.upcomingReleases.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-purple-500/35 bg-purple-500/5 p-3 shadow-[0_0_12px_rgba(168,85,247,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-purple-300 mb-1.5">
-                        <Radio className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]" />
-                        <span>Featured clips</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.postsFeaturingTracks.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-pink-500/35 bg-pink-500/5 p-3 shadow-[0_0_12px_rgba(236,72,153,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-pink-300 mb-1.5">
-                        <Heart className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]" />
-                        <span>Track saves</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.totalLikesAcrossPosts.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-cyan-500/35 bg-cyan-500/5 p-3 shadow-[0_0_12px_rgba(6,182,212,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-cyan-300 mb-1.5">
-                        <MessageCircle className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]" />
-                        <span>Comments</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.totalCommentsAcrossPosts.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-blue-500/35 bg-blue-500/5 p-3 shadow-[0_0_12px_rgba(59,130,246,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-blue-300 mb-1.5">
-                        <Users className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]" />
-                        <span>Uploaders</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.uniqueUploaders.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg border-2 border-emerald-500/35 bg-emerald-500/5 p-3 shadow-[0_0_12px_rgba(16,185,129,0.12)]">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-300 mb-1.5">
-                        <Headphones className="w-4 h-4 shrink-0 drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]" />
-                        <span>Collaborations</span>
-                      </div>
-                      <div className="text-xl font-bold text-center">{artistStats.collaborations.toLocaleString()}</div>
+                <div className="mb-6">
+                  <div className="flex justify-center mb-3">
+                    <div className="inline-flex items-center rounded-lg border border-white/10 bg-black/20 p-1">
+                      <button
+                        type="button"
+                        onClick={() => setArtistStatsMode("artist")}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                          artistStatsMode === "artist"
+                            ? "bg-white text-black"
+                            : "text-gray-300 hover:text-white"
+                        }`}
+                        data-testid="stats-mode-artist"
+                      >
+                        Artist
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setArtistStatsMode("user")}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                          artistStatsMode === "user"
+                            ? "bg-white text-black"
+                            : "text-gray-300 hover:text-white"
+                        }`}
+                        data-testid="stats-mode-user"
+                      >
+                        User
+                      </button>
                     </div>
                   </div>
-                  {!hasAnyArtistImpact && (
-                    <p className="text-xs text-gray-400 mt-3 text-center">
-                      Your impact stats will grow as tracks are confirmed and clips get linked to your releases.
-                    </p>
-                  )}
+
+                  <div className="[perspective:1200px]">
+                    <div
+                      className="relative min-h-[430px] transition-transform duration-500 ease-out [transform-style:preserve-3d]"
+                      style={{
+                        transform: artistStatsMode === "artist" ? "rotateY(0deg)" : "rotateY(180deg)",
+                      }}
+                    >
+                      <div className="absolute inset-0 [backface-visibility:hidden]">
+                        <StatsCardSection
+                          title="Your impact"
+                          titleInfo={PROFILE_HELP.sectionImpact}
+                          items={artistImpactItems}
+                          helperText={
+                            hasAnyArtistImpact
+                              ? undefined
+                              : "Your impact stats will grow as tracks are confirmed and clips get linked to your releases."
+                          }
+                        />
+                      </div>
+                      <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                        <StatsCardSection
+                          title="Your user activity"
+                          titleInfo={PROFILE_HELP.sectionUserActivity}
+                          items={userOverviewItems}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div className="bg-surface rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-primary mb-1" data-testid="stat-total-ids">
-                      {userStats?.totalIDs || 0}
-                    </div>
-                    <div className="text-xs text-gray-400">Total IDs</div>
-                  </div>
-                  <div className="bg-surface rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-green-500 mb-1" data-testid="stat-confirmed">
-                      {userStats?.confirmedIDs || 0}
-                    </div>
-                    <div className="text-xs text-gray-400">Confirmed</div>
-                  </div>
-                  <div className="bg-surface rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-accent mb-1" data-testid="stat-saved">
-                      {userStats?.savedTracks || 0}
-                    </div>
-                    <div className="text-xs text-gray-400">Saved</div>
-                  </div>
-                  <div className="bg-surface rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-secondary mb-1" data-testid="stat-likes">
-                      {userStats?.totalLikes || 0}
-                    </div>
-                    <div className="text-xs text-gray-400">Likes</div>
-                  </div>
-                </div>
+                <StatsCardSection
+                  title="Your overview"
+                  titleInfo={PROFILE_HELP.sectionOverview}
+                  items={userOverviewItems}
+                  className="mb-6"
+                />
               )}
 
           {/* Reputation Section */}
           <div className="mb-6">
-            <h3 className="font-semibold mb-4 flex items-center">
-              <TrendingUp className="w-5 h-5 text-accent mr-2" />
-              Reputation
-            </h3>
+            <div className="mb-4 flex items-center gap-1.5">
+              <TrendingUp className="w-5 h-5 text-accent shrink-0" />
+              <h3 className="font-semibold">Reputation</h3>
+              <StatInfoPopover
+                label="Reputation"
+                content={PROFILE_HELP.reputation}
+                side="bottom"
+                align="start"
+                className="text-gray-400 hover:text-gray-200"
+              />
+            </div>
             <div className="bg-surface rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium" data-testid="reputation-level">
@@ -710,54 +918,23 @@ export default function UserProfile(props: any = {}) {
             </div>
           </div>
 
-          {/* Favorite Genres */}
-          <div className="mb-6">
-            <h3 className="font-semibold mb-4">Your Posted Genres</h3>
-            {genreStats.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {genreStats.map((genreStat) => {
-                  const getGenreColors = (genre: string) => {
-                    switch (genre.toLowerCase()) {
-                      case "dnb":
-                        return { bg: "bg-purple-600/20", text: "text-purple-400" };
-                      case "ukg":
-                        return { bg: "bg-green-600/20", text: "text-green-400" };
-                      case "dubstep":
-                        return { bg: "bg-red-600/20", text: "text-red-400" };
-                      case "bassline":
-                        return { bg: "bg-blue-600/20", text: "text-blue-400" };
-                      case "house":
-                        return { bg: "bg-yellow-600/20", text: "text-yellow-400" };
-                      case "techno":
-                        return { bg: "bg-pink-600/20", text: "text-pink-400" };
-                      case "trance":
-                        return { bg: "bg-cyan-600/20", text: "text-cyan-400" };
-                      case "other":
-                        return { bg: "bg-gray-600/20", text: "text-gray-400" };
-                      default:
-                        return { bg: "bg-gray-600/20", text: "text-gray-400" };
-                    }
-                  };
-                  
-                  const colorSet = getGenreColors(genreStat.genre);
-                  
-                  return (
-                    <span 
-                      key={genreStat.genre}
-                      className={`${colorSet.bg} ${colorSet.text} px-3 py-1 rounded-full text-sm`}
-                      data-testid={`genre-${genreStat.genre.toLowerCase()}`}
-                    >
-                      {genreStat.genre} ({genreStat.count})
-                    </span>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-gray-400 text-sm" data-testid="text-no-genres">
-                No tracks posted yet. Start submitting tracks to see your genre statistics!
-              </p>
-            )}
-          </div>
+          <GenreBreakdownSection
+            title="Tracks You Posted"
+            titleInfo={PROFILE_HELP.tracksPosted}
+            stats={genreStats}
+            emptyMessage="No tracks posted yet. Start submitting tracks to see your genre breakdown."
+            isLoading={postsLoading}
+            testIdPrefix="posted-genres"
+          />
+
+          <GenreBreakdownSection
+            title="Tracks You Identified"
+            titleInfo={PROFILE_HELP.tracksIdentified}
+            stats={identifiedGenreStats}
+            emptyMessage="When your ID is confirmed as the correct track, those tracks will show up here."
+            isLoading={identifiedGenresLoading}
+            testIdPrefix="identified-genres"
+          />
 
           {/* Settings */}
           <div className="space-y-3">
