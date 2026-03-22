@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Send, Heart, CheckCircle, Award, XCircle, Filter, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { INPUT_LIMITS } from "@shared/input-limits";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -146,8 +147,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   // Note: karma display has been removed from the comments UI to avoid stray numeric artifacts near names.
 
   // Handle comment input changes and artist mention detection
-  const handleCommentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value.slice(0, INPUT_LIMITS.commentBody);
     const cursorPosition = e.target.selectionStart || 0;
     
     setNewComment(value);
@@ -338,13 +339,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newComment.trim()) {
-      addCommentMutation.mutate({
-        content: newComment.trim(),
-        parentId: replyingTo?.id
-      } as any);
-      setReplyingTo(null); // Clear reply state after submitting
-    }
+    const trimmed = newComment.trim();
+    if (!trimmed || trimmed.length > INPUT_LIMITS.commentBody) return;
+    addCommentMutation.mutate({
+      content: trimmed,
+      parentId: replyingTo?.id
+    } as any);
+    setReplyingTo(null); // Clear reply state after submitting
   };
 
   return (
@@ -784,29 +785,40 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               </div>
             )}
             
-            <form onSubmit={handleSubmit} className="flex space-x-2">
-              <img
-                src={userProfileImage || undefined}
-                alt="Your profile"
-                className="w-8 h-8 rounded-full flex-shrink-0"
-              />
-              <Input
-                value={newComment}
-                onChange={handleCommentChange}
-                placeholder={replyingTo ? `Replying to @${replyingTo.username}...` : "Add a comment... (Use @ to tag artists)"}
-                className="flex-1 border-gray-300 rounded-full"
-                disabled={addCommentMutation.isPending}
-                data-testid="comment-input"
-              />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!newComment.trim() || addCommentMutation.isPending}
-                className="rounded-full px-4"
-                data-testid="comment-submit"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-1">
+              <div className="flex space-x-2 items-end">
+                <img
+                  src={userProfileImage || undefined}
+                  alt="Your profile"
+                  className="w-8 h-8 rounded-full flex-shrink-0"
+                />
+                <Textarea
+                  value={newComment}
+                  onChange={handleCommentChange}
+                  placeholder={replyingTo ? `Replying to @${replyingTo.username}...` : "Add a comment... (Use @ to tag artists)"}
+                  className="flex-1 border-gray-300 rounded-2xl min-h-[40px] max-h-32 resize-y"
+                  disabled={addCommentMutation.isPending}
+                  data-testid="comment-input"
+                  maxLength={INPUT_LIMITS.commentBody}
+                  rows={2}
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={
+                    !newComment.trim() ||
+                    newComment.length > INPUT_LIMITS.commentBody ||
+                    addCommentMutation.isPending
+                  }
+                  className="rounded-full px-4 flex-shrink-0"
+                  data-testid="comment-submit"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 text-right">
+                {newComment.length} / {INPUT_LIMITS.commentBody}
+              </p>
             </form>
           </div>
         </div>

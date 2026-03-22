@@ -21,6 +21,7 @@ import { useLocation } from "wouter";
 import { formatReleaseTitleLine } from "@/lib/release-display";
 import { formatDate } from "@/pages/release-tracker";
 import { isReleaseUpcoming } from "@/lib/release-status";
+import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -85,7 +86,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
       setHasLiked(post.hasLiked || false);
       setLikes(post.likes);
     }
-  }, [post.id, post.hasLiked, post.likes, post]); // Sync when post ID, hasLiked, likes, or entire post object changes
+  }, [post.id, post.hasLiked, post.likes]); // Avoid depending on `post` reference — cache updates replace the object every time
 
   // Ensure video plays immediately and loops properly
   useEffect(() => {
@@ -305,29 +306,6 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     return null;
   };
 
-  const getGenreColor = (genre: string) => {
-    switch (genre.toLowerCase()) {
-      case "dnb":
-        return "bg-primary/80";
-      case "ukg":
-        return "bg-secondary/80";
-      case "dubstep":
-        return "bg-green-600/80";
-      case "house":
-        return "bg-purple-600/80";
-      case "techno":
-        return "bg-red-600/80";
-      case "bassline":
-        return "bg-orange-600/80";
-      case "trance":
-        return "bg-blue-600/80";
-      case "other":
-        return "bg-gray-600/80";
-      default:
-        return "bg-gray-600/80";
-    }
-  };
-
   const formatCount = (count: number) => {
     if (count >= 1000) {
       return `${(count / 1000).toFixed(1)}K`;
@@ -375,7 +353,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   // Check if artist is verified
   const isVerifiedArtist = post.user.account_type === 'artist' && post.user.verified_artist === true;
 
-
+  const genreChip = getGenreChipStyle(post.genre);
 
   return (
     <div 
@@ -413,7 +391,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         </video>
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
       </div>
-      {/* Top overlay with status - pt-safe for notch */}
+      {/* Top overlay with status — pt-safe for notch */}
       <div className="absolute top-20 left-4 right-20 z-20">
         <div className="flex gap-2 mb-4">
           {getStatusBadge()}
@@ -548,56 +526,76 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         )}
       </div>
       {/* Bottom content overlay - right-20 leaves room for action buttons; bottom clears BottomNavigation */}
-      <div className="absolute left-0 right-20 z-20 px-4 pt-16 pb-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none"
+      <div
+        className="absolute left-0 right-20 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-6 pt-16 pointer-events-none"
         style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
       >
-        <div className="pointer-events-auto max-h-[50vh] overflow-y-auto space-y-3">
-          <div className="flex items-center space-x-3">
-            {/* User avatar with verification */}
-            <div className="relative">
-              <img 
-                src={
-                  contextUser && post.userId === contextUser.id 
-                    ? (userProfileImage || post.user.avatar_url || undefined)
-                    : (post.user.avatar_url || undefined)
-                }
-                alt="User Profile" 
-                className={`w-10 h-10 rounded-full border-2 ${
-                  isVerifiedArtist
-                    ? "border-[#FFD700] " + goldAvatarGlowShadowClass
-                    : post.genre === "DnB"
-                      ? "border-primary"
-                      : post.genre === "UKG"
-                        ? "border-secondary"
-                        : "border-green-600"
-                }`}
-              />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <div className="flex items-center space-x-1">
-                  <p className={`font-semibold text-sm ${isVerifiedArtist ? "text-[#FFD700]" : "text-white"}`}>
-                    @{post.user.username}
-                  </p>
-                  {isVerifiedArtist && (
-                    <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />
-                  )}
-                </div>
+        {/* Scroll only avatar + title/desc so genre pill (glow) is never inside overflow-y-auto */}
+        <div className="pointer-events-auto flex max-h-[50vh] min-h-0 flex-col gap-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-contain py-0.5 pl-0.5 pr-1 [scrollbar-gutter:stable]">
+            <div className="flex items-center space-x-3">
+              {/* User avatar with verification */}
+              <div className="relative">
+                <img 
+                  src={
+                    contextUser && post.userId === contextUser.id 
+                      ? (userProfileImage || post.user.avatar_url || undefined)
+                      : (post.user.avatar_url || undefined)
+                  }
+                  alt="User Profile" 
+                  className={`w-10 h-10 rounded-full border-2 ${
+                    isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : ""
+                  }`}
+                  style={
+                    !isVerifiedArtist ? { borderColor: genreChip.bgColor } : undefined
+                  }
+                />
               </div>
-              <p className="text-xs text-gray-300">{post.location}</p>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1">
+                    <p className={`font-semibold text-sm ${isVerifiedArtist ? "text-[#FFD700]" : "text-white"}`}>
+                      @{post.user.username}
+                    </p>
+                    {isVerifiedArtist && (
+                      <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-300">{post.location}</p>
+              </div>
             </div>
+
+            {(post.title || post.description) ? (
+              <div className="mt-2 space-y-2">
+                {post.title && (
+                  <p className="text-sm font-semibold text-white truncate">{post.title}</p>
+                )}
+                {post.description && (
+                  <p className="text-sm font-medium text-white">{post.description}</p>
+                )}
+              </div>
+            ) : null}
           </div>
-          
-          <div className="space-y-2">
-            {post.title && (
-              <p className="text-sm font-semibold text-white truncate">{post.title}</p>
-            )}
-            {post.description && (
-              <p className="text-sm font-medium text-white">{post.description}</p>
-            )}
-            <div className="flex items-center space-x-2 text-xs text-gray-300">
+
+          <div className="shrink-0 overflow-visible px-0.5 py-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
+              <span
+                data-testid="post-genre-tag"
+                className="inline-block rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
+              >
+                {genreChip.label}
+              </span>
+              <span className="text-gray-500 select-none" aria-hidden>
+                •
+              </span>
               {post.djName && <span>Played by: {post.djName}</span>}
-              {(post.djName && (post.playedDate || post.createdAt)) && <span>•</span>}
+              {post.djName && (
+                <span className="text-gray-500 select-none" aria-hidden>
+                  •
+                </span>
+              )}
               <span>
                 {post.playedDate
                   ? `Played on: ${formatPlayedDate(post.playedDate)}`
@@ -607,6 +605,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               </span>
             </div>
           </div>
+
           {releasePreview && (
             <button
               type="button"

@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
+import { withAvatarCacheBust } from "@/lib/avatar-utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
@@ -16,11 +17,12 @@ import { VideoCard } from "@/components/video-card";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "@/components/verified-artist";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 
 /** Concise copy for profile stat sections and cards (popover help). */
 const PROFILE_HELP = {
   sectionImpact:
-    "How your music shows up on Dub Hub: confirmed tracks, releases, clips that feature your songs, and engagement from the community.",
+    "How your music shows up on dub hub: confirmed tracks, releases, clips that feature your songs, and engagement from the community.",
   sectionUserActivity:
     "Your personal activity: uploads, confirmed IDs on your posts, saves, and likes you’ve given others.",
   sectionOverview:
@@ -146,6 +148,7 @@ export default function UserProfile(props: any = {}) {
   const [activeTab, setActiveTab] = useState("profile");
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [, navigate] = useLocation();
   const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
@@ -442,7 +445,7 @@ export default function UserProfile(props: any = {}) {
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('profile_uploads')
         .upload(filePath, file, {
-          cacheControl: '3600',
+          cacheControl: '60',
           upsert: true, // Overwrite if exists
         });
 
@@ -450,22 +453,24 @@ export default function UserProfile(props: any = {}) {
         throw uploadError;
       }
 
-      // Get public URL
+      // Get public URL (same path every time → same base URL; bust cache for display)
       const { data: { publicUrl } } = supabase.storage
         .from('profile_uploads')
         .getPublicUrl(filePath);
 
+      const avatarUrl = withAvatarCacheBust(publicUrl);
+
       // Update Supabase profiles.avatar_url
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: avatarUrl })
         .eq('id', currentUser.id);
 
       if (updateError) {
         throw updateError;
       }
 
-      return { url: publicUrl };
+      return { url: avatarUrl };
     },
     onSuccess: (data) => {
       updateProfileImage(data.url);
@@ -940,8 +945,10 @@ export default function UserProfile(props: any = {}) {
           <div className="space-y-3">
             <Button
               variant="ghost"
+              type="button"
               className="w-full bg-surface hover:bg-surface/80 text-left p-4 rounded-xl flex items-center justify-between h-auto"
               data-testid="button-settings"
+              onClick={() => setChangePasswordOpen(true)}
             >
               <div className="flex items-center space-x-3">
                 <Settings className="w-5 h-5 text-gray-400" />
@@ -949,7 +956,6 @@ export default function UserProfile(props: any = {}) {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </Button>
-            
             <Button
               variant="ghost"
               className="w-full bg-red-900/20 hover:bg-red-900/30 text-left p-4 rounded-xl flex items-center justify-between h-auto text-red-400 hover:text-red-300"
@@ -1195,6 +1201,7 @@ export default function UserProfile(props: any = {}) {
             accept="image/*"
             style={{ display: 'none' }}
           />
+          <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
         </div>
       </div>
     </div>

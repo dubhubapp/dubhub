@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey, unique, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { INPUT_LIMITS } from "./input-limits";
 
 // Supabase auth profiles table - links auth.users to custom profile data
 export const profiles = pgTable("profiles", {
@@ -217,18 +218,18 @@ export const insertUserSchema = createInsertSchema(users).pick({
 // Posts schema
 export const insertPostSchema = z.object({
   userId: z.string(),
-  title: z.string().optional(),
+  title: z.string().max(INPUT_LIMITS.postTitle).optional(),
   videoUrl: z.string(),
-  description: z.string().optional(),
-  genre: z.string().optional(),
-  djName: z.string().optional(),
+  description: z.string().max(INPUT_LIMITS.postDescription).optional(),
+  genre: z.string().max(INPUT_LIMITS.postGenre).optional(),
+  djName: z.string().max(INPUT_LIMITS.postDjName).optional(),
   playedDate: z.string().optional(),
-  location: z.string().optional(),
+  location: z.string().max(INPUT_LIMITS.postLocation).optional(),
 });
 
 // Comments schema - updated to use body instead of content
 export const insertCommentSchema = z.object({
-  body: z.string(),
+  body: z.string().trim().min(1, "Comment cannot be empty").max(INPUT_LIMITS.commentBody),
   artistTag: z.string().optional().nullable(), // UUID of artist_video_tags.id
   parentId: z.string().optional().nullable(),
 });

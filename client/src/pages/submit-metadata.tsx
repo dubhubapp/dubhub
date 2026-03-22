@@ -3,9 +3,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { insertPostSchema } from "@shared/schema";
+import { INPUT_LIMITS } from "@shared/input-limits";
+import type { PostWithUser } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -26,14 +28,20 @@ const getTodayInputValue = () => {
 
 const todayInputValue = getTodayInputValue();
 
-const submitFormSchema = insertPostSchema
-  .omit({ userId: true, videoUrl: true })
-  .extend({
-    // Block future dates (matches <input type="date"> YYYY-MM-DD format).
-    playedDate: z.string().optional().refine((v) => !v || v <= todayInputValue, {
-      message: "Date cannot be in the future",
-    }),
-  });
+const submitFormSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Title is required")
+    .max(INPUT_LIMITS.postTitle, `Title must be at most ${INPUT_LIMITS.postTitle} characters`),
+  genre: z.string().min(1, "Genre is required").max(INPUT_LIMITS.postGenre),
+  description: z.string().max(INPUT_LIMITS.postDescription, `Description must be at most ${INPUT_LIMITS.postDescription} characters`),
+  djName: z.string().max(INPUT_LIMITS.postDjName, `Must be at most ${INPUT_LIMITS.postDjName} characters`),
+  location: z.string().max(INPUT_LIMITS.postLocation, `Must be at most ${INPUT_LIMITS.postLocation} characters`),
+  playedDate: z.string().optional().refine((v) => !v || v <= todayInputValue, {
+    message: "Date cannot be in the future",
+  }),
+});
 
 type SubmitFormData = z.infer<typeof submitFormSchema>;
 
@@ -57,6 +65,10 @@ export default function SubmitMetadata() {
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const simulatedProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const creepTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const hasRealProgressRef = useRef(false);
+  const creepStartedRef = useRef(false);
 
   // Get trim state
   const [trimState, setTrimState] = useState<{fileName: string; fileType: string; fileSize: number; videoUrl: string} | null>(null);
@@ -177,19 +189,76 @@ export default function SubmitMetadata() {
       }
       
       // Use XMLHttpRequest for real upload progress tracking
+      setUploadProgress(0);
+      hasRealProgressRef.current = false;
+      creepStartedRef.current = false;
       return new Promise<{ url: string; filename: string }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        
-        // Track upload progress
+
+        const clearSimulated = () => {
+          if (simulatedProgressRef.current) {
+            clearInterval(simulatedProgressRef.current);
+            simulatedProgressRef.current = null;
+          }
+        };
+
+        const clearCreep = () => {
+          creepTimeoutsRef.current.forEach(clearTimeout);
+          creepTimeoutsRef.current = [];
+        };
+
+        // Slow creep 95→96→97→98→99 while waiting for server response
+        const startPost95Creep = () => {
+          if (creepStartedRef.current) return;
+          creepStartedRef.current = true;
+          const delays = [700, 800, 1100, 1400]; // ms: 95→96, 96→97, 97→98, 98→99
+          let total = 0;
+          [96, 97, 98, 99].forEach((target, i) => {
+            total += delays[i];
+            creepTimeoutsRef.current.push(
+              setTimeout(() => setUploadProgress(target), total)
+            );
+          });
+        };
+
+        // Simulated progress when real progress unavailable (e.g. lengthComputable false)
+        const startSimulatedProgress = () => {
+          clearSimulated();
+          const start = Date.now();
+          simulatedProgressRef.current = setInterval(() => {
+            const elapsed = (Date.now() - start) / 1000;
+            // Ease toward 92% over ~12s: 92 * (1 - e^(-t/3))
+            const pct = 92 * (1 - Math.exp(-elapsed / 3));
+            setUploadProgress(prev => Math.min(prev, 92, pct));
+          }, 80);
+        };
+
+        // Track upload progress - use fractional values for smooth bar
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
-            const percentComplete = Math.round((e.loaded / e.total) * 100);
-            setUploadProgress(percentComplete);
+            hasRealProgressRef.current = true;
+            clearSimulated();
+            const percentComplete = (e.loaded / e.total) * 100;
+            const capped = Math.min(95, percentComplete);
+            setUploadProgress(capped);
+            if (percentComplete >= 95) startPost95Creep();
+          } else if (!simulatedProgressRef.current) {
+            startSimulatedProgress();
           }
         });
-        
+
+        // Start simulated after 400ms if no real progress events
+        const simTimeout = setTimeout(() => {
+          if (!hasRealProgressRef.current && !simulatedProgressRef.current) {
+            startSimulatedProgress();
+          }
+        }, 400);
+
         // Handle completion
         xhr.addEventListener('load', () => {
+          clearTimeout(simTimeout);
+          clearSimulated();
+          clearCreep();
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               const response = JSON.parse(xhr.responseText);
@@ -210,10 +279,16 @@ export default function SubmitMetadata() {
         
         // Handle errors
         xhr.addEventListener('error', () => {
+          clearTimeout(simTimeout);
+          clearSimulated();
+          clearCreep();
           reject(new Error('Network error during upload'));
         });
-        
+
         xhr.addEventListener('abort', () => {
+          clearTimeout(simTimeout);
+          clearSimulated();
+          clearCreep();
           reject(new Error('Upload cancelled'));
         });
         
@@ -249,12 +324,12 @@ export default function SubmitMetadata() {
 
       // Map form data to backend's expected snake_case format
       const submitData = {
-        title: data.formData.title || "Untitled Post", // Backend requires title
+        title: data.formData.title.trim(),
         video_url: data.videoUrl,
-        genre: data.formData.genre || null,
-        description: data.formData.description || null,
-        location: data.formData.location || null,
-        dj_name: data.formData.djName || null,
+        genre: data.formData.genre.trim(),
+        description: data.formData.description?.trim() || null,
+        location: data.formData.location?.trim() || null,
+        dj_name: data.formData.djName?.trim() || null,
         played_date: data.formData.playedDate || null,
       };
       
@@ -269,7 +344,12 @@ export default function SubmitMetadata() {
       console.log("Post created successfully:", responseData);
       return responseData;
     },
-    onSuccess: () => {
+    onSuccess: async (created: { id?: string }) => {
+      const newPostId = created?.id;
+      if (!newPostId) {
+        console.error("Post created but response missing id:", created);
+      }
+
       toast({
         title: "Track Submitted!",
         description: "Your track ID request has been submitted successfully.",
@@ -293,15 +373,42 @@ export default function SubmitMetadata() {
       form.reset();
       setUploadedVideoUrl(null);
       setVideoFile(null); // Clear video file reference
-      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
-      
+
+      // Put the new post in every cached feed variant so it appears immediately under Hottest/Newest
+      // (feed is limited to 10; a 0-like post may not be in the refetched page without this).
+      if (newPostId) {
+        try {
+          const detailRes = await apiRequest("GET", `/api/posts/${newPostId}`);
+          const fullPost = (await detailRes.json()) as PostWithUser;
+          queryClient.setQueriesData(
+            { queryKey: ["/api/posts"], exact: false },
+            (old: PostWithUser[] | undefined) => {
+              if (!old) return [fullPost];
+              const idx = old.findIndex((p) => p.id === fullPost.id);
+              if (idx >= 0) {
+                const next = [...old];
+                next[idx] = fullPost;
+                return next;
+              }
+              return [fullPost, ...old];
+            },
+          );
+        } catch (e) {
+          console.warn("Could not load new post for feed cache; Home may fetch it:", e);
+        }
+      }
+
       // Invalidate user posts query to show new post in profile immediately
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
       }
-      
-      // Navigate to home with newPost parameter to trigger scroll to top
-      setLocation("/?newPost=true");
+
+      // Deep-link to the post so Home scrolls/highlights by ID (not feed position / sort order).
+      if (newPostId) {
+        setLocation(`/?post=${encodeURIComponent(newPostId)}`);
+      } else {
+        setLocation("/");
+      }
     },
     onError: (error: Error) => {
       console.error("Post submission error:", error);
@@ -402,16 +509,20 @@ export default function SubmitMetadata() {
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Title</FormLabel>
+                    <FormLabel className="text-sm font-medium text-gray-300">Title *</FormLabel>
                     <FormControl>
                       <Input 
                         placeholder="e.g., Amazing DnB track from Fabric"
                         className="bg-surface border-gray-600 text-white placeholder-gray-400"
                         data-testid="input-title"
+                        maxLength={INPUT_LIMITS.postTitle}
                         {...field}
                         value={field.value || ""}
                       />
                     </FormControl>
+                    <p className="text-xs text-gray-500 text-right">
+                      {(field.value?.length ?? 0)} / {INPUT_LIMITS.postTitle}
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -422,8 +533,8 @@ export default function SubmitMetadata() {
                 name="genre"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Genre</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormLabel className="text-sm font-medium text-gray-300">Genre *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || undefined}>
                       <FormControl>
                         <SelectTrigger className="bg-surface border-gray-600 text-white" data-testid="select-genre">
                           <SelectValue placeholder="Select genre..." />
@@ -454,9 +565,13 @@ export default function SubmitMetadata() {
                         className="bg-surface border-gray-600 text-white placeholder-gray-400 resize-none"
                         rows={4}
                         data-testid="textarea-description"
+                        maxLength={INPUT_LIMITS.postDescription}
                         {...field} 
                       />
                     </FormControl>
+                    <p className="text-xs text-gray-500 text-right">
+                      {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -495,6 +610,7 @@ export default function SubmitMetadata() {
                         placeholder="e.g., Fabric London, Printworks"
                         className="bg-surface border-gray-600 text-white placeholder-gray-400"
                         data-testid="input-location"
+                        maxLength={INPUT_LIMITS.postLocation}
                         {...field}
                         value={field.value || ""}
                       />
@@ -515,6 +631,7 @@ export default function SubmitMetadata() {
                         placeholder="e.g., DJ Name"
                         className="bg-surface border-gray-600 text-white placeholder-gray-400"
                         data-testid="input-dj"
+                        maxLength={INPUT_LIMITS.postDjName}
                         {...field}
                         value={field.value || ""}
                       />
@@ -524,6 +641,17 @@ export default function SubmitMetadata() {
                 )}
               />
 
+              {isUploading && (
+                <div className="rounded-lg bg-surface/80 border border-gray-700/50 p-4 space-y-3">
+                  <Progress
+                    value={uploadProgress}
+                    className="h-2.5 bg-gray-800"
+                  />
+                  <p className="text-sm text-gray-400 text-center tabular-nums">
+                    Uploading... {Math.round(uploadProgress)}%
+                  </p>
+                </div>
+              )}
               <Button
                 type="submit"
                 className="w-full bg-primary hover:bg-primary/90"
@@ -533,7 +661,7 @@ export default function SubmitMetadata() {
                 {isUploading || submitMutation.isPending ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    {isUploading ? `Uploading... ${uploadProgress}%` : "Submitting..."}
+                    {isUploading ? "Uploading..." : "Submitting..."}
                   </>
                 ) : (
                   "Submit Track ID"

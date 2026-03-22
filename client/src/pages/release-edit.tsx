@@ -17,6 +17,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
+import { INPUT_LIMITS } from "@shared/input-limits";
 
 export default function ReleaseEdit() {
   const [, params] = useRoute("/releases/:id/edit");
@@ -203,8 +204,15 @@ export default function ReleaseEdit() {
         toast({ title: "Title is required", variant: "destructive" });
         return;
       }
-      if (!releaseDate) {
-        toast({ title: "Release date is required", variant: "destructive" });
+      if (title.trim().length > INPUT_LIMITS.releaseTitle) {
+        toast({
+          title: `Title must be at most ${INPUT_LIMITS.releaseTitle} characters`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!comingSoon && !releaseDate) {
+        toast({ title: "Release date is required unless Coming soon", variant: "destructive" });
         return;
       }
     }
@@ -288,16 +296,10 @@ export default function ReleaseEdit() {
         toAttach,
       });
 
-      if (toDetach.length > 0) {
-        const releaseDateCheck = release.releaseDate ? new Date(release.releaseDate) : null;
-        if (releaseDateCheck && releaseDateCheck <= new Date()) {
-          toast({
-            title: "Release is already out",
-            description: "Attached posts can no longer be changed.",
-            variant: "destructive",
-          });
-          return;
-        }
+      const releaseDateCheck = release.releaseDate ? new Date(release.releaseDate) : null;
+      const isLiveRelease = !!(releaseDateCheck && releaseDateCheck <= new Date());
+      const detachIds = isLiveRelease ? [] : toDetach;
+      if (detachIds.length > 0) {
         const { data: { session } } = await supabase.auth.getSession();
         const detachHeaders: Record<string, string> = { "Content-Type": "application/json" };
         if (session?.access_token) detachHeaders["Authorization"] = `Bearer ${session.access_token}`;
@@ -305,21 +307,21 @@ export default function ReleaseEdit() {
           method: "DELETE",
           headers: detachHeaders,
           credentials: "include",
-          body: JSON.stringify({ post_ids: toDetach }),
+          body: JSON.stringify({ post_ids: detachIds }),
         });
         if (detachRes.status === 409) {
           const data = await detachRes.json().catch(() => ({}));
           if (data.code === "RELEASE_LOCKED") {
             toast({
-              title: "Release is already out",
-              description: data.message || "Attached posts can no longer be changed.",
+              title: "Can’t remove posts",
+              description: data.message || "Posts cannot be removed after a release is live.",
               variant: "destructive",
             });
             return;
           }
         }
         if (!detachRes.ok) throw new Error("Detach failed");
-        console.log("[ReleaseEdit] Detached posts", { releaseId, toDetach });
+        console.log("[ReleaseEdit] Detached posts", { releaseId, toDetach: detachIds });
       }
       if (toAttach.length > 0) {
         await attachPostsWithAuth(releaseId, toAttach);
@@ -379,7 +381,18 @@ export default function ReleaseEdit() {
         <section className="mb-8">
           <h2 className="text-sm font-medium text-muted-foreground mb-2">Details</h2>
             <div className="space-y-3">
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
+            <div>
+              <label className="text-sm font-medium block mb-1">Title *</label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value.slice(0, INPUT_LIMITS.releaseTitle))}
+                placeholder="Title"
+                maxLength={INPUT_LIMITS.releaseTitle}
+              />
+              <p className="text-xs text-muted-foreground text-right mt-1">
+                {title.length} / {INPUT_LIMITS.releaseTitle}
+              </p>
+            </div>
             <div>
               <label className="text-sm font-medium block mb-1">Release date</label>
               <div className="flex items-center gap-2 mb-2">
@@ -621,19 +634,15 @@ export default function ReleaseEdit() {
           <h2 className="text-sm font-medium text-muted-foreground mb-2">Attach posts</h2>
           {isReleaseLocked && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-              This release is already out. Attached posts can no longer be changed.
+              This release is live. You can add more posts; posts already attached can’t be removed.
             </p>
           )}
-          {!isReleaseLocked && (
-          <>
-            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-              Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
-            </p>
-            <p className="text-xs text-muted-foreground mb-2">
-              Selected posts will be attached when you save changes.
-            </p>
-          </>
-          )}
+          <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+            Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
+          </p>
+          <p className="text-xs text-muted-foreground mb-2">
+            Selected posts will be attached when you save changes.
+          </p>
           <label className="flex items-center gap-2 mb-3">
             <input
               type="checkbox"

@@ -1,5 +1,9 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  resolveAvatarUrlForProfile,
+  isMismatchedDefaultAvatar,
+} from "@/lib/default-avatar";
 import type { User } from "@shared/schema";
 
 interface SupabaseProfile {
@@ -10,6 +14,8 @@ interface SupabaseProfile {
   account_type: string;
   verified_artist: boolean | null;
   moderator: boolean;
+  /** Account creation time from `profiles.created_at` */
+  created_at: string;
 }
 
 interface UserContextType {
@@ -66,7 +72,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Fetch real profile from Supabase
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, email, username, avatar_url, account_type, verified_artist, moderator')
+          .select(
+            'id, email, username, avatar_url, account_type, verified_artist, moderator, created_at'
+          )
           .eq('id', session.user.id)
           .single();
 
@@ -77,10 +85,29 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // Use ONLY real data from Supabase
+        // Use ONLY real data from Supabase; correct default avatar if type/default mismatch
         setUsername(profileData.username || null);
         setDisplayName(profileData.username || null); // Use username as display name
-        setProfileImage(profileData.avatar_url || null);
+        const resolvedAvatar = resolveAvatarUrlForProfile(
+          profileData.avatar_url,
+          profileData.account_type
+        );
+        setProfileImage(resolvedAvatar);
+        const shouldPersistAvatar =
+          resolvedAvatar &&
+          (isMismatchedDefaultAvatar(profileData.avatar_url, profileData.account_type) ||
+            !profileData.avatar_url) &&
+          resolvedAvatar !== profileData.avatar_url;
+        if (shouldPersistAvatar) {
+          supabase
+            .from("profiles")
+            .update({ avatar_url: resolvedAvatar })
+            .eq("id", session.user.id)
+            .then(({ error }) => {
+              if (error)
+                console.warn("[UserContext] Could not sync avatar_url in DB:", error);
+            });
+        }
         
         // Set verified artist status
         const isVerifiedArtist = profileData.account_type === "artist" && profileData.verified_artist === true;
@@ -95,18 +122,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
         setUserType(role);
 
+        const accountCreatedAt = profileData.created_at
+          ? new Date(profileData.created_at)
+          : new Date();
+
         // Create User object for compatibility
         setCurrentUser({
           id: profileData.id,
           username: profileData.username,
           displayName: profileData.username,
           userType: profileData.account_type as "user" | "artist",
-          profileImage: profileData.avatar_url || null,
+          profileImage: resolvedAvatar,
           isVerified: isVerifiedArtist, // Use verified_artist from Supabase
           level: 1,
           currentXP: 0,
-          memberSince: new Date(),
-          createdAt: new Date(),
+          memberSince: accountCreatedAt,
+          createdAt: accountCreatedAt,
         } as unknown as User);
         
         setIsAuthenticated(true);
@@ -132,7 +163,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfileImage = (url: string) => {
     setProfileImage(url);
-    // Update in Supabase
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      return { ...prev, profileImage: url } as User;
+    });
+    // Persist (caller may have already updated profiles; this keeps context-only callers in sync)
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         supabase

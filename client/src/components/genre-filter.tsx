@@ -1,5 +1,5 @@
-
 import { useState } from "react";
+import { GENRE_ENTRIES, getGenreLabel } from "@/lib/genre-styles";
 
 interface GenreFilterProps {
   selectedGenres: string[];
@@ -9,20 +9,10 @@ interface GenreFilterProps {
   isCollapsed?: boolean;
 }
 
-const genres = [
-  { id: "dnb", label: "DnB", color: "text-white", bgColor: "#8f57b3" },
-  { id: "ukg", label: "UKG", color: "text-white", bgColor: "#77c961" },
-  { id: "dubstep", label: "Dubstep", color: "text-white", bgColor: "#b0271d" },
-  { id: "bassline", label: "Bassline", color: "text-white", bgColor: "#3c72f5" },
-  { id: "house", label: "House", color: "text-black", bgColor: "#fdb436" },
-  { id: "techno", label: "Techno", color: "text-white", bgColor: "#e882cf" },
-  { id: "trance", label: "Trance", color: "text-black", bgColor: "#93e1de" },
-  { id: "other", label: "Other", color: "text-white", bgColor: "#7e7e7e" },
-];
-
-function getGenreLabel(genreId: string) {
-  return genres.find((g) => g.id === genreId)?.label ?? "Unknown";
-}
+const genres = GENRE_ENTRIES.map((g) => ({
+  ...g,
+  color: g.textClass,
+}));
 
 export function GenreFilter({ 
   selectedGenres,

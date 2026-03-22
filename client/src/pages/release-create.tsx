@@ -9,6 +9,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
+import { INPUT_LIMITS } from "@shared/input-limits";
 
 export default function ReleaseCreate() {
   const [, navigate] = useLocation();
@@ -146,6 +147,13 @@ export default function ReleaseCreate() {
       toast({ title: "Title is required", variant: "destructive" });
       return;
     }
+    if (title.trim().length > INPUT_LIMITS.releaseTitle) {
+      toast({
+        title: `Title must be at most ${INPUT_LIMITS.releaseTitle} characters`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (!comingSoon && !releaseDate) {
       toast({ title: "Release date is required unless Coming soon", variant: "destructive" });
       return;
@@ -261,10 +269,14 @@ export default function ReleaseCreate() {
               <label className="text-sm font-medium block mb-1">Title *</label>
               <Input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => setTitle(e.target.value.slice(0, INPUT_LIMITS.releaseTitle))}
                 placeholder="Release title"
                 required
+                maxLength={INPUT_LIMITS.releaseTitle}
               />
+              <p className="text-xs text-muted-foreground text-right mt-1">
+                {title.length} / {INPUT_LIMITS.releaseTitle}
+              </p>
             </div>
             <div>
               <label className="text-sm font-medium block mb-1">Release date *</label>

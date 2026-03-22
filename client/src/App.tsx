@@ -5,7 +5,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider } from "@/lib/user-context";
-import { BottomNavigation } from "@/components/bottom-navigation";
+import { ConditionalBottomNavigation } from "@/components/conditional-bottom-navigation";
+import { PasswordRecoveryRedirect } from "@/components/auth/PasswordRecoveryRedirect";
 import { supabase } from "@/lib/supabaseClient";
 
 import Home from "@/pages/home";
@@ -19,6 +20,7 @@ import ReleaseEdit from "@/pages/release-edit";
 import UserProfile from "@/pages/user-profile";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
+import ResetPasswordPage from "@/pages/reset-password";
 import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
 
@@ -187,7 +189,12 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
+          <Switch>
+            <Route path="/reset-password" component={ResetPasswordPage} />
+            <Route>
+              <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
+            </Route>
+          </Switch>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
@@ -201,9 +208,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <UserProvider>
+          <PasswordRecoveryRedirect />
           <Toaster />
           <div className="h-screen flex flex-col bg-background text-foreground">
             <Switch>
+              <Route path="/reset-password" component={ResetPasswordPage} />
               <Route path="/" component={Home} />
               <Route path="/submit" component={Submit} />
               <Route path="/trim-video" component={TrimVideo} />
@@ -217,7 +226,7 @@ function App() {
               <Route path="/moderator" component={ModeratorPage} />
               <Route component={NotFound} />
             </Switch>
-            <BottomNavigation />
+            <ConditionalBottomNavigation />
           </div>
         </UserProvider>
       </TooltipProvider>

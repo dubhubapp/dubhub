@@ -143,7 +143,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
       if (code === "POST_ALREADY_ATTACHED") {
         description = "This post is already attached to another release.";
       } else if (code === "RELEASE_LOCKED") {
-        description = "This release is locked and can no longer accept new posts.";
+        description = "Posts can’t be removed after a release is live. You can still add new posts.";
       }
       toast({
         title: "Attach failed",

@@ -12,7 +12,8 @@ import { formatReleaseTitleLine } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
-import { isReleaseUpcoming } from "@/lib/release-status";
+import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
+import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
@@ -180,6 +181,14 @@ export default function ReleaseDetail() {
   }
 
   const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
+  const showOwnerReleaseDay =
+    isArtist &&
+    isOwner &&
+    isReleaseDayToday(release.isComingSoon, release.releaseDate);
+  const showSavedReleaseDay =
+    !isOwner &&
+    !!(release as { viewerSavedRelease?: boolean }).viewerSavedRelease &&
+    isReleaseDayToday(release.isComingSoon, release.releaseDate);
   const firstClipLabel = formatMonthYear(stats?.firstClipAt ?? null);
   const latestClipLabel = formatMonthYear(stats?.latestClipAt ?? null);
   const announcedAfterLabel =
@@ -274,6 +283,13 @@ export default function ReleaseDetail() {
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
+
+        {showOwnerReleaseDay && (
+          <ReleaseDayCelebration releaseId={release.id} title={release.title} variant="full" />
+        )}
+        {showSavedReleaseDay && (
+          <SavedReleaseDayCelebration releaseId={release.id} title={release.title} variant="full" />
+        )}
 
         {isOwner && !release.isPublic && (release.collaborators || []).length > 0 && (
           <div className="mb-4 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-sm">

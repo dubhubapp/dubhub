@@ -13,6 +13,11 @@ import { Filter } from 'bad-words';
 import { apiRequest } from '@/lib/queryClient';
 import { validateUsername, normalizeUsernameForStorage } from '@shared/usernameValidation';
 import { checkUsernameAvailability } from '@shared/usernameAvailability';
+import {
+  AUTH_EMAIL_RATE_LIMIT_MESSAGE,
+  isAuthEmailRateLimitError,
+  isDuplicateSignupEmailError,
+} from '@/lib/auth-errors';
 
 interface SignUpProps {
   onToggleMode: () => void;
@@ -216,29 +221,34 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
       // If we reach here, user was not created
       // Handle error only if user doesn't exist
       if (error) {
-        // Check for specific error types
         const errorMessage = error.message || '';
         const errorCode = error.code || '';
-        
-        // Only show username error for actual conflicts
-        const isUsernameConflict = 
-          errorCode === '23505' || // PostgreSQL unique violation
-          errorMessage.toLowerCase().includes('duplicate') ||
-          errorMessage.toLowerCase().includes('profiles_username') ||
-          errorMessage.toLowerCase().includes('already exists') ||
-          errorMessage.toLowerCase().includes("name's taken");
-        
-        if (isUsernameConflict) {
-          setErrorMessage('Username already taken, please choose another.');
-        } else if (errorMessage.includes('already registered') || errorMessage.includes('email')) {
-          setErrorMessage('An account with this email already exists');
-        } else if (errorMessage.includes('Password should be') || errorMessage.includes('password')) {
-          setErrorMessage('Password is too weak. Please use a stronger password');
-        } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
-          setErrorMessage('Too many signup attempts. Please wait a moment and try again');
+
+        if (isAuthEmailRateLimitError(error)) {
+          setErrorMessage(AUTH_EMAIL_RATE_LIMIT_MESSAGE);
         } else {
-          // Show actual Supabase error message, don't convert to username error
-          setErrorMessage(errorMessage || 'Failed to create account. Please try again.');
+          const em = errorMessage.toLowerCase();
+          // Prefer duplicate-email detection before username heuristics ("already exists" can mean email).
+          const isUsernameConflict =
+            errorCode === '23505' ||
+            em.includes('profiles_username') ||
+            em.includes("name's taken") ||
+            (em.includes('duplicate') &&
+              (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
+            (em.includes('username') && em.includes('taken'));
+
+          if (isDuplicateSignupEmailError(error)) {
+            setErrorMessage('An account with this email already exists');
+          } else if (isUsernameConflict) {
+            setErrorMessage('Username already taken, please choose another.');
+          } else if (
+            errorMessage.includes('Password should be') ||
+            errorMessage.toLowerCase().includes('password')
+          ) {
+            setErrorMessage('Password is too weak. Please use a stronger password');
+          } else {
+            setErrorMessage(errorMessage || 'Failed to create account. Please try again.');
+          }
         }
       } else {
         // No error but no user - might be magic-link scenario
@@ -249,27 +259,31 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         });
         setShowVerificationModal(true);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[SignUp] Unexpected signup error:', error);
-      
-      // Only show username error for actual conflicts
-      const errorMessage = error.message || '';
-      const isUsernameConflict = 
-        errorMessage.toLowerCase().includes('duplicate') ||
-        errorMessage.toLowerCase().includes('profiles_username') ||
-        errorMessage.toLowerCase().includes('already exists') ||
-        errorMessage.toLowerCase().includes("name's taken") ||
-        errorMessage.includes('23505');
-      
-      if (isUsernameConflict) {
-        setErrorMessage('Username already taken, please choose another.');
-      } else if (errorMessage.includes('email') || errorMessage.includes('already registered')) {
-        setErrorMessage('An account with this email already exists');
-      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
-        setErrorMessage('Too many signup attempts. Please wait a moment and try again');
+
+      if (isAuthEmailRateLimitError(error)) {
+        setErrorMessage(AUTH_EMAIL_RATE_LIMIT_MESSAGE);
       } else {
-        // Show actual error message, don't convert to username error
-        setErrorMessage(errorMessage || 'An unexpected error occurred. Please try again.');
+        const errorMessage =
+          error instanceof Error ? error.message : String((error as { message?: string })?.message ?? '');
+        const em = errorMessage.toLowerCase();
+        const code = String((error as { code?: string }).code ?? '');
+        const isUsernameConflict =
+          code === '23505' ||
+          em.includes('profiles_username') ||
+          em.includes("name's taken") ||
+          (em.includes('duplicate') &&
+            (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
+          (em.includes('username') && em.includes('taken'));
+
+        if (isDuplicateSignupEmailError(error)) {
+          setErrorMessage('An account with this email already exists');
+        } else if (isUsernameConflict) {
+          setErrorMessage('Username already taken, please choose another.');
+        } else {
+          setErrorMessage(errorMessage || 'An unexpected error occurred. Please try again.');
+        }
       }
     } finally {
       setIsLoading(false);
@@ -425,27 +439,44 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               Please click the verification link in your email to activate your account. 
               Once verified, you can return here and sign in.
             </p>
-            {accountType === 'artist' && (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p className="text-yellow-800 text-sm font-medium text-center">
-                  Please verify your email AND send a DM to @dubhub.uk on Instagram from your official artist account to have your profile marked as verified.
-                </p>
+            {accountType === "artist" && (
+              <>
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <p className="text-yellow-800 text-sm font-medium text-center">
+                    Please verify your email AND send a DM to @dubhub.uk on Instagram from your official artist account to have your profile marked as verified.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    asChild
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    <a
+                      href="https://www.instagram.com/dubhub.uk/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      DM us here!
+                    </a>
+                  </Button>
+                </div>
+              </>
+            )}
+            {accountType === "user" && (
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                  data-testid="button-post-signup-sign-in"
+                  onClick={() => {
+                    setShowVerificationModal(false);
+                    onToggleMode();
+                  }}
+                >
+                  Sign in
+                </Button>
               </div>
             )}
-            <div className="flex flex-col gap-2">
-              <Button
-                asChild
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                <a
-                  href="https://www.instagram.com/dubhub.uk/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  DM us here!
-                </a>
-              </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>

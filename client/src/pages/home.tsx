@@ -1,6 +1,6 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { GenreFilter } from "@/components/genre-filter";
@@ -23,6 +23,8 @@ export default function Home() {
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocationRef = useRef<string>(location);
+  const mergeAttemptedForPostId = useRef<Set<string>>(new Set());
+  const queryClient = useQueryClient();
 
   const { currentUser } = useUser();
 
@@ -120,47 +122,27 @@ export default function Home() {
     });
   }, [posts, identificationFilter, selectedGenres, sortMode]);
 
-  const debugTopThree = useMemo(() => {
-    return uiPosts.slice(0, 3).map((p) => {
-      const created = p.createdAt ? new Date(p.createdAt as any) : null;
-      const rawLikes =
-        (p as any).likes ??
-        (p as any).likes_count ??
-        (p as any).likesCount ??
-        (p as any).likeCount ??
-        (p as any).like_count ??
-        0;
-      const likesNum = typeof rawLikes === "string" ? Number(rawLikes) : rawLikes;
-      const likes = Number.isFinite(likesNum) ? (likesNum as number) : 0;
-      const createdStr =
-        created && Number.isFinite(created.getTime())
-          ? created.toISOString().slice(0, 10)
-          : String(p.createdAt ?? "");
-      return { id: p.id, title: p.title, likes, createdAt: createdStr };
-    });
-  }, [uiPosts]);
-
+  // Scroll-to-top must run only when the user changes sort or filters — not when feed data
+  // updates (e.g. like/unlike), or every like would retrigger this and reset scroll.
   useEffect(() => {
     console.log("[Home][SortDebug]", {
       sortMode,
       identificationFilter,
       selectedGenres,
-      top: debugTopThree,
     });
     if (videoFeedRef.current) {
-      // Jump to top so reordering is immediately visible.
+      // Jump to top so reordering is immediately visible after sort/filter change.
       videoFeedRef.current.scrollTo({ top: 0, behavior: "auto" });
       setHighlightedPostId(null);
       lastScrolledPostId.current = null;
     }
-  }, [sortMode, debugTopThree, identificationFilter, selectedGenres]);
+  }, [sortMode, identificationFilter, selectedGenres]);
 
-  // Handle scroll to specific post from notification OR scroll to top after new post
+  // Handle scroll to specific post from notification / ?post= deep link, or merge post into feed when missing (e.g. not in first page under Hottest)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const postId = params.get('post') || params.get('track'); // Support both for backward compatibility
-    const newPost = params.get('newPost');
-    
+
     // Check if location has changed (not just posts refetch)
     const locationChanged = location !== lastLocationRef.current;
     if (locationChanged) {
@@ -170,17 +152,49 @@ export default function Home() {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
     }
-    
-    // Handle scroll to top after new post submission
-    if (newPost && uiPosts.length > 0) {
-      setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        // Clear the query parameter
-        navigate('/', { replace: true });
-      }, 100);
+
+    if (!postId) {
+      mergeAttemptedForPostId.current.clear();
+    }
+
+    // Post not in current feed slice (sort/limit/filters): fetch once and merge so scroll works without changing sort order
+    if (
+      postId &&
+      !isLoading &&
+      !mergeAttemptedForPostId.current.has(postId) &&
+      uiPosts.every((p) => p.id !== postId)
+    ) {
+      mergeAttemptedForPostId.current.add(postId);
+      void (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const headers: Record<string, string> = {};
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+          }
+          const res = await fetch(`/api/posts/${postId}`, {
+            headers,
+            credentials: 'include',
+          });
+          if (!res.ok) {
+            return;
+          }
+          const fullPost = (await res.json()) as PostWithUser;
+          queryClient.setQueriesData(
+            { queryKey: ["/api/posts"], exact: false },
+            (old: PostWithUser[] | undefined) => {
+              if (!old) return [fullPost];
+              if (old.some((p) => p.id === fullPost.id)) return old;
+              return [fullPost, ...old];
+            },
+          );
+        } catch {
+          // One attempt; avoids a refetch loop if the post is missing or the network fails
+        }
+      })();
       return;
     }
-    
+
     // Only process if we have a postId, it's different from the last one we scrolled to, and posts are loaded
     if (postId && postId !== lastScrolledPostId.current && uiPosts.length > 0 && videoFeedRef.current) {
       // Find the post in the list
@@ -209,7 +223,7 @@ export default function Home() {
         }, 3000);
       }
     }
-  }, [uiPosts, location, navigate]);
+  }, [uiPosts, location, navigate, isLoading, queryClient]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -363,7 +377,7 @@ export default function Home() {
       
       <div
         ref={videoFeedRef}
-        className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide"
+        className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide [overflow-anchor:auto]"
       >
         {uiPosts.map((post) => (
           <VideoCard 

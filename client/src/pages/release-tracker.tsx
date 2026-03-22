@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Calendar, Plus, Music, ExternalLink, Disc3 } from "lucide-react";
@@ -12,6 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
+import { isReleaseDayToday } from "@/lib/release-status";
+import { ReleaseDayCelebration } from "@/components/release-day-celebration";
+import { cn } from "@/lib/utils";
 
 export type ReleaseFeedItem = {
   id: string;
@@ -87,6 +90,17 @@ function getViewFromSearch(search: string, scope: FeedScope): FeedView {
   return v === "past" || v === "collaborations" ? v : "upcoming";
 }
 
+/** Saved Releases feed: release drops today for someone else’s track (not your own release). */
+function isSavedReleaseOutTodayInList(
+  r: ReleaseFeedItem,
+  scope: FeedScope,
+  currentUserId: string | undefined
+): boolean {
+  if (scope !== "saved" || !currentUserId) return false;
+  if (r.artistId === currentUserId) return false;
+  return isReleaseDayToday(r.isComingSoon, r.releaseDate);
+}
+
 export default function ReleaseTracker() {
   const [, navigate] = useLocation();
   const { currentUser, userType } = useUser();
@@ -155,6 +169,14 @@ export default function ReleaseTracker() {
     refetchOnWindowFocus: true,
   });
 
+  const myReleasesDueToday = useMemo(() => {
+    if (!isArtist || effectiveScope !== "my" || !currentUser?.id) return [];
+    return feed.filter(
+      (r) =>
+        r.artistId === currentUser.id && isReleaseDayToday(r.isComingSoon, r.releaseDate)
+    );
+  }, [feed, isArtist, effectiveScope, currentUser?.id]);
+
   if (isLoading) {
     return (
       <div className="flex-1 bg-background flex items-center justify-center">
@@ -221,6 +243,26 @@ export default function ReleaseTracker() {
           </div>
         )}
 
+        {currentUser?.id && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {myReleasesDueToday.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                className="w-full text-left rounded-lg transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  params.set("scope", scope);
+                  params.set("view", feedView);
+                  navigate(`/releases/${r.id}?${params}`);
+                }}
+              >
+                <ReleaseDayCelebration releaseId={r.id} title={r.title} variant="inline" />
+              </button>
+            ))}
+          </div>
+        )}
+
         {!currentUser?.id ? (
           <div className="text-center text-muted-foreground py-12">
             <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -264,7 +306,9 @@ export default function ReleaseTracker() {
                   {monthLabel}
                 </h2>
                 <div className="space-y-4">
-                  {items.map((r) => (
+                  {items.map((r) => {
+                    const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
+                    return (
                     <button
                       key={r.id}
                       type="button"
@@ -274,7 +318,11 @@ export default function ReleaseTracker() {
                         params.set("view", feedView);
                         navigate(`/releases/${r.id}?${params}`);
                       }}
-                      className="w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4"
+                      className={cn(
+                        "w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4",
+                        savedOutToday &&
+                          "ring-1 ring-emerald-500/20 shadow-[0_0_18px_-10px_rgba(16,185,129,0.2)] bg-emerald-500/[0.03]"
+                      )}
                     >
                       <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
                         {r.artworkUrl ? (
@@ -313,6 +361,11 @@ export default function ReleaseTracker() {
                           </span>
                             );
                           })()}
+                          {savedOutToday && (
+                            <span className="inline-block text-xs px-2 py-0.5 rounded border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-400/95">
+                              Out today
+                            </span>
+                          )}
                           {r.collaboratorStatus && (
                             <span
                               className={`text-xs px-2 py-0.5 rounded ${
@@ -347,7 +400,8 @@ export default function ReleaseTracker() {
                         )}
                       </div>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             ))}

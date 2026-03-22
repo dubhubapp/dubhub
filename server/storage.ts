@@ -61,6 +61,8 @@ export interface IStorage {
   // Releases
   getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]>;
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
+  /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
+  isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean>;
   getRelease(id: string): Promise<any | undefined>;
   getReleaseStats(releaseId: string): Promise<any | undefined>;
   createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
@@ -1717,6 +1719,52 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean> {
+    if (!userId || !releaseId) return false;
+    try {
+      const result = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM releases r
+          WHERE r.id = ${releaseId}
+            AND r.is_public = true
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM release_posts rp
+                JOIN posts p ON p.id = rp.post_id
+                JOIN post_likes pl ON pl.post_id = p.id
+                WHERE rp.release_id = r.id
+                  AND pl.user_id = ${userId}
+                  AND p.is_verified_artist = true
+                  AND p.artist_verified_by IS NOT NULL
+                  AND r.artist_id = p.artist_verified_by
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM release_posts rp
+                JOIN posts p ON p.id = rp.post_id
+                WHERE rp.release_id = r.id
+                  AND p.user_id = ${userId}
+                  AND p.is_verified_artist = true
+                  AND p.artist_verified_by IS NOT NULL
+                  AND r.artist_id = p.artist_verified_by
+              )
+            )
+        ) AS ok
+      `);
+      const row = (result as any).rows?.[0];
+      return !!row?.ok;
+    } catch (error) {
+      console.error("[isReleaseInViewerSavedFeed] Error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Public releases the artist can attach a post to (upcoming and already live).
+   * Excludes releases that already include `excludePostId` when provided.
+   */
   async getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]> {
     if (!artistId) return [];
     try {
@@ -1730,17 +1778,15 @@ export class DatabaseStorage implements IStorage {
         FROM releases r
         WHERE r.artist_id = ${artistId}
           AND r.is_public = true
-          AND (
-            r.release_date >= NOW()
-            OR (r.release_date IS NULL AND r.is_coming_soon = true)
-          )
           ${excludePostId
             ? sql`AND NOT EXISTS (
                  SELECT 1 FROM release_posts rp
                  WHERE rp.release_id = r.id AND rp.post_id = ${excludePostId}
                )`
             : sql``}
-        ORDER BY r.release_date ASC NULLS LAST
+        ORDER BY
+          CASE WHEN r.release_date IS NULL THEN 1 ELSE 0 END,
+          r.release_date DESC NULLS LAST
       `);
       return (result as any).rows || [];
     } catch (error) {
@@ -2066,6 +2112,7 @@ export class DatabaseStorage implements IStorage {
     return { attached, newlyAttached, rejected, postAlreadyAttached: postAlreadyAttached.length > 0 ? postAlreadyAttached : undefined };
   }
 
+  /** Removing release–post links is blocked once the release date has passed; adding posts is always allowed (see attachPostsToRelease). */
   async detachPostsFromRelease(releaseId: string, actorId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }> {
     try {
       const canManage = await this.canManageRelease(releaseId, actorId);

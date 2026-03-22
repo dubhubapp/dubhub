@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Logo } from '@/components/brand/Logo';
+import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
 
 interface SignInProps {
   onToggleMode: () => void;
@@ -17,6 +18,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const { toast } = useToast();
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -136,7 +138,17 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-foreground">Password</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="password" className="text-foreground">Password</Label>
+              <button
+                type="button"
+                onClick={() => setForgotPasswordOpen(true)}
+                className="text-xs text-accent hover:underline"
+                data-testid="link-forgot-password"
+              >
+                Forgot password?
+              </button>
+            </div>
             <Input
               id="password"
               type="password"
@@ -174,6 +186,12 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
             </button>
           </p>
         </div>
+
+        <ForgotPasswordDialog
+          open={forgotPasswordOpen}
+          onOpenChange={setForgotPasswordOpen}
+          initialEmail={email}
+        />
       </CardContent>
     </Card>
   );

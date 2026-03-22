@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { supabase } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
+import { INPUT_LIMITS } from "@shared/input-limits";
 import { insertCommentSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { db } from "./db";
@@ -632,9 +633,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.dbUser.id;
       
       const { title, video_url, genre, description, location, dj_name, played_date } = req.body;
-      
-      if (!title || !video_url) {
+
+      const titleTrim = String(title ?? "").trim();
+      const genreTrim = String(genre ?? "").trim();
+      if (!titleTrim || !video_url) {
         return res.status(400).json({ message: "Title and video_url are required" });
+      }
+      if (!genreTrim) {
+        return res.status(400).json({ message: "genre is required" });
+      }
+      if (titleTrim.length > INPUT_LIMITS.postTitle) {
+        return res.status(400).json({ message: `Title must be at most ${INPUT_LIMITS.postTitle} characters` });
+      }
+      if (genreTrim.length > INPUT_LIMITS.postGenre) {
+        return res.status(400).json({ message: `Genre must be at most ${INPUT_LIMITS.postGenre} characters` });
+      }
+      const descStr = description != null ? String(description) : "";
+      if (descStr.length > INPUT_LIMITS.postDescription) {
+        return res.status(400).json({ message: `Description must be at most ${INPUT_LIMITS.postDescription} characters` });
+      }
+      const locStr = location != null ? String(location) : "";
+      if (locStr.length > INPUT_LIMITS.postLocation) {
+        return res.status(400).json({ message: `Location must be at most ${INPUT_LIMITS.postLocation} characters` });
+      }
+      const djStr = dj_name != null ? String(dj_name) : "";
+      if (djStr.length > INPUT_LIMITS.postDjName) {
+        return res.status(400).json({ message: `DJ name must be at most ${INPUT_LIMITS.postDjName} characters` });
       }
 
       // played_date is YYYY-MM-DD (date only) and must not be in the future.
@@ -653,12 +677,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const post = await storage.createPost({
         userId,
-        title,
+        title: titleTrim,
         video_url,
-        genre: genre || null,
-        description: description || null,
-        location: location || null,
-        dj_name: dj_name || null,
+        genre: genreTrim,
+        description: descStr.trim() || undefined,
+        location: locStr.trim() || undefined,
+        dj_name: djStr.trim() || undefined,
         played_date: normalizedPlayedDate,
       });
       
@@ -913,23 +937,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const userId = req.dbUser.id;
       const { body, parentId } = req.body;
-      
-      if (!body || !body.trim()) {
-        return res.status(400).json({ message: "Comment body is required" });
+
+      const parsedComment = insertCommentSchema.safeParse({
+        body: body ?? "",
+        artistTag: null,
+        parentId: parentId != null && parentId !== "" ? String(parentId) : null,
+      });
+      if (!parsedComment.success) {
+        const msg =
+          parsedComment.error.flatten().fieldErrors.body?.[0] ??
+          parsedComment.error.errors[0]?.message ??
+          "Invalid comment";
+        return res.status(400).json({ message: msg });
       }
-      
+      const commentText = parsedComment.data.body;
+
       // Comment row: artist_tag is UUID (FK to artist_video_tags.id). We never store username here.
       // @mentions are handled in processArtistTags and create artist_video_tags rows.
       const comment = await storage.createComment(
         postId,
         userId,
-        body.trim(),
+        commentText,
         null,
-        parentId ?? null
+        parsedComment.data.parentId ?? null
       );
-      
+
       const commenterUsername = req.dbUser?.username ?? "Someone";
-      const taggedArtists = await processArtistTags(comment.id, postId, userId, body.trim());
+      const taggedArtists = await processArtistTags(comment.id, postId, userId, commentText);
 
       // Track who we've notified to avoid duplicates
       const notified = new Set<string>();
@@ -2832,7 +2866,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const artworkPath = release.artworkUrl || null;
       const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
-      res.json({ ...release, artworkPath, artworkUrl });
+      let viewerSavedRelease = false;
+      if (userId && !isOwner) {
+        viewerSavedRelease = await storage.isReleaseInViewerSavedFeed(userId, release.id);
+      }
+      res.json({ ...release, artworkPath, artworkUrl, viewerSavedRelease });
     } catch (error) {
       console.error("[/api/releases/:id] Error:", error);
       res.status(500).json({ message: "Failed to get release" });
@@ -2906,7 +2944,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
       const { title, release_date, artwork_url, is_coming_soon } = req.body;
       const coming = !!is_coming_soon;
-      if (!title) return res.status(400).json({ message: "title is required" });
+      const titleTrim = String(title ?? "").trim();
+      if (!titleTrim) return res.status(400).json({ message: "title is required" });
+      if (titleTrim.length > INPUT_LIMITS.releaseTitle) {
+        return res.status(400).json({ message: `title must be at most ${INPUT_LIMITS.releaseTitle} characters` });
+      }
       let releaseDate: Date | null = null;
       if (!coming) {
         if (!release_date) return res.status(400).json({ message: "release_date is required unless coming soon" });
@@ -2916,7 +2958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const release = await storage.createRelease({
         artistId: req.dbUser.id,
-        title: String(title).trim(),
+        title: titleTrim,
         releaseDate,
         artworkUrl: artwork_url?.trim() || null,
         isComingSoon: coming,
@@ -2935,7 +2977,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
       const { title, release_date, artwork_url, is_coming_soon } = req.body;
       const updates: { title?: string; releaseDate?: Date | null; artworkUrl?: string | null; isComingSoon?: boolean } = {};
-      if (title !== undefined) updates.title = String(title).trim();
+      if (title !== undefined) {
+        const t = String(title).trim();
+        if (!t) return res.status(400).json({ message: "title cannot be empty" });
+        if (t.length > INPUT_LIMITS.releaseTitle) {
+          return res.status(400).json({ message: `title must be at most ${INPUT_LIMITS.releaseTitle} characters` });
+        }
+        updates.title = t;
+      }
       if (release_date !== undefined) {
         if (!release_date) {
           updates.releaseDate = null;
@@ -3043,7 +3092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (releaseDate && releaseDate <= new Date()) {
         return res.status(409).json({
           code: "RELEASE_LOCKED",
-          message: "This release is already out. Attached posts can no longer be changed.",
+          message: "Posts cannot be removed after a release is live. You can still add new posts.",
         });
       }
       const { post_ids } = req.body;
@@ -3052,7 +3101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.locked) {
         return res.status(409).json({
           code: "RELEASE_LOCKED",
-          message: "This release is already out. Attached posts can no longer be changed.",
+          message: "Posts cannot be removed after a release is live. You can still add new posts.",
         });
       }
       if (!result.ok) return res.status(400).json({ message: "Detach failed" });
