@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Send, Heart, CheckCircle, Award, XCircle, Filter, Flag } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
@@ -30,7 +30,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser } = useUser();
+  const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist } = useUser();
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
 
@@ -361,18 +361,28 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         commentId={reportingComment?.id}
         reportedUserId={reportingComment?.userId}
       />
-      <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md h-[60vh] p-0 bg-white/95 backdrop-blur-sm rounded-t-3xl fixed bottom-0 left-1/2 transform -translate-x-1/2 animate-in slide-in-from-bottom duration-300 border-0 shadow-2xl">
-        <DialogTitle className="sr-only">Comments for track</DialogTitle>
-        <DialogDescription className="sr-only">View and add comments for this track</DialogDescription>
+      <Drawer
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        shouldScaleBackground={false}
+      >
+      <DrawerContent
+        overlayClassName="z-40 bg-transparent"
+        className="z-40 mx-auto h-[34vh] max-h-[34vh] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm"
+        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+      >
+        <DrawerTitle className="sr-only">Comments for track</DrawerTitle>
+        <DrawerDescription className="sr-only">View and add comments for this track</DrawerDescription>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div className="flex items-center space-x-3">
-            <h3 className="text-lg font-semibold text-gray-900">Comments ({comments.reduce((total, comment) => total + 1 + (comment.replies?.length || 0), 0)})</h3>
+            <h3 className="text-base font-semibold text-gray-900">Comments ({comments.reduce((total, comment) => total + 1 + (comment.replies?.length || 0), 0)})</h3>
             <div className="flex items-center space-x-2">
-              <Filter className="w-4 h-4 text-gray-500" />
+              <Filter className="h-3.5 w-3.5 text-gray-500" />
               <Select value={commentFilter} onValueChange={(value: 'all' | 'newest' | 'top') => setCommentFilter(value)}>
-                <SelectTrigger className="h-8 w-[100px] text-xs border-gray-200">
+                <SelectTrigger className="h-7 w-[96px] border-gray-200 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -387,14 +397,14 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             variant="ghost"
             size="sm"
             onClick={onClose}
-            className="h-8 w-8 p-0 rounded-full hover:bg-gray-100"
+            className="h-7 w-7 rounded-full p-0 hover:bg-gray-100"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         {/* Comments List */}
-        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2 space-y-3">
           {(() => {
             let filteredComments = [...comments];
             
@@ -480,7 +490,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1.5">
                   <div className="flex items-center space-x-1">
                     <span 
                       className={`text-sm font-medium cursor-pointer hover:underline ${
@@ -542,10 +552,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     {formatTimeAgo(comment.createdAt)}
                   </span>
                 </div>
-                <p className="text-sm text-gray-700 mt-1">
+                <p className="mt-0.5 text-sm text-gray-700">
                   {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
-                <div className="flex items-center space-x-4 mt-2">
+                <div className="mt-1.5 flex items-center space-x-3">
                   {/* Comment likes (separate from post likes) */}
                   <button
                     className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-1 text-xs ${
@@ -641,7 +651,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 {comment.replies &&
                   comment.replies.length > 0 &&
                   (visibleReplyCountByParent[comment.id] ?? 0) > 0 && (
-                  <div className="ml-8 mt-3 space-y-3 border-l-2 border-gray-100 pl-3">
+                  <div className="ml-7 mt-2 space-y-2.5 border-l-2 border-gray-100 pl-2.5">
                     {sortedRepliesChronological(comment.replies)
                       .slice(0, visibleReplyCountByParent[comment.id] ?? 0)
                       .map((reply) => (
@@ -658,7 +668,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-1.5">
                             <div className="flex items-center space-x-1">
                               <span 
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
@@ -690,10 +700,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                               {formatTimeAgo(reply.createdAt)}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-700 mt-1">
+                          <p className="mt-0.5 text-xs text-gray-700">
                             {highlightArtistMentions(reply.body, reply.tagStatus)}
                           </p>
-                          <div className="flex items-center space-x-3 mt-1">
+                          <div className="mt-1 flex items-center space-x-2.5">
                             {/* Comment likes for replies */}
                             <button
                               className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-xs ${
@@ -732,14 +742,14 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         </div>
 
         {/* Comment Input */}
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-gray-200 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3">
           {/* Reply indicator */}
           {replyingTo && (
-            <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <span className="text-sm text-blue-600">Replying to</span>
-                  <span className="text-sm font-medium text-blue-800">@{replyingTo.username}</span>
+                  <span className="text-xs text-blue-600">Replying to</span>
+                  <span className="text-xs font-medium text-blue-800">@{replyingTo.username}</span>
                 </div>
                 <button 
                   onClick={() => {
@@ -757,13 +767,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           <div className="relative">
             {/* Artist Auto-complete Dropdown */}
             {showArtistDropdown && filteredArtists.length > 0 && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
+              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                 {filteredArtists.map((artist: any) => (
                   <button
                     key={artist.id}
                     type="button"
                     onClick={() => handleArtistSelect(artist.username)}
-                    className="w-full flex items-center space-x-3 p-3 hover:bg-gray-50 text-left border-b border-gray-100 last:border-b-0"
+                    className="flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left hover:bg-gray-50 last:border-b-0"
                     data-testid={`artist-option-${artist.id}`}
                   >
                     <img
@@ -786,17 +796,21 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             )}
             
             <form onSubmit={handleSubmit} className="flex flex-col gap-1">
-              <div className="flex space-x-2 items-end">
+              <div className="flex items-center space-x-2">
                 <img
                   src={userProfileImage || undefined}
                   alt="Your profile"
-                  className={`avatar-media w-8 h-8 rounded-full flex-shrink-0 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""}`}
+                  className={`avatar-media h-8 w-8 flex-shrink-0 rounded-full border-2 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""} ${
+                    verifiedArtist
+                      ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                      : "border-gray-200"
+                  }`}
                 />
                 <Textarea
                   value={newComment}
                   onChange={handleCommentChange}
                   placeholder={replyingTo ? `Replying to @${replyingTo.username}...` : "Add a comment... (Use @ to tag artists)"}
-                  className="flex-1 border-gray-300 rounded-2xl min-h-[40px] max-h-32 resize-y"
+                  className="min-h-[38px] max-h-28 flex-1 resize-y rounded-2xl border-gray-300"
                   disabled={addCommentMutation.isPending}
                   data-testid="comment-input"
                   maxLength={INPUT_LIMITS.commentBody}
@@ -816,7 +830,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <Send className="w-4 h-4" />
                 </Button>
               </div>
-              <p className="text-xs text-gray-500 text-right">
+              <p className="text-[11px] text-gray-500 text-right">
                 {newComment.length} / {INPUT_LIMITS.commentBody}
               </p>
             </form>
@@ -887,8 +901,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </DrawerContent>
+    </Drawer>
     </>
   );
 }

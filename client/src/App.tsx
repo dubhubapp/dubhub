@@ -24,6 +24,7 @@ import AuthPage from "@/pages/auth";
 import ResetPasswordPage from "@/pages/reset-password";
 import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
+import SettingsPage from "@/pages/settings";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -202,8 +203,8 @@ function App() {
     );
   }
 
-  // Create a wrapper component for UserProfile that has access to handleSignOut
-  const UserProfileWithSignOut = () => <UserProfile onSignOut={handleSignOut} />;
+  // Wrapper for settings actions that require app-level sign-out behavior
+  const SettingsWithSignOut = () => <SettingsPage onSignOut={handleSignOut} />;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -211,7 +212,8 @@ function App() {
         <UserProvider>
           <PasswordRecoveryRedirect />
           <Toaster />
-          <div className="h-screen flex flex-col bg-background text-foreground">
+          <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
+            <div className="flex min-h-0 flex-1 flex-col w-full">
             <Switch>
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route path="/" component={Home} />
@@ -223,10 +225,12 @@ function App() {
               <Route path="/releases/:id" component={ReleaseDetail} />
               <Route path="/releases" component={ReleaseTracker} />
               <Route path="/leaderboard" component={Leaderboard} />
-              <Route path="/profile" component={UserProfileWithSignOut} />
+              <Route path="/profile" component={UserProfile} />
+              <Route path="/settings" component={SettingsWithSignOut} />
               <Route path="/moderator" component={ModeratorPage} />
               <Route component={NotFound} />
             </Switch>
+            </div>
             <ConditionalBottomNavigation />
             <ReleaseDropDayBanner />
           </div>

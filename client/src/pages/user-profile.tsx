@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, LogOut, Camera, Upload, MessageCircle, Heart, User, CheckCircle, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -17,7 +17,13 @@ import { VideoCard } from "@/components/video-card";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "@/components/verified-artist";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
-import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
+
+/** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
+const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
+type ProfileTabId = (typeof PROFILE_TAB_IDS)[number];
+function isProfileTabId(v: string): v is ProfileTabId {
+  return (PROFILE_TAB_IDS as readonly string[]).includes(v);
+}
 
 /** Concise copy for profile stat sections and cards (popover help). */
 const PROFILE_HELP = {
@@ -49,10 +55,6 @@ const PROFILE_HELP = {
   artistUploaders: "Different people who posted clips of your tracks.",
   artistCollaborations: "Collaborative releases you’re credited on.",
 } as const;
-
-interface UserProfileProps {
-  onSignOut?: () => void;
-}
 
 function formatGenreDisplayLabel(genreKey: string): string {
   const g = genreKey.toLowerCase();
@@ -141,16 +143,18 @@ function GenreBreakdownSection({
   );
 }
 
-export default function UserProfile(props: any = {}) {
-  const { onSignOut } = props;
+export default function UserProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage, username, updateProfileImage, currentUser, verifiedArtist, userType } = useUser();
   const [activeTab, setActiveTab] = useState("profile");
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [likesViewerStartIndex, setLikesViewerStartIndex] = useState<number | null>(null);
+  const [postsViewerStartIndex, setPostsViewerStartIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const likesViewerRef = useRef<HTMLDivElement | null>(null);
+  const postsViewerRef = useRef<HTMLDivElement | null>(null);
   const [, navigate] = useLocation();
   const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
     queryKey: ["/api/user", currentUser?.id, "stats"],
@@ -383,35 +387,6 @@ export default function UserProfile(props: any = {}) {
     },
   ];
 
-  const handleSignOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
-      // Clear all storage to prevent session mix-up
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      toast({
-        title: "Signed Out",
-        description: "You have been successfully signed out.",
-      });
-      
-      if (onSignOut) {
-        onSignOut();
-      } else {
-        // Redirect to main page if no callback provided
-        window.location.pathname = '/';
-      }
-    } catch (error: any) {
-      toast({
-        title: "Sign Out Failed",
-        description: error.message || "Failed to sign out.",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleProfileImageChange = () => {
     fileInputRef.current?.click();
   };
@@ -559,6 +534,38 @@ export default function UserProfile(props: any = {}) {
     }
   }, [activeTab]);
 
+  // Keep tab state consistent with Radix Tabs (invalid value => no panel content + odd layout)
+  useEffect(() => {
+    if (!isProfileTabId(activeTab)) {
+      setActiveTab("profile");
+      setLikesViewerStartIndex(null);
+      setPostsViewerStartIndex(null);
+    }
+  }, [activeTab]);
+
+  // Scroll liked-post viewer to the opened index (must run unconditionally — hooks before any early return)
+  useEffect(() => {
+    if (likesViewerStartIndex === null) return;
+    const frame = requestAnimationFrame(() => {
+      const viewer = likesViewerRef.current;
+      if (!viewer) return;
+      const target = viewer.querySelector<HTMLElement>(`[data-liked-viewer-index="${likesViewerStartIndex}"]`);
+      target?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [likesViewerStartIndex]);
+
+  useEffect(() => {
+    if (postsViewerStartIndex === null) return;
+    const frame = requestAnimationFrame(() => {
+      const viewer = postsViewerRef.current;
+      if (!viewer) return;
+      const target = viewer.querySelector<HTMLElement>(`[data-posts-viewer-index="${postsViewerStartIndex}"]`);
+      target?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [postsViewerStartIndex]);
+
   const handleNotificationClick = (notification: NotificationWithUser) => {
     // Mark as read if unread
     if (!notification.read) {
@@ -684,8 +691,73 @@ export default function UserProfile(props: any = {}) {
     return `${Math.floor(days / 7)}w ago`;
   };
 
+  const getPostStatusMeta = (post: PostWithUser) => {
+    const status = post.verificationStatus ?? (post as any).verification_status;
+    const isIdentified = status === "identified" || status === "community";
+    return isIdentified
+      ? {
+          label: "Identified",
+          className: "bg-green-500/85 text-white",
+          Icon: CheckCircle,
+        }
+      : {
+          label: "Unidentified",
+          className: "bg-red-500/85 text-white",
+          Icon: Clock,
+        };
+  };
+
+  const getPostThumbnail = (post: PostWithUser) => {
+    const maybePreview =
+      (post as any).thumbnailUrl ??
+      (post as any).thumbnail_url ??
+      (post as any).previewImage ??
+      (post as any).preview_image ??
+      null;
+    return typeof maybePreview === "string" && maybePreview.trim() ? maybePreview : null;
+  };
+
+  const openLikedPostViewer = (startIndex: number) => {
+    if (!likedPosts.length) return;
+    const clamped = Math.max(0, Math.min(startIndex, likedPosts.length - 1));
+    setPostsViewerStartIndex(null);
+    setActiveTab("liked");
+    setLikesViewerStartIndex(clamped);
+  };
+
+  const closeLikesViewer = () => {
+    setLikesViewerStartIndex(null);
+    setActiveTab("liked");
+  };
+
+  const openPostsPostViewer = (startIndex: number) => {
+    if (!filteredPosts.length) return;
+    const clamped = Math.max(0, Math.min(startIndex, filteredPosts.length - 1));
+    setLikesViewerStartIndex(null);
+    setActiveTab("posts");
+    setPostsViewerStartIndex(clamped);
+  };
+
+  const closePostsViewer = () => {
+    setPostsViewerStartIndex(null);
+    setActiveTab("posts");
+  };
+
+  const handleProfileTabChange = (value: string) => {
+    if (!isProfileTabId(value)) return;
+    if (value !== "liked") {
+      setLikesViewerStartIndex(null);
+    }
+    if (value !== "posts") {
+      setPostsViewerStartIndex(null);
+    }
+    setActiveTab(value);
+  };
+
+  const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
+
   return (
-    <div className="flex-1 bg-dark overflow-y-auto">
+    <div className="min-h-0 min-w-0 w-full flex-1 bg-dark overflow-x-hidden overflow-y-auto">
       <div className={`p-6 ${activeTab === "profile" ? "pb-6" : "pb-24"}`}>
         <div className="max-w-md mx-auto">
           {/* User Header */}
@@ -742,7 +814,7 @@ export default function UserProfile(props: any = {}) {
           </div>
 
           {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-6">
+          <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-6">
             <TabsList className="grid w-full grid-cols-4" data-testid="profile-tabs">
               <TabsTrigger value="profile" data-testid="tab-profile">
                 Profile
@@ -753,7 +825,7 @@ export default function UserProfile(props: any = {}) {
               </TabsTrigger>
               <TabsTrigger value="liked" data-testid="tab-liked">
                 <Heart className="w-4 h-4 mr-1" />
-                Liked
+                Likes
               </TabsTrigger>
               <TabsTrigger value="notifications" data-testid="tab-notifications" className="relative">
                 <Bell className="w-4 h-4 mr-1" />
@@ -899,7 +971,7 @@ export default function UserProfile(props: any = {}) {
               type="button"
               className="w-full bg-surface hover:bg-surface/80 text-left p-4 rounded-xl flex items-center justify-between h-auto"
               data-testid="button-settings"
-              onClick={() => setChangePasswordOpen(true)}
+              onClick={() => navigate("/settings")}
             >
               <div className="flex items-center space-x-3">
                 <Settings className="w-5 h-5 text-gray-400" />
@@ -907,54 +979,53 @@ export default function UserProfile(props: any = {}) {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </Button>
-            <Button
-              variant="ghost"
-              className="w-full bg-red-900/20 hover:bg-red-900/30 text-left p-4 rounded-xl flex items-center justify-between h-auto text-red-400 hover:text-red-300"
-              onClick={handleSignOut}
-              data-testid="button-logout"
-            >
-              <div className="flex items-center space-x-3">
-                <LogOut className="w-5 h-5" />
-                <span className="text-sm">Sign Out</span>
-              </div>
-            </Button>
               </div>
             </TabsContent>
 
             {/* Posts Tab */}
             <TabsContent value="posts" className="mt-6">
-              {/* Filter Buttons */}
-              <div className="flex gap-2 mb-4">
-                <Button
-                  variant={postFilter === "all" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPostFilter("all")}
-                  data-testid="filter-all-posts"
-                >
-                  All ({userPosts.length})
-                </Button>
-                <Button
-                  variant={postFilter === "identified" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPostFilter("identified")}
-                  data-testid="filter-identified-posts"
-                >
-                  Identified ({userPosts.filter(t => 
-                    t.verificationStatus === "identified" || 
-                    t.verificationStatus === "community"
-                  ).length})
-                </Button>
-                <Button
-                  variant={postFilter === "unidentified" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPostFilter("unidentified")}
-                  data-testid="filter-unidentified-posts"
-                >
-                  Unidentified ({userPosts.filter(t => 
-                    t.verificationStatus === "unverified"
-                  ).length})
-                </Button>
-              </div>
+              {postsViewerStartIndex === null && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <Button
+                    variant={postFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setPostFilter("all");
+                      setPostsViewerStartIndex(null);
+                    }}
+                    data-testid="filter-all-posts"
+                  >
+                    All ({userPosts.length})
+                  </Button>
+                  <Button
+                    variant={postFilter === "identified" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setPostFilter("identified");
+                      setPostsViewerStartIndex(null);
+                    }}
+                    data-testid="filter-identified-posts"
+                  >
+                    Identified ({userPosts.filter(t =>
+                      t.verificationStatus === "identified" ||
+                      t.verificationStatus === "community"
+                    ).length})
+                  </Button>
+                  <Button
+                    variant={postFilter === "unidentified" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setPostFilter("unidentified");
+                      setPostsViewerStartIndex(null);
+                    }}
+                    data-testid="filter-unidentified-posts"
+                  >
+                    Unidentified ({userPosts.filter(t =>
+                      t.verificationStatus === "unverified"
+                    ).length})
+                  </Button>
+                </div>
+              )}
 
               {postsLoading ? (
                 <div className="text-center py-8">
@@ -965,8 +1036,8 @@ export default function UserProfile(props: any = {}) {
                 <div className="text-center py-12">
                   <Upload className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                   <p className="text-gray-400 text-lg mb-2">
-                    {postFilter === "all" 
-                      ? "No posts yet" 
+                    {postFilter === "all"
+                      ? "No posts yet"
                       : postFilter === "identified"
                       ? "No identified posts"
                       : "No unidentified posts"}
@@ -975,11 +1046,86 @@ export default function UserProfile(props: any = {}) {
                     {postFilter === "all" && "Start uploading tracks to see them here!"}
                   </p>
                 </div>
+              ) : postsViewerStartIndex !== null ? (
+                <div
+                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-13rem))] min-h-[20rem]"
+                  role="region"
+                  aria-label="Your posts"
+                >
+                  <button
+                    type="button"
+                    onClick={closePostsViewer}
+                    className="absolute left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white shadow-md backdrop-blur-md transition-colors hover:bg-black/70 active:scale-95 touch-manipulation"
+                    aria-label="Back to posts grid"
+                    data-testid="close-posts-viewer"
+                  >
+                    <ArrowLeft className="h-4 w-4" aria-hidden />
+                  </button>
+                  <div
+                    ref={postsViewerRef}
+                    className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide overscroll-y-contain [overflow-anchor:auto]"
+                  >
+                    {filteredPosts.map((post, index) => (
+                      <div
+                        key={post.id}
+                        data-posts-viewer-index={index}
+                        className="snap-start h-full w-full shrink-0"
+                      >
+                        <VideoCard post={post} showStatusBadge embeddedFeed />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : (
-                <div className="space-y-4">
-                  {filteredPosts.map((post) => (
-                    <VideoCard key={post.id} post={post} showStatusBadge />
-                  ))}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {filteredPosts.map((post, index) => {
+                    const statusMeta = getPostStatusMeta(post);
+                    const StatusBadgeIcon = statusMeta.Icon;
+                    const thumbnailSrc = getPostThumbnail(post);
+                    return (
+                      <button
+                        key={post.id}
+                        type="button"
+                        onClick={() => openPostsPostViewer(index)}
+                        className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
+                        data-testid={`posts-thumbnail-${post.id}`}
+                        aria-label={`Open your post: ${post.description?.slice(0, 40) || post.id}`}
+                      >
+                        {thumbnailSrc ? (
+                          <img
+                            src={thumbnailSrc}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <video
+                            src={post.videoUrl || ""}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        )}
+
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+
+                        <span
+                          className={`absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium backdrop-blur-sm ${statusMeta.className}`}
+                        >
+                          <StatusBadgeIcon className="w-3 h-3" />
+                          {statusMeta.label}
+                        </span>
+
+                        <div className="absolute bottom-2 left-2 right-2">
+                          <p className="text-xs text-white/95 font-medium truncate">@{post.user.username}</p>
+                          {post.description ? (
+                            <p className="text-[11px] text-white/80 truncate">{post.description}</p>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>
@@ -997,11 +1143,87 @@ export default function UserProfile(props: any = {}) {
                   <p className="text-gray-400 text-lg mb-2">No liked videos yet</p>
                   <p className="text-gray-500 text-sm">Start liking tracks to see them here!</p>
                 </div>
+              ) : likesViewerStartIndex !== null ? (
+                <div
+                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-13rem))] min-h-[20rem]"
+                  role="region"
+                  aria-label="Liked posts"
+                >
+                  {/* Floating back: fixed to viewer viewport, not scroll content (Home-style snap lives in inner scroller). */}
+                  <button
+                    type="button"
+                    onClick={closeLikesViewer}
+                    className="absolute left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white shadow-md backdrop-blur-md transition-colors hover:bg-black/70 active:scale-95 touch-manipulation"
+                    aria-label="Back to liked grid"
+                    data-testid="close-likes-viewer"
+                  >
+                    <ArrowLeft className="h-4 w-4" aria-hidden />
+                  </button>
+                  <div
+                    ref={likesViewerRef}
+                    className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide overscroll-y-contain [overflow-anchor:auto]"
+                  >
+                    {likedPosts.map((post, index) => (
+                      <div
+                        key={post.id}
+                        data-liked-viewer-index={index}
+                        className="snap-start h-full w-full shrink-0"
+                      >
+                        <VideoCard post={post} showStatusBadge embeddedFeed />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : (
-                <div className="space-y-4">
-                  {likedPosts.map((post) => (
-                    <VideoCard key={post.id} post={post} showStatusBadge />
-                  ))}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {likedPosts.map((post, index) => {
+                    const statusMeta = getPostStatusMeta(post);
+                    const StatusBadgeIcon = statusMeta.Icon;
+                    const thumbnailSrc = getPostThumbnail(post);
+                    return (
+                      <button
+                        key={post.id}
+                        type="button"
+                        onClick={() => openLikedPostViewer(index)}
+                        className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
+                        data-testid={`liked-thumbnail-${post.id}`}
+                        aria-label={`Open liked post by @${post.user.username}`}
+                      >
+                        {thumbnailSrc ? (
+                          <img
+                            src={thumbnailSrc}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <video
+                            src={post.videoUrl || ""}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        )}
+
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+
+                        <span
+                          className={`absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium backdrop-blur-sm ${statusMeta.className}`}
+                        >
+                          <StatusBadgeIcon className="w-3 h-3" />
+                          {statusMeta.label}
+                        </span>
+
+                        <div className="absolute bottom-2 left-2 right-2">
+                          <p className="text-xs text-white/95 font-medium truncate">@{post.user.username}</p>
+                          {post.description ? (
+                            <p className="text-[11px] text-white/80 truncate">{post.description}</p>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>
@@ -1129,7 +1351,6 @@ export default function UserProfile(props: any = {}) {
             accept="image/*"
             style={{ display: 'none' }}
           />
-          <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
         </div>
       </div>
     </div>

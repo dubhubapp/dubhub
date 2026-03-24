@@ -3,6 +3,6 @@ import { BottomNavigation } from "@/components/bottom-navigation";
 
 export function ConditionalBottomNavigation() {
   const [location] = useLocation();
-  if (location === "/reset-password") return null;
+  if (location === "/reset-password" || location === "/settings") return null;
   return <BottomNavigation />;
 }

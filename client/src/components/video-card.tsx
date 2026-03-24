@@ -29,9 +29,11 @@ interface VideoCardProps {
   post: PostWithUser;
   isHighlighted?: boolean;
   showStatusBadge?: boolean;
+  /** Use scrollport height (e.g. Profile Likes snap viewer) instead of full viewport. */
+  embeddedFeed?: boolean;
 }
 
-export function VideoCard({ post, isHighlighted = false, showStatusBadge = false }: VideoCardProps) {
+export function VideoCard({ post, isHighlighted = false, showStatusBadge = false, embeddedFeed = false }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
     id: string;
@@ -383,9 +385,13 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
   const genreChip = getGenreChipStyle(post.genre);
 
+  const snapHeightClass = embeddedFeed
+    ? "min-h-full h-full"
+    : "min-h-screen h-screen";
+
   return (
     <div 
-      className={`min-h-screen h-screen w-full relative snap-start snap-always flex-shrink-0 transition-all duration-300 ${
+      className={`${snapHeightClass} w-full relative snap-start snap-always flex-shrink-0 transition-all duration-300 ${
         isHighlighted ? 'ring-4 ring-primary ring-inset' : ''
       }`}
       data-post-id={post.id}
