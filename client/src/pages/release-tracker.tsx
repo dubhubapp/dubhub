@@ -101,6 +101,11 @@ function isSavedReleaseOutTodayInList(
   return isReleaseDayToday(r.isComingSoon, r.releaseDate);
 }
 
+/** Any release with release_date = today (for glow and Out today badge). */
+function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
+  return isReleaseDayToday(r.isComingSoon, r.releaseDate);
+}
+
 export default function ReleaseTracker() {
   const [, navigate] = useLocation();
   const { currentUser, userType } = useUser();
@@ -177,6 +182,117 @@ export default function ReleaseTracker() {
     );
   }, [feed, isArtist, effectiveScope, currentUser?.id]);
 
+  const featuredReleaseIds = useMemo(
+    () => new Set(myReleasesDueToday.map((r) => r.id)),
+    [myReleasesDueToday]
+  );
+  const standardDatedFeed = useMemo(
+    () => feed.filter((r) => r.releaseDate && !r.isComingSoon && !featuredReleaseIds.has(r.id)),
+    [feed, featuredReleaseIds]
+  );
+
+  const renderReleaseCard = (r: ReleaseFeedItem, opts?: { featured?: boolean }) => {
+    const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
+    const releaseDayHighlight = isReleaseDayHighlight(r);
+    const isOwnerReleaseDay = r.artistId === currentUser?.id && releaseDayHighlight;
+    const featured = !!opts?.featured;
+    return (
+      <button
+        key={r.id}
+        type="button"
+        onClick={() => {
+          const params = new URLSearchParams();
+          if (isArtist) params.set("scope", scope);
+          params.set("view", feedView);
+          navigate(`/releases/${r.id}?${params}`);
+        }}
+        className={cn(
+          "w-full text-left rounded-xl p-4 transition-colors flex gap-4",
+          featured
+            ? "bg-transparent border-0 px-1 py-2 shadow-none hover:bg-transparent"
+            : "bg-card border hover:bg-accent/5",
+          !featured && savedOutToday &&
+            "ring-1 ring-emerald-500/40 shadow-[0_0_24px_-8px_rgba(16,185,129,0.3)] bg-emerald-500/[0.06] border-emerald-500/35",
+          !featured && isOwnerReleaseDay &&
+            "ring-1 ring-violet-500/40 shadow-[0_0_26px_-8px_rgba(139,92,246,0.35)] bg-violet-500/[0.06] border-violet-500/35",
+          !featured && releaseDayHighlight && !savedOutToday && !isOwnerReleaseDay &&
+            "ring-1 ring-amber-500/35 shadow-[0_0_22px_-8px_rgba(245,158,11,0.3)] bg-amber-500/[0.06] border-amber-500/30"
+        )}
+      >
+        <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+          {r.artworkUrl ? (
+            <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <Music className="w-10 h-10 text-muted-foreground" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-foreground">
+            {formatReleaseTitleLine(r.artistUsername, "", r.collaborators).replace(" — ", "")}
+          </p>
+          <p className="text-sm text-foreground mt-0.5 line-clamp-2 break-words">
+            {r.title}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {r.isComingSoon ? "Coming soon..." : formatDate(r.releaseDate)}
+          </p>
+          {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null)) && (
+            <p className="text-xs text-primary mt-1">
+              {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null))}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-1 mt-2 items-center">
+            {(() => {
+              const upcoming = r.isComingSoon || isUpcoming(r.releaseDate);
+              return (
+                <span
+                  className={`inline-block text-xs px-2 py-0.5 rounded ${
+                    upcoming
+                      ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                      : "bg-green-500/20 text-green-600 dark:text-green-400"
+                  }`}
+                >
+                  {upcoming ? "Upcoming" : "Released"}
+                </span>
+              );
+            })()}
+            {r.collaboratorStatus && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  r.collaboratorStatus === "ACCEPTED"
+                    ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                    : r.collaboratorStatus === "REJECTED"
+                    ? "bg-red-500/20 text-red-600 dark:text-red-400"
+                    : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                }`}
+              >
+                {r.collaboratorStatus}
+              </span>
+            )}
+          </div>
+          {r.links && r.links.length > 0 && (
+            <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              {sortLinksByPlatform(r.links).map((link) => (
+                <a
+                  key={link.id}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
+                  title={getPlatformLabel(link.platform)}
+                >
+                  <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
+                  <span>{getLinkCtaLabel(link.platform, r.isComingSoon || isUpcoming(r.releaseDate || null))}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </button>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex-1 bg-background flex items-center justify-center">
@@ -244,22 +360,11 @@ export default function ReleaseTracker() {
         )}
 
         {currentUser?.id && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {myReleasesDueToday.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                className="w-full text-left rounded-lg transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                onClick={() => {
-                  const params = new URLSearchParams();
-                  params.set("scope", scope);
-                  params.set("view", feedView);
-                  navigate(`/releases/${r.id}?${params}`);
-                }}
-              >
-                <ReleaseDayCelebration releaseId={r.id} title={r.title} variant="inline" />
-              </button>
-            ))}
+          <div className="relative z-10 mb-7 rounded-xl border-2 border-amber-300/80 bg-gradient-to-br from-violet-500/16 via-background/86 to-amber-400/22 shadow-[0_0_34px_-8px_rgba(139,92,246,0.4),0_0_78px_-8px_rgba(245,158,11,0.95),0_14px_32px_-18px_rgba(245,158,11,0.6),inset_0_1px_0_rgba(255,255,255,0.14)] p-3 space-y-3">
+            <ReleaseDayCelebration releaseId={myReleasesDueToday[0].id} variant="heading" />
+            <div className="space-y-3">
+              {myReleasesDueToday.map((r) => renderReleaseCard(r, { featured: true }))}
+            </div>
           </div>
         )}
 
@@ -298,7 +403,7 @@ export default function ReleaseTracker() {
         ) : (
           <div className="space-y-6">
             {groupReleasesByMonth(
-              feed.filter((r) => r.releaseDate && !r.isComingSoon),
+              standardDatedFeed,
               effectiveView === "upcoming" || effectiveView === "collaborations"
             ).map(({ key: monthKey, label: monthLabel, items }) => (
               <section key={monthKey}>
@@ -306,102 +411,7 @@ export default function ReleaseTracker() {
                   {monthLabel}
                 </h2>
                 <div className="space-y-4">
-                  {items.map((r) => {
-                    const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
-                    return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => {
-                        const params = new URLSearchParams();
-                        if (isArtist) params.set("scope", scope);
-                        params.set("view", feedView);
-                        navigate(`/releases/${r.id}?${params}`);
-                      }}
-                      className={cn(
-                        "w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4",
-                        savedOutToday &&
-                          "ring-1 ring-emerald-500/20 shadow-[0_0_18px_-10px_rgba(16,185,129,0.2)] bg-emerald-500/[0.03]"
-                      )}
-                    >
-                      <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-                        {r.artworkUrl ? (
-                          <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <Music className="w-10 h-10 text-muted-foreground" />
-                      )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-foreground">
-                          {formatReleaseTitleLine(r.artistUsername, "", r.collaborators).replace(" — ", "")}
-                        </p>
-                        <p className="text-sm text-foreground mt-0.5 line-clamp-2 break-words">
-                          {r.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {r.isComingSoon ? "Coming soon..." : formatDate(r.releaseDate)}
-                        </p>
-                        {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null)) && (
-                          <p className="text-xs text-primary mt-1">
-                            {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null))}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-1 mt-2 items-center">
-                          {(() => {
-                            const upcoming = r.isComingSoon || isUpcoming(r.releaseDate);
-                            return (
-                              <span
-                            className={`inline-block text-xs px-2 py-0.5 rounded ${
-                              upcoming
-                                ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                                : "bg-green-500/20 text-green-600 dark:text-green-400"
-                            }`}
-                          >
-                            {upcoming ? "Upcoming" : "Released"}
-                          </span>
-                            );
-                          })()}
-                          {savedOutToday && (
-                            <span className="inline-block text-xs px-2 py-0.5 rounded border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-400/95">
-                              Out today
-                            </span>
-                          )}
-                          {r.collaboratorStatus && (
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded ${
-                                r.collaboratorStatus === "ACCEPTED"
-                                  ? "bg-green-500/20 text-green-600 dark:text-green-400"
-                                  : r.collaboratorStatus === "REJECTED"
-                                  ? "bg-red-500/20 text-red-600 dark:text-red-400"
-                                  : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                              }`}
-                            >
-                              {r.collaboratorStatus}
-                            </span>
-                          )}
-                        </div>
-                        {r.links && r.links.length > 0 && (
-                          <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                            {sortLinksByPlatform(r.links).map((link) => (
-                              <a
-                                key={link.id}
-                                href={link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
-                                title={getPlatformLabel(link.platform)}
-                              >
-                                <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                                <span>{getLinkCtaLabel(link.platform, r.isComingSoon || isUpcoming(r.releaseDate || null))}</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                    );
-                  })}
+                  {items.map((r) => renderReleaseCard(r))}
                 </div>
               </section>
             ))}

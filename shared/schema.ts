@@ -329,8 +329,11 @@ export type PostWithUser = Post & {
 export type UserStats = {
   totalIDs: number;
   confirmedIDs: number;
-  savedTracks: number;
   totalLikes: number;
+  tracksIdentified: number;
+  accuracyPercent: number;
+  likesOnPosts: number;
+  commentsOnPosts: number;
 };
 
 // NotificationWithUser - updated to use Post instead of Track

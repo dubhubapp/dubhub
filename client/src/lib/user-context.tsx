@@ -22,13 +22,11 @@ interface UserContextType {
   currentUser: User | null;
   userType: "user" | "artist" | "moderator";
   profileImage: string | null;
-  displayName: string | null;
   username: string | null;
   verifiedArtist: boolean; // Whether current user is a verified artist
   isLoading: boolean;
   isAuthenticated: boolean;
   updateProfileImage: (url: string) => void;
-  updateDisplayName: (name: string) => void;
 }
 
 const UserContext = createContext<UserContextType | null>(null);
@@ -36,7 +34,6 @@ const UserContext = createContext<UserContextType | null>(null);
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [userType, setUserType] = useState<"user" | "artist" | "moderator">("user");
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [verifiedArtist, setVerifiedArtist] = useState<boolean>(false);
@@ -59,7 +56,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (!session?.user) {
           // No session - clear all profile data
           setProfileImage(null);
-          setDisplayName(null);
           setUsername(null);
           setUserType("user");
           setCurrentUser(null);
@@ -87,7 +83,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
         // Use ONLY real data from Supabase; correct default avatar if type/default mismatch
         setUsername(profileData.username || null);
-        setDisplayName(profileData.username || null); // Use username as display name
         const resolvedAvatar = resolveAvatarUrlForProfile(
           profileData.avatar_url,
           profileData.account_type
@@ -178,23 +173,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const updateDisplayName = (name: string) => {
-    setDisplayName(name);
-    // Note: Display name is typically the username, but we can update if needed
-  };
-
   return (
     <UserContext.Provider value={{ 
       currentUser: currentUser || null, 
       userType, 
       profileImage, 
-      displayName,
       username,
       verifiedArtist,
       isLoading,
       isAuthenticated,
       updateProfileImage,
-      updateDisplayName
     }}>
       {children}
     </UserContext.Provider>

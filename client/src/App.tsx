@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider } from "@/lib/user-context";
 import { ConditionalBottomNavigation } from "@/components/conditional-bottom-navigation";
+import { ReleaseDropDayBanner } from "@/components/release-drop-day-banner";
 import { PasswordRecoveryRedirect } from "@/components/auth/PasswordRecoveryRedirect";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -227,6 +228,7 @@ function App() {
               <Route component={NotFound} />
             </Switch>
             <ConditionalBottomNavigation />
+            <ReleaseDropDayBanner />
           </div>
         </UserProvider>
       </TooltipProvider>

@@ -16,6 +16,7 @@ export default function ReleaseCreate() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
+  const releaseCreateHapticFiredRef = useRef(false);
   const [title, setTitle] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
   const [comingSoon, setComingSoon] = useState(false);
@@ -34,6 +35,15 @@ export default function ReleaseCreate() {
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
   const [collabSearch, setCollabSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerReleaseCreateSuccessHaptic = () => {
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") {
+      return;
+    }
+
+    // Subtle "small -> slightly stronger" pulse sequence (< 1s total).
+    navigator.vibrate([14, 36, 28]);
+  };
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
@@ -143,6 +153,7 @@ export default function ReleaseCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    releaseCreateHapticFiredRef.current = false;
     if (!title.trim()) {
       toast({ title: "Title is required", variant: "destructive" });
       return;
@@ -235,6 +246,10 @@ export default function ReleaseCreate() {
         console.log("[ReleaseCreate] Success: created release", releaseId, "removed feed cache");
       }
 
+      if (!releaseCreateHapticFiredRef.current) {
+        triggerReleaseCreateSuccessHaptic();
+        releaseCreateHapticFiredRef.current = true;
+      }
       toast({ title: "Release created" });
       navigate("/releases");
     } catch (error) {

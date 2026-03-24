@@ -61,6 +61,7 @@ export default function SubmitMetadata() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { currentUser } = useUser();
+  const uploadSuccessHapticFiredRef = useRef(false);
   
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -74,6 +75,15 @@ export default function SubmitMetadata() {
   const [trimState, setTrimState] = useState<{fileName: string; fileType: string; fileSize: number; videoUrl: string} | null>(null);
   const [trimTimes, setTrimTimes] = useState<{startTime: number; endTime: number} | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
+
+  const triggerUploadSuccessHaptic = () => {
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") {
+      return;
+    }
+
+    // Subtle "small -> slightly stronger" pulse sequence (< 1s total).
+    navigator.vibrate([14, 36, 28]);
+  };
   
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -174,6 +184,9 @@ export default function SubmitMetadata() {
   });
 
   const uploadMutation = useMutation({
+    onMutate: () => {
+      uploadSuccessHapticFiredRef.current = false;
+    },
     mutationFn: async ({ file, start, end }: { file: File; start: number; end: number }) => {
       const formData = new FormData();
       formData.append('video', file);
@@ -301,6 +314,10 @@ export default function SubmitMetadata() {
     onSuccess: (data) => {
       setUploadedVideoUrl(data.url);
       setUploadProgress(0);
+      if (!uploadSuccessHapticFiredRef.current) {
+        triggerUploadSuccessHaptic();
+        uploadSuccessHapticFiredRef.current = true;
+      }
       toast({
         title: "Video Uploaded!",
         description: "Your video has been processed and uploaded successfully.",
@@ -561,7 +578,7 @@ export default function SubmitMetadata() {
                     <FormLabel className="text-sm font-medium text-gray-300">Description</FormLabel>
                     <FormControl>
                       <Textarea 
-                        placeholder="Tell us about this track... where did you hear it? What makes it special?"
+                        placeholder="what makes this special? how long have you been looking for this track? when did you first hear it?"
                         className="bg-surface border-gray-600 text-white placeholder-gray-400 resize-none"
                         rows={4}
                         data-testid="textarea-description"

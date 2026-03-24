@@ -1,12 +1,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2 } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
-import { GoldVerifiedArtistPill, GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
@@ -22,6 +22,7 @@ import { formatReleaseTitleLine } from "@/lib/release-display";
 import { formatDate } from "@/pages/release-tracker";
 import { isReleaseUpcoming } from "@/lib/release-status";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -254,37 +255,60 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   });
 
   const getStatusBadge = () => {
+    const renderIdentifiedStatus = (
+      icon: JSX.Element,
+      sourceLabel: string | null,
+      testId: string,
+    ) => (
+      <div className="flex flex-col gap-1">
+        <span
+          className="inline-flex w-fit items-center rounded-full bg-green-500/80 px-3 py-1 text-sm font-medium backdrop-blur-sm"
+          data-testid={testId}
+        >
+          {icon}
+          Identified
+        </span>
+        {sourceLabel ? (
+          <span className="pl-1 text-[11px] font-medium text-gray-200/90">
+            {sourceLabel}
+          </span>
+        ) : null}
+      </div>
+    );
+
+    const verificationStatus = post.verificationStatus ?? (post as any).verification_status;
+
+    // Community source first so it never falls through to another identified source
+    if (verificationStatus === "community") {
+      return renderIdentifiedStatus(
+        <ShieldCheck className="mr-1 h-3 w-3" />,
+        "Community identified",
+        "badge-community-identified",
+      );
+    }
+
     // Artist verification takes precedence: if artist confirmed, show Artist Verified
     const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
     const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
     if (isArtistVerifiedPost && artistVerifiedBy) {
-      return (
-        <GoldVerifiedArtistPill data-testid="badge-artist-verified" size="sm" />
+      return renderIdentifiedStatus(
+        <GoldVerifiedTick className="mr-1 h-3 w-3 text-white" />,
+        "Artist verified",
+        "badge-artist-verified",
       );
     }
     
     // Show identified badge if moderator confirmed (fallback when no artist verification)
-    if (post.verificationStatus === "identified") {
-      return (
-        <span className="bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-identified">
-          <CheckCircle className="w-3 h-3 inline mr-1" />
-          Identified
-        </span>
-      );
-    }
-    
-    // Show community identified badge if uploader marked but not yet moderator approved
-    if (post.verificationStatus === "community") {
-      return (
-        <span className="bg-blue-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-community-identified">
-          <ShieldCheck className="w-3 h-3 inline mr-1" />
-          Community Identified
-        </span>
+    if (verificationStatus === "identified") {
+      return renderIdentifiedStatus(
+        <CheckCircle className="mr-1 h-3 w-3" />,
+        null,
+        "badge-identified",
       );
     }
     
     // Show under review badge
-    if (post.verificationStatus === "under_review") {
+    if (verificationStatus === "under_review") {
       return (
         <span className="bg-yellow-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-under-review">
           <ShieldCheck className="w-3 h-3 inline mr-1" />
@@ -293,10 +317,10 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
       );
     }
     
-    // Show unidentified badge when explicitly requested (e.g., in profile Posts tab)
-    if (showStatusBadge && post.verificationStatus === "unverified") {
+    // Unidentified should always show a red status pill
+    if (verificationStatus === "unverified") {
       return (
-        <span className="bg-gray-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-unidentified">
+        <span className="rounded-full bg-red-500/80 px-3 py-1 text-sm font-medium backdrop-blur-sm" data-testid="badge-unidentified">
           <Clock className="w-3 h-3 inline mr-1" />
           Unidentified
         </span>
@@ -352,6 +376,10 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
   // Check if artist is verified
   const isVerifiedArtist = post.user.account_type === 'artist' && post.user.verified_artist === true;
+  const postAvatarSrc =
+    contextUser && post.userId === contextUser.id
+      ? (userProfileImage || post.user.avatar_url || undefined)
+      : (post.user.avatar_url || undefined);
 
   const genreChip = getGenreChipStyle(post.genre);
 
@@ -393,7 +421,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
       </div>
       {/* Top overlay with status — pt-safe for notch */}
       <div className="absolute top-20 left-4 right-20 z-20">
-        <div className="flex gap-2 mb-4">
+        <div className="mt-2 flex gap-2 mb-4">
           {getStatusBadge()}
         </div>
       </div>
@@ -537,13 +565,9 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               {/* User avatar with verification */}
               <div className="relative">
                 <img 
-                  src={
-                    contextUser && post.userId === contextUser.id 
-                      ? (userProfileImage || post.user.avatar_url || undefined)
-                      : (post.user.avatar_url || undefined)
-                  }
+                  src={postAvatarSrc}
                   alt="User Profile" 
-                  className={`w-10 h-10 rounded-full border-2 ${
+                  className={`avatar-media w-10 h-10 rounded-full border-2 ${isDefaultAvatarUrl(postAvatarSrc) ? "avatar-default-media" : ""} ${
                     isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : ""
                   }`}
                   style={
@@ -562,7 +586,6 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                     )}
                   </div>
                 </div>
-                <p className="text-xs text-gray-300">{post.location}</p>
               </div>
             </div>
 
@@ -603,6 +626,17 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                     ? formatTimeAgo(post.createdAt)
                     : "Recently"}
               </span>
+              {post.location && (
+                <>
+                  <span className="text-gray-500 select-none" aria-hidden>
+                    •
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" aria-hidden />
+                    <span className="truncate">{post.location}</span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
 

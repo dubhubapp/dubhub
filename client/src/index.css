@@ -50,6 +50,23 @@
   .border-3 {
     border-width: 3px;
   }
+
+  .avatar-shell {
+    @apply relative flex items-center justify-center overflow-hidden rounded-full leading-none;
+  }
+
+  .avatar-media {
+    @apply block align-middle;
+  }
+
+  .avatar-icon {
+    @apply block shrink-0;
+  }
+
+  .avatar-default-media {
+    @apply object-cover;
+    transform: translateY(5%);
+  }
   
   .snap-y {
     scroll-snap-type: y mandatory;

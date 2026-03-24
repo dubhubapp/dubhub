@@ -60,6 +60,8 @@ export interface IStorage {
 
   // Releases
   getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]>;
+  /** Saved (liked/uploaded) or owned/collaborator releases; narrow date window; client applies local “release day” filter. */
+  getReleasesDropDayBannerCandidates(userId: string): Promise<any[]>;
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
   /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
   isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean>;
@@ -903,8 +905,9 @@ export class DatabaseStorage implements IStorage {
   async updateUser(id: string, updates: any): Promise<any | undefined> {
     try {
       const normalizedUpdates: any = { ...updates };
-      if (updates.username) {
-        normalizedUpdates.username = updates.username.trim().toLowerCase();
+      // Username is treated as immutable identity after signup.
+      if (Object.prototype.hasOwnProperty.call(normalizedUpdates, "username")) {
+        delete normalizedUpdates.username;
       }
 
       const { data, error } = await supabase
@@ -1678,7 +1681,10 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             JOIN profiles pr ON pr.id = r.artist_id
             LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-            WHERE ${baseWhere} AND (r.release_date >= NOW() OR (r.release_date IS NULL AND r.is_coming_soon = true))
+            WHERE ${baseWhere} AND (
+              (r.release_date IS NULL AND r.is_coming_soon = true)
+              OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
+            )
             ORDER BY r.release_date ASC NULLS LAST
           `)
         : await db.execute(sql`
@@ -1690,7 +1696,7 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             JOIN profiles pr ON pr.id = r.artist_id
             LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-            WHERE ${baseWhere} AND r.release_date IS NOT NULL AND r.release_date < NOW()
+            WHERE ${baseWhere} AND r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date < (NOW() AT TIME ZONE 'UTC')::date)
             ORDER BY r.release_date DESC NULLS LAST
           `);
       const rows = (result as any).rows || [];
@@ -1715,6 +1721,42 @@ export class DatabaseStorage implements IStorage {
       return this.mapReleasesFeedRows(rows);
     } catch (error) {
       console.error("[getReleasesFeed] Error:", error);
+      return [];
+    }
+  }
+
+  async getReleasesDropDayBannerCandidates(userId: string): Promise<any[]> {
+    if (!userId) return [];
+    try {
+      const savedWhere = sql`(r.is_public = true AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+      const myWhere = sql`(r.artist_id = ${userId} OR EXISTS (
+                 SELECT 1
+                 FROM release_collaborators rc0
+                 WHERE rc0.release_id = r.id
+                   AND rc0.artist_id = ${userId}
+                   AND rc0.status = 'ACCEPTED'
+               ))`;
+      const viewerWhere = sql`(${savedWhere} OR ${myWhere})`;
+      const result = await db.execute(sql`
+        SELECT DISTINCT ON (r.id)
+          r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+          pr.username AS artist_username, rc.status AS collaborator_status,
+          (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+           FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
+           WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+        FROM releases r
+        JOIN profiles pr ON pr.id = r.artist_id
+        LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
+        WHERE ${viewerWhere}
+          AND r.is_coming_soon = false
+          AND r.release_date IS NOT NULL
+          AND (r.release_date AT TIME ZONE 'UTC')::date BETWEEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - 1 AND (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date + 1
+        ORDER BY r.id, r.release_date ASC NULLS LAST
+      `);
+      const rows = (result as any).rows || [];
+      return this.mapReleasesFeedRows(rows);
+    } catch (error) {
+      console.error("[getReleasesDropDayBannerCandidates] Error:", error);
       return [];
     }
   }

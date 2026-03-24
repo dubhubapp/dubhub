@@ -13,6 +13,7 @@ import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { ReportModal } from "./report-modal";
 import { GoldVerifiedArtistPill, GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -66,7 +67,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         
         // Check if user is a verified artist
         const isVerifiedArtist = verifiedArtists.some((artist: any) => 
-          artist.username === username || artist.displayName === username
+          artist.username === username
         );
         
         let className = isVerifiedArtist 
@@ -101,7 +102,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const handleUserClick = async (username: string) => {
     try {
       // First try to find in verified artists
-      const artist = verifiedArtists.find((a: any) => a.username === username || a.displayName === username);
+      const artist = verifiedArtists.find((a: any) => a.username === username);
       if (artist) {
         setSelectedUser(artist);
         setShowUserPopup(true);
@@ -194,7 +195,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
   // Filter artists based on search term
   const filteredArtists = verifiedArtists.filter((artist: any) => 
-    artist.displayName.toLowerCase().includes(artistSearchTerm.toLowerCase()) ||
     artist.username.toLowerCase().includes(artistSearchTerm.toLowerCase())
   ).slice(0, 5); // Limit to 5 results
 
@@ -472,7 +472,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <img
                   src={comment.user.avatar_url || undefined}
                   alt={comment.user.username}
-                  className={`w-8 h-8 rounded-full border-2 ${
+                  className={`avatar-media w-8 h-8 rounded-full border-2 ${isDefaultAvatarUrl(comment.user.avatar_url) ? "avatar-default-media" : ""} ${
                     comment.user.account_type === "artist" && comment.user.verified_artist
                       ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                       : "border-transparent"
@@ -650,7 +650,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                           <img
                             src={reply.user.avatar_url || undefined}
                             alt={reply.user.username}
-                            className={`w-6 h-6 rounded-full border-2 ${
+                            className={`avatar-media w-6 h-6 rounded-full border-2 ${isDefaultAvatarUrl(reply.user.avatar_url) ? "avatar-default-media" : ""} ${
                               reply.user.account_type === "artist" && reply.user.verified_artist
                                 ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                                 : "border-transparent"
@@ -769,12 +769,12 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     <img
                       src={artist.avatar_url || artist.profileImage || undefined}
                       alt={artist.username}
-                      className="w-8 h-8 rounded-full"
+                      className={`avatar-media w-8 h-8 rounded-full ${isDefaultAvatarUrl(artist.avatar_url || artist.profileImage) ? "avatar-default-media" : ""}`}
                     />
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
                         <span className="text-sm font-medium text-yellow-600">
-                          {artist.displayName}
+                          @{artist.username}
                         </span>
                         <CheckCircle className="w-3 h-3 text-yellow-400" />
                       </div>
@@ -790,7 +790,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <img
                   src={userProfileImage || undefined}
                   alt="Your profile"
-                  className="w-8 h-8 rounded-full flex-shrink-0"
+                  className={`avatar-media w-8 h-8 rounded-full flex-shrink-0 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""}`}
                 />
                 <Textarea
                   value={newComment}
@@ -832,7 +832,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <img
                     src={selectedUser.avatar_url || selectedUser.profileImage || undefined}
                     alt={selectedUser.username}
-                    className={`w-20 h-20 rounded-full mx-auto border-2 ${
+                    className={`avatar-media w-20 h-20 rounded-full mx-auto border-2 ${isDefaultAvatarUrl(selectedUser.avatar_url || selectedUser.profileImage) ? "avatar-default-media" : ""} ${
                       selectedUser.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-transparent"
                     }`}
                   />
@@ -848,7 +848,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <h3 className={`text-xl font-bold mb-1 ${
                   selectedUser.verified_artist ? "text-yellow-600" : "text-gray-900"
                 }`}>
-                  {selectedUser.displayName || selectedUser.username}
+                  @{selectedUser.username}
                 </h3>
                 
                 <p className="text-gray-600 mb-2">@{selectedUser.username}</p>

@@ -35,3 +35,11 @@ export function resolveAvatarUrlForProfile(
   }
   return avatarUrl;
 }
+
+export function isDefaultAvatarUrl(avatarUrl: string | null | undefined): boolean {
+  if (!avatarUrl) return false;
+  return (
+    avatarUrl.includes("default_user_avatar") ||
+    avatarUrl.includes("default_artist_avatar")
+  );
+}

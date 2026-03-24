@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Crown, Check, X, Clock } from "lucide-react";
+import { Crown, Check, X, Clock, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/user-context";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import type { PostWithUser } from "@shared/schema";
 
 type FilterMode = "pending" | "confirmed" | "all";
@@ -206,7 +207,7 @@ export default function ArtistProfile() {
               <img 
                 src={undefined}
                 alt="Artist Profile" 
-                className="w-20 h-20 rounded-full mx-auto border-3 border-accent"
+                className="avatar-media w-20 h-20 rounded-full mx-auto border-3 border-accent"
               />
               <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-accent rounded-full flex items-center justify-center">
                 <Check className="w-3 h-3 text-black" />
@@ -224,7 +225,7 @@ export default function ArtistProfile() {
 
           {userType === "artist" && artistStats && (
             <div className="bg-surface rounded-xl p-4 mb-6">
-              <h2 className="text-sm font-medium text-gray-300 mb-3">Your impact</h2>
+              <h2 className="text-sm font-medium text-gray-300 mb-3">Your Impact</h2>
               <div className="space-y-1.5 text-sm">
                 <p>{artistStats.confirmedTracks.toLocaleString()} confirmed track{artistStats.confirmedTracks !== 1 ? "s" : ""}</p>
                 <p>
@@ -303,7 +304,7 @@ export default function ArtistProfile() {
                     <img 
                       src={track.user.avatar_url || undefined}
                       alt="User Profile" 
-                      className="w-10 h-10 rounded-full"
+                      className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(track.user.avatar_url) ? "avatar-default-media" : ""}`}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
@@ -312,7 +313,12 @@ export default function ArtistProfile() {
                       </div>
                       <p className="text-sm text-gray-300 mb-2">{track.description}</p>
                       <div className="flex items-center space-x-4 text-xs text-gray-500 mb-3">
-                        {track.location && <span>{track.location}</span>}
+                        {track.location && (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <MapPin className="w-3.5 h-3.5 text-gray-500 shrink-0" aria-hidden />
+                            <span>{track.location}</span>
+                          </span>
+                        )}
                         {track.playedDate && <span>Played: {formatPlayedDate(track.playedDate)}</span>}
                         {track.djName && <span>Played by: {track.djName}</span>}
                         {track.genre && <span>{track.genre}</span>}

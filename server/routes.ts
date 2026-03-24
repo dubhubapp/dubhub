@@ -436,12 +436,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/users", async (req, res) => {
     try {
       console.log('[/api/users] Received request:', JSON.stringify(req.body));
-      const { id, username, displayName, userType } = req.body;
+      const { id, username, userType } = req.body;
 
-      if (!id || !username || !displayName || !userType) {
-        console.error('[/api/users] Missing fields:', { id: !!id, username: !!username, displayName: !!displayName, userType: !!userType });
+      if (!id || !username || !userType) {
+        console.error('[/api/users] Missing fields:', { id: !!id, username: !!username, userType: !!userType });
         return res.status(400).json({ 
-          message: "Missing required fields: id, username, displayName, userType" 
+          message: "Missing required fields: id, username, userType" 
         });
       }
 
@@ -1204,15 +1204,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE user_id = ${userId}
       `);
       const totalLikes = Number((totalLikesResult as any).rows?.[0]?.count ?? 0);
-      
-      // savedTracks is always 0 (no saves feature)
-      const savedTracks = 0;
+
+      // Get successful track IDs made by user on other users' posts
+      const tracksIdentifiedResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM posts p
+        INNER JOIN comments c ON c.id = p.verified_comment_id
+        WHERE p.verified_comment_id IS NOT NULL
+          AND c.user_id = ${userId}
+          AND p.user_id <> ${userId}
+      `);
+      const tracksIdentified = Number((tracksIdentifiedResult as any).rows?.[0]?.count ?? 0);
+
+      // Approximate ID attempts on other users' posts to derive accuracy
+      const identificationAttemptsResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM comments c
+        INNER JOIN posts p ON p.id = c.post_id
+        WHERE c.user_id = ${userId}
+          AND p.user_id <> ${userId}
+      `);
+      const identificationAttempts = Number((identificationAttemptsResult as any).rows?.[0]?.count ?? 0);
+      const accuracyPercent =
+        identificationAttempts > 0
+          ? Math.round((tracksIdentified / identificationAttempts) * 100)
+          : 0;
+
+      // Get engagement received on user's posts
+      const likesOnPostsResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM post_likes pl
+        INNER JOIN posts p ON p.id = pl.post_id
+        WHERE p.user_id = ${userId}
+      `);
+      const likesOnPosts = Number((likesOnPostsResult as any).rows?.[0]?.count ?? 0);
+
+      const commentsOnPostsResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM comments c
+        INNER JOIN posts p ON p.id = c.post_id
+        WHERE p.user_id = ${userId}
+      `);
+      const commentsOnPosts = Number((commentsOnPostsResult as any).rows?.[0]?.count ?? 0);
       
       res.json({
         totalIDs,
         confirmedIDs,
-        savedTracks,
         totalLikes,
+        tracksIdentified,
+        accuracyPercent,
+        likesOnPosts,
+        commentsOnPosts,
       });
     } catch (error) {
       console.error("[/api/user/:id/stats] Error:", error);
@@ -2793,7 +2835,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(artists.map((artist: any) => ({
         id: artist.id,
         username: artist.username,
-        displayName: artist.username,
         profileImage: artist.avatar_url,
         avatar_url: artist.avatar_url,
         verified_artist: artist.verified_artist,
@@ -2821,6 +2862,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { data } = supabase.storage.from('release-artworks').getPublicUrl(artworkUrl);
     return data?.publicUrl ?? null;
   }
+
+  app.get("/api/releases/drop-day-banner", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser?.id) return res.json([]);
+      const rows = await storage.getReleasesDropDayBannerCandidates(req.dbUser.id);
+      const withArtwork = await Promise.all(
+        rows.map(async (r: any) => ({
+          ...r,
+          artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
+        }))
+      );
+      res.json(withArtwork);
+    } catch (error) {
+      console.error("[/api/releases/drop-day-banner] Error:", error);
+      res.status(500).json({ message: "Failed to get release day banner" });
+    }
+  });
 
   app.get("/api/releases/feed", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {

@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Trophy, Medal, Award, TrendingUp, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { useUser } from "@/lib/user-context";
-import { resolveAvatarUrlForProfile } from "@/lib/default-avatar";
+import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { GoldVerifiedTick } from "@/components/verified-artist";
 
 interface LeaderboardEntry {
@@ -127,7 +127,7 @@ export default function Leaderboard() {
           <img 
             src={profileImageUrl} 
             alt={entry.username}
-            className="w-12 h-12 rounded-full object-cover"
+            className={`avatar-media w-12 h-12 rounded-full ${isDefaultAvatarUrl(profileImageUrl) ? "avatar-default-media" : ""}`}
             onError={(e) => {
               // Fallback to initials if image fails to load
               const target = e.target as HTMLImageElement;

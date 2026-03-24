@@ -1,14 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, LogOut, Edit2, Camera, Check, X, Upload, MessageCircle, Heart, Bookmark, User, CheckCircle, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, LogOut, Camera, Upload, MessageCircle, Heart, User, CheckCircle, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
@@ -24,18 +24,21 @@ const PROFILE_HELP = {
   sectionImpact:
     "How your music shows up on dub hub: confirmed tracks, releases, clips that feature your songs, and engagement from the community.",
   sectionUserActivity:
-    "Your personal activity: uploads, confirmed IDs on your posts, saves, and likes you’ve given others.",
+    "Your personal activity: uploads, confirmed IDs on your posts, and engagement your posts receive.",
   sectionOverview:
-    "A quick snapshot of your account: posts you’ve shared, IDs confirmed on your uploads, saves, and likes you’ve given.",
+    "A quick snapshot of your account: posts you’ve shared, IDs confirmed on your uploads, and engagement on your posts.",
   reputation:
     "Reputation reflects correct IDs and participation. Higher levels can unlock badges and recognition as the system evolves.",
   tracksPosted:
     "Genres for every clip you’ve posted. Each upload counts once toward the genre totals.",
-  tracksIdentified:
+  tracksIdentifiedGenres:
     "Shows genres for tracks you correctly identified. Excludes your own tracks and IDs on your own posts.",
   totalIDs: "Total clips or tracks you’ve uploaded to the community.",
   confirmedOverview: "Your uploads that have been identified or verified.",
-  saved: "Tracks you’ve bookmarked (when saves are available).",
+  tracksIdentifiedStat: "Tracks you correctly identified on other users' posts.",
+  accuracy: "Percentage of your identification attempts on other users' posts that were confirmed as correct.",
+  likesOnPosts: "Total likes received across posts you uploaded.",
+  commentsOnPosts: "Total comments received across posts you uploaded.",
   likesGiven: "Posts you’ve liked.",
   artistConfirmedTracks: "Tracks on your artist profile that are confirmed as yours.",
   artistReleases: "Releases you’ve created on your artist profile.",
@@ -142,9 +145,7 @@ export default function UserProfile(props: any = {}) {
   const { onSignOut } = props;
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage, displayName, username, updateProfileImage, updateDisplayName, currentUser, verifiedArtist, userType } = useUser();
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState("");
+  const { profileImage, username, updateProfileImage, currentUser, verifiedArtist, userType } = useUser();
   const [activeTab, setActiveTab] = useState("profile");
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
@@ -187,10 +188,6 @@ export default function UserProfile(props: any = {}) {
     queryKey: ["/api/user", currentUser?.id, "liked-posts"],
     enabled: !!currentUser?.id,
   });
-
-  // Saved posts removed - no longer supported
-  const savedPosts: PostWithUser[] = [];
-  const savedLoading = false;
 
   // Query for user's posts
   const { data: userPosts = [], isLoading: postsLoading } = useQuery<PostWithUser[]>({
@@ -283,7 +280,7 @@ export default function UserProfile(props: any = {}) {
   const artistImpactItems: StatsCardItem[] = artistStats
     ? [
         {
-          label: "Confirmed tracks",
+          label: "Confirmed Tracks",
           value: artistStats.confirmedTracks.toLocaleString(),
           Icon: BadgeCheck,
           toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
@@ -297,21 +294,21 @@ export default function UserProfile(props: any = {}) {
           info: PROFILE_HELP.artistReleases,
         },
         {
-          label: "Upcoming releases",
+          label: "Upcoming Releases",
           value: artistStats.upcomingReleases.toLocaleString(),
           Icon: CalendarClock,
           toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
           info: PROFILE_HELP.artistUpcoming,
         },
         {
-          label: "Featured clips",
+          label: "Featured Clips",
           value: artistStats.postsFeaturingTracks.toLocaleString(),
           Icon: Radio,
           toneClassName: "border-purple-500/35 bg-purple-500/5 shadow-[0_0_12px_rgba(168,85,247,0.12)] text-purple-300 [&_svg]:drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]",
           info: PROFILE_HELP.artistFeaturedClips,
         },
         {
-          label: "Track saves",
+          label: "Track Saves",
           value: artistStats.totalLikesAcrossPosts.toLocaleString(),
           Icon: Heart,
           toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
@@ -343,7 +340,7 @@ export default function UserProfile(props: any = {}) {
 
   const userOverviewItems: StatsCardItem[] = [
     {
-      label: "Total IDs",
+      label: "Uploads",
       value: Number(userStats?.totalIDs || 0).toLocaleString(),
       Icon: Upload,
       toneClassName: "border-primary/35 bg-primary/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-primary [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
@@ -357,18 +354,32 @@ export default function UserProfile(props: any = {}) {
       info: PROFILE_HELP.confirmedOverview,
     },
     {
-      label: "Saved",
-      value: Number(userStats?.savedTracks || 0).toLocaleString(),
-      Icon: Bookmark,
-      toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
-      info: PROFILE_HELP.saved,
+      label: "Tracks ID’d",
+      value: Number(userStats?.tracksIdentified || 0).toLocaleString(),
+      Icon: BadgeCheck,
+      toneClassName: "border-violet-500/35 bg-violet-500/5 shadow-[0_0_12px_rgba(139,92,246,0.12)] text-violet-300 [&_svg]:drop-shadow-[0_0_6px_rgba(139,92,246,0.4)]",
+      info: PROFILE_HELP.tracksIdentifiedStat,
     },
     {
       label: "Likes",
-      value: Number(userStats?.totalLikes || 0).toLocaleString(),
+      value: Number(userStats?.likesOnPosts || 0).toLocaleString(),
+      toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
       Icon: Heart,
-      toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
-      info: PROFILE_HELP.likesGiven,
+      info: PROFILE_HELP.likesOnPosts,
+    },
+    {
+      label: "Comments",
+      value: Number(userStats?.commentsOnPosts || 0).toLocaleString(),
+      Icon: MessageCircle,
+      toneClassName: "border-cyan-500/35 bg-cyan-500/5 shadow-[0_0_12px_rgba(6,182,212,0.12)] text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
+      info: PROFILE_HELP.commentsOnPosts,
+    },
+    {
+      label: "Accuracy",
+      value: `${Math.max(0, Math.min(100, Number(userStats?.accuracyPercent || 0)))}%`,
+      Icon: TrendingUp,
+      toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
+      info: PROFILE_HELP.accuracy,
     },
   ];
 
@@ -399,26 +410,6 @@ export default function UserProfile(props: any = {}) {
         variant: "destructive",
       });
     }
-  };
-
-  const handleNameEdit = () => {
-    setEditedName(displayName || "");
-    setIsEditingName(true);
-  };
-
-  const handleNameSave = () => {
-    // Update the display name permanently
-    updateDisplayName(editedName);
-    setIsEditingName(false);
-    toast({
-      title: "Profile Updated",
-      description: "Your display name has been updated.",
-    });
-  };
-
-  const handleNameCancel = () => {
-    setEditedName("");
-    setIsEditingName(false);
   };
 
   const handleProfileImageChange = () => {
@@ -642,7 +633,6 @@ export default function UserProfile(props: any = {}) {
   // User data from current user context - ONLY use real data from Supabase
   // NO mock/fallback data
   const userData = {
-    displayName: username || displayName || currentUser?.username || null,
     username: username || currentUser?.username || null,
     profileImage: profileImage || (currentUser as any)?.avatarUrl || currentUser?.profileImage || null,
     level: currentUser?.level || 1,
@@ -650,6 +640,7 @@ export default function UserProfile(props: any = {}) {
     nextLevelXP: 1000,
     memberSince: formatMemberSince(currentUser?.memberSince),
   };
+  const isDefaultProfileAvatar = isDefaultAvatarUrl(userData.profileImage);
 
   const progressPercentage = (userData.currentXP / userData.nextLevelXP) * 100;
 
@@ -695,7 +686,7 @@ export default function UserProfile(props: any = {}) {
 
   return (
     <div className="flex-1 bg-dark overflow-y-auto">
-      <div className="p-6 pb-24">
+      <div className={`p-6 ${activeTab === "profile" ? "pb-6" : "pb-24"}`}>
         <div className="max-w-md mx-auto">
           {/* User Header */}
           <div className="text-center mb-6">
@@ -704,17 +695,17 @@ export default function UserProfile(props: any = {}) {
                 <img 
                   src={userData.profileImage}
                   alt="User Profile" 
-                  className={`w-20 h-20 rounded-full mx-auto border-2 ${
+                  className={`avatar-media w-20 h-20 rounded-full mx-auto border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
                     verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
                   }`}
                 />
               ) : (
                 <div
-                  className={`w-20 h-20 rounded-full mx-auto border-2 ${
+                  className={`avatar-shell w-20 h-20 mx-auto border-2 ${
                     verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                  } bg-gray-700 flex items-center justify-center`}
+                  } bg-gray-700`}
                 >
-                  <User className="w-10 h-10 text-gray-400" />
+                  <User className="avatar-icon w-10 h-10 text-gray-400" />
                 </div>
               )}
               <button 
@@ -726,55 +717,19 @@ export default function UserProfile(props: any = {}) {
               </button>
             </div>
             <div className="mt-3">
-              {isEditingName ? (
-                <div className="flex items-center justify-center space-x-2 mt-2">
-                  <Input 
-                    value={editedName}
-                    onChange={(e) => setEditedName(e.target.value)}
-                    className="w-48 text-center"
-                    data-testid="input-edit-name"
-                  />
-                  <Button 
-                    size="sm" 
-                    onClick={handleNameSave}
-                    data-testid="button-save-name"
-                  >
-                    <Check className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={handleNameCancel}
-                    data-testid="button-cancel-name"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center space-x-2">
-                  <h1 className="text-xl font-bold">{userData.displayName || userData.username || 'User'}</h1>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={handleNameEdit}
-                    className="p-1 h-6 w-6"
-                    data-testid="button-edit-name"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
-            {userData.username && (
-              <div className="flex items-center justify-center space-x-1">
-                <p className={`text-sm font-semibold ${verifiedArtist ? "text-[#FFD700]" : "text-gray-400"}`}>
-                  @{userData.username}
-                </p>
-                {verifiedArtist && (
-                  <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />
+              <div className="inline-flex items-center justify-center gap-1.5">
+                <h1
+                  className={`text-xl font-bold ${
+                    verifiedArtist ? "text-[#FFD700]" : "text-foreground"
+                  }`}
+                >
+                  {userData.username ? `@${userData.username}` : "@user"}
+                </h1>
+                {userData.username && verifiedArtist && (
+                  <GoldVerifiedTick className="w-4 h-4 -mt-0.5 shrink-0" />
                 )}
               </div>
-            )}
+            </div>
             <p
               className={`text-xs mt-1 inline-flex items-center rounded-full px-3 py-0.5 border ${
                 verifiedArtist
@@ -788,7 +743,7 @@ export default function UserProfile(props: any = {}) {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-6">
-            <TabsList className="grid w-full grid-cols-5" data-testid="profile-tabs">
+            <TabsList className="grid w-full grid-cols-4" data-testid="profile-tabs">
               <TabsTrigger value="profile" data-testid="tab-profile">
                 Profile
               </TabsTrigger>
@@ -799,10 +754,6 @@ export default function UserProfile(props: any = {}) {
               <TabsTrigger value="liked" data-testid="tab-liked">
                 <Heart className="w-4 h-4 mr-1" />
                 Liked
-              </TabsTrigger>
-              <TabsTrigger value="saved" data-testid="tab-saved">
-                <Bookmark className="w-4 h-4 mr-1" />
-                Saved
               </TabsTrigger>
               <TabsTrigger value="notifications" data-testid="tab-notifications" className="relative">
                 <Bell className="w-4 h-4 mr-1" />
@@ -856,7 +807,7 @@ export default function UserProfile(props: any = {}) {
                     >
                       <div className="absolute inset-0 [backface-visibility:hidden]">
                         <StatsCardSection
-                          title="Your impact"
+                          title="Your Impact"
                           titleInfo={PROFILE_HELP.sectionImpact}
                           items={artistImpactItems}
                           helperText={
@@ -868,7 +819,7 @@ export default function UserProfile(props: any = {}) {
                       </div>
                       <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
                         <StatsCardSection
-                          title="Your user activity"
+                          title="Your Activity"
                           titleInfo={PROFILE_HELP.sectionUserActivity}
                           items={userOverviewItems}
                         />
@@ -934,7 +885,7 @@ export default function UserProfile(props: any = {}) {
 
           <GenreBreakdownSection
             title="Tracks You Identified"
-            titleInfo={PROFILE_HELP.tracksIdentified}
+            titleInfo={PROFILE_HELP.tracksIdentifiedGenres}
             stats={identifiedGenreStats}
             emptyMessage="When your ID is confirmed as the correct track, those tracks will show up here."
             isLoading={identifiedGenresLoading}
@@ -1051,29 +1002,6 @@ export default function UserProfile(props: any = {}) {
                   {likedPosts.map((post) => (
                     <VideoCard key={post.id} post={post} showStatusBadge />
                   ))}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Saved Tab */}
-            <TabsContent value="saved" className="mt-6">
-              {savedLoading ? (
-                <div className="text-center py-8">
-                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                  <p className="text-gray-400">Loading saved videos...</p>
-                </div>
-              ) : savedPosts.length === 0 ? (
-                <div className="text-center py-12">
-                  <Bookmark className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 text-lg mb-2">No saved videos yet</p>
-                  <p className="text-gray-500 text-sm">Start saving tracks to see them here!</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Saved tracks feature removed */}
-                  <div className="text-center py-12">
-                    <p className="text-gray-400">Saved tracks feature is no longer available</p>
-                  </div>
                 </div>
               )}
             </TabsContent>

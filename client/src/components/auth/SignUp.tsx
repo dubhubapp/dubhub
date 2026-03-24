@@ -186,7 +186,6 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           await apiRequest('POST', '/api/users', {
             id: data.user.id,
             username: trimmedUsername, // Send original username with casing preserved
-            displayName: trimmedUsername, // Use same username for display
             userType: accountType,
           });
           console.log('[SignUp] Backend confirmed Supabase profile for user.');

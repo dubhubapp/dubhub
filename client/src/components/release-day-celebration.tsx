@@ -14,7 +14,7 @@ type ReleaseDayCelebrationProps = {
   releaseId: string;
   title?: string;
   /** Full detail page: soft glow + short-lived sparkles. Inline: compact strip only. */
-  variant?: "full" | "inline";
+  variant?: "full" | "inline" | "heading";
 };
 
 /**
@@ -55,7 +55,9 @@ export function ReleaseDayCelebration({ releaseId, title, variant = "full" }: Re
       className={
         variant === "full"
           ? "relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-violet-500/10 via-background/80 to-amber-500/10 px-4 py-3 shadow-[0_0_24px_-8px_rgba(139,92,246,0.35)]"
-          : "relative overflow-hidden rounded-lg border border-primary/15 bg-gradient-to-r from-violet-500/8 via-background/90 to-amber-500/8 px-3 py-2.5"
+          : variant === "inline"
+          ? "relative overflow-hidden rounded-lg border border-primary/15 bg-gradient-to-r from-violet-500/8 via-background/90 to-amber-500/8 px-3 py-2.5"
+          : "relative px-0 py-0"
       }
       role="status"
       aria-live="polite"
@@ -73,7 +75,7 @@ export function ReleaseDayCelebration({ releaseId, title, variant = "full" }: Re
         />
         <div className="min-w-0">
           <p className={`font-semibold text-foreground ${variant === "full" ? "text-base" : "text-sm"}`}>
-            Happy release day
+            Happy Release Day
           </p>
           {title ? (
             <p className={`text-muted-foreground truncate ${variant === "full" ? "text-sm mt-0.5" : "text-xs mt-0.5"}`}>
@@ -85,7 +87,7 @@ export function ReleaseDayCelebration({ releaseId, title, variant = "full" }: Re
     </div>
   );
 
-  if (variant === "inline") {
+  if (variant === "inline" || variant === "heading") {
     return banner;
   }
 
