@@ -12,6 +12,9 @@ import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
+import { deriveTrustLevel } from "@shared/trust-level";
+import { getGenreChipStyle } from "@/lib/genre-styles";
+import { formatJoinedDateLine } from "@/lib/joined-date";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "@/components/verified-artist";
@@ -34,7 +37,7 @@ const PROFILE_HELP = {
   sectionOverview:
     "A quick snapshot of your account: posts you’ve shared, IDs confirmed on your uploads, and engagement on your posts.",
   reputation:
-    "Reputation reflects correct IDs and participation. Higher levels can unlock badges and recognition as the system evolves.",
+    "Rep sums up your confirmed IDs and how you show up for the community. Nail IDs on others’ posts and it grows.",
   tracksPosted:
     "Genres for every clip you’ve posted. Each upload counts once toward the genre totals.",
   tracksIdentifiedGenres:
@@ -61,6 +64,33 @@ function formatGenreDisplayLabel(genreKey: string): string {
   if (g === "dnb") return "DNB";
   if (g === "ukg") return "UKG";
   return g.charAt(0).toUpperCase() + g.slice(1);
+}
+
+function hexToRgbForGradient(hex: string): { r: number; g: number; b: number } | null {
+  const h = hex.replace("#", "").trim();
+  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) return null;
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+/** Smooth horizontal gradient in a genre hue; used for rep progress fill. */
+function repProgressGradientFromGenreBg(bgHex: string): string {
+  const t = hexToRgbForGradient(bgHex);
+  if (!t) {
+    return "linear-gradient(90deg, rgba(255,255,255,0.88) 0%, rgba(255,255,255,1) 45%, rgba(248,250,252,0.92) 100%)";
+  }
+  const { r, g, b } = t;
+  const start = `rgb(${Math.round(r * 0.58)}, ${Math.round(g * 0.58)}, ${Math.round(b * 0.58)})`;
+  const mid = bgHex;
+  const end = `rgb(${Math.round(r + (255 - r) * 0.34)}, ${Math.round(g + (255 - g) * 0.34)}, ${Math.round(b + (255 - b) * 0.34)})`;
+  return `linear-gradient(90deg, ${start} 0%, ${mid} 52%, ${end} 100%)`;
+}
+
+function whiteRepProgressGradient(): string {
+  return "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,1) 50%, rgba(241,245,249,0.95) 100%)";
 }
 
 function getGenreChipColors(genre: string) {
@@ -180,12 +210,27 @@ export default function UserProfile() {
   });
 
   // Karma system
-  const { data: karmaData, isLoading: reputationLoading, isError: karmaError } = useQuery<{karma: number}>({
+  const { data: karmaData, isLoading: reputationLoading, isError: karmaError } = useQuery<{
+    reputation: number;
+    correct_ids: number;
+    karma?: number; // backwards-compatible
+  }>({
     queryKey: ["/api/user", currentUser?.id, "karma"],
     enabled: !!currentUser?.id,
     retry: false,
   });
-  const userReputation = karmaData ? { reputation: karmaData.karma, confirmedIds: userStats?.confirmedIDs || 0 } : { reputation: 0, confirmedIds: userStats?.confirmedIDs || 0 };
+  // Hardened trust: same fields as GET /api/user/:id/karma (`reputation` === score; `karma` is legacy alias).
+  const userReputation = useMemo(() => {
+    if (!karmaData) return { reputation: 0, confirmedIds: 0 };
+    const repRaw = karmaData.reputation ?? karmaData.karma ?? 0;
+    const idsRaw = karmaData.correct_ids ?? 0;
+    const repN = Number(repRaw);
+    const idsN = Number(idsRaw);
+    return {
+      reputation: Number.isFinite(repN) ? Math.max(0, repN) : 0,
+      confirmedIds: Number.isFinite(idsN) ? Math.max(0, idsN) : 0,
+    };
+  }, [karmaData]);
 
   // Query for user's liked posts
   const { data: likedPosts = [], isLoading: likedLoading } = useQuery<PostWithUser[]>({
@@ -267,6 +312,36 @@ export default function UserProfile() {
       }))
       .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
   }, [identifiedGenresData]);
+
+  /** Top genre for rep bar colouring: IDs first, then posted genres (same mapping as elsewhere). */
+  const repBarGenreChip = useMemo(() => {
+    const topId = identifiedGenresData?.genres?.[0]?.genreKey;
+    if (topId != null && String(topId).trim()) {
+      return getGenreChipStyle(topId);
+    }
+    if (genreStats.length > 0) {
+      return getGenreChipStyle(genreStats[0].genre);
+    }
+    return null;
+  }, [identifiedGenresData?.genres, genreStats]);
+
+  const repTrustForProfile = useMemo(() => {
+    const s = Number(userReputation?.reputation ?? 0);
+    return deriveTrustLevel(Number.isFinite(s) ? s : 0);
+  }, [userReputation?.reputation]);
+
+  const repProgressPctClamped = useMemo(() => {
+    const p = repTrustForProfile.progressPct;
+    return Math.min(100, Math.max(0, Number.isFinite(p) ? p : 0));
+  }, [repTrustForProfile.progressPct]);
+
+  const repProgressFillCss = useMemo(
+    () =>
+      repBarGenreChip != null
+        ? repProgressGradientFromGenreBg(repBarGenreChip.bgColor)
+        : whiteRepProgressGradient(),
+    [repBarGenreChip],
+  );
 
   const hasAnyArtistImpact =
     !!artistStats &&
@@ -352,7 +427,7 @@ export default function UserProfile() {
     },
     {
       label: "Confirmed",
-      value: Number(userStats?.confirmedIDs || 0).toLocaleString(),
+      value: Number(userReputation?.confirmedIds || 0).toLocaleString(),
       Icon: CheckCircle,
       toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
       info: PROFILE_HELP.confirmedOverview,
@@ -630,13 +705,6 @@ export default function UserProfile() {
     );
   }
 
-  // Format member since date
-  const formatMemberSince = (date?: Date | string) => {
-    if (!date) return "Recently";
-    const memberDate = typeof date === 'string' ? new Date(date) : date;
-    return memberDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  };
-
   // User data from current user context - ONLY use real data from Supabase
   // NO mock/fallback data
   const userData = {
@@ -645,35 +713,11 @@ export default function UserProfile() {
     level: currentUser?.level || 1,
     currentXP: currentUser?.currentXP || 0,
     nextLevelXP: 1000,
-    memberSince: formatMemberSince(currentUser?.memberSince),
+    joinedDateLine: formatJoinedDateLine(currentUser?.memberSince),
   };
   const isDefaultProfileAvatar = isDefaultAvatarUrl(userData.profileImage);
 
   const progressPercentage = (userData.currentXP / userData.nextLevelXP) * 100;
-
-  // Reputation helper functions with new level system
-  const getLevelInfo = (score: number) => {
-    if (score < 20) return { level: 1, min: 0, max: 20, color: 'from-gray-400 to-gray-500' };
-    if (score < 50) return { level: 2, min: 20, max: 50, color: 'from-blue-400 to-blue-500' };
-    if (score < 100) return { level: 3, min: 50, max: 100, color: 'from-green-400 to-green-500' };
-    if (score < 200) return { level: 4, min: 100, max: 200, color: 'from-purple-400 to-purple-500' };
-    return { level: 5, min: 200, max: 300, color: 'from-yellow-400 to-yellow-500' };
-  };
-
-  const getReputationLevel = (score: number) => {
-    const levelInfo = getLevelInfo(score);
-    return `Level ${levelInfo.level}`;
-  };
-
-  const getReputationProgress = (score: number) => {
-    const levelInfo = getLevelInfo(score);
-    const progress = ((score - levelInfo.min) / (levelInfo.max - levelInfo.min)) * 100;
-    return Math.min(100, Math.max(0, progress));
-  };
-
-  const getReputationColor = (score: number) => {
-    return getLevelInfo(score).color;
-  };
 
   const formatTimeAgo = (date: Date | string) => {
     const now = new Date();
@@ -802,14 +846,8 @@ export default function UserProfile() {
                 )}
               </div>
             </div>
-            <p
-              className={`text-xs mt-1 inline-flex items-center rounded-full px-3 py-0.5 border ${
-                verifiedArtist
-                  ? "text-white border-white/70 shadow-[0_0_12px_rgba(255,255,255,0.7)]"
-                  : "text-gray-500 border-transparent"
-              }`}
-            >
-              Member since {userData.memberSince}
+            <p className="text-xs mt-1 inline-flex items-center rounded-full px-3 py-0.5 border text-white border-white/70 shadow-[0_0_12px_rgba(255,255,255,0.7)]">
+              {userData.joinedDateLine}
             </p>
           </div>
 
@@ -908,13 +946,13 @@ export default function UserProfile() {
                 />
               )}
 
-          {/* Reputation Section */}
+          {/* Rep (trust tier) */}
           <div className="mb-6">
             <div className="mb-4 flex items-center gap-1.5">
               <TrendingUp className="w-5 h-5 text-accent shrink-0" />
-              <h3 className="font-semibold">Reputation</h3>
+              <h3 className="font-semibold">Rep</h3>
               <StatInfoPopover
-                label="Reputation"
+                label="Rep"
                 content={PROFILE_HELP.reputation}
                 side="bottom"
                 align="start"
@@ -922,26 +960,31 @@ export default function UserProfile() {
               />
             </div>
             <div className="bg-surface rounded-xl p-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3 text-center">
                 <span className="text-sm font-medium" data-testid="reputation-level">
-                  {getReputationLevel(userReputation?.reputation || 0)}
-                </span>
-                <span className="text-xs text-gray-400">
-                  {Math.floor(getReputationProgress(userReputation?.reputation || 0))}% to next level
+                  {repTrustForProfile.displayName}
                 </span>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-2 mb-2">
-                <div 
-                  className={`bg-gradient-to-r ${getReputationColor(userReputation?.reputation || 0)} h-2 rounded-full transition-all duration-1000 ease-out`}
-                  style={{ 
-                    width: `${getReputationProgress(userReputation?.reputation || 0)}%` 
+              <div className="w-full rounded-full h-2 overflow-hidden bg-gray-700/90">
+                <div
+                  className="h-2 rounded-full transition-[width] duration-700 ease-out"
+                  style={{
+                    width: `${repTrustForProfile.isTopTier ? 100 : repProgressPctClamped}%`,
+                    minWidth: (repTrustForProfile.isTopTier ? 100 : repProgressPctClamped) > 0 ? 3 : 0,
+                    background: repProgressFillCss,
                   }}
                   data-testid="reputation-bar"
-                ></div>
+                />
               </div>
-              <div className="text-xs text-gray-400 space-y-1">
-                <p>• Earn reputation by correctly identifying tracks</p>
-                <p>• Higher levels unlock special badges and recognition</p>
+              <div
+                className={`mt-2 flex items-center text-[11px] font-medium text-gray-400 ${
+                  repTrustForProfile.isTopTier ? "justify-start" : "justify-between"
+                }`}
+              >
+                <span>{repTrustForProfile.displayName}</span>
+                {!repTrustForProfile.isTopTier && repTrustForProfile.nextDisplayName && (
+                  <span>{repTrustForProfile.nextDisplayName}</span>
+                )}
               </div>
             </div>
           </div>

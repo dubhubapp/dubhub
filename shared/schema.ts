@@ -190,7 +190,10 @@ export const achievements = pgTable("achievements", {
   earnedAt: timestamp("earned_at").notNull().defaultNow(),
 });
 
-// User karma table (Supabase)
+/**
+ * Aggregate public trust per profile. Mutations only via `server/karmaService.ts` (+ Supabase migrations).
+ * API field `reputation` maps to `score`. See that module for semantics and event pairing.
+ */
 export const userKarma = pgTable("user_karma", {
   userId: varchar("user_id").primaryKey().references(() => profiles.id),
   score: integer("score").notNull().default(0),
@@ -331,9 +334,25 @@ export type UserStats = {
   confirmedIDs: number;
   totalLikes: number;
   tracksIdentified: number;
+  /** Legacy profile metric; not `user_karma` and not used for trust tiers / leaderboards. */
   accuracyPercent: number;
   likesOnPosts: number;
   commentsOnPosts: number;
+};
+
+/**
+ * Lightweight, public-facing identity stats for profile popups (users and artists).
+ * Community-side only (posts, IDs, trust, genre) — not release/performance analytics.
+ */
+export type PublicLightProfileStats = {
+  /** Total posts/uploads created by the account. */
+  posts: number;
+  /** Hardened trust reputation score (community-side). */
+  reputation: number;
+  /** Hardened count of correct IDs contributed by the account. */
+  correct_ids: number;
+  /** Canonical genre key (e.g. dnb) for the strongest associated community-side activity. */
+  topGenreKey: string | null;
 };
 
 // NotificationWithUser - updated to use Post instead of Track

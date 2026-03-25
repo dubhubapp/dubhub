@@ -15,6 +15,12 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { getPlatformTrendMetrics } from "./internalAnalytics";
+import {
+  awardConfirmedIdKarma,
+  awardCommentLikeKarma,
+  getUserKarmaAggregate,
+  revokeCommentLikeKarma,
+} from "./karmaService";
 
 // Internal analytics is founder/business intelligence only.
 // Keep this allowlist intentionally small and explicit.
@@ -45,6 +51,60 @@ function canAccessInternalAnalytics(user: AuthenticatedRequest["dbUser"] | undef
     (!!normalizedUserId && INTERNAL_ANALYTICS_ALLOWLIST_USER_ID_SET.has(normalizedUserId)) ||
     (!!normalizedUsername && INTERNAL_ANALYTICS_ALLOWLIST_USERNAME_SET.has(normalizedUsername))
   );
+}
+
+async function fetchPublicLightProfileStats(userId: string): Promise<import("@shared/schema").PublicLightProfileStats> {
+  // `reputation` / `correct_ids` come from one LEFT JOIN to `user_karma` (same source as GET …/karma).
+  const result = await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM posts WHERE user_id = ${userId}) AS posts,
+      COALESCE(uk.score, 0) AS reputation,
+      COALESCE(uk.correct_ids, 0) AS correct_ids,
+
+      /* Strongest associated genre for community-side IDs:
+         prefer genres where this user's comment became the verified/correct ID */
+      COALESCE(
+        (
+          SELECT genre_key
+          FROM (
+            SELECT
+              COALESCE(NULLIF(TRIM(LOWER(p.genre)), ''), 'other') AS genre_key,
+              COUNT(*)::int AS cnt
+            FROM posts p
+            INNER JOIN comments c ON c.id = p.verified_comment_id
+            WHERE c.user_id = ${userId}
+              AND p.verified_comment_id IS NOT NULL
+            GROUP BY COALESCE(NULLIF(TRIM(LOWER(p.genre)), ''), 'other')
+            ORDER BY cnt DESC, genre_key ASC
+            LIMIT 1
+          ) sub
+        ),
+        (
+          /* Fallback: most common genre across the user's own posts */
+          SELECT genre_key
+          FROM (
+            SELECT
+              COALESCE(NULLIF(TRIM(LOWER(p.genre)), ''), 'other') AS genre_key,
+              COUNT(*)::int AS cnt
+            FROM posts p
+            WHERE p.user_id = ${userId}
+            GROUP BY COALESCE(NULLIF(TRIM(LOWER(p.genre)), ''), 'other')
+            ORDER BY cnt DESC, genre_key ASC
+            LIMIT 1
+          ) sub2
+        )
+      ) AS top_genre_key
+    FROM (SELECT ${userId} AS uid) AS ctx
+    LEFT JOIN user_karma uk ON uk.user_id = ctx.uid
+  `);
+
+  const row = (result as any).rows?.[0] ?? {};
+  return {
+    posts: Number(row.posts ?? 0),
+    reputation: Number(row.reputation ?? 0),
+    correct_ids: Number(row.correct_ids ?? 0),
+    topGenreKey: row.top_genre_key != null ? String(row.top_genre_key) : null,
+  };
 }
 
 // Helper function to detect artist mentions in comment text
@@ -503,16 +563,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Get user karma data
-      const karmaResult = await db.execute(sql`
-        SELECT score FROM user_karma WHERE user_id = ${user.id} LIMIT 1
-      `);
-      const karmaRow = (karmaResult as any).rows?.[0];
-      const karma = karmaRow ? Number(karmaRow.score) : 0;
+      // Hardened community trust — read via karmaService (same as GET /api/user/:id/karma).
+      const { score: reputation, correct_ids: correctIdsAgg } = await getUserKarmaAggregate(user.id);
       
+      let publicLight: import("@shared/schema").PublicLightProfileStats | undefined;
+      try {
+        publicLight = await fetchPublicLightProfileStats(user.id);
+      } catch (statsErr) {
+        console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
+      }
+
       const userProfile = {
         ...user,
-        karma: karma
+        reputation,
+        correct_ids: correctIdsAgg,
+        karma: reputation,
+        ...(publicLight !== undefined ? { publicLight } : {}),
       };
 
       res.json(userProfile);
@@ -1066,12 +1132,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           DELETE FROM comment_votes
           WHERE id = ${rows[0].id}
         `);
+        // Reward reversal on unlike (idempotent via user_karma_events)
+        try {
+          await revokeCommentLikeKarma({ actorUserId: userId, commentId });
+        } catch (karmaErr) {
+          console.error("[karma] Failed to revoke comment-like karma:", karmaErr);
+        }
       } else {
         // Like: insert new row
         await db.execute(sql`
           INSERT INTO comment_votes (user_id, comment_id, vote_type, created_at, updated_at)
           VALUES (${userId}, ${commentId}, 'upvote', NOW(), NOW())
         `);
+        // Reward on like (+1 score only; correct_ids unchanged)
+        try {
+          await awardCommentLikeKarma({ actorUserId: userId, commentId });
+        } catch (karmaErr) {
+          console.error("[karma] Failed to award comment-like karma:", karmaErr);
+        }
       }
 
       // Return updated like count and current like state
@@ -1151,16 +1229,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user karma
+  /**
+   * Public trust aggregate (`user_karma`). Field meanings match `server/karmaService.ts` module doc.
+   * - `reputation` === `score`; `karma` is a legacy alias for `reputation`.
+   */
   app.get("/api/user/:id/karma", async (req, res) => {
     try {
       const userId = req.params.id;
-      const result = await db.execute(sql`
-        SELECT score FROM user_karma WHERE user_id = ${userId} LIMIT 1
-      `);
-      const row = (result as any).rows?.[0];
-      const karma = row ? Number(row.score) : 0;
-      res.json({ karma });
+      const { score, correct_ids: correctIds } = await getUserKarmaAggregate(userId);
+      res.json({ reputation: score, correct_ids: correctIds, karma: score });
     } catch (error) {
       console.error("[/api/user/:id/karma] Error:", error);
       console.error("[/api/user/:id/karma] Error details:", {
@@ -1169,13 +1246,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.params.id,
       });
       res.status(500).json({ 
-        message: "Failed to get karma",
+        message: "Failed to load trust aggregate",
         error: error instanceof Error ? error.message : String(error)
       });
     }
   });
 
-  // Get user stats
+  /**
+   * Activity / engagement stats for profile UI — **not** the trust source of truth.
+   * `accuracyPercent` is a coarse ratio of comments-on-others’-posts vs verified wins; it is **not**
+   * `user_karma`, not used for leaderboards, and not validated idempotently. Prefer `/api/user/:id/karma`
+   * + `user_karma` for reputation and hardened `correct_ids`.
+   */
   app.get("/api/user/:id/stats", async (req, res) => {
     try {
       const userId = req.params.id;
@@ -1216,7 +1298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
       const tracksIdentified = Number((tracksIdentifiedResult as any).rows?.[0]?.count ?? 0);
 
-      // Approximate ID attempts on other users' posts to derive accuracy
+      // Legacy UX metric only (see route JSDoc — not trust).
       const identificationAttemptsResult = await db.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM comments c
@@ -1522,6 +1604,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Reward the commenter using idempotent confirmed-ID karma.
+      // NOTE: Self-credit is blocked inside the karma helper.
+      try {
+        await awardConfirmedIdKarma({
+          source: "artist_confirmed",
+          actorUserId: artistId,
+          postId,
+          commentId,
+        });
+      } catch (karmaErr) {
+        console.error("[karma] Failed to award confirmed-id karma (artist confirm):", karmaErr);
+      }
+
       res.json({
         message: "Post confirmed by artist",
         insertedArtistCommentId: artistCommentId,
@@ -1701,13 +1796,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No comment selected for verification" });
       }
       
-      // Get the comment to find the commenter
+      // Validate the selected comment belongs to this post (prevents awarding/marking with mismatched commentId).
       const commentResult = await db.execute(sql`
-        SELECT * FROM comments WHERE id = ${selectedCommentId} LIMIT 1
+        SELECT id, post_id, user_id
+        FROM comments
+        WHERE id = ${selectedCommentId}
+          AND post_id = ${postId}
+        LIMIT 1
       `);
       const commentRows = (commentResult as any).rows || [];
       if (commentRows.length === 0) {
-        return res.status(404).json({ message: "Selected comment not found" });
+        return res.status(403).json({ message: "Selected comment does not belong to this post" });
       }
       const comment = commentRows[0];
       
@@ -1726,23 +1825,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
         VALUES (${postId}, ${moderatorId}, 'confirmed', NOW())
       `);
-      
-      // Reward the commenter who provided the ID using user_karma
-      await db.execute(sql`
-        INSERT INTO user_karma (user_id, score, correct_ids)
-        VALUES (${comment.user_id}, 10, 1)
-        ON CONFLICT (user_id) DO UPDATE
-        SET score = user_karma.score + 10,
-            correct_ids = user_karma.correct_ids + 1
-      `);
-      
-      // Reward the moderator
-      await db.execute(sql`
-        INSERT INTO user_karma (user_id, score)
-        VALUES (${moderatorId}, 1)
-        ON CONFLICT (user_id) DO UPDATE
-        SET score = user_karma.score + 1
-      `);
+
+      // Reward the commenter using idempotent confirmed-ID karma.
+      // NOTE: Moderator score is intentionally NOT awarded; moderation actions should not inflate public trust.
+      try {
+        await awardConfirmedIdKarma({
+          source: "moderator_confirmed",
+          actorUserId: moderatorId,
+          postId,
+          commentId: selectedCommentId,
+        });
+      } catch (karmaErr) {
+        console.error("[karma] Failed to award confirmed-id karma (moderator confirm):", karmaErr);
+      }
       
       // Note: Notification to commenter is handled by the database trigger on moderator_actions
       

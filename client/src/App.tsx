@@ -25,6 +25,7 @@ import ResetPasswordPage from "@/pages/reset-password";
 import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
+import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -153,7 +154,9 @@ function App() {
   const handleSignOut = async () => {
     // Sign out from Supabase
     await supabase.auth.signOut();
-    
+
+    const themePreference = localStorage.getItem(THEME_STORAGE_KEY);
+
     // Clear all authentication and user data from localStorage and sessionStorage
     localStorage.removeItem('dubhub-authenticated');
     localStorage.removeItem('dubhub-user-role');
@@ -161,10 +164,14 @@ function App() {
     localStorage.removeItem('dubhub-display-name');
     localStorage.removeItem('userRole');
     localStorage.removeItem('dubhub-signup-role');
-    
+
     // Clear any other potential storage items
     localStorage.clear();
     sessionStorage.clear();
+
+    if (themePreference === "dark" || themePreference === "light") {
+      localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+    }
     
     // Reset authentication state
     setIsAuthenticated(false);

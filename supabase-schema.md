@@ -248,3 +248,43 @@ Notes:
 - Events are append-only analytics records.
 - Events should be written from backend actions only, not frontend UI.
 - Events are for analytics/trend tracking and should not be treated as the source of truth for product state.
+
+---
+
+## user_karma
+| Column     | Type        | Nullable | Default | Notes |
+|------------|-------------|----------|---------|-------|
+| user_id    | uuid        | NO       | –       | Primary key, FK → auth.users.id (matches profiles.id) |
+| score      | integer     | YES      | 0       | Reputation / trust score |
+| correct_ids| integer     | YES      | 0       | Confirmed IDs on other users’ posts only |
+| updated_at | timestamptz | NO       | now()   | Last updated |
+
+Notes:
+- `score` is the broader trust metric.
+- `correct_ids` is the hard trust metric for successful IDs.
+- Self-credit must not increase `score` or `correct_ids`.
+- `score` may increase from confirmed IDs and comment likes.
+- `correct_ids` should only increase for valid confirmed IDs on another account’s post.
+- **Application code:** all trust writes to `user_karma` / `user_karma_events` go through `server/karmaService.ts` (see file header for rules). Reads may use `getUserKarmaAggregate` or joined selects in routes/storage.
+
+---
+
+## user_karma_events
+| Column            | Type        | Nullable | Default           | Notes |
+|------------------|-------------|----------|-------------------|-------|
+| id               | uuid        | NO       | gen_random_uuid() | Primary key |
+| user_id          | uuid        | NO       | –                 | Recipient of karma, FK → auth.users.id (matches profiles.id) |
+| source_user_id   | uuid        | YES      | –                 | Actor who caused the event (e.g. liker, confirmer), FK → auth.users.id |
+| post_id          | uuid        | YES      | –                 | Related post, FK → posts.id |
+| comment_id       | uuid        | YES      | –                 | Related comment, FK → comments.id |
+| event_type       | text        | NO       | –                 | `confirmed_id` / `comment_like` |
+| score_delta      | integer     | NO       | 0                 | Score change applied by this event |
+| correct_ids_delta| integer     | NO       | 0                 | Correct ID change applied by this event |
+| revoked_at       | timestamptz | YES      | –                 | Set when an event is reversed/deactivated |
+| created_at       | timestamptz | NO       | now()             | Created |
+
+Notes:
+- This table exists to make karma updates idempotent, auditable, and reversible where needed.
+- `confirmed_id` events should only be created for valid, non-self-credit correct IDs.
+- `comment_like` events should add score when active and be revoked/removed when the like is removed.
+- Active unique constraints prevent duplicate rewards for the same underlying action.

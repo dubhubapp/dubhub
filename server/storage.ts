@@ -1513,50 +1513,30 @@ export class DatabaseStorage implements IStorage {
 
   async getLeaderboard(userType: "user" | "artist"): Promise<any[]> {
     try {
-      if (userType === "user") {
-        const result = await db.execute(sql`
-          SELECT
-            p.id,
-            p.username,
-            p.avatar_url,
-            p.account_type,
-            p.moderator,
-            p.verified_artist,
-            COALESCE(uk.score, 0) AS karma,
-            COALESCE(uk.correct_ids, 0) AS correct_ids,
-            COALESCE(ls.correct_ids, 0) AS leaderboard_correct_ids,
-            COALESCE(ls.score, 0) AS leaderboard_score
-          FROM profiles p
-          LEFT JOIN user_karma uk ON uk.user_id = p.id
-          LEFT JOIN leaderboard_stats ls ON ls.user_id = p.id
-          WHERE p.account_type = 'user'
-          ORDER BY COALESCE(uk.score, 0) DESC, COALESCE(uk.correct_ids, 0) DESC
-          LIMIT 100
-        `);
+      // Read-only ranking from `user_karma`. All score / correct_ids **writes** must go through `server/karmaService.ts`.
+      // Community trust leaderboard:
+      //  - primary: hardened `user_karma.score` as `reputation`
+      //  - secondary: `user_karma.correct_ids`
+      const accountType = userType === "user" ? "user" : "artist";
+      const result = await db.execute(sql`
+        SELECT
+          p.id AS user_id,
+          p.username,
+          p.avatar_url,
+          p.account_type,
+          p.moderator,
+          p.verified_artist,
+          COALESCE(uk.score, 0) AS reputation,
+          COALESCE(uk.correct_ids, 0) AS correct_ids,
+          p.created_at AS created_at
+        FROM profiles p
+        LEFT JOIN user_karma uk ON uk.user_id = p.id
+        WHERE p.account_type = ${accountType}
+        ORDER BY COALESCE(uk.score, 0) DESC, COALESCE(uk.correct_ids, 0) DESC
+        LIMIT 100
+      `);
 
-        return (result as any).rows || [];
-      } else {
-        const result = await db.execute(sql`
-          SELECT
-            p.id,
-            p.username,
-            p.avatar_url,
-            p.account_type,
-            p.moderator,
-            p.verified_artist,
-            COALESCE(uk.score, 0) AS karma,
-            COALESCE(als.correct_ids, 0) AS confirmed_tags,
-            COALESCE(als.score, 0) AS artist_score
-          FROM profiles p
-          LEFT JOIN user_karma uk ON uk.user_id = p.id
-          LEFT JOIN artist_leaderboard_stats als ON als.artist_id = p.id
-          WHERE p.account_type = 'artist'
-          ORDER BY COALESCE(uk.score, 0) DESC, COALESCE(als.correct_ids, 0) DESC
-          LIMIT 100
-        `);
-
-        return (result as any).rows || [];
-      }
+      return (result as any).rows || [];
     } catch (error) {
       console.error("[getLeaderboard] Error:", error);
       return [];

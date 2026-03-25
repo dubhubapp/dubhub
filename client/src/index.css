@@ -27,6 +27,30 @@
   --dark: hsl(227, 96%, 54%);
 }
 
+.dark {
+  --background: hsl(227, 42%, 11%);
+  --foreground: hsl(210, 25%, 96%);
+  --muted: hsl(227, 28%, 18%);
+  --muted-foreground: hsl(215, 14%, 68%);
+  --popover: hsl(227, 38%, 13%);
+  --popover-foreground: hsl(210, 25%, 96%);
+  --card: hsl(227, 32%, 14%);
+  --card-foreground: hsl(210, 25%, 96%);
+  --border: hsl(227, 22%, 26%);
+  --input: hsl(227, 28%, 20%);
+  --primary: hsl(210, 25%, 96%);
+  --primary-foreground: hsl(227, 42%, 13%);
+  --secondary: hsl(180, 45%, 32%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --accent: hsl(180, 45%, 32%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 45%, 38%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --ring: hsl(227, 35%, 45%);
+  --surface: hsl(227, 28%, 16%);
+  --dark: hsl(227, 45%, 9%);
+}
+
 @layer base {
   * {
     @apply border-border;

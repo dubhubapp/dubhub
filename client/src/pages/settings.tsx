@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ChevronRight, KeyRound, LogOut, Settings as SettingsIcon } from "lucide-react";
+import { ArrowLeft, ChevronRight, KeyRound, LogOut, Moon, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
+import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
@@ -11,6 +13,13 @@ interface SettingsPageProps {
 export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [, navigate] = useLocation();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
+
+  const handleThemeToggle = (enabled: boolean) => {
+    const next: ThemeMode = enabled ? "dark" : "light";
+    applyTheme(next);
+    setThemeMode(next);
+  };
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -56,6 +65,24 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
           </div>
 
           <div className="space-y-3">
+            <div className="w-full bg-surface rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center space-x-3 min-w-0">
+                <Moon className="w-5 h-5 text-muted-foreground shrink-0" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">Dark mode</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use a darker background across the app.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={themeMode === "dark"}
+                onCheckedChange={handleThemeToggle}
+                aria-label="Dark mode"
+                data-testid="switch-dark-mode"
+              />
+            </div>
+
             <Button
               variant="ghost"
               type="button"

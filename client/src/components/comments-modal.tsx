@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, CheckCircle, Award, XCircle, Filter, Flag } from "lucide-react";
+import { X, Send, Heart, CheckCircle, Award, XCircle, Filter, Flag, MoreHorizontal } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +12,15 @@ import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { ReportModal } from "./report-modal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { GoldVerifiedArtistPill, GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
+import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -33,6 +40,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist } = useUser();
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
+
+  const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
+    verifiedArtistsEnabled: isOpen,
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -81,7 +92,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         }
         
         return (
-          <span key={index} className={className} onClick={() => handleUserClick(username)}>
+          <span
+            key={index}
+            className={className}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openByUsername(username, {
+                anchor: { x: e.clientX, y: e.clientY },
+              });
+            }}
+          >
             {part}
           </span>
         );
@@ -90,34 +111,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     });
   };
 
-  // Handle user profile popup
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [showUserPopup, setShowUserPopup] = useState(false);
   const REPLY_BATCH_SIZE = 3;
   // Per-parent-thread visible reply count (0 = collapsed)
   const [visibleReplyCountByParent, setVisibleReplyCountByParent] = useState<Record<string, number>>({});
   const [replyingTo, setReplyingTo] = useState<{id: string, username: string} | null>(null);
   const [commentFilter, setCommentFilter] = useState<'all' | 'newest' | 'top'>('all');
-
-  const handleUserClick = async (username: string) => {
-    try {
-      // First try to find in verified artists
-      const artist = verifiedArtists.find((a: any) => a.username === username);
-      if (artist) {
-        setSelectedUser(artist);
-        setShowUserPopup(true);
-        return;
-      }
-
-      // If not found in artists, try to fetch user profile from API
-      const response = await apiRequest('GET', `/api/user/profile/${username}`);
-      const userData = await response.json();
-      setSelectedUser(userData);
-      setShowUserPopup(true);
-    } catch (error) {
-      console.error('Failed to fetch user:', error);
-    }
-  };
 
   const { data: comments = [] } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", post.id, "comments"],
@@ -496,9 +494,12 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       className={`text-sm font-medium cursor-pointer hover:underline ${
                         comment.user.account_type === 'artist' && comment.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
                       }`}
-                      onClick={() => {
-                        setSelectedUser(comment.user);
-                        setShowUserPopup(true);
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openByUsername(comment.user.username, {
+                          anchor: { x: e.clientX, y: e.clientY },
+                        });
                       }}
                     >
                       {comment.user.username}
@@ -555,7 +556,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <p className="mt-0.5 text-sm text-gray-700">
                   {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
-                <div className="mt-1.5 flex items-center space-x-3">
+                <div className="mt-1.5 flex items-center gap-2 sm:gap-3">
                   {/* Comment likes (separate from post likes) */}
                   <button
                     className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-1 text-xs ${
@@ -580,17 +581,35 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   >
                     Reply
                   </button>
-                  <button 
-                    className="text-xs text-red-600 hover:text-red-700"
-                    onClick={() => {
-                      setReportingComment({id: comment.id, userId: comment.userId});
-                      setShowReportModal(true);
-                    }}
-                    data-testid={`report-button-${comment.id}`}
-                  >
-                    <Flag className="w-3 h-3 inline mr-1" />
-                    Report
-                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
+                        aria-label="Comment actions"
+                        data-testid={`comment-actions-trigger-${comment.id}`}
+                      >
+                        <MoreHorizontal className="h-4 w-4" aria-hidden />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={4}
+                      className="min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg"
+                    >
+                      <DropdownMenuItem
+                        className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                        onSelect={() => {
+                          setReportingComment({ id: comment.id, userId: comment.userId });
+                          setShowReportModal(true);
+                        }}
+                        data-testid={`report-button-${comment.id}`}
+                      >
+                        <Flag className="h-4 w-4 shrink-0 text-red-600" />
+                        Report comment
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   {/* Toggle replies button */}
                   {comment.replies && comment.replies.length > 0 && (() => {
                     const totalReplies = comment.replies.length;
@@ -674,7 +693,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
                                   reply.user.account_type === 'artist' && reply.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
                                 }`}
-                                onClick={() => handleUserClick(reply.user.username)}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openByUsername(reply.user.username, {
+                                    anchor: { x: e.clientX, y: e.clientY },
+                                  });
+                                }}
                               >
                                 {reply.user.username}
                               </span>
@@ -837,70 +862,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           </div>
         </div>
 
-        {/* User Profile Popup */}
-        {showUserPopup && selectedUser && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowUserPopup(false)}>
-            <div className="bg-white rounded-2xl p-6 mx-4 max-w-sm w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="text-center">
-                <div className="relative inline-block mb-4">
-                  <img
-                    src={selectedUser.avatar_url || selectedUser.profileImage || undefined}
-                    alt={selectedUser.username}
-                    className={`avatar-media w-20 h-20 rounded-full mx-auto border-2 ${isDefaultAvatarUrl(selectedUser.avatar_url || selectedUser.profileImage) ? "avatar-default-media" : ""} ${
-                      selectedUser.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-transparent"
-                    }`}
-                  />
-                  {selectedUser.verified_artist && (
-                    <GoldVerifiedTick
-                      withBackground
-                      backgroundClassName="bg-white rounded-full"
-                      className="absolute bottom-0 right-2 w-6 h-6"
-                    />
-                  )}
-                </div>
-                
-                <h3 className={`text-xl font-bold mb-1 ${
-                  selectedUser.verified_artist ? "text-yellow-600" : "text-gray-900"
-                }`}>
-                  @{selectedUser.username}
-                </h3>
-                
-                <p className="text-gray-600 mb-2">@{selectedUser.username}</p>
-                
-                {/* Karma Score removed from popup for now to keep identity UI clean */}
-                
-                {selectedUser.verified_artist && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <div className="flex items-center justify-center space-x-2">
-                      <CheckCircle className="w-5 h-5 text-yellow-600" />
-                      <span className="text-sm font-medium text-yellow-700">Verified Artist</span>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="flex items-center justify-center space-x-4 text-sm text-gray-600">
-                  <div className="text-center">
-                    <div className="font-medium">Level {selectedUser.level}</div>
-                    <div className="text-xs">Experience</div>
-                  </div>
-                  <div className="w-px h-8 bg-gray-300"></div>
-                  <div className="text-center">
-                    <div className="font-medium">{selectedUser.currentXP}</div>
-                    <div className="text-xs">XP Points</div>
-                  </div>
-                </div>
-                
-                <Button 
-                  onClick={() => setShowUserPopup(false)}
-                  className="w-full mt-4"
-                  data-testid="close-profile-popup"
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        {userProfilePopup}
       </DrawerContent>
     </Drawer>
     </>

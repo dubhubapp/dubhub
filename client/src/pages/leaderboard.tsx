@@ -8,19 +8,18 @@ import { Trophy, Medal, Award, TrendingUp, ArrowUp, ArrowDown, Minus } from "luc
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { GoldVerifiedTick } from "@/components/verified-artist";
+import { deriveTrustLevel } from "@shared/trust-level";
 
 interface LeaderboardEntry {
   user_id: string;
   username: string;
   avatar_url: string | null;
-  score: number;
   correct_ids: number;
-  verified_artist?: boolean;
   reputation: number;
+  verified_artist?: boolean;
   created_at: string;
   account_type: string;
   moderator: boolean;
-  role: string;
 }
 
 type TimeFilter = "month" | "year" | "all";
@@ -79,15 +78,6 @@ export default function Leaderboard() {
 
   const isLoading = activeTab === "users" ? isLoadingUsers : isLoadingArtists;
 
-  // Calculate level from reputation
-  const getLevel = (reputation: number) => {
-    return Math.floor(reputation / 100) + 1;
-  };
-
-  const getLevelProgress = (reputation: number) => {
-    return (reputation % 100);
-  };
-
   const getRankIcon = (rank: number) => {
     if (rank === 1) return <Trophy className="w-6 h-6 text-yellow-500" />;
     if (rank === 2) return <Medal className="w-6 h-6 text-gray-400" />;
@@ -98,8 +88,8 @@ export default function Leaderboard() {
   const LeaderboardEntry = ({ entry, rank }: { entry: LeaderboardEntry; rank: number }) => {
     const isCurrentUser = entry.user_id === currentUserId;
     const isVerifiedArtist = entry.account_type === "artist" && entry.verified_artist === true;
-    const level = getLevel(entry.reputation);
-    const levelProgress = getLevelProgress(entry.reputation);
+    const trustLevel = deriveTrustLevel(entry.reputation ?? 0);
+    const levelProgress = trustLevel.progressPct;
 
     const profileImageUrl =
       resolveAvatarUrlForProfile(entry.avatar_url, entry.account_type) ?? "";
@@ -164,7 +154,7 @@ export default function Leaderboard() {
           
           {/* Level Bar with Gradient */}
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-mono text-muted-foreground">Level {level}</span>
+            <span className="text-xs text-muted-foreground">{trustLevel.displayName}</span>
             <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
               <div 
                 className="h-full bg-gradient-to-r from-primary via-primary to-primary/70 transition-all duration-300 rounded-full"

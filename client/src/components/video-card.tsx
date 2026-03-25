@@ -23,6 +23,7 @@ import { formatDate } from "@/pages/release-tracker";
 import { isReleaseUpcoming } from "@/lib/release-status";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
+import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -50,6 +51,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
+  const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
   const [hasLiked, setHasLiked] = useState(post.hasLiked || false);
@@ -564,44 +566,67 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         className="absolute left-0 right-20 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-6 pt-16 pointer-events-none"
         style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
       >
-        {/* Scroll only avatar + title/desc so genre pill (glow) is never inside overflow-y-auto */}
-        <div className="pointer-events-auto flex max-h-[50vh] min-h-0 flex-col gap-2">
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-contain py-0.5 pl-0.5 pr-1 [scrollbar-gutter:stable]">
-            <div className="flex items-center space-x-3">
-              {/* User avatar with verification */}
-              <div className="relative">
-                <img 
-                  src={postAvatarSrc}
-                  alt="User Profile" 
-                  className={`avatar-media w-10 h-10 rounded-full border-2 ${isDefaultAvatarUrl(postAvatarSrc) ? "avatar-default-media" : ""} ${
-                    isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : ""
-                  }`}
-                  style={
-                    !isVerifiedArtist ? { borderColor: genreChip.bgColor } : undefined
-                  }
-                />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <div className="flex items-center space-x-1">
-                    <p className={`font-semibold text-sm ${isVerifiedArtist ? "text-[#FFD700]" : "text-white"}`}>
-                      @{post.user.username}
-                    </p>
-                    {isVerifiedArtist && (
-                      <GoldVerifiedTick className="w-4 h-4 -mt-0.5" />
-                    )}
+        {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets */}
+        <div className="pointer-events-none flex flex-col gap-2">
+          <div className="overflow-x-clip py-0.5 pl-0.5 pr-1">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (post.user?.username) openByUsername(post.user.username);
+                }}
+                aria-label={
+                  post.user.username ? `View profile @${post.user.username}` : "View profile"
+                }
+                data-testid="post-author-identity"
+              >
+                <div className="relative shrink-0">
+                  <img
+                    src={postAvatarSrc}
+                    alt=""
+                    className={`avatar-media h-10 w-10 rounded-full border-2 ${
+                      isDefaultAvatarUrl(postAvatarSrc) ? "avatar-default-media" : ""
+                    } ${isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : ""}`}
+                    style={!isVerifiedArtist ? { borderColor: genreChip.bgColor } : undefined}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-1">
+                      <span
+                        className={`min-w-0 truncate font-semibold text-sm ${
+                          isVerifiedArtist ? "text-[#FFD700]" : "text-white"
+                        }`}
+                        title={post.user.username ? `@${post.user.username}` : undefined}
+                      >
+                        @{post.user.username}
+                      </span>
+                      {isVerifiedArtist && (
+                        <GoldVerifiedTick className="h-4 w-4 shrink-0 -mt-0.5" />
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </button>
             </div>
 
             {(post.title || post.description) ? (
               <div className="mt-2 space-y-2">
                 {post.title && (
-                  <p className="text-sm font-semibold text-white truncate">{post.title}</p>
+                  <p className="line-clamp-2 text-sm font-semibold text-white break-words" title={post.title}>
+                    {post.title}
+                  </p>
                 )}
                 {post.description && (
-                  <p className="text-sm font-medium text-white">{post.description}</p>
+                  <p
+                    className="line-clamp-4 text-sm font-medium text-white break-words"
+                    title={post.description}
+                  >
+                    {post.description}
+                  </p>
                 )}
               </div>
             ) : null}
@@ -653,7 +678,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                 e.stopPropagation();
                 navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
               }}
-              className="mt-3 w-full flex items-center gap-3 p-2 rounded-lg bg-black/40 hover:bg-black/50 transition-colors text-left"
+              className="pointer-events-auto mt-3 w-full flex items-center gap-3 p-2 rounded-lg bg-black/40 hover:bg-black/50 transition-colors text-left"
             >
               <div className="w-12 h-12 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
                 {releasePreview.artworkUrl ? (
@@ -808,6 +833,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         isOpen={showArtistVerificationDialog}
         onClose={() => setShowArtistVerificationDialog(false)}
       />
+      {userProfilePopup}
     </div>
   );
 }

@@ -269,7 +269,6 @@ export default function Home() {
       <div className="flex-1 relative bg-background">
         <div className="absolute top-0 left-0 right-0 z-20 bg-white/10 backdrop-blur-xl h-16">
           <Header
-            title="dub hub"
             className="py-4"
             rightContent={
               <div className="flex items-center gap-2">
@@ -328,7 +327,6 @@ export default function Home() {
       {/* Header - z-40 so it stays above scrolling post overlays (z-20/z-30); post content scrolls underneath */}
       <div className="absolute top-0 left-0 right-0 z-40 bg-white/10 backdrop-blur-xl transition-all duration-300 h-16">
         <Header
-          title="dub hub"
           className="py-4"
           rightContent={
             <div className="flex items-center gap-2">
