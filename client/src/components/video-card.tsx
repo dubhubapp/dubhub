@@ -93,6 +93,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     }
   }, [post.id, post.hasLiked, post.likes]); // Avoid depending on `post` reference — cache updates replace the object every time
 
+  const videoSrc =
+    (post.videoUrl && String(post.videoUrl)) ||
+    ((post as any).video_url != null && String((post as any).video_url)) ||
+    "";
+
   // Ensure video plays immediately and loops properly
   useEffect(() => {
     const video = videoRef.current;
@@ -146,7 +151,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('ended', handleEnded);
     };
-  }, [post.videoUrl]);
+  }, [post.id, videoSrc]);
 
   const likeMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/posts/${post.id}/like`),
@@ -400,12 +405,14 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     >
       {/* Video background - object-contain preserves full frame; muted required for autoplay, unmute on tap */}
       <div className="absolute inset-0 flex items-center justify-center bg-black">
-        <video 
+        <video
+          key={`${post.id}-${videoSrc}`}
           ref={videoRef}
           className="w-full h-full object-contain cursor-pointer"
-          autoPlay 
-          muted 
-          loop 
+          src={videoSrc || undefined}
+          autoPlay
+          muted
+          loop
           playsInline
           preload="auto"
           onClick={(e) => {
@@ -422,9 +429,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
               }
             }
           }}
-        >
-          <source src={post.videoUrl || ""} type="video/mp4" />
-        </video>
+        />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
       </div>
       {/* Top overlay with status — pt-safe for notch */}

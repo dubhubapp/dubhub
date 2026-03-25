@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { GENRE_ENTRIES, getGenreLabel } from "@/lib/genre-styles";
+import { cn } from "@/lib/utils";
 
 interface GenreFilterProps {
   selectedGenres: string[];
@@ -26,10 +27,17 @@ export function GenreFilter({
   const selectedGenreLabels = selectedGenres.map(getGenreLabel);
   const collapsedLabel =
     isAllSelected
-      ? "All"
+      ? "Genre"
       : selectedGenreLabels.length <= 2
         ? selectedGenreLabels.join(" + ")
         : `${selectedGenreLabels[0]} + ${selectedGenreLabels.length - 1} more`;
+
+  const collapsedTriggerStatusClass =
+    identificationFilter === "identified"
+      ? "border-green-400/80 ring-2 ring-green-400/45 shadow-[0_0_8px_2px_rgba(34,197,94,0.55),0_0_28px_4px_rgba(34,197,94,0.35),0_0_48px_2px_rgba(34,197,94,0.2)]"
+      : identificationFilter === "unidentified"
+        ? "border-red-400/80 ring-2 ring-red-400/45 shadow-[0_0_8px_2px_rgba(239,68,68,0.55),0_0_28px_4px_rgba(239,68,68,0.32),0_0_48px_2px_rgba(239,68,68,0.18)]"
+        : "border-white/20 shadow-none ring-0";
 
   const toggleGenre = (genreId: string) => {
     const isSelected = selectedGenres.includes(genreId);
@@ -46,7 +54,17 @@ export function GenreFilter({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="bg-white/10 backdrop-blur-lg rounded-full px-4 py-2 text-white hover:bg-white/20 transition-colors flex items-center space-x-2 border border-white/20"
+          aria-haspopup="true"
+          aria-expanded={isOpen}
+          aria-label={
+            isAllSelected
+              ? "Filter by genre and identification status"
+              : `Genre filter, ${collapsedLabel}`
+          }
+          className={cn(
+            "bg-white/10 backdrop-blur-lg rounded-full px-4 py-2 text-white hover:bg-white/20 transition-[colors,box-shadow,border-color] flex items-center space-x-2 border",
+            collapsedTriggerStatusClass
+          )}
         >
           <span className="text-sm font-medium">{collapsedLabel}</span>
           <svg 
