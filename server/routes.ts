@@ -2873,7 +2873,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Leaderboard endpoints
   app.get("/api/leaderboard/users", async (req, res) => {
     try {
-      const leaderboard = await storage.getLeaderboard("user");
+      const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
+      const timeFilter: "month" | "year" | "all" =
+        rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
+      const leaderboard = await storage.getLeaderboard("user", timeFilter);
       res.json(leaderboard);
     } catch (error) {
       console.error("Error fetching user leaderboard:", error);
@@ -2883,11 +2886,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/leaderboard/artists", async (req, res) => {
     try {
-      const leaderboard = await storage.getLeaderboard("artist");
+      const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
+      const timeFilter: "month" | "year" | "all" =
+        rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
+      const leaderboard = await storage.getLeaderboard("artist", timeFilter);
       res.json(leaderboard);
     } catch (error) {
       console.error("Error fetching artist leaderboard:", error);
       res.status(500).json({ message: "Failed to get artist leaderboard" });
+    }
+  });
+
+  app.get("/api/leaderboard/users/my-rank", async (req, res) => {
+    try {
+      const userId = String(req.query.userId ?? "").trim();
+      if (!userId) return res.status(400).json({ message: "Missing userId" });
+      const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
+      const timeFilter: "month" | "year" | "all" =
+        rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
+      const result = await storage.getLeaderboardUserRank("user", userId, timeFilter);
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching users leaderboard rank:", error);
+      res.status(500).json({ message: "Failed to get users leaderboard rank" });
+    }
+  });
+
+  app.get("/api/leaderboard/artists/my-rank", async (req, res) => {
+    try {
+      const userId = String(req.query.userId ?? "").trim();
+      if (!userId) return res.status(400).json({ message: "Missing userId" });
+      const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
+      const timeFilter: "month" | "year" | "all" =
+        rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
+      const result = await storage.getLeaderboardUserRank("artist", userId, timeFilter);
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching artists leaderboard rank:", error);
+      res.status(500).json({ message: "Failed to get artists leaderboard rank" });
+    }
+  });
+
+  app.get("/api/leaderboard/:type/my-rank", async (req, res) => {
+    try {
+      const typeParam = String(req.params.type ?? "").toLowerCase();
+      const userType = typeParam === "artists" ? "artist" : typeParam === "users" ? "user" : null;
+      if (!userType) {
+        return res.status(400).json({ message: "Invalid leaderboard type" });
+      }
+
+      const userId = String(req.query.userId ?? "").trim();
+      if (!userId) {
+        return res.status(400).json({ message: "Missing userId" });
+      }
+
+      const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
+      const timeFilter: "month" | "year" | "all" =
+        rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
+
+      const result = await storage.getLeaderboardUserRank(userType, userId, timeFilter);
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching leaderboard user rank:", error);
+      res.status(500).json({ message: "Failed to get leaderboard user rank" });
     }
   });
 

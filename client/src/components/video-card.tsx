@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
@@ -264,35 +264,31 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   });
 
   const getStatusBadge = () => {
-    const renderIdentifiedStatus = (
+    const statusPillBase =
+      "inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-3 py-2 text-xs font-semibold leading-none text-white backdrop-blur-xl shadow-[0_6px_22px_-12px_rgba(0,0,0,0.85)]";
+    const identifiedPillClass = "border-green-300/40 bg-green-500/30";
+    const iconBaseClass = "h-3.5 w-3.5 shrink-0";
+    const renderStatus = (
       icon: JSX.Element,
-      sourceLabel: string | null,
+      label: string,
       testId: string,
+      className?: string,
     ) => (
-      <div className="flex flex-col gap-1">
-        <span
-          className="inline-flex w-fit items-center rounded-full bg-green-500/80 px-3 py-1 text-sm font-medium backdrop-blur-sm"
-          data-testid={testId}
-        >
-          {icon}
-          Identified
-        </span>
-        {sourceLabel ? (
-          <span className="pl-1 text-[11px] font-medium text-gray-200/90">
-            {sourceLabel}
-          </span>
-        ) : null}
-      </div>
+      <span className={`${statusPillBase} ${className ?? ""}`} data-testid={testId}>
+        {icon}
+        {label}
+      </span>
     );
 
     const verificationStatus = post.verificationStatus ?? (post as any).verification_status;
 
     // Community source first so it never falls through to another identified source
     if (verificationStatus === "community") {
-      return renderIdentifiedStatus(
-        <ShieldCheck className="mr-1 h-3 w-3" />,
-        "Community identified",
+      return renderStatus(
+        <Users className={iconBaseClass} />,
+        "Identified",
         "badge-community-identified",
+        identifiedPillClass,
       );
     }
 
@@ -300,27 +296,32 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
     const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
     if (isArtistVerifiedPost && artistVerifiedBy) {
-      return renderIdentifiedStatus(
-        <GoldVerifiedTick className="mr-1 h-3 w-3 text-white" />,
-        "Artist verified",
+      return renderStatus(
+        <GoldVerifiedTick className={`${iconBaseClass} text-[#FFD700]`} />,
+        "Identified",
         "badge-artist-verified",
+        identifiedPillClass,
       );
     }
     
     // Show identified badge if moderator confirmed (fallback when no artist verification)
     if (verificationStatus === "identified") {
-      return renderIdentifiedStatus(
-        <CheckCircle className="mr-1 h-3 w-3" />,
-        null,
+      return renderStatus(
+        <Check className={`${iconBaseClass} text-white`} />,
+        "Identified",
         "badge-identified",
+        identifiedPillClass,
       );
     }
     
     // Show under review badge
     if (verificationStatus === "under_review") {
       return (
-        <span className="bg-yellow-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium" data-testid="badge-under-review">
-          <ShieldCheck className="w-3 h-3 inline mr-1" />
+        <span
+          className={`${statusPillBase} border-yellow-300/35 bg-yellow-500/20 text-yellow-100`}
+          data-testid="badge-under-review"
+        >
+          <ShieldCheck className={iconBaseClass} />
           Under review by moderators
         </span>
       );
@@ -329,8 +330,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
     // Unidentified should always show a red status pill
     if (verificationStatus === "unverified") {
       return (
-        <span className="rounded-full bg-red-500/80 px-3 py-1 text-sm font-medium backdrop-blur-sm" data-testid="badge-unidentified">
-          <Clock className="w-3 h-3 inline mr-1" />
+        <span
+          className={`${statusPillBase} border-red-300/35 bg-red-500/25`}
+          data-testid="badge-unidentified"
+        >
+          <Clock className={iconBaseClass} />
           Unidentified
         </span>
       );
@@ -432,9 +436,9 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
       </div>
-      {/* Top overlay with status — pt-safe for notch */}
-      <div className="absolute top-20 left-4 right-20 z-20">
-        <div className="mt-2 flex gap-2 mb-4">
+      {/* Top overlay status chip aligned with top floating controls row */}
+      <div className="pointer-events-none absolute left-4 right-24 top-[calc(env(safe-area-inset-top)+0.5rem)] z-30">
+        <div className="flex min-h-9 items-center gap-2">
           {getStatusBadge()}
         </div>
       </div>

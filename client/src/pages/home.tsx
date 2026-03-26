@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { GenreFilter } from "@/components/genre-filter";
-import { Header } from "@/components/brand/Header";
 import type { PostWithUser } from "@shared/schema";
 import { supabase } from "@/lib/supabaseClient";
 import { useUser } from "@/lib/user-context";
@@ -94,6 +93,11 @@ const feedSortDiceWrapActive = feedSortPillActive;
 
 /** Keep in sync with `animation.dice-spin` duration in `tailwind.config.ts` (0.42s). */
 const DICE_SPIN_ANIMATION_MS = 420;
+const feedTopOverlayRoot =
+  "pointer-events-none absolute inset-x-0 top-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]";
+const feedTopOverlayGradient =
+  "pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/28 via-black/10 to-transparent";
+const feedTopOverlayRightRow = "pointer-events-auto flex justify-end";
 
 /** Dice used in the sort row and for Random exhausted restart — same icon, spin, and chrome. */
 function FeedSortDiceButton({
@@ -644,28 +648,26 @@ export default function Home() {
   if (sortMode === "random") {
     return (
       <div className="flex-1 relative bg-background overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 z-40 bg-white/10 backdrop-blur-xl transition-all duration-300 h-16">
-          <Header
-            className="py-4"
-            rightContent={
-              <FeedSortControls
-                sortMode="random"
-                onHottest={() => setSortMode("hottest")}
-                onNewest={() => setSortMode("newest")}
-                randomDiceDelayPressMs={
-                  randomExhausted ? DICE_SPIN_ANIMATION_MS : undefined
+        <div className={feedTopOverlayGradient} />
+        <div className={feedTopOverlayRoot}>
+          <div className={feedTopOverlayRightRow}>
+            <FeedSortControls
+              sortMode="random"
+              onHottest={() => setSortMode("hottest")}
+              onNewest={() => setSortMode("newest")}
+              randomDiceDelayPressMs={
+                randomExhausted ? DICE_SPIN_ANIMATION_MS : undefined
+              }
+              onRandomPress={() => {
+                if (randomExhausted) {
+                  resetRandomSession();
+                  void loadNextRandom({ afterRestart: true });
+                  return;
                 }
-                onRandomPress={() => {
-                  if (randomExhausted) {
-                    resetRandomSession();
-                    void loadNextRandom({ afterRestart: true });
-                    return;
-                  }
-                  void loadNextRandom();
-                }}
-              />
-            }
-          />
+                void loadNextRandom();
+              }}
+            />
+          </div>
         </div>
 
         <GenreFilter
@@ -742,24 +744,22 @@ export default function Home() {
   if (uiPosts.length === 0) {
     return (
       <div className="flex-1 relative bg-background">
-        <div className="absolute top-0 left-0 right-0 z-20 bg-white/10 backdrop-blur-xl h-16">
-          <Header
-            className="py-4"
-            rightContent={
-              <FeedSortControls
-                sortMode={sortMode}
-                onHottest={() => {
-                  console.log("[Home][SortDebug] click hottest (before):", sortMode);
-                  setSortMode("hottest");
-                }}
-                onNewest={() => {
-                  console.log("[Home][SortDebug] click newest (before):", sortMode);
-                  setSortMode("newest");
-                }}
-                onRandomPress={() => setSortMode("random")}
-              />
-            }
-          />
+        <div className={feedTopOverlayGradient} />
+        <div className={feedTopOverlayRoot}>
+          <div className={feedTopOverlayRightRow}>
+            <FeedSortControls
+              sortMode={sortMode}
+              onHottest={() => {
+                console.log("[Home][SortDebug] click hottest (before):", sortMode);
+                setSortMode("hottest");
+              }}
+              onNewest={() => {
+                console.log("[Home][SortDebug] click newest (before):", sortMode);
+                setSortMode("newest");
+              }}
+              onRandomPress={() => setSortMode("random")}
+            />
+          </div>
         </div>
         <GenreFilter 
           selectedGenres={selectedGenres}
@@ -780,25 +780,22 @@ export default function Home() {
 
   return (
     <div className="flex-1 relative bg-background overflow-hidden">
-      {/* Header - z-40 so it stays above scrolling post overlays (z-20/z-30); post content scrolls underneath */}
-      <div className="absolute top-0 left-0 right-0 z-40 bg-white/10 backdrop-blur-xl transition-all duration-300 h-16">
-        <Header
-          className="py-4"
-          rightContent={
-            <FeedSortControls
-              sortMode={sortMode}
-              onHottest={() => {
-                console.log("[Home][SortDebug] click hottest (before):", sortMode);
-                setSortMode("hottest");
-              }}
-              onNewest={() => {
-                console.log("[Home][SortDebug] click newest (before):", sortMode);
-                setSortMode("newest");
-              }}
-              onRandomPress={() => setSortMode("random")}
-            />
-          }
-        />
+      <div className={feedTopOverlayGradient} />
+      <div className={feedTopOverlayRoot}>
+        <div className={feedTopOverlayRightRow}>
+          <FeedSortControls
+            sortMode={sortMode}
+            onHottest={() => {
+              console.log("[Home][SortDebug] click hottest (before):", sortMode);
+              setSortMode("hottest");
+            }}
+            onNewest={() => {
+              console.log("[Home][SortDebug] click newest (before):", sortMode);
+              setSortMode("newest");
+            }}
+            onRandomPress={() => setSortMode("random")}
+          />
+        </div>
       </div>
 
       {/* Collapsible filter dropdown */}

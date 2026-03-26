@@ -50,7 +50,7 @@ export function GenreFilter({
 
   if (isCollapsed) {
     return (
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50">
+      <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+0.5rem)] z-50 -translate-x-1/2 transform">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}

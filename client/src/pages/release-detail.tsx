@@ -306,7 +306,7 @@ export default function ReleaseDetail() {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold truncate">
+            <h1 className="text-xl font-bold leading-tight break-words whitespace-normal">
               {formatReleaseTitleLine(
                 release.artistUsername,
                 release.title,

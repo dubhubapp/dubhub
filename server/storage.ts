@@ -55,7 +55,12 @@ export interface IStorage {
   createReport(data: { postId: string; reportedBy: string; reason: string }): Promise<any>;
 
   // Leaderboards
-  getLeaderboard(userType: "user" | "artist"): Promise<any[]>;
+  getLeaderboard(userType: "user" | "artist", timeFilter?: "month" | "year" | "all"): Promise<any[]>;
+  getLeaderboardUserRank(
+    userType: "user" | "artist",
+    userId: string,
+    timeFilter?: "month" | "year" | "all",
+  ): Promise<{ rank: number; entry: any | null }>;
   getArtistStats(artistId: string): Promise<any>;
 
   // Releases
@@ -1511,14 +1516,47 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getLeaderboard(userType: "user" | "artist"): Promise<any[]> {
+  async getLeaderboard(
+    userType: "user" | "artist",
+    timeFilter: "month" | "year" | "all" = "all",
+  ): Promise<any[]> {
     try {
       // Read-only ranking from `user_karma`. All score / correct_ids **writes** must go through `server/karmaService.ts`.
       // Community trust leaderboard:
       //  - primary: hardened `user_karma.score` as `reputation`
       //  - secondary: `user_karma.correct_ids`
       const accountType = userType === "user" ? "user" : "artist";
+      const applyMonth = timeFilter === "month";
+      const applyYear = timeFilter === "year";
       const result = await db.execute(sql`
+        WITH period_events AS (
+          SELECT
+            e.user_id,
+            COALESCE(SUM(e.score_delta), 0)::int AS score,
+            COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
+          FROM user_karma_events e
+          WHERE e.revoked_at IS NULL
+            AND (
+              (${applyMonth} = false AND ${applyYear} = false)
+              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
+              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+            )
+          GROUP BY e.user_id
+        ),
+        period_confirmed AS (
+          SELECT
+            e.user_id,
+            COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
+          FROM user_karma_events e
+          WHERE e.revoked_at IS NULL
+            AND e.event_type = 'confirmed_id'
+            AND (
+              (${applyMonth} = false AND ${applyYear} = false)
+              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
+              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+            )
+          GROUP BY e.user_id
+        )
         SELECT
           p.id AS user_id,
           p.username,
@@ -1526,13 +1564,58 @@ export class DatabaseStorage implements IStorage {
           p.account_type,
           p.moderator,
           p.verified_artist,
-          COALESCE(uk.score, 0) AS reputation,
-          COALESCE(uk.correct_ids, 0) AS correct_ids,
-          p.created_at AS created_at
+          CASE
+            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
+            ELSE COALESCE(uk.score, 0)
+          END AS reputation,
+          CASE
+            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
+            ELSE COALESCE(uk.correct_ids, 0)
+          END AS correct_ids,
+          p.created_at AS created_at,
+          COALESCE(
+            (
+              SELECT q.genre_key
+              FROM (
+                SELECT COALESCE(NULLIF(TRIM(LOWER(post.genre)), ''), 'other') AS genre_key, COUNT(*)::int AS count
+                FROM posts post
+                INNER JOIN comments c ON c.id = post.verified_comment_id
+                WHERE c.user_id = p.id
+                  AND post.verified_comment_id IS NOT NULL
+                GROUP BY COALESCE(NULLIF(TRIM(LOWER(post.genre)), ''), 'other')
+                ORDER BY count DESC, genre_key ASC
+                LIMIT 1
+              ) q
+            ),
+            (
+              SELECT q2.genre_key
+              FROM (
+                SELECT COALESCE(NULLIF(TRIM(LOWER(post2.genre)), ''), 'other') AS genre_key, COUNT(*)::int AS count
+                FROM posts post2
+                WHERE post2.user_id = p.id
+                GROUP BY COALESCE(NULLIF(TRIM(LOWER(post2.genre)), ''), 'other')
+                ORDER BY count DESC, genre_key ASC
+                LIMIT 1
+              ) q2
+            ),
+            'other'
+          ) AS favorite_genre
         FROM profiles p
         LEFT JOIN user_karma uk ON uk.user_id = p.id
+        LEFT JOIN period_events pe ON pe.user_id = p.id
+        LEFT JOIN period_confirmed pc ON pc.user_id = p.id
         WHERE p.account_type = ${accountType}
-        ORDER BY COALESCE(uk.score, 0) DESC, COALESCE(uk.correct_ids, 0) DESC
+        ORDER BY
+          CASE
+            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
+            ELSE COALESCE(uk.score, 0)
+          END DESC,
+          CASE
+            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
+            ELSE COALESCE(uk.correct_ids, 0)
+          END DESC,
+          p.username ASC,
+          p.id ASC
         LIMIT 100
       `);
 
@@ -1540,6 +1623,118 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[getLeaderboard] Error:", error);
       return [];
+    }
+  }
+
+  async getLeaderboardUserRank(
+    userType: "user" | "artist",
+    userId: string,
+    timeFilter: "month" | "year" | "all" = "all",
+  ): Promise<{ rank: number; entry: any | null }> {
+    try {
+      const accountType = userType === "user" ? "user" : "artist";
+      const applyMonth = timeFilter === "month";
+      const applyYear = timeFilter === "year";
+
+      const result = await db.execute(sql`
+        WITH period_events AS (
+          SELECT
+            e.user_id,
+            COALESCE(SUM(e.score_delta), 0)::int AS score,
+            COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
+          FROM user_karma_events e
+          WHERE e.revoked_at IS NULL
+            AND (
+              (${applyMonth} = false AND ${applyYear} = false)
+              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
+              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+            )
+          GROUP BY e.user_id
+        ),
+        period_confirmed AS (
+          SELECT
+            e.user_id,
+            COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
+          FROM user_karma_events e
+          WHERE e.revoked_at IS NULL
+            AND e.event_type = 'confirmed_id'
+            AND (
+              (${applyMonth} = false AND ${applyYear} = false)
+              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
+              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+            )
+          GROUP BY e.user_id
+        ),
+        scoped AS (
+          SELECT
+            p.id AS user_id,
+            p.username,
+            p.avatar_url,
+            p.account_type,
+            p.moderator,
+            p.verified_artist,
+            CASE
+              WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
+              ELSE COALESCE(uk.score, 0)
+            END AS reputation,
+            CASE
+              WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
+              ELSE COALESCE(uk.correct_ids, 0)
+            END AS correct_ids,
+            p.created_at AS created_at,
+            COALESCE(
+              (
+                SELECT q.genre_key
+                FROM (
+                  SELECT COALESCE(NULLIF(TRIM(LOWER(post.genre)), ''), 'other') AS genre_key, COUNT(*)::int AS count
+                  FROM posts post
+                  INNER JOIN comments c ON c.id = post.verified_comment_id
+                  WHERE c.user_id = p.id
+                    AND post.verified_comment_id IS NOT NULL
+                  GROUP BY COALESCE(NULLIF(TRIM(LOWER(post.genre)), ''), 'other')
+                  ORDER BY count DESC, genre_key ASC
+                  LIMIT 1
+                ) q
+              ),
+              (
+                SELECT q2.genre_key
+                FROM (
+                  SELECT COALESCE(NULLIF(TRIM(LOWER(post2.genre)), ''), 'other') AS genre_key, COUNT(*)::int AS count
+                  FROM posts post2
+                  WHERE post2.user_id = p.id
+                  GROUP BY COALESCE(NULLIF(TRIM(LOWER(post2.genre)), ''), 'other')
+                  ORDER BY count DESC, genre_key ASC
+                  LIMIT 1
+                ) q2
+              ),
+              'other'
+            ) AS favorite_genre
+          FROM profiles p
+          LEFT JOIN user_karma uk ON uk.user_id = p.id
+          LEFT JOIN period_events pe ON pe.user_id = p.id
+          LEFT JOIN period_confirmed pc ON pc.user_id = p.id
+          WHERE p.account_type = ${accountType}
+        ),
+        ranked AS (
+          SELECT
+            *,
+            ROW_NUMBER() OVER (
+              ORDER BY reputation DESC, correct_ids DESC, username ASC, user_id ASC
+            ) AS rank
+          FROM scoped
+        )
+        SELECT *
+        FROM ranked
+        WHERE user_id = ${userId}
+        LIMIT 1
+      `);
+
+      const row = (result as any).rows?.[0] ?? null;
+      if (!row) return { rank: 0, entry: null };
+      return { rank: Number(row.rank ?? 0), entry: row };
+    } catch (error) {
+      console.error("[getLeaderboardUserRank] Error:", error);
+      return { rank: 0, entry: null };
     }
   }
 
