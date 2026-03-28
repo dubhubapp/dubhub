@@ -21,7 +21,9 @@ interface StatsCardSectionProps {
 
 export function StatsCardSection({ title, titleInfo, items, helperText, className }: StatsCardSectionProps) {
   return (
-    <div className={`bg-surface rounded-xl p-4 ${className ?? ""}`.trim()}>
+    <div
+      className={`rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] ${className ?? ""}`.trim()}
+    >
       <div className="mb-4 flex items-center justify-center gap-1.5">
         <h3 className="font-semibold text-center">{title}</h3>
         {titleInfo ? (

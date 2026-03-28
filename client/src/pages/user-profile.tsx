@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -26,6 +26,20 @@ const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
 type ProfileTabId = (typeof PROFILE_TAB_IDS)[number];
 function isProfileTabId(v: string): v is ProfileTabId {
   return (PROFILE_TAB_IDS as readonly string[]).includes(v);
+}
+
+const MODERATOR_QUEUE_KEYWORDS = [
+  "community verification",
+  "pending verification",
+  "id confirmation",
+  "moderator review",
+  "report",
+];
+
+function isModeratorQueueNotificationMessage(message: unknown): boolean {
+  if (typeof message !== "string") return false;
+  const lower = message.toLowerCase();
+  return MODERATOR_QUEUE_KEYWORDS.some((keyword) => lower.includes(keyword));
 }
 
 /** Concise copy for profile stat sections and cards (popover help). */
@@ -121,6 +135,7 @@ type GenreStatRow = { genre: string; count: number };
 function GenreBreakdownSection({
   title,
   titleInfo,
+  titleIcon: TitleIcon,
   stats,
   emptyMessage,
   isLoading,
@@ -128,14 +143,16 @@ function GenreBreakdownSection({
 }: {
   title: string;
   titleInfo: string;
+  titleIcon?: React.ComponentType<{ className?: string }>;
   stats: GenreStatRow[];
   emptyMessage: string;
   isLoading?: boolean;
   testIdPrefix: string;
 }) {
   return (
-    <div className="mb-6">
-      <div className="mb-4 flex items-center gap-1.5">
+    <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+      <div className="mb-4 flex items-center justify-center gap-1.5 text-center">
+        {TitleIcon ? <TitleIcon className="w-4 h-4 text-gray-300 shrink-0" /> : null}
         <h3 className="font-semibold">{title}</h3>
         <StatInfoPopover
           label={title}
@@ -156,7 +173,7 @@ function GenreBreakdownSection({
             return (
               <span
                 key={`${genreStat.genre}-${genreStat.count}`}
-                className={`${colorSet.bg} ${colorSet.text} px-3 py-1 rounded-full text-sm`}
+                className={`${colorSet.bg} ${colorSet.text} border border-white/10 px-3 py-1 rounded-full text-sm`}
                 data-testid={`${testIdPrefix}-genre-${genreStat.genre.toLowerCase()}`}
               >
                 {genreStat.genre} ({genreStat.count})
@@ -252,12 +269,27 @@ export default function UserProfile() {
     retry: false,
   });
 
-  const { data: notifications = [], isLoading: notificationsLoading } = useQuery<NotificationWithUser[]>({
-    queryKey: ["/api/user", currentUser?.id, "notifications"],
-    enabled: !!currentUser?.id,
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
+  const [notifications, setNotifications] = useState<NotificationWithUser[]>([]);
+  const [isInitialNotificationsLoading, setIsInitialNotificationsLoading] = useState(false);
+  const [isRefreshingNotifications, setIsRefreshingNotifications] = useState(false);
+  const [isLoadingOlderNotifications, setIsLoadingOlderNotifications] = useState(false);
+  const [hasMoreOlderNotifications, setHasMoreOlderNotifications] = useState(true);
+  const [hasLoadedNotifications, setHasLoadedNotifications] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const notificationsListRef = useRef<HTMLDivElement | null>(null);
+  const pullStartYRef = useRef<number | null>(null);
+  const initialNotificationsInFlightRef = useRef(false);
+  const refreshNotificationsInFlightRef = useRef(false);
+  const loadOlderNotificationsInFlightRef = useRef(false);
+  const loadedNotificationsForUserRef = useRef<string | null>(null);
+  const prevActiveTabRef = useRef<string>("profile");
+  const lastSentinelActivationRef = useRef<string | null>(null);
+
+  const NOTIFICATIONS_PAGE_SIZE = 20;
+  const MAX_INITIAL_PAGES = 6;
+  const notificationsDebugEnabled =
+    typeof window !== "undefined" && window.localStorage.getItem("debugNotifications") === "1";
 
   const { data: unreadCountData, isError: unreadCountError } = useQuery<{ count: number }>({
     queryKey: ["/api/user", currentUser?.id, "notifications", "unread-count"],
@@ -267,7 +299,81 @@ export default function UserProfile() {
     refetchOnMount: "always",
   });
 
-  const unreadCount = unreadCountData?.count || 0;
+  const unreadCount = userType === "moderator"
+    ? notifications.filter((n) => !n.read && !isModeratorQueueNotificationMessage(n.message)).length
+    : unreadCountData?.count || 0;
+
+  const mergeUniqueNotifications = (incoming: NotificationWithUser[], mode: "prepend" | "append") => {
+    setNotifications((prev) => {
+      const byId = new Map<string, NotificationWithUser>();
+      if (mode === "prepend") {
+        for (const n of incoming) byId.set(n.id, n);
+        for (const n of prev) if (!byId.has(n.id)) byId.set(n.id, n);
+      } else {
+        for (const n of prev) byId.set(n.id, n);
+        for (const n of incoming) if (!byId.has(n.id)) byId.set(n.id, n);
+      }
+      return Array.from(byId.values()).sort(
+        (a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime(),
+      );
+    });
+  };
+
+  const fetchNotificationsPage = async (params?: {
+    limit?: number;
+    before?: string;
+    beforeId?: string;
+    after?: string;
+    afterId?: string;
+  }): Promise<{ notifications: NotificationWithUser[]; hasMore: boolean }> => {
+    if (!currentUser?.id) return { notifications: [], hasMore: false };
+    if (notificationsDebugEnabled) {
+      console.debug("[notifications][initial-fetch] request", {
+        userId: currentUser.id,
+        params: {
+          limit: params?.limit ?? NOTIFICATIONS_PAGE_SIZE,
+          before: params?.before ?? null,
+          beforeId: params?.beforeId ?? null,
+          after: params?.after ?? null,
+          afterId: params?.afterId ?? null,
+        },
+      });
+    }
+    const q = new URLSearchParams();
+    q.set("limit", String(params?.limit ?? NOTIFICATIONS_PAGE_SIZE));
+    if (params?.before) q.set("before", params.before);
+    if (params?.beforeId) q.set("beforeId", params.beforeId);
+    if (params?.after) q.set("after", params.after);
+    if (params?.afterId) q.set("afterId", params.afterId);
+    const res = await apiRequest("GET", `/api/user/${currentUser.id}/notifications?${q.toString()}`);
+    const raw = await res.json();
+    // Backwards-compatible parsing: support both legacy array and paged object payloads.
+    const notifications = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.notifications)
+        ? raw.notifications
+        : [];
+    const filteredNotifications =
+      userType === "moderator"
+        ? notifications.filter((n: NotificationWithUser) => !isModeratorQueueNotificationMessage(n.message))
+        : notifications;
+    const hasMore = Array.isArray(raw) ? notifications.length >= (params?.limit ?? NOTIFICATIONS_PAGE_SIZE) : Boolean(raw?.hasMore);
+    if (notificationsDebugEnabled) {
+      console.debug("[notifications][post-parse] api payload", {
+        limit: params?.limit ?? NOTIFICATIONS_PAGE_SIZE,
+        received: notifications.length,
+        hasMore,
+        isArrayPayload: Array.isArray(raw),
+      });
+      // No extra client-side notification filtering currently; keep explicit marker for tracing pipeline.
+      console.debug("[notifications][post-filter] count", {
+        beforeFilter: notifications.length,
+        afterFilter: filteredNotifications.length,
+        filter: userType === "moderator" ? "exclude-moderator-queue" : "none",
+      });
+    }
+    return { notifications: filteredNotifications, hasMore };
+  };
 
   // Filter posts based on verification status
   const filteredPosts = useMemo(() => {
@@ -419,7 +525,7 @@ export default function UserProfile() {
 
   const userOverviewItems: StatsCardItem[] = [
     {
-      label: "Uploads",
+      label: "Posts",
       value: Number(userStats?.totalIDs || 0).toLocaleString(),
       Icon: Upload,
       toneClassName: "border-primary/35 bg-primary/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-primary [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
@@ -433,9 +539,9 @@ export default function UserProfile() {
       info: PROFILE_HELP.confirmedOverview,
     },
     {
-      label: "Tracks ID’d",
+      label: "IDs",
       value: Number(userStats?.tracksIdentified || 0).toLocaleString(),
-      Icon: BadgeCheck,
+      Icon: Check,
       toneClassName: "border-violet-500/35 bg-violet-500/5 shadow-[0_0_12px_rgba(139,92,246,0.12)] text-violet-300 [&_svg]:drop-shadow-[0_0_6px_rgba(139,92,246,0.4)]",
       info: PROFILE_HELP.tracksIdentifiedStat,
     },
@@ -538,7 +644,8 @@ export default function UserProfile() {
     mutationFn: async (notificationId: string) => {
       return apiRequest("PATCH", `/api/notifications/${notificationId}/read`);
     },
-    onSuccess: () => {
+    onSuccess: (_data, notificationId) => {
+      setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)));
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
@@ -552,6 +659,7 @@ export default function UserProfile() {
       return apiRequest("PATCH", `/api/user/${currentUser.id}/notifications/mark-all-read`);
     },
     onSuccess: () => {
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
@@ -602,12 +710,359 @@ export default function UserProfile() {
     return !!releaseId && !isCollaboratorResponse(n);
   };
 
+  type NotificationGroupKind = "post_like" | "post_comment" | "release_event" | "system_event" | "moderator_event" | "single";
+  type GroupedNotification = {
+    id: string;
+    representative: NotificationWithUser;
+    notifications: NotificationWithUser[];
+    count: number;
+    unreadCount: number;
+    kind: NotificationGroupKind;
+    isGrouped: boolean;
+  };
+
+  const GROUP_WINDOW_MS = 1000 * 60 * 60 * 24; // 24 hours
+
+  const getNotificationKind = (n: NotificationWithUser): NotificationGroupKind => {
+    const lowerMessage = (n.message || "").toLowerCase();
+    if (
+      lowerMessage.includes("report") ||
+      lowerMessage.includes("moderator") ||
+      lowerMessage.includes("removed") ||
+      lowerMessage.includes("suspended") ||
+      lowerMessage.includes("banned")
+    ) {
+      return "moderator_event";
+    }
+    if (isReleaseNotification(n)) return "release_event";
+    if (lowerMessage.includes("liked your post")) return "post_like";
+    if (
+      lowerMessage.includes("commented on your post") ||
+      lowerMessage.includes("replied to your comment") ||
+      lowerMessage.includes("tagged you in a comment")
+    ) {
+      return "post_comment";
+    }
+    if (!n.postId && !((n as any).releaseId ?? (n as any).release_id ?? n.release?.id)) return "system_event";
+    return "single";
+  };
+
+  const getNotificationGroupKey = (n: NotificationWithUser) => {
+    const kind = getNotificationKind(n);
+    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id ?? null;
+    const contextId = n.postId ?? releaseId ?? `misc:${n.id}`;
+    const created = new Date(n.createdAt as any).getTime();
+    const bucket = Number.isFinite(created) ? Math.floor(created / GROUP_WINDOW_MS) : 0;
+    const canGroup =
+      kind === "post_like" ||
+      kind === "post_comment" ||
+      kind === "release_event" ||
+      kind === "system_event";
+    return canGroup ? `${kind}:${contextId}:${bucket}` : `single:${n.id}`;
+  };
+
+  const countGrouped = (items: NotificationWithUser[]) => {
+    const keys = new Set<string>();
+    for (const n of items) keys.add(getNotificationGroupKey(n));
+    return keys.size;
+  };
+
+  const groupedNotifications = useMemo<GroupedNotification[]>(() => {
+    if (notifications.length === 0) return [];
+    const groups = new Map<string, NotificationWithUser[]>();
+
+    for (const n of notifications) {
+      const key = getNotificationGroupKey(n);
+      const arr = groups.get(key);
+      if (arr) arr.push(n);
+      else groups.set(key, [n]);
+    }
+
+    const output: GroupedNotification[] = Array.from(groups.values()).map((items) => {
+      const sorted = [...items].sort(
+        (a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime(),
+      );
+      const representative = sorted[0];
+      const kind = getNotificationKind(representative);
+      const unreadCount = sorted.filter((x) => !x.read).length;
+      return {
+        id: sorted.map((x) => x.id).join(":"),
+        representative,
+        notifications: sorted,
+        count: sorted.length,
+        unreadCount,
+        kind,
+        isGrouped: sorted.length > 1,
+      };
+    });
+
+    return output.sort(
+      (a, b) =>
+        new Date(b.representative.createdAt as any).getTime() -
+        new Date(a.representative.createdAt as any).getTime(),
+    );
+  }, [notifications]);
+
+  const visibleNotifications = useMemo<GroupedNotification[]>(() => {
+    if (groupedNotifications.length > 0) return groupedNotifications;
+    if (notifications.length === 0) return [];
+    // Safety fallback: keep notifications visible even if grouping derivation returns empty unexpectedly.
+    return notifications.map((n) => ({
+      id: n.id,
+      representative: n,
+      notifications: [n],
+      count: 1,
+      unreadCount: n.read ? 0 : 1,
+      kind: getNotificationKind(n),
+      isGrouped: false,
+    }));
+  }, [groupedNotifications, notifications]);
+
+  useEffect(() => {
+    if (!notificationsDebugEnabled || activeTab !== "notifications") return;
+    console.debug("[notifications][post-group] counts", {
+      raw: notifications.length,
+      grouped: groupedNotifications.length,
+      visible: visibleNotifications.length,
+      hasLoadedNotifications,
+      isInitialNotificationsLoading,
+    });
+  }, [notificationsDebugEnabled, activeTab, notifications.length, groupedNotifications.length, visibleNotifications.length, hasLoadedNotifications, isInitialNotificationsLoading]);
+
+  const notificationsRenderState = useMemo<"loading" | "empty" | "list">(() => {
+    if (isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0) return "loading";
+    if (hasLoadedNotifications && notifications.length === 0 && visibleNotifications.length === 0) return "empty";
+    return "list";
+  }, [isInitialNotificationsLoading, hasLoadedNotifications, notifications.length, visibleNotifications.length]);
+
+  useEffect(() => {
+    if (!notificationsDebugEnabled || activeTab !== "notifications") return;
+    console.debug("[notifications][final-render] state", {
+      renderState: notificationsRenderState,
+      raw: notifications.length,
+      grouped: groupedNotifications.length,
+      visible: visibleNotifications.length,
+      hasLoadedNotifications,
+      isInitialNotificationsLoading,
+      isRefreshingNotifications,
+      isLoadingOlderNotifications,
+    });
+  }, [
+    notificationsDebugEnabled,
+    activeTab,
+    notificationsRenderState,
+    notifications.length,
+    groupedNotifications.length,
+    visibleNotifications.length,
+    hasLoadedNotifications,
+    isInitialNotificationsLoading,
+    isRefreshingNotifications,
+    isLoadingOlderNotifications,
+  ]);
+
+  if (import.meta.env.DEV && activeTab === "notifications") {
+    console.debug("[notifications]", {
+      notificationsCount: notifications.length,
+      groupedCount: groupedNotifications.length,
+      visibleCount: visibleNotifications.length,
+      hasLoadedNotifications,
+      isInitialNotificationsLoading,
+    });
+  }
+
   // Mark all notifications as read when Notifications tab is opened
   useEffect(() => {
-    if (activeTab === "notifications" && unreadCount > 0) {
+    if (userType !== "moderator" && activeTab === "notifications" && unreadCount > 0) {
       markAllNotificationsAsReadMutation.mutate();
     }
-  }, [activeTab]);
+  }, [activeTab, unreadCount, userType]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV && activeTab === "notifications" && currentUser?.id) {
+      const sentinelKey = `${currentUser.id}:notifications`;
+      if (lastSentinelActivationRef.current !== sentinelKey) {
+        console.debug("[notifications][sentinel] mounted", { userId: currentUser.id });
+        lastSentinelActivationRef.current = sentinelKey;
+      }
+    }
+  }, [activeTab, currentUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const runInitialNotificationsLoad = async () => {
+      if (!currentUser?.id || activeTab !== "notifications") return;
+      const enteringNotifications = prevActiveTabRef.current !== "notifications";
+      const alreadyLoadedForUser = loadedNotificationsForUserRef.current === currentUser.id;
+      if (!enteringNotifications && (alreadyLoadedForUser || hasLoadedNotifications)) return;
+      if (initialNotificationsInFlightRef.current) return;
+      if (import.meta.env.DEV) {
+        console.debug("[notifications][sentinel] initial fetch triggered", {
+          userId: currentUser.id,
+          enteringNotifications,
+          alreadyLoadedForUser,
+          hasLoadedNotifications,
+        });
+      }
+      initialNotificationsInFlightRef.current = true;
+      setIsInitialNotificationsLoading(true);
+      try {
+        // Initial path: fetch one page, render immediately, then finish loading state.
+        const firstPage = await fetchNotificationsPage({ limit: NOTIFICATIONS_PAGE_SIZE });
+        if (cancelled) return;
+        setNotifications(firstPage.notifications);
+        setHasMoreOlderNotifications(firstPage.hasMore);
+        setHasLoadedNotifications(true);
+        loadedNotificationsForUserRef.current = currentUser.id;
+
+        // Optional non-blocking top-up: improve grouped-page density without blocking first render.
+        if (firstPage.hasMore && countGrouped(firstPage.notifications) < NOTIFICATIONS_PAGE_SIZE) {
+          void (async () => {
+            let pageCount = 1;
+            let hasMore = firstPage.hasMore;
+            let cursor = firstPage.notifications[firstPage.notifications.length - 1];
+            const aggregate = [...firstPage.notifications];
+            while (!cancelled && hasMore && cursor && countGrouped(aggregate) < NOTIFICATIONS_PAGE_SIZE && pageCount < MAX_INITIAL_PAGES) {
+              const page = await fetchNotificationsPage({
+                limit: NOTIFICATIONS_PAGE_SIZE,
+                before: new Date(cursor.createdAt as any).toISOString(),
+                beforeId: cursor.id,
+              });
+              pageCount += 1;
+              if (page.notifications.length === 0) {
+                hasMore = false;
+                break;
+              }
+              aggregate.push(...page.notifications);
+              hasMore = page.hasMore;
+              cursor = page.notifications[page.notifications.length - 1];
+              if (!cancelled) {
+                setNotifications((prev) => {
+                  const byId = new Map<string, NotificationWithUser>();
+                  for (const n of prev) byId.set(n.id, n);
+                  for (const n of aggregate) byId.set(n.id, n);
+                  return Array.from(byId.values()).sort(
+                    (a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime(),
+                  );
+                });
+                setHasMoreOlderNotifications(hasMore);
+              }
+            }
+          })();
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({ title: "Failed to load notifications", variant: "destructive" });
+        }
+      } finally {
+        // Always release initial loader so strict-mode effect cleanup cannot trap loading=true.
+        initialNotificationsInFlightRef.current = false;
+        if (!cancelled) setIsInitialNotificationsLoading(false);
+      }
+    };
+    runInitialNotificationsLoad();
+    prevActiveTabRef.current = activeTab;
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentUser?.id, hasLoadedNotifications]);
+
+  useEffect(() => {
+    setNotifications([]);
+    setHasLoadedNotifications(false);
+    setHasMoreOlderNotifications(true);
+    loadedNotificationsForUserRef.current = null;
+    initialNotificationsInFlightRef.current = false;
+    refreshNotificationsInFlightRef.current = false;
+    loadOlderNotificationsInFlightRef.current = false;
+  }, [currentUser?.id]);
+
+  const refreshNewerNotifications = async () => {
+    if (!currentUser?.id || refreshNotificationsInFlightRef.current) return;
+    refreshNotificationsInFlightRef.current = true;
+    setIsRefreshingNotifications(true);
+    const newest = notifications[0];
+    if (!newest) {
+      try {
+        const page = await fetchNotificationsPage({ limit: NOTIFICATIONS_PAGE_SIZE });
+        setNotifications(page.notifications);
+        setHasMoreOlderNotifications(page.hasMore);
+        setHasLoadedNotifications(true);
+      } finally {
+        refreshNotificationsInFlightRef.current = false;
+        setIsRefreshingNotifications(false);
+        setPullDistance(0);
+        setIsPulling(false);
+        pullStartYRef.current = null;
+      }
+      return;
+    }
+    const container = notificationsListRef.current;
+    const prevHeight = container?.scrollHeight ?? 0;
+    try {
+      const page = await fetchNotificationsPage({
+        limit: NOTIFICATIONS_PAGE_SIZE,
+        after: new Date(newest.createdAt as any).toISOString(),
+        afterId: newest.id,
+      });
+      if (page.notifications.length > 0) {
+        mergeUniqueNotifications(page.notifications, "prepend");
+        requestAnimationFrame(() => {
+          const nextHeight = container?.scrollHeight ?? 0;
+          if (container) container.scrollTop += Math.max(0, nextHeight - prevHeight);
+        });
+      }
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
+      }
+    } catch {
+      toast({ title: "Refresh failed", variant: "destructive" });
+    } finally {
+      refreshNotificationsInFlightRef.current = false;
+      setIsRefreshingNotifications(false);
+      setPullDistance(0);
+      setIsPulling(false);
+      pullStartYRef.current = null;
+    }
+  };
+
+  const loadOlderNotifications = async () => {
+    if (
+      !currentUser?.id ||
+      loadOlderNotificationsInFlightRef.current ||
+      isLoadingOlderNotifications ||
+      !hasMoreOlderNotifications ||
+      notifications.length === 0
+    ) return;
+    loadOlderNotificationsInFlightRef.current = true;
+    setIsLoadingOlderNotifications(true);
+    try {
+      const previousGroupedCount = countGrouped(notifications);
+      let hasMore = true;
+      let cursor = notifications[notifications.length - 1];
+      const aggregate: NotificationWithUser[] = [];
+      while (hasMore && countGrouped([...notifications, ...aggregate]) - previousGroupedCount < NOTIFICATIONS_PAGE_SIZE && cursor) {
+        const page = await fetchNotificationsPage({
+          limit: NOTIFICATIONS_PAGE_SIZE,
+          before: new Date(cursor.createdAt as any).toISOString(),
+          beforeId: cursor.id,
+        });
+        if (page.notifications.length === 0) {
+          hasMore = false;
+          break;
+        }
+        aggregate.push(...page.notifications);
+        hasMore = page.hasMore;
+        cursor = page.notifications[page.notifications.length - 1];
+      }
+      mergeUniqueNotifications(aggregate, "append");
+      setHasMoreOlderNotifications(hasMore);
+    } catch {
+      toast({ title: "Failed to load older notifications", variant: "destructive" });
+    } finally {
+      loadOlderNotificationsInFlightRef.current = false;
+      setIsLoadingOlderNotifications(false);
+    }
+  };
 
   // Keep tab state consistent with Radix Tabs (invalid value => no panel content + odd layout)
   useEffect(() => {
@@ -653,6 +1108,92 @@ export default function UserProfile() {
     } else if (notification.postId) {
       navigate(`/?post=${notification.postId}`);
     }
+  };
+
+  const getGroupedNotificationMessage = (group: GroupedNotification) => {
+    if (!group.isGrouped) return null;
+    if (group.kind === "post_like") {
+      const uniqueUsernames = Array.from(
+        new Set(
+          group.notifications
+            .map((n) => n.triggeredByUser?.username?.trim())
+            .filter((u): u is string => !!u),
+        ),
+      );
+      const [first, second] = uniqueUsernames;
+      const remaining = Math.max(group.count - 2, 0);
+      if (first && second && remaining > 0) {
+        return `@${first}, @${second} and ${remaining} others liked your post`;
+      }
+      if (first && second) {
+        return `@${first} and @${second} liked your post`;
+      }
+      if (first) {
+        return `@${first} and ${Math.max(group.count - 1, 0)} others liked your post`;
+      }
+      return `${group.count} people liked your post`;
+    }
+    if (group.kind === "post_comment") {
+      return `${group.count} new comments on your post`;
+    }
+    if (group.kind === "release_event") {
+      const messages = group.notifications.map((n) => (n.message || "").toLowerCase());
+      const hasReleaseDay = messages.some((m) => m.includes("out now") || m.includes("released today") || m.includes("release day"));
+      const hasAnnouncement = messages.some((m) => m.includes("just got announced") || m.includes("announced"));
+      const hasCollab = messages.some((m) => m.includes("collaboration invite") || m.includes("collaborator"));
+      if (hasReleaseDay && hasAnnouncement) return `${group.count} updates on this release (announcement + release-day)`;
+      if (hasReleaseDay) return `${group.count} release-day updates`;
+      if (hasAnnouncement) return `${group.count} announcement updates for this release`;
+      if (hasCollab) return `${group.count} collaboration updates for this release`;
+      return `${group.count} updates for this release`;
+    }
+    if (group.kind === "system_event") {
+      return `${group.count} system updates`;
+    }
+    return null;
+  };
+
+  const handleGroupedNotificationClick = (group: GroupedNotification) => {
+    // Preserve underlying records; mark each unread item as read, then navigate using latest item.
+    for (const n of group.notifications) {
+      if (!n.read) markNotificationAsReadMutation.mutate(n.id);
+    }
+    handleNotificationClick(group.representative);
+  };
+
+  const handleNotificationsScroll = () => {
+    const el = notificationsListRef.current;
+    if (!el || activeTab !== "notifications") return;
+    const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 120;
+    if (nearBottom) loadOlderNotifications();
+  };
+
+  const handleNotificationsTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (notificationsListRef.current?.scrollTop === 0) {
+      pullStartYRef.current = e.touches[0]?.clientY ?? null;
+      setIsPulling(true);
+    } else {
+      pullStartYRef.current = null;
+      setIsPulling(false);
+    }
+  };
+
+  const handleNotificationsTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isPulling || pullStartYRef.current == null) return;
+    const currentY = e.touches[0]?.clientY ?? pullStartYRef.current;
+    const delta = Math.max(0, currentY - pullStartYRef.current);
+    setPullDistance(Math.min(96, delta * 0.45));
+  };
+
+  const handleNotificationsTouchEnd = () => {
+    const threshold = 52;
+    if (isPulling && pullDistance >= threshold && !refreshNotificationsInFlightRef.current) {
+      void refreshNewerNotifications();
+      return;
+    }
+    setPullDistance(0);
+    setIsPulling(false);
+    pullStartYRef.current = null;
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -802,10 +1343,10 @@ export default function UserProfile() {
 
   return (
     <div className="min-h-0 min-w-0 w-full flex-1 bg-dark overflow-x-hidden overflow-y-auto">
-      <div className={`p-6 ${activeTab === "profile" ? "pb-6" : "pb-24"}`}>
+      <div className={`p-6 ${activeTab === "profile" ? "pb-20" : "pb-24"}`}>
         <div className="max-w-md mx-auto">
           {/* User Header */}
-          <div className="text-center mb-6">
+          <div className="text-center mb-0">
             <div className="relative inline-block">
               {userData.profileImage ? (
                 <img 
@@ -846,26 +1387,46 @@ export default function UserProfile() {
                 )}
               </div>
             </div>
-            <p className="text-xs mt-1 inline-flex items-center rounded-full px-3 py-0.5 border text-white border-white/70 shadow-[0_0_12px_rgba(255,255,255,0.7)]">
+            <p className="text-xs mt-3 mb-3 inline-flex items-center rounded-full px-3 py-0.5 border text-white border-white/70 shadow-[0_0_12px_rgba(255,255,255,0.7)]">
               {userData.joinedDateLine}
             </p>
           </div>
 
           {/* Tabs */}
           <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-6">
-            <TabsList className="grid w-full grid-cols-4" data-testid="profile-tabs">
-              <TabsTrigger value="profile" data-testid="tab-profile">
+            <TabsList
+              className="grid w-full grid-cols-4 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5 h-auto"
+              data-testid="profile-tabs"
+            >
+              <TabsTrigger
+                value="profile"
+                data-testid="tab-profile"
+                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+              >
+                <User className="w-4 h-4 mr-1" />
                 Profile
               </TabsTrigger>
-              <TabsTrigger value="posts" data-testid="tab-posts">
+              <TabsTrigger
+                value="posts"
+                data-testid="tab-posts"
+                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+              >
                 <Upload className="w-4 h-4 mr-1" />
                 Posts
               </TabsTrigger>
-              <TabsTrigger value="liked" data-testid="tab-liked">
+              <TabsTrigger
+                value="liked"
+                data-testid="tab-liked"
+                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+              >
                 <Heart className="w-4 h-4 mr-1" />
                 Likes
               </TabsTrigger>
-              <TabsTrigger value="notifications" data-testid="tab-notifications" className="relative">
+              <TabsTrigger
+                value="notifications"
+                data-testid="tab-notifications"
+                className="relative rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+              >
                 <Bell className="w-4 h-4 mr-1" />
                 Notif.
                 {unreadCount > 0 && (
@@ -876,18 +1437,18 @@ export default function UserProfile() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="profile" className="space-y-6 mt-6">
+            <TabsContent value="profile" className="space-y-4 mt-5">
               {userType === "artist" && artistStats ? (
-                <div className="mb-6">
-                  <div className="flex justify-center mb-3">
-                    <div className="inline-flex items-center rounded-lg border border-white/10 bg-black/20 p-1">
+                <div>
+                  <div className="flex justify-center my-3">
+                    <div className="inline-flex items-center rounded-xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5">
                       <button
                         type="button"
                         onClick={() => setArtistStatsMode("artist")}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
                           artistStatsMode === "artist"
-                            ? "bg-white text-black"
-                            : "text-gray-300 hover:text-white"
+                            ? "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                            : "bg-black/20 text-white/70 hover:text-white"
                         }`}
                         data-testid="stats-mode-artist"
                       >
@@ -896,10 +1457,10 @@ export default function UserProfile() {
                       <button
                         type="button"
                         onClick={() => setArtistStatsMode("user")}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
                           artistStatsMode === "user"
-                            ? "bg-white text-black"
-                            : "text-gray-300 hover:text-white"
+                            ? "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                            : "bg-black/20 text-white/70 hover:text-white"
                         }`}
                         data-testid="stats-mode-user"
                       >
@@ -920,6 +1481,7 @@ export default function UserProfile() {
                           title="Your Impact"
                           titleInfo={PROFILE_HELP.sectionImpact}
                           items={artistImpactItems}
+                          className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
                           helperText={
                             hasAnyArtistImpact
                               ? undefined
@@ -932,6 +1494,7 @@ export default function UserProfile() {
                           title="Your Activity"
                           titleInfo={PROFILE_HELP.sectionUserActivity}
                           items={userOverviewItems}
+                          className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
                         />
                       </div>
                     </div>
@@ -942,24 +1505,24 @@ export default function UserProfile() {
                   title="Your overview"
                   titleInfo={PROFILE_HELP.sectionOverview}
                   items={userOverviewItems}
-                  className="mb-6"
+                  className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
                 />
               )}
 
           {/* Rep (trust tier) */}
-          <div className="mb-6">
-            <div className="mb-4 flex items-center gap-1.5">
-              <TrendingUp className="w-5 h-5 text-accent shrink-0" />
-              <h3 className="font-semibold">Rep</h3>
-              <StatInfoPopover
-                label="Rep"
-                content={PROFILE_HELP.reputation}
-                side="bottom"
-                align="start"
-                className="text-gray-400 hover:text-gray-200"
-              />
-            </div>
-            <div className="bg-surface rounded-xl p-4">
+          <div>
+            <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+              <div className="mb-3 flex items-center justify-center gap-1.5 text-center">
+                <TrendingUp className="w-5 h-5 text-accent shrink-0" />
+                <h3 className="font-semibold">Rep</h3>
+                <StatInfoPopover
+                  label="Rep"
+                  content={PROFILE_HELP.reputation}
+                  side="bottom"
+                  align="start"
+                  className="text-gray-400 hover:text-gray-200"
+                />
+              </div>
               <div className="mb-3 text-center">
                 <span className="text-sm font-medium" data-testid="reputation-level">
                   {repTrustForProfile.displayName}
@@ -990,8 +1553,9 @@ export default function UserProfile() {
           </div>
 
           <GenreBreakdownSection
-            title="Tracks You Posted"
+            title="Posts"
             titleInfo={PROFILE_HELP.tracksPosted}
+            titleIcon={Upload}
             stats={genreStats}
             emptyMessage="No tracks posted yet. Start submitting tracks to see your genre breakdown."
             isLoading={postsLoading}
@@ -999,8 +1563,9 @@ export default function UserProfile() {
           />
 
           <GenreBreakdownSection
-            title="Tracks You Identified"
+            title="IDs"
             titleInfo={PROFILE_HELP.tracksIdentifiedGenres}
+            titleIcon={Check}
             stats={identifiedGenreStats}
             emptyMessage="When your ID is confirmed as the correct track, those tracks will show up here."
             isLoading={identifiedGenresLoading}
@@ -1008,11 +1573,11 @@ export default function UserProfile() {
           />
 
           {/* Settings */}
-          <div className="space-y-3">
+          <div>
             <Button
               variant="ghost"
               type="button"
-              className="w-full bg-surface hover:bg-surface/80 text-left p-4 rounded-xl flex items-center justify-between h-auto"
+              className="w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
               data-testid="button-settings"
               onClick={() => navigate("/settings")}
             >
@@ -1273,7 +1838,7 @@ export default function UserProfile() {
 
             {/* Notifications Tab */}
             <TabsContent value="notifications" className="mt-6">
-              {unreadCount > 0 && (
+              {userType !== "moderator" && unreadCount > 0 && (
                 <div className="flex justify-end mb-4">
                   <Button
                     variant="outline"
@@ -1286,48 +1851,70 @@ export default function UserProfile() {
                   </Button>
                 </div>
               )}
-              {notificationsLoading ? (
-                <div className="text-center py-8">
-                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+              {isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0 ? (
+                <div className="text-center py-10">
+                  <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                   <p className="text-gray-400">Loading notifications...</p>
                 </div>
-              ) : notifications.length === 0 ? (
+              ) : hasLoadedNotifications && notifications.length === 0 && visibleNotifications.length === 0 ? (
                 <div className="text-center py-12">
                   <Bell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                   <p className="text-gray-400 text-lg mb-2">No notifications yet</p>
                   <p className="text-gray-500 text-sm">You'll see activity updates here</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {notifications.map((notification) => {
+                <div
+                  ref={notificationsListRef}
+                  className="max-h-[70dvh] overflow-y-auto pr-1"
+                  onScroll={handleNotificationsScroll}
+                  onTouchStart={handleNotificationsTouchStart}
+                  onTouchMove={handleNotificationsTouchMove}
+                  onTouchEnd={handleNotificationsTouchEnd}
+                >
+                  <div
+                    className="flex items-center justify-center transition-all duration-150"
+                    style={{ height: `${isRefreshingNotifications ? 44 : pullDistance}px` }}
+                  >
+                    {(isRefreshingNotifications || pullDistance > 8) && (
+                      <Disc3
+                        className={`${isRefreshingNotifications ? "animate-spin text-primary" : "text-muted-foreground"} w-6 h-6`}
+                        style={{ animationDuration: "1.6s", transform: isRefreshingNotifications ? undefined : `rotate(${pullDistance * 2}deg)` }}
+                      />
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {visibleNotifications.map((group) => {
+                    const notification = group.representative;
+                    const hasUnread = group.unreadCount > 0;
                     const isTag = isTagNotification(notification);
                     const isAcceptance = isCollaboratorAcceptance(notification);
                     const isRejection = isCollaboratorRejection(notification);
                     const isCollabResponse = isCollaboratorResponse(notification);
                     const isRelease = isReleaseNotification(notification);
+                    const summaryText = getGroupedNotificationMessage(group);
                     const baseClass = "flex gap-3 p-3 rounded-lg border transition-colors cursor-pointer";
                     const styleClass = isCollabResponse
                       ? isAcceptance
-                        ? notification.read
+                        ? !hasUnread
                           ? "border-green-600/40 bg-green-500/5 hover:bg-green-500/10"
                           : "border-green-500/60 bg-green-500/15 hover:bg-green-500/25 ring-1 ring-green-500/20"
-                        : notification.read
+                        : !hasUnread
                           ? "border-amber-600/40 bg-amber-500/5 hover:bg-amber-500/10"
                           : "border-amber-500/60 bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-500/20"
                       : isRelease
-                        ? notification.read
+                        ? !hasUnread
                           ? "border-amber-400/50 bg-amber-500/10 hover:bg-amber-500/15"
                           : "border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-400/30"
-                      : notification.read
+                      : !hasUnread
                         ? "border-gray-700 bg-surface hover:bg-gray-800"
                         : "border-primary/30 bg-primary/10 hover:bg-primary/20";
-                    return (
-                      <div
-                        key={notification.id}
-                        className={`${baseClass} ${styleClass}`}
-                        onClick={() => handleNotificationClick(notification)}
-                        data-testid={`notification-${notification.id}`}
-                      >
+                      return (
+                        <div
+                          key={group.id}
+                          className={`${baseClass} ${styleClass}`}
+                          onClick={() => handleGroupedNotificationClick(group)}
+                          data-testid={`notification-${notification.id}`}
+                        >
                         {/* Thumbnail: release artwork takes precedence over post video */}
                         <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
                           {notification.release?.artworkUrl ? (
@@ -1352,7 +1939,9 @@ export default function UserProfile() {
                         {/* Notification Content: tag and acceptance include @username in message */}
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm ${(isCollabResponse || isRelease) ? "font-medium text-foreground" : "text-foreground"}`}>
-                            {isTag || isCollabResponse ? (
+                            {summaryText ? (
+                              summaryText
+                            ) : isTag || isCollabResponse ? (
                               notification.message
                             ) : (
                               <>
@@ -1368,19 +1957,33 @@ export default function UserProfile() {
 
                         {/* Acceptance/rejection icon + unread indicator */}
                         <div className="flex items-center gap-2">
+                          {group.isGrouped && (
+                            <div className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-white/80">
+                              {group.count}
+                            </div>
+                          )}
                           {isAcceptance && (
                             <CheckCircle className="w-5 h-5 flex-shrink-0 text-green-500" aria-hidden />
                           )}
                           {isRejection && (
                             <X className="w-5 h-5 flex-shrink-0 text-amber-500" aria-hidden />
                           )}
-                          {!notification.read && (
+                          {group.unreadCount > 0 && (
                             <div className={`w-2 h-2 rounded-full ${isCollabResponse ? (isAcceptance ? "bg-green-500" : "bg-amber-500") : isRelease ? "bg-amber-400" : "bg-primary"}`}></div>
                           )}
                         </div>
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {isLoadingOlderNotifications && (
+                    <div className="py-3 flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-muted-foreground/50 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                  {!hasMoreOlderNotifications && visibleNotifications.length > 0 && (
+                    <p className="py-4 text-center text-xs text-muted-foreground">You're all caught up</p>
+                  )}
                 </div>
               )}
             </TabsContent>

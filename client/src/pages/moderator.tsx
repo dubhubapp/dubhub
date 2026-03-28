@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useUser } from "@/lib/user-context";
-import { Header } from "@/components/brand/Header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,12 +9,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Shield, AlertTriangle, Users, FileText, Settings, CheckCircle, XCircle, User, ExternalLink, MessageSquare, MoreVertical } from "lucide-react";
+import { Shield, AlertTriangle, FileText, CheckCircle, XCircle, User, MessageSquare, Clock3 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
+import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
+
+function formatModeratorReportTimestamp(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
 
 export default function ModeratorPage() {
   const [activeTab, setActiveTab] = useState("pending");
@@ -49,7 +56,8 @@ export default function ModeratorPage() {
         // Get all notifications for the moderator using authenticated user's UUID
         const response = await apiRequest("GET", `/api/user/${currentUser.id}/notifications`);
         if (!response.ok) return;
-        const notifications = await response.json();
+        const raw = await response.json();
+        const notifications = Array.isArray(raw) ? raw : (raw?.notifications ?? []);
         
         // Mark all unread report-related or community-verification notifications as read,
         // depending on which tab is currently active.
@@ -113,6 +121,26 @@ export default function ModeratorPage() {
     queryKey: ["/api/posts", selectedPost?.id, "comments"],
     enabled: !!selectedPost,
   });
+  const toCommentTime = (value: unknown) => {
+    if (!value) return 0;
+    if (value instanceof Date) return value.getTime();
+    const t = new Date(value as any).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+  const oldestPostCommentId =
+    [...postComments].sort((a, b) => toCommentTime(a.createdAt) - toCommentTime(b.createdAt))[0]?.id ?? null;
+  const formatCommentTimestamp = (value: Date | string | null | undefined) => {
+    if (!value) return "Unknown time";
+    const date = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) return "Unknown time";
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
 
   const confirmVerificationMutation = useMutation({
     mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string }) => {
@@ -293,37 +321,56 @@ export default function ModeratorPage() {
     return null;
   }
 
+  const pendingVerificationCount = pendingVerifications.length;
+  const unresolvedReportsCount = reportedContent.filter(
+    (r: { status?: string }) => r.status === "open" || r.status === "under_review"
+  ).length;
+
   return (
-    <div className="flex-1 bg-background">
-      <Header title="Moderator Dashboard" className="bg-red-500/10 border-b border-red-500/20" />
-      
-      <div className="p-4 space-y-6">
+    <div className="min-h-screen bg-background pb-24">
+      <div className="mx-auto w-full max-w-4xl space-y-5 px-4 pb-6 pt-5">
         {/* Moderator Badge */}
         <div className="flex items-center justify-center">
-          <Badge variant="outline" className="bg-red-500/10 border-red-500 text-red-600 px-4 py-2" data-testid="moderator-badge">
+          <Badge
+            variant="outline"
+            className="rounded-full border-red-500/40 bg-red-500/15 px-4 py-2 text-red-300 shadow-[0_0_20px_-10px_rgba(239,68,68,0.75)]"
+            data-testid="moderator-badge"
+          >
             <Shield className="w-4 h-4 mr-2" />
             Moderator Access
           </Badge>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="pending" data-testid="tab-pending">
-              Pending Verifications
-              {pendingVerifications.length > 0 && (
-                <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold rounded-full bg-red-500 text-white">
-                  {pendingVerifications.length}
-                </span>
-              )}
+          <TabsList className="grid h-auto w-full grid-cols-2 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-md">
+            <TabsTrigger
+              value="pending"
+              data-testid="tab-pending"
+              className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+            >
+              <span>Pending Verifications</span>
+              <ModeratorQueueCountBadge count={pendingVerificationCount} />
             </TabsTrigger>
-            <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
+            <TabsTrigger
+              value="reports"
+              data-testid="tab-reports"
+              className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+            >
+              <span>Reports</span>
+              <ModeratorQueueCountBadge count={unresolvedReportsCount} />
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="pending" className="space-y-4">
-            <Card>
+          <TabsContent value="pending" className="mt-5 space-y-4">
+            <Card className="border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
               <CardHeader>
-                <CardTitle>Pending Verifications</CardTitle>
-                <CardDescription>Community-verified posts awaiting moderator confirmation</CardDescription>
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  Pending Verifications
+                  <ModeratorQueueCountBadge count={pendingVerificationCount} />
+                </CardTitle>
+                <CardDescription className="text-muted-foreground/90">
+                  Community-verified posts awaiting moderator confirmation
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {isPendingLoading ? (
@@ -331,20 +378,24 @@ export default function ModeratorPage() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
                 ) : pendingVerifications.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Shield className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No pending verifications</p>
-                    <p className="text-sm">All community verifications have been reviewed</p>
+                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
+                    <Shield className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                    <p className="text-sm font-medium text-foreground/90">No pending verifications</p>
+                    <p className="mt-1 text-sm text-muted-foreground">All community verifications have been reviewed.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {pendingVerifications.map((post: any) => (
-                      <Card key={post.id} className="border-blue-500/20" data-testid={`pending-verification-${post.id}`}>
+                      <Card
+                        key={post.id}
+                        className="border-white/10 bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
+                        data-testid={`pending-verification-${post.id}`}
+                      >
                         <CardContent className="p-4">
-                          <div className="flex gap-4">
+                          <div className="flex flex-col gap-4 sm:flex-row">
                             {/* Video thumbnail - clickable */}
                             <div 
-                              className="relative w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted cursor-pointer group"
+                              className="group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-muted sm:h-24 sm:w-24"
                               onClick={() => setPostForComments(post)}
                               data-testid={`thumbnail-${post.id}`}
                             >
@@ -364,7 +415,7 @@ export default function ModeratorPage() {
                                   <FileText className="w-8 h-8 text-muted-foreground" />
                                 </div>
                               )}
-                              <div className="absolute top-1 right-1">
+                              <div className="absolute right-1 top-1">
                                 <Badge variant="secondary" className="text-xs">
                                   {post.genre}
                                 </Badge>
@@ -389,15 +440,15 @@ export default function ModeratorPage() {
 
                               {/* Verified comment display */}
                               {post.verifiedComment ? (
-                                <div className="bg-blue-500/10 border border-blue-500/20 rounded p-3 space-y-2">
+                                <div className="space-y-2 rounded-xl border border-blue-500/25 bg-blue-500/10 p-3">
                                   <div className="flex items-center justify-between">
-                                    <p className="text-xs font-medium text-blue-400">Uploader's Selection:</p>
+                                    <p className="text-xs font-medium text-blue-300">Uploader's Selection:</p>
                                     <Badge variant="secondary" className="text-xs">
                                       <MessageSquare className="w-3 h-3 mr-1" />
                                       Selected Comment
                                     </Badge>
                                   </div>
-                                  <div className="bg-background/50 rounded p-2">
+                                  <div className="rounded-lg border border-white/10 bg-black/25 p-2">
                                     <div className="flex items-center gap-2 mb-1">
                                       <User className="w-3 h-3" />
                                       <span className="text-xs font-medium">@{post.verifiedComment.user?.username || 'Unknown'}</span>
@@ -406,17 +457,17 @@ export default function ModeratorPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="bg-blue-500/10 border border-blue-500/20 rounded p-2">
-                                  <p className="text-xs font-medium text-blue-400 mb-1">Community Identified</p>
+                                <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 p-2">
+                                  <p className="mb-1 text-xs font-medium text-blue-300">Community Identified</p>
                                   <p className="text-sm">A user marked a comment as the correct track ID</p>
                                 </div>
                               )}
 
                               {/* Action buttons */}
-                              <div className="flex gap-2 pt-2">
+                              <div className="flex flex-wrap gap-2 pt-2">
                                 <Button
                                   size="sm"
-                                  className="bg-green-600 hover:bg-green-700"
+                                  className="bg-accent text-accent-foreground hover:bg-accent/90"
                                   onClick={() => {
                                     setSelectedPost(post);
                                     setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
@@ -448,11 +499,16 @@ export default function ModeratorPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="reports" className="space-y-4">
-            <Card>
+          <TabsContent value="reports" className="mt-5 space-y-4">
+            <Card className="border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
               <CardHeader>
-                <CardTitle>Reported Content</CardTitle>
-                <CardDescription>Content flagged by users for review</CardDescription>
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  Reports
+                  <ModeratorQueueCountBadge count={unresolvedReportsCount} />
+                </CardTitle>
+                <CardDescription className="text-muted-foreground/90">
+                  Content flagged by users for review
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {isReportsLoading ? (
@@ -461,20 +517,24 @@ export default function ModeratorPage() {
                     <p>Loading reports...</p>
                   </div>
                 ) : reportedContent.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No reported content at this time</p>
-                    <p className="text-sm">All clear! 🎉</p>
+                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
+                    <AlertTriangle className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                    <p className="text-sm font-medium text-foreground/90">No reported content at this time</p>
+                    <p className="mt-1 text-sm text-muted-foreground">All clear for now.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {reportedContent.map((report: any) => (
-                      <Card key={report.id} className="border-red-500/20" data-testid={`report-${report.id}`}>
+                      <Card
+                        key={report.id}
+                        className="border-white/10 bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
+                        data-testid={`report-${report.id}`}
+                      >
                         <CardContent className="p-4">
-                          <div className="flex gap-4">
+                          <div className="flex flex-col gap-4 sm:flex-row">
                             {/* Video thumbnail - clickable */}
                             <div 
-                              className="relative w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted cursor-pointer group"
+                              className="group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-muted sm:h-24 sm:w-24"
                               onClick={async () => {
                                 if (report.post?.id) {
                                   // Fetch the full post data to ensure we have all fields
@@ -563,7 +623,7 @@ export default function ModeratorPage() {
                                   {report.post?.title || report.post?.description || "Unknown post"}
                                 </p>
                                 {report.is_user_report && report.reportedUser && (
-                                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded p-2 mt-2">
+                                  <div className="mt-2 rounded-xl border border-yellow-500/25 bg-yellow-500/10 p-2">
                                     <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ User Comment Report</p>
                                     <p className="text-sm text-muted-foreground">
                                       Reported user: <span className="font-semibold">@{report.reportedUser.username}</span>
@@ -581,15 +641,39 @@ export default function ModeratorPage() {
                                     Post by: @{report.post.user.username}
                                   </p>
                                 )}
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                                  <User className="w-4 h-4" />
-                                  <span>Reported by @{report.reporter?.username || "Unknown"}</span>
+                                <div
+                                  className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-2 text-xs"
+                                  data-testid={`reporter-meta-${report.id}`}
+                                >
+                                  {report.reporter?.avatar_url ? (
+                                    <img
+                                      src={report.reporter.avatar_url}
+                                      alt=""
+                                      className="h-7 w-7 shrink-0 rounded-full border border-white/15 object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 bg-muted">
+                                      <User className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1 space-y-0.5">
+                                    <p className="text-foreground">
+                                      <span className="text-muted-foreground">Reported by </span>
+                                      <span className="font-semibold">
+                                        @{report.reporter?.username ?? "unknown"}
+                                      </span>
+                                    </p>
+                                    <p className="flex items-center gap-1 text-muted-foreground">
+                                      <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                      <span>Reported on {formatModeratorReportTimestamp(report.created_at)}</span>
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
 
                               {/* Report reason */}
-                              <div className="bg-red-500/10 border border-red-500/20 rounded p-3">
-                                <p className="text-xs font-medium text-red-400 mb-1">Report Reason:</p>
+                              <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3">
+                                <p className="mb-1 text-xs font-medium text-red-300">Report Reason:</p>
                                 <p className="text-sm">{report.reason}</p>
                                 {report.description && (
                                   <div className="mt-2 pt-2 border-t border-red-500/20">
@@ -715,7 +799,7 @@ export default function ModeratorPage() {
         setSelectedPost(null);
         setSelectedCommentId("");
       }}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-background/95 backdrop-blur-md">
+        <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto bg-background/95 backdrop-blur-md">
           <DialogHeader>
             <DialogTitle>Review Comments & Select Identification</DialogTitle>
           </DialogHeader>
@@ -723,7 +807,7 @@ export default function ModeratorPage() {
           {selectedPost && (
             <div className="space-y-4">
               {/* Post info summary */}
-              <div className="bg-muted/50 p-3 rounded-lg">
+              <div className="rounded-lg border border-white/10 bg-black/25 p-3">
                 <p className="font-semibold text-sm mb-1">{selectedPost.description}</p>
                 <p className="text-xs text-muted-foreground">Uploaded by @{selectedPost.user.username}</p>
               </div>
@@ -737,13 +821,26 @@ export default function ModeratorPage() {
               ) : (
                 <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
                   <div className="space-y-3">
-                    {postComments.map((comment) => (
-                      <div 
-                        key={comment.id} 
-                        className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${
-                          selectedCommentId === comment.id 
-                            ? 'border-green-500 bg-green-50/30' 
-                            : 'border-border hover:bg-accent/50'
+                    {postComments.map((comment) => {
+                      const isSelected = selectedCommentId === comment.id;
+                      const isOldest = comment.id === oldestPostCommentId;
+                      const highlightClass = isOldest
+                        ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
+                        : "border-border hover:bg-accent/50";
+                      const selectionRingClass = isSelected
+                        ? isOldest
+                          ? "ring-2 ring-[#3B82F6]/95 shadow-[0_0_24px_rgba(59,130,246,0.65)]"
+                          : "ring-2 ring-white shadow-[0_0_28px_rgba(255,255,255,0.45)]"
+                        : "";
+                      return (
+                      <div
+                        key={comment.id}
+                        className={`flex items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
+                          isSelected ? selectionRingClass : ""
+                        } ${
+                          isSelected && !isOldest
+                            ? "border-white/95 bg-white/8 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)]"
+                            : ""
                         }`}
                       >
                         <RadioGroupItem 
@@ -752,7 +849,7 @@ export default function ModeratorPage() {
                           data-testid={`radio-comment-${comment.id}`} 
                         />
                         <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="mb-2 flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
                               <User className="w-4 h-4 text-primary" />
                             </div>
@@ -761,6 +858,15 @@ export default function ModeratorPage() {
                               {comment.user.verified_artist && (
                                 <CheckCircle className="w-4 h-4 text-primary" />
                               )}
+                            </div>
+                            {isOldest && (
+                              <span className="whitespace-nowrap rounded-full border border-[#3B82F6] bg-[#3B82F6] px-2 py-0.5 text-[11px] font-medium text-white">
+                                Oldest Comment
+                              </span>
+                            )}
+                            <div className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <Clock3 className="h-3.5 w-3.5" />
+                              <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                             </div>
                           </div>
                           <p className="text-sm text-foreground">{comment.body}</p>
@@ -771,13 +877,13 @@ export default function ModeratorPage() {
                           )}
                         </Label>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </RadioGroup>
               )}
 
               {/* Action buttons */}
-              <div className="flex justify-end gap-2 pt-4 border-t border-border">
+              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -789,7 +895,6 @@ export default function ModeratorPage() {
                   Cancel
                 </Button>
                 <Button
-                  className="bg-green-600 hover:bg-green-700"
                   onClick={() => {
                     if (selectedCommentId && selectedPost) {
                       confirmVerificationMutation.mutate({
@@ -802,7 +907,7 @@ export default function ModeratorPage() {
                   data-testid="button-confirm-selection"
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  {confirmVerificationMutation.isPending ? "Confirming..." : "Confirm as Identified"}
+                  {confirmVerificationMutation.isPending ? "Confirming..." : "Confirm"}
                 </Button>
               </div>
             </div>

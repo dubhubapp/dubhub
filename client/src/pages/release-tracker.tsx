@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Calendar, Plus, Music, ExternalLink, Disc3 } from "lucide-react";
+import { Calendar, Music, ExternalLink, Disc3, Plus } from "lucide-react";
 import { formatReleaseTitleLine } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
@@ -151,6 +151,15 @@ export default function ReleaseTracker() {
 
   const effectiveScope: FeedScope = isArtist ? scope : "saved";
   const effectiveView: FeedView = effectiveScope === "saved" && feedView === "collaborations" ? "upcoming" : feedView;
+  const tabGroupClass =
+    "flex gap-1 p-1.5 rounded-xl border border-white/10 bg-black/35 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
+  const tabButtonBaseClass =
+    "flex-1 py-2 text-sm font-medium rounded-lg border border-white/10 transition-all";
+  const activeTabClass =
+    "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]";
+  const inactiveTabClass = "bg-black/20 text-white/70 hover:text-white hover:bg-black/30";
+  const releaseCardBaseClass =
+    "w-full text-left rounded-xl p-4 transition-all border flex gap-4 bg-black/30 backdrop-blur-md border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] hover:bg-black/40 hover:border-white/20";
 
   const { data: feed = [], isLoading } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
@@ -207,10 +216,10 @@ export default function ReleaseTracker() {
           navigate(`/releases/${r.id}?${params}`);
         }}
         className={cn(
-          "w-full text-left rounded-xl p-4 transition-colors flex gap-4",
+          releaseCardBaseClass,
           featured
             ? "bg-transparent border-0 px-1 py-2 shadow-none hover:bg-transparent"
-            : "bg-card border hover:bg-accent/5",
+            : "",
           !featured && savedOutToday &&
             "ring-1 ring-emerald-500/40 shadow-[0_0_24px_-8px_rgba(16,185,129,0.3)] bg-emerald-500/[0.06] border-emerald-500/35",
           !featured && isOwnerReleaseDay &&
@@ -305,33 +314,19 @@ export default function ReleaseTracker() {
   }
 
   return (
-    <div className="flex-1 bg-background overflow-y-auto pb-24">
+    <div className="flex-1 bg-background overflow-y-auto pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]">
       <div className="p-4 max-w-md mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">Releases</h1>
-          {isArtist && (
-            <Button
-              size="sm"
-              onClick={() => navigate("/releases/new")}
-              className="flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-              Add Release
-            </Button>
-          )}
-        </div>
-
         {currentUser?.id && (
           <div className="space-y-3 mb-4">
             {isArtist && (
-              <div className="flex gap-1 p-1 rounded-lg bg-muted">
+              <div className={tabGroupClass}>
                 {(["my", "saved"] as FeedScope[]).map((s) => (
                   <button
                     key={s}
                     type="button"
                     onClick={() => setScope(s)}
-                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                      scope === s ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    className={`${tabButtonBaseClass} ${
+                      scope === s ? activeTabClass : inactiveTabClass
                     }`}
                   >
                     {s === "my" ? "My Releases" : "Saved Releases"}
@@ -339,7 +334,7 @@ export default function ReleaseTracker() {
                 ))}
               </div>
             )}
-            <div className="flex gap-1 p-1 rounded-lg bg-muted">
+            <div className={tabGroupClass}>
               {(effectiveScope === "my"
                 ? (["upcoming", "collaborations", "past"] as FeedView[])
                 : (["upcoming", "past"] as FeedView[])
@@ -348,8 +343,8 @@ export default function ReleaseTracker() {
                   key={v}
                   type="button"
                   onClick={() => setFeedView(v)}
-                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                    feedView === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  className={`${tabButtonBaseClass} ${
+                    feedView === v ? activeTabClass : inactiveTabClass
                   }`}
                 >
                   {v === "upcoming" ? "Upcoming" : v === "collaborations" ? "Collaborations" : "Past"}
@@ -407,7 +402,7 @@ export default function ReleaseTracker() {
               effectiveView === "upcoming" || effectiveView === "collaborations"
             ).map(({ key: monthKey, label: monthLabel, items }) => (
               <section key={monthKey}>
-                <h2 className="text-sm font-semibold text-muted-foreground mb-3 sticky top-0 bg-background/95 backdrop-blur py-1 -mx-1 px-1">
+                <h2 className="text-sm font-semibold text-white/85 mb-3">
                   {monthLabel}
                 </h2>
                 <div className="space-y-4">
@@ -417,7 +412,7 @@ export default function ReleaseTracker() {
             ))}
             {feed.some((r) => r.isComingSoon) && (
               <section>
-                <h2 className="text-sm font-semibold text-muted-foreground mb-3">
+                <h2 className="text-sm font-semibold text-white/85 mb-3 mt-1">
                   Coming soon...
                 </h2>
                 <div className="space-y-4">
@@ -433,7 +428,7 @@ export default function ReleaseTracker() {
                           params.set("view", feedView);
                           navigate(`/releases/${r.id}?${params}`);
                         }}
-                        className="w-full text-left bg-card border rounded-xl p-4 hover:bg-accent/5 transition-colors flex gap-4"
+                        className={releaseCardBaseClass}
                       >
                         <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
                           {r.artworkUrl ? (
@@ -499,6 +494,26 @@ export default function ReleaseTracker() {
             )}
           </div>
         )}
+      </div>
+
+      <div
+        className="fixed inset-x-0 z-30 pointer-events-none"
+        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+      >
+        <div className="absolute inset-x-0 bottom-0 h-[calc(6.25rem+env(safe-area-inset-bottom,0px))] bg-background" />
+        <div className="absolute inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom,0px))] h-32 bg-gradient-to-t from-background via-background/95 via-45% to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-background/90 via-background/60 to-transparent" />
+        <div className="relative mx-auto max-w-md px-4">
+          <div className="relative pb-0 pt-1">
+            <Button
+              onClick={() => navigate("/releases/new")}
+              className="pointer-events-auto h-12 w-full rounded-xl border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]"
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Add Release
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

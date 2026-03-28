@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/user-context";
+import { cn } from "@/lib/utils";
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -28,6 +29,32 @@ const REPORT_REASONS = [
   "Impersonation",
   "Other",
 ];
+
+/** Report reason menu: full-height list (no inner scroll), subtle dividers, tick-only selection */
+const reportReasonSelectTriggerClass = cn(
+  "h-10 min-h-10 rounded-md border border-input bg-background px-3 text-left text-sm transition-colors",
+  "hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background",
+  "data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2 data-[state=open]:ring-offset-background",
+);
+
+const reportReasonSelectContentClass = cn(
+  "z-[100] max-h-none overflow-visible border border-border bg-popover p-0 text-popover-foreground shadow-md",
+);
+
+const reportReasonSelectViewportClass = cn(
+  "h-auto max-h-none min-h-0 w-full min-w-[var(--radix-select-trigger-width)]",
+);
+
+const reportReasonSelectItemClass = cn(
+  "relative cursor-pointer rounded-sm py-2 pl-8 pr-3 text-sm outline-none transition-colors duration-150",
+  "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+  "focus:bg-muted/40 data-[highlighted]:bg-muted/40",
+  /* Selected: checkmark + slightly stronger label only */
+  "data-[state=checked]:bg-transparent data-[state=checked]:font-medium",
+  "data-[state=checked]:data-[highlighted]:bg-muted/45",
+  /* Subtle divider after first row only between items */
+  "[&:not(:first-child)]:border-t [&:not(:first-child)]:border-border/25",
+);
 
 // Safety timeout to re-enable UI if request hangs (10 seconds)
 const SAFETY_TIMEOUT_MS = 10000;
@@ -102,19 +129,21 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
       }
     },
     onSuccess: () => {
-      // Do NOT close modal here - let handleOpenChange be the single source of truth
-      // Just show success toast and invalidate queries
       toast({
         title: "Report Submitted",
         description: "Thanks — our moderation team will review this shortly.",
       });
-      
-      // Invalidate queries (no refetch - let natural refetch happen)
+
       if (currentUser?.id && isMountedRef.current) {
         queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
       }
       if (isMountedRef.current) {
         queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+      }
+
+      // Close after success; `useEffect` on `isOpen` clears reason, description, and select state
+      if (isMountedRef.current) {
+        onClose();
       }
     },
     onError: (error: any) => {
@@ -122,7 +151,13 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
       // Just show error toast
       let errorMessage = "Failed to submit report";
       try {
-        if (error?.message) {
+        const bodyMsg =
+          error?.body && typeof error.body === "object" && "message" in error.body
+            ? String((error.body as { message?: string }).message ?? "")
+            : "";
+        if (bodyMsg) {
+          errorMessage = bodyMsg;
+        } else if (error?.message) {
           errorMessage = error.message;
         } else if (typeof error === "string") {
           errorMessage = error;
@@ -131,13 +166,22 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
         // If parsing fails, use default message
       }
 
-      if (errorMessage.includes("Already reported") || errorMessage.includes("409")) {
+      const isDuplicate =
+        error?.status === 409 ||
+        error?.body?.code === "DUPLICATE_REPORT" ||
+        /already reported this (post|comment)/i.test(errorMessage) ||
+        errorMessage.includes("Already reported");
+
+      if (isDuplicate) {
         toast({
-          title: "Already Reported",
-          description: "You have already reported this item.",
+          title: "Already reported",
+          description:
+            type === "comment"
+              ? "You’ve already reported this comment. Our team will review it."
+              : "You’ve already reported this post. Our team will review it.",
           variant: "destructive",
         });
-      } else if (errorMessage.includes("rate limit") || errorMessage.includes("429")) {
+      } else if (errorMessage.toLowerCase().includes("rate limit") || error?.status === 429) {
         toast({
           title: "Rate Limit Exceeded",
           description: "You've submitted too many reports. Please try again later.",
@@ -214,16 +258,10 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
     }
   }, [isOpen]);
 
-  // SINGLE SOURCE OF TRUTH: Only close modal here
+  // User dismiss (overlay, Escape, Cancel): notify parent. Success path calls `onClose()` from `onSuccess`.
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      // Force close nested Select dropdown immediately (prevents stuck portal overlay)
-      // This must happen BEFORE onClose() to ensure portal closes before dialog unmounts
       setIsReasonSelectOpen(false);
-      
-      // Call onClose synchronously - let Radix handle the close animation
-      // Note: Form reset, timeout cleanup, and diagnostics happen in the isOpen effect
-      // Focus restoration happens in onCloseAutoFocus to avoid duplicate blur calls
       onClose();
     }
   };
@@ -268,12 +306,21 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
               open={isReasonSelectOpen}
               onOpenChange={setIsReasonSelectOpen}
             >
-              <SelectTrigger>
+              <SelectTrigger
+                className={cn(
+                  reportReasonSelectTriggerClass,
+                  reason && "bg-muted/25",
+                )}
+              >
                 <SelectValue placeholder="Select a reason" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent
+                className={reportReasonSelectContentClass}
+                viewportClassName={reportReasonSelectViewportClass}
+                position="popper"
+              >
                 {REPORT_REASONS.map((r) => (
-                  <SelectItem key={r} value={r}>
+                  <SelectItem key={r} value={r} className={reportReasonSelectItemClass}>
                     {r}
                   </SelectItem>
                 ))}

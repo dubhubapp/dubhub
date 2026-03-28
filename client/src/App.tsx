@@ -31,6 +31,10 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string>('user');
   const [isLoading, setIsLoading] = useState(true);
+  const [enforcementState, setEnforcementState] = useState<{ banned: boolean; suspendedUntil: string | null }>({
+    banned: false,
+    suspendedUntil: null,
+  });
 
   useEffect(() => {
     // Check Supabase authentication session
@@ -52,11 +56,23 @@ function App() {
           // Fetch user profile to get role and check artist verification
           const { data: profileData, error: profileError } = await supabase
             .from('profiles')
-            .select('id, email, username, avatar_url, account_type, moderator, verified_artist')
+            .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
             .eq('id', session.user.id)
             .single();
           
           if (profileData) {
+            const suspendedUntil = profileData.suspended_until ? new Date(profileData.suspended_until) : null;
+            const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
+            const isBanned = profileData.banned === true;
+            if (isBanned || isSuspended) {
+              setEnforcementState({
+                banned: isBanned,
+                suspendedUntil: isSuspended ? profileData.suspended_until : null,
+              });
+              setIsLoading(false);
+              return;
+            }
+            setEnforcementState({ banned: false, suspendedUntil: null });
             // Block unverified artists from logging in
             if (profileData.account_type === 'artist' && !profileData.verified_artist) {
               console.warn('[App] Unverified artist blocked from login');
@@ -83,6 +99,7 @@ function App() {
           }
         } else {
           setIsAuthenticated(false);
+        setEnforcementState({ banned: false, suspendedUntil: null });
           // Clear localStorage if no session
           localStorage.removeItem('dubhub-authenticated');
           localStorage.removeItem('dubhub-user-role');
@@ -104,11 +121,22 @@ function App() {
         // Fetch role and check artist verification
         supabase
           .from('profiles')
-          .select('id, email, username, avatar_url, account_type, moderator, verified_artist')
+          .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
           .eq('id', session.user.id)
           .single()
           .then(({ data: profileData }) => {
             if (profileData) {
+              const suspendedUntil = profileData.suspended_until ? new Date(profileData.suspended_until) : null;
+              const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
+              const isBanned = profileData.banned === true;
+              if (isBanned || isSuspended) {
+                setEnforcementState({
+                  banned: isBanned,
+                  suspendedUntil: isSuspended ? profileData.suspended_until : null,
+                });
+                return;
+              }
+              setEnforcementState({ banned: false, suspendedUntil: null });
               // Block unverified artists from logging in
               if (profileData.account_type === 'artist' && !profileData.verified_artist) {
                 console.warn('[App] Unverified artist blocked from login');
@@ -133,6 +161,7 @@ function App() {
       } else if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
         setUserRole('user');
+        setEnforcementState({ banned: false, suspendedUntil: null });
         localStorage.removeItem('dubhub-authenticated');
         localStorage.removeItem('dubhub-user-role');
       }
@@ -204,6 +233,37 @@ function App() {
               <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
             </Route>
           </Switch>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  if (enforcementState.banned || enforcementState.suspendedUntil) {
+    const suspendedText = enforcementState.suspendedUntil
+      ? new Date(enforcementState.suspendedUntil).toLocaleString()
+      : null;
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <div className="h-screen bg-background flex items-center justify-center px-6">
+            <div className="max-w-md w-full rounded-xl border border-red-500/40 bg-red-500/10 p-6 text-center">
+              <h1 className="text-2xl font-bold text-red-300 mb-2">
+                {enforcementState.banned ? "Account permanently banned" : "Account temporarily suspended"}
+              </h1>
+              <p className="text-sm text-red-100/90 mb-4">
+                {enforcementState.banned
+                  ? "Your account has been permanently banned due to repeated violations of community guidelines."
+                  : `Your account is suspended until ${suspendedText}.`}
+              </p>
+              <button
+                className="inline-flex items-center justify-center rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-500/90"
+                onClick={handleSignOut}
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>

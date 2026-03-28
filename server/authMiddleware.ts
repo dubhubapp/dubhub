@@ -15,6 +15,9 @@ export interface AuthenticatedRequest extends Request {
     account_type?: string;
     verified_artist?: boolean;
     moderator?: boolean;
+    suspended_until?: string | null;
+    banned?: boolean | null;
+    warning_count?: number | null;
   };
 }
 
@@ -43,9 +46,22 @@ export async function withSupabaseUser(
     // Fetch full profile from Supabase profiles table (username, account_type, avatar_url, verified_artist, moderator)
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('username, account_type, avatar_url, verified_artist, moderator')
+      .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count')
       .eq('id', user.id)
       .single();
+    const suspendedUntil = profileData?.suspended_until ? new Date(profileData.suspended_until) : null;
+    const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
+    const isBanned = profileData?.banned === true;
+    if (isBanned || isSuspended) {
+      return res.status(403).json({
+        message: isBanned ? "Your account has been permanently banned." : "Your account is temporarily suspended.",
+        enforcement: {
+          banned: isBanned,
+          suspended_until: profileData?.suspended_until ?? null,
+        },
+      });
+    }
+
 
     if (profileError || !profileData) {
       console.error(`[Auth] Supabase profile not found for user ${user.id}:`, profileError?.message || 'No profile data');
@@ -76,6 +92,9 @@ export async function withSupabaseUser(
       account_type: profileData.account_type,
       verified_artist: profileData.verified_artist,
       moderator: profileData.moderator || false,
+      suspended_until: profileData.suspended_until ?? null,
+      banned: profileData.banned ?? false,
+      warning_count: profileData.warning_count ?? 0,
     };
     next();
   } catch (error) {
@@ -111,7 +130,7 @@ export async function optionalSupabaseUser(
     // Fetch full profile from Supabase profiles table
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('username, account_type, avatar_url, verified_artist, moderator')
+      .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count')
       .eq('id', user.id)
       .single();
 
@@ -122,6 +141,9 @@ export async function optionalSupabaseUser(
     }
 
     if (profileData) {
+      const suspendedUntil = profileData?.suspended_until ? new Date(profileData.suspended_until) : null;
+      const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
+      const isBanned = profileData?.banned === true;
       req.supabaseUser = {
         id: user.id,
         email: user.email,
@@ -137,7 +159,15 @@ export async function optionalSupabaseUser(
         account_type: profileData.account_type,
         verified_artist: profileData.verified_artist,
         moderator: profileData.moderator || false,
+        suspended_until: profileData.suspended_until ?? null,
+        banned: profileData.banned ?? false,
+        warning_count: profileData.warning_count ?? 0,
       };
+      // For optional auth routes, hide user context when blocked.
+      if (isBanned || isSuspended) {
+        req.supabaseUser = undefined;
+        req.dbUser = undefined;
+      }
     }
 
     next();

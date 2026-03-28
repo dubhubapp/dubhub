@@ -53,6 +53,37 @@ function canAccessInternalAnalytics(user: AuthenticatedRequest["dbUser"] | undef
   );
 }
 
+/** Comment reports embed `COMMENT_ID:{uuid}` in description; match UUID anywhere for robustness. */
+function parseReportedCommentId(description: unknown): string | null {
+  if (typeof description !== "string" || !description) return null;
+  const m = description.match(/COMMENT_ID:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Remove the exact content this report targets: reported comment, else reported post.
+ * Throws POST_DELETE_FAILED if post removal fails; NO_REPORTED_CONTENT if nothing to remove.
+ */
+async function enforceRemoveReportedContentFromReport(report: {
+  description: string | null;
+  reported_post_id: string | null;
+}): Promise<"comment" | "post"> {
+  const commentId = parseReportedCommentId(report.description);
+  if (commentId) {
+    await db.execute(sql`DELETE FROM comment_votes WHERE comment_id = ${commentId}`);
+    await db.execute(sql`DELETE FROM comments WHERE id = ${commentId}`);
+    return "comment";
+  }
+  if (report.reported_post_id) {
+    const ok = await storage.deletePost(report.reported_post_id);
+    if (!ok) {
+      throw new Error("POST_DELETE_FAILED");
+    }
+    return "post";
+  }
+  throw new Error("NO_REPORTED_CONTENT");
+}
+
 async function fetchPublicLightProfileStats(userId: string): Promise<import("@shared/schema").PublicLightProfileStats> {
   // `reputation` / `correct_ids` come from one LEFT JOIN to `user_karma` (same source as GET …/karma).
   const result = await db.execute(sql`
@@ -831,16 +862,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Post not found" });
       }
 
-      // Abuse prevention: Check if user already reported this post
-      const existingReport = await db.execute(sql`
+      // One post report per reporter per post (exclude comment reports, which use COMMENT_ID: in description)
+      const existingPostReport = await db.execute(sql`
         SELECT id FROM reports
         WHERE reporter_id = ${userId}
           AND reported_post_id = ${postId}
-          AND status != 'dismissed'
+          AND (description IS NULL OR description NOT LIKE 'COMMENT_ID:%')
         LIMIT 1
       `);
-      if ((existingReport as any).rows?.length > 0) {
-        return res.status(409).json({ message: "Already reported" });
+      if ((existingPostReport as any).rows?.length > 0) {
+        return res.status(409).json({
+          message: "You have already reported this post.",
+          code: "DUPLICATE_REPORT",
+        });
       }
 
       // Rate limiting: Check reports in last hour
@@ -925,17 +959,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const comment = commentRows[0];
 
-      // Abuse prevention: Check if user already reported this comment
-      const existingReport = await db.execute(sql`
+      const commentIdPrefix = `COMMENT_ID:${commentId}`;
+      const existingCommentReport = await db.execute(sql`
         SELECT id FROM reports
         WHERE reporter_id = ${userId}
-          AND reported_user_id = ${comment.user_id}
-          AND reported_post_id = ${comment.post_id}
-          AND status != 'dismissed'
+          AND (
+            description = ${commentIdPrefix}
+            OR description LIKE ${`${commentIdPrefix}|%`}
+          )
         LIMIT 1
       `);
-      if ((existingReport as any).rows?.length > 0) {
-        return res.status(409).json({ message: "Already reported" });
+      if ((existingCommentReport as any).rows?.length > 0) {
+        return res.status(409).json({
+          message: "You have already reported this comment.",
+          code: "DUPLICATE_REPORT",
+        });
       }
 
       // Rate limiting: Check reports in last hour
@@ -2051,11 +2089,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             moderator: report.post_user_moderator || false,
           } : null,
         } : null,
-        reporter: report.reporter_username ? {
-          id: report.reporter_id,
-          username: report.reporter_username,
-          avatar_url: report.reporter_avatar_url,
-        } : null,
+        reporter: report.reporter_id
+          ? {
+              id: report.reporter_id,
+              username: (report.reporter_username && String(report.reporter_username).trim()) || "Unknown",
+              avatar_url: report.reporter_avatar_url ?? null,
+            }
+          : null,
         reportedUser: report.reported_user_username ? {
           id: report.reported_user_id,
           username: report.reported_user_username,
@@ -2072,6 +2112,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       // Return empty array on error instead of 500 to prevent frontend crashes
       res.json([]);
+    }
+  });
+
+  // Moderator: user enforcement history/status
+  app.get("/api/moderator/users/:userId/enforcement-history", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const userId = req.params.userId;
+      const profileResult = await db.execute(sql`
+        SELECT warning_count, suspended_until, banned
+        FROM profiles
+        WHERE id = ${userId}
+        LIMIT 1
+      `);
+      const profile = ((profileResult as any).rows || [])[0];
+      if (!profile) {
+        return res.status(404).json({ message: "User profile not found" });
+      }
+
+      const historyResult = await db.execute(sql`
+        SELECT id, reason, resolution_action, resolved_at, created_at, reported_post_id
+        FROM reports
+        WHERE reported_user_id = ${userId}
+          AND resolution_action IS NOT NULL
+        ORDER BY COALESCE(resolved_at, created_at) DESC
+        LIMIT 200
+      `);
+      const rows = (historyResult as any).rows || [];
+
+      const warningsFromReports = rows
+        .filter((r: any) => r.resolution_action === "user_warned")
+        .map((r: any) => ({
+          reportId: r.id,
+          reason: r.reason ?? null,
+          at: r.resolved_at ?? r.created_at ?? null,
+          postId: r.reported_post_id ?? null,
+        }));
+
+      // Also include warns logged in moderator_actions (post owner = user), so history matches
+      // profiles.warning_count when some older reports had no reported_user_id set.
+      const maWarnResult = await db.execute(sql`
+        SELECT ma.id, ma.reason, ma.created_at, ma.post_id
+        FROM moderator_actions ma
+        INNER JOIN posts p ON p.id = ma.post_id
+        WHERE p.user_id = ${userId}
+          AND ma.action = 'warn_user'
+        ORDER BY ma.created_at DESC
+        LIMIT 200
+      `);
+      const maWarnRows = (maWarnResult as any).rows || [];
+      const warningsFromActions = maWarnRows.map((r: any) => ({
+        reportId: null,
+        reason: r.reason ?? null,
+        at: r.created_at ?? null,
+        postId: r.post_id ?? null,
+      }));
+
+      let warnUnknownSeq = 0;
+      const warnDedupeKey = (at: string | null, postId: string | null) => {
+        if (!at) return `unknown_${warnUnknownSeq++}`;
+        const t = new Date(at).getTime();
+        if (Number.isNaN(t)) return `bad_${warnUnknownSeq++}`;
+        const bucket = Math.floor(t / 5000);
+        return `${postId ?? "nopost"}_${bucket}`;
+      };
+      const seenWarn = new Set<string>();
+      const warnings = [...warningsFromReports, ...warningsFromActions]
+        .sort((a, b) => {
+          const ta = a.at ? new Date(a.at).getTime() : 0;
+          const tb = b.at ? new Date(b.at).getTime() : 0;
+          return tb - ta;
+        })
+        .filter((w) => {
+          const k = warnDedupeKey(w.at, w.postId);
+          if (seenWarn.has(k)) return false;
+          seenWarn.add(k);
+          return true;
+        });
+
+      const suspensions = rows
+        .filter((r: any) => typeof r.resolution_action === "string" && r.resolution_action.startsWith("user_suspended_"))
+        .map((r: any) => {
+          const m = String(r.resolution_action).match(/user_suspended_(\d+)_days/);
+          const days = m ? Number(m[1]) : null;
+          return {
+            reportId: r.id,
+            reason: r.reason ?? null,
+            days: Number.isFinite(days as number) ? days : null,
+            at: r.resolved_at ?? r.created_at ?? null,
+          };
+        });
+
+      const bans = rows
+        .filter((r: any) => r.resolution_action === "user_banned_permanently")
+        .map((r: any) => ({
+          reportId: r.id,
+          reason: r.reason ?? null,
+          at: r.resolved_at ?? r.created_at ?? null,
+        }));
+
+      res.json({
+        profile: {
+          warningCount: Number(profile.warning_count ?? 0),
+          suspendedUntil: profile.suspended_until ?? null,
+          banned: Boolean(profile.banned),
+        },
+        history: {
+          warnings: warnings.map((w: { reportId: string | null; reason: string | null; at: string | null }) => ({
+            reportId: w.reportId,
+            reason: w.reason,
+            at: w.at,
+          })),
+          suspensions,
+          bans,
+        },
+      });
+    } catch (error) {
+      console.error("[/api/moderator/users/:userId/enforcement-history] Error:", error);
+      res.status(500).json({ message: "Failed to load enforcement history" });
     }
   });
 
@@ -2221,8 +2382,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "This report does not have an associated post" });
       }
 
-      // Delete the post
-      await storage.deletePost(report.reported_post_id);
+      const deleted = await storage.deletePost(report.reported_post_id);
+      if (!deleted) {
+        return res.status(500).json({ message: "Failed to delete post" });
+      }
 
       // Mark report as resolved
       await db.execute(sql`
@@ -2267,40 +2430,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const report = reportRows[0];
 
-      if (!report.reported_user_id) {
-        return res.status(400).json({ message: "This report does not have an associated user/comment" });
-      }
-
-      // Extract comment ID from description (format: "COMMENT_ID:{commentId}|{description}")
-      let commentId: string | null = null;
-      if (report.description && report.description.startsWith('COMMENT_ID:')) {
-        const parts = report.description.split('|');
-        commentId = parts[0].replace('COMMENT_ID:', '').trim();
-      }
-
+      const commentId = parseReportedCommentId(report.description);
       if (!commentId) {
         return res.status(400).json({ message: "Could not find comment ID in report" });
       }
 
-      // Delete the comment
-      await db.execute(sql`
-        DELETE FROM comments WHERE id = ${commentId}
-      `);
+      let targetUserId: string | null = report.reported_user_id ?? null;
+      if (!targetUserId) {
+        const commentOwnerResult = await db.execute(sql`
+          SELECT user_id FROM comments WHERE id = ${commentId} LIMIT 1
+        `);
+        const commentOwnerRows = (commentOwnerResult as any).rows || [];
+        targetUserId = commentOwnerRows[0]?.user_id ?? null;
+      }
+      if (!targetUserId) {
+        return res.status(400).json({ message: "This report does not have an associated user/comment" });
+      }
+
+      await db.execute(sql`DELETE FROM comment_votes WHERE comment_id = ${commentId}`);
+      await db.execute(sql`DELETE FROM comments WHERE id = ${commentId}`);
 
       // Notify the comment owner about the removal
-      if (report.reported_user_id) {
-        await db.execute(sql`
-          INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
-          VALUES (
-            ${report.reported_user_id},
-            ${moderatorId},
-            ${report.reported_post_id},
-            'Your comment was removed: ' || ${report.reason || 'Violation of community guidelines'},
-            false,
-            NOW()
-          )
-        `);
-      }
+      await db.execute(sql`
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        VALUES (
+          ${targetUserId},
+          ${moderatorId},
+          ${report.reported_post_id},
+          'Your comment was removed: ' || ${report.reason || 'Violation of community guidelines'},
+          false,
+          NOW()
+        )
+      `);
 
       // Mark report as resolved
       await db.execute(sql`
@@ -2347,26 +2508,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const report = reportRows[0];
 
-      if (!report.reported_user_id) {
-        return res.status(400).json({ message: "This report does not have an associated user" });
-      }
-
-      // Check if this is a comment report (description contains COMMENT_ID)
-      const isCommentReport = report.description && report.description.startsWith('COMMENT_ID:');
-      let commentId: string | null = null;
-      if (isCommentReport) {
-        const parts = report.description.split('|');
-        commentId = parts[0].replace('COMMENT_ID:', '').trim();
-      }
-
-      // Apply moderation action: Warn user (includes removing reported content)
-      // Part 1: Remove the reported content as part of the warning action
-      if (isCommentReport && commentId) {
-        await db.execute(sql`
-          DELETE FROM comments WHERE id = ${commentId}
+      const commentIdForTarget = parseReportedCommentId(report.description);
+      let targetUserId: string | null = report.reported_user_id ?? report.post_owner_id ?? null;
+      if (!targetUserId && commentIdForTarget) {
+        const commentOwnerResult = await db.execute(sql`
+          SELECT user_id FROM comments WHERE id = ${commentIdForTarget} LIMIT 1
         `);
-      } else if (report.reported_post_id && report.post_owner_id === report.reported_user_id) {
-        await storage.deletePost(report.reported_post_id);
+        const commentOwnerRows = (commentOwnerResult as any).rows || [];
+        targetUserId = commentOwnerRows[0]?.user_id ?? null;
+      }
+      if (!targetUserId) {
+        return res.status(400).json({ message: "Unable to resolve reported user for this report" });
+      }
+
+      let removedContentKind: "comment" | "post";
+      try {
+        removedContentKind = await enforceRemoveReportedContentFromReport(report);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === "NO_REPORTED_CONTENT") {
+          return res.status(400).json({
+            message: "This report does not reference a post or comment that can be removed.",
+          });
+        }
+        if (msg === "POST_DELETE_FAILED") {
+          return res.status(500).json({
+            message: "Failed to remove the reported post. Please try again or use Remove post.",
+          });
+        }
+        throw e;
       }
 
       // Part 2: Apply warning to user profile
@@ -2374,31 +2544,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await db.execute(sql`
           UPDATE profiles
           SET warning_count = COALESCE(warning_count, 0) + 1
-          WHERE id = ${report.reported_user_id}
+          WHERE id = ${targetUserId}
         `);
       } catch (error) {
         // If warning_count column doesn't exist, that's okay
       }
 
-      // Create detailed notification message
-      let notificationMessage: string;
-      if (isCommentReport) {
-        notificationMessage = `Your comment was removed for breaking our content guidelines following a report for ${report.reason || 'violation of community guidelines'}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`;
-      } else {
-        notificationMessage = `Your post was removed for breaking our content guidelines following a report for ${report.reason || 'violation of community guidelines'}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`;
-      }
+      const notificationMessage =
+        removedContentKind === "comment"
+          ? `Your comment was removed for breaking our content guidelines following a report for ${report.reason || "violation of community guidelines"}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`
+          : `Your post was removed for breaking our content guidelines following a report for ${report.reason || "violation of community guidelines"}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`;
+
+      // Post was deleted — avoid FK to posts.id on notifications.post_id
+      const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
       // Notify the user about the warning
       await db.execute(sql`
         INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
         VALUES (
-          ${report.reported_user_id},
+          ${targetUserId},
           ${moderatorId},
-          ${report.reported_post_id},
+          ${notificationPostId},
           ${notificationMessage},
           false,
           NOW()
         )
+      `);
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
+        VALUES (${notificationPostId}, ${moderatorId}, 'warn_user', ${report.reason ?? 'content guideline violation'}, NOW())
       `);
 
       // Mark report as resolved
@@ -2421,8 +2595,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/moderator/reports/:reportId/suspend-user", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const reportId = req.params.reportId;
-      const { days = 7 } = req.body;
-      
+      const MAX_SUSPEND_DAYS = 31;
+      const MIN_SUSPEND_DAYS = 1;
+      const rawDays = req.body?.days;
+      const resolved =
+        rawDays === undefined || rawDays === null ? 7 : Number(rawDays);
+      if (
+        !Number.isFinite(resolved) ||
+        !Number.isInteger(resolved) ||
+        resolved < MIN_SUSPEND_DAYS ||
+        resolved > MAX_SUSPEND_DAYS
+      ) {
+        return res.status(400).json({
+          message: `Suspension duration must be a whole number between ${MIN_SUSPEND_DAYS} and ${MAX_SUSPEND_DAYS} days.`,
+          code: "INVALID_SUSPEND_DAYS",
+        });
+      }
+      const days = resolved;
+
       if (!req.dbUser || !req.dbUser.moderator) {
         return res.status(403).json({ message: "Moderator access required" });
       }
@@ -2447,54 +2637,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const report = reportRows[0];
 
-      if (!report.reported_user_id) {
-        return res.status(400).json({ message: "This report does not have an associated user" });
-      }
-
-      // Check if this is a comment report (description contains COMMENT_ID)
-      const isCommentReport = report.description && report.description.startsWith('COMMENT_ID:');
-      let commentId: string | null = null;
-      if (isCommentReport) {
-        const parts = report.description.split('|');
-        commentId = parts[0].replace('COMMENT_ID:', '').trim();
-      }
-
-      // Apply moderation action: Suspend user (includes removing reported content)
-      // Part 1: Remove the reported content as part of the suspension action
-      if (isCommentReport && commentId) {
-        await db.execute(sql`
-          DELETE FROM comments WHERE id = ${commentId}
+      const commentIdForTarget = parseReportedCommentId(report.description);
+      let targetUserId: string | null = report.reported_user_id ?? report.post_owner_id ?? null;
+      if (!targetUserId && commentIdForTarget) {
+        const commentOwnerResult = await db.execute(sql`
+          SELECT user_id FROM comments WHERE id = ${commentIdForTarget} LIMIT 1
         `);
-      } else if (report.reported_post_id && report.post_owner_id === report.reported_user_id) {
-        await storage.deletePost(report.reported_post_id);
+        const commentOwnerRows = (commentOwnerResult as any).rows || [];
+        targetUserId = commentOwnerRows[0]?.user_id ?? null;
+      }
+      if (!targetUserId) {
+        return res.status(400).json({ message: "Unable to resolve reported user for this report" });
+      }
+
+      let removedContentKind: "comment" | "post";
+      try {
+        removedContentKind = await enforceRemoveReportedContentFromReport(report);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === "NO_REPORTED_CONTENT") {
+          return res.status(400).json({
+            message: "This report does not reference a post or comment that can be removed.",
+          });
+        }
+        if (msg === "POST_DELETE_FAILED") {
+          return res.status(500).json({
+            message: "Failed to remove the reported post. Please try again or use Remove post.",
+          });
+        }
+        throw e;
       }
 
       // Part 2: Apply suspension to user profile
       await db.execute(sql`
         UPDATE profiles
         SET suspended_until = NOW() + (INTERVAL '1 day' * ${days})
-        WHERE id = ${report.reported_user_id}
+        WHERE id = ${targetUserId}
       `);
 
-      // Create detailed notification message
-      let notificationMessage: string;
-      if (isCommentReport) {
-        notificationMessage = `Your comment was removed and your account has been suspended for ${days} days following a report for ${report.reason || 'violation of community guidelines'}. You're here to get tracks ID'd, so please respect our platform.`;
-      } else {
-        notificationMessage = `Your post was removed and your account has been suspended for ${days} days following a report for ${report.reason || 'violation of community guidelines'}. You're here to get tracks ID'd, so please respect our platform.`;
-      }
+      const notificationMessage =
+        removedContentKind === "comment"
+          ? `Your comment was removed and your account has been suspended for ${days} days following a report for ${report.reason || "violation of community guidelines"}. You're here to get tracks ID'd, so please respect our platform.`
+          : `Your post was removed and your account has been suspended for ${days} days following a report for ${report.reason || "violation of community guidelines"}. You're here to get tracks ID'd, so please respect our platform.`;
+
+      const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
       // Notify the user about the suspension
       await db.execute(sql`
         INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
         VALUES (
-          ${report.reported_user_id},
+          ${targetUserId},
           ${moderatorId},
-          ${report.reported_post_id},
+          ${notificationPostId},
           ${notificationMessage},
           false,
           NOW()
         )
+      `);
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
+        VALUES (${notificationPostId}, ${moderatorId}, 'suspend_user', ${report.reason ?? 'content guideline violation'}, NOW())
       `);
 
       // Mark report as resolved
@@ -2541,26 +2743,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const report = reportRows[0];
 
-      if (!report.reported_user_id) {
-        return res.status(400).json({ message: "This report does not have an associated user" });
-      }
-
-      // Check if this is a comment report (description contains COMMENT_ID)
-      const isCommentReport = report.description && report.description.startsWith('COMMENT_ID:');
-      let commentId: string | null = null;
-      if (isCommentReport) {
-        const parts = report.description.split('|');
-        commentId = parts[0].replace('COMMENT_ID:', '').trim();
-      }
-
-      // Apply moderation action: Ban user permanently (includes removing reported content)
-      // Part 1: Remove the reported content as part of the ban action
-      if (isCommentReport && commentId) {
-        await db.execute(sql`
-          DELETE FROM comments WHERE id = ${commentId}
+      const commentIdForTarget = parseReportedCommentId(report.description);
+      let targetUserId: string | null = report.reported_user_id ?? report.post_owner_id ?? null;
+      if (!targetUserId && commentIdForTarget) {
+        const commentOwnerResult = await db.execute(sql`
+          SELECT user_id FROM comments WHERE id = ${commentIdForTarget} LIMIT 1
         `);
-      } else if (report.reported_post_id && report.post_owner_id === report.reported_user_id) {
-        await storage.deletePost(report.reported_post_id);
+        const commentOwnerRows = (commentOwnerResult as any).rows || [];
+        targetUserId = commentOwnerRows[0]?.user_id ?? null;
+      }
+      if (!targetUserId) {
+        return res.status(400).json({ message: "Unable to resolve reported user for this report" });
+      }
+
+      let removedContentKind: "comment" | "post";
+      try {
+        removedContentKind = await enforceRemoveReportedContentFromReport(report);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === "NO_REPORTED_CONTENT") {
+          return res.status(400).json({
+            message: "This report does not reference a post or comment that can be removed.",
+          });
+        }
+        if (msg === "POST_DELETE_FAILED") {
+          return res.status(500).json({
+            message: "Failed to remove the reported post. Please try again or use Remove post.",
+          });
+        }
+        throw e;
       }
 
       // Part 2: Apply permanent ban to user profile
@@ -2570,36 +2781,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
           UPDATE profiles
           SET suspended_until = NOW() + (INTERVAL '1 day' * 36500),
               banned = true
-          WHERE id = ${report.reported_user_id}
+          WHERE id = ${targetUserId}
         `);
       } catch (error) {
         // If banned column doesn't exist, just use suspended_until
         await db.execute(sql`
           UPDATE profiles
           SET suspended_until = NOW() + (INTERVAL '1 day' * 36500)
-          WHERE id = ${report.reported_user_id}
+          WHERE id = ${targetUserId}
         `);
       }
 
-      // Create detailed notification message
-      let notificationMessage: string;
-      if (isCommentReport) {
-        notificationMessage = `Your comment was removed and your account has been permanently banned following a report for ${report.reason || 'violation of community guidelines'}.`;
-      } else {
-        notificationMessage = `Your post was removed and your account has been permanently banned following a report for ${report.reason || 'violation of community guidelines'}.`;
-      }
+      const notificationMessage =
+        removedContentKind === "comment"
+          ? `Your comment was removed and your account has been permanently banned following a report for ${report.reason || "violation of community guidelines"}.`
+          : `Your post was removed and your account has been permanently banned following a report for ${report.reason || "violation of community guidelines"}.`;
+
+      const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
       // Notify the user about the ban
       await db.execute(sql`
         INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
         VALUES (
-          ${report.reported_user_id},
+          ${targetUserId},
           ${moderatorId},
-          ${report.reported_post_id},
+          ${notificationPostId},
           ${notificationMessage},
           false,
           NOW()
         )
+      `);
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
+        VALUES (${notificationPostId}, ${moderatorId}, 'ban_user', ${report.reason ?? 'content guideline violation'}, NOW())
       `);
 
       // Mark report as resolved
@@ -2699,8 +2913,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // Use authenticated user's UUID, not params
       const userId = req.dbUser.id;
-      const notifications = await storage.getUserNotifications(userId);
-      res.json(notifications);
+      const limitRaw = Number(req.query.limit ?? 20);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20;
+      const before = typeof req.query.before === "string" ? req.query.before : undefined;
+      const beforeId = typeof req.query.beforeId === "string" ? req.query.beforeId : undefined;
+      const after = typeof req.query.after === "string" ? req.query.after : undefined;
+      const afterId = typeof req.query.afterId === "string" ? req.query.afterId : undefined;
+      const page = await storage.getUserNotifications(userId, { limit, before, beforeId, after, afterId });
+      res.json(page);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("[/api/user/:id/notifications] Error:", error);

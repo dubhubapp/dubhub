@@ -46,7 +46,10 @@ export interface IStorage {
 
   // Notifications
   createNotification(notification: InsertNotification): Promise<Notification>;
-  getUserNotifications(userId: string): Promise<NotificationWithUser[]>;
+  getUserNotifications(
+    userId: string,
+    options?: { limit?: number; before?: string; beforeId?: string; after?: string; afterId?: string }
+  ): Promise<{ notifications: NotificationWithUser[]; hasMore: boolean }>;
   markNotificationAsRead(notificationId: string): Promise<boolean>;
   markAllNotificationsAsRead(userId: string): Promise<boolean>;
   getUnreadNotificationCount(userId: string): Promise<number>;
@@ -973,17 +976,18 @@ export class DatabaseStorage implements IStorage {
 
   async deletePost(id: string): Promise<boolean> {
     try {
-      // Delete related data first
+      // Delete related data first (column names must match live Supabase schema)
+      await db.execute(
+        sql`DELETE FROM comment_votes WHERE comment_id IN (SELECT id FROM comments WHERE post_id = ${id})`,
+      );
       await db.execute(sql`DELETE FROM post_likes WHERE post_id = ${id}`);
       await db.execute(sql`DELETE FROM comments WHERE post_id = ${id}`);
       await db.execute(sql`DELETE FROM artist_video_tags WHERE post_id = ${id}`);
-      await db.execute(sql`DELETE FROM reports WHERE post_id = ${id}`);
+      await db.execute(sql`DELETE FROM release_posts WHERE post_id = ${id}`);
+      await db.execute(sql`DELETE FROM reports WHERE reported_post_id = ${id}`);
       await db.execute(sql`DELETE FROM notifications WHERE post_id = ${id}`);
 
-      // Delete the post
-      const result = await db.execute(sql`
-        DELETE FROM posts WHERE id = ${id}
-      `);
+      await db.execute(sql`DELETE FROM posts WHERE id = ${id}`);
 
       return true;
     } catch (error) {
@@ -1362,7 +1366,10 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getUserNotifications(userId: string): Promise<NotificationWithUser[]> {
+  async getUserNotifications(
+    userId: string,
+    options?: { limit?: number; before?: string; beforeId?: string; after?: string; afterId?: string },
+  ): Promise<{ notifications: NotificationWithUser[]; hasMore: boolean }> {
     // Validate UUID before querying
     if (!this.isValidUUID(userId)) {
       console.error("[getUserNotifications] Invalid UUID:", userId);
@@ -1370,6 +1377,14 @@ export class DatabaseStorage implements IStorage {
     }
     
     try {
+      const parsedLimit = Number(options?.limit ?? 20);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20;
+      const before = options?.before ? new Date(options.before) : null;
+      const after = options?.after ? new Date(options.after) : null;
+      const hasBefore = !!before && !Number.isNaN(before.getTime());
+      const hasAfter = !!after && !Number.isNaN(after.getTime());
+      const pageLimit = limit + 1;
+
       const result = await db.execute(sql`
         SELECT
           n.id,
@@ -1390,12 +1405,23 @@ export class DatabaseStorage implements IStorage {
         LEFT JOIN posts po   ON po.id = n.post_id
         LEFT JOIN releases r ON r.id = n.release_id
         WHERE n.artist_id = ${userId}
-        ORDER BY n.created_at DESC
+          AND (
+            ${hasBefore}::boolean = false OR
+            n.created_at < ${hasBefore ? before : null}::timestamp
+          )
+          AND (
+            ${hasAfter}::boolean = false OR
+            n.created_at > ${hasAfter ? after : null}::timestamp
+          )
+        ORDER BY n.created_at DESC, n.id DESC
+        LIMIT ${pageLimit}
       `);
 
       const rows = (result as any).rows || [];
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
-      return rows.map((row: any) => ({
+      const notifications = pageRows.map((row: any) => ({
         id: row.id,
         artistId: row.artist_id,
         postId: row.post_id,
@@ -1416,9 +1442,10 @@ export class DatabaseStorage implements IStorage {
           ? { id: row.release_id, artworkUrl: this.releaseArtworkPublicUrl(row.release_artwork_url) }
           : null,
       }));
+      return { notifications, hasMore };
     } catch (error) {
       console.error("[getUserNotifications] Error:", error);
-      return [];
+      return { notifications: [], hasMore: false };
     }
   }
 

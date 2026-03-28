@@ -290,13 +290,13 @@ export default function Leaderboard() {
 
     return (
       <div
-        className="relative overflow-hidden rounded-xl bg-black/30 backdrop-blur-md border border-white/10 px-4 py-3 mb-4"
+        className="relative mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30 px-4 py-3 backdrop-blur-md"
         data-testid="rewards-banner"
       >
-        <div className="flex items-center gap-3">
-          <Trophy className="w-7 h-7 text-primary shrink-0" />
+        <div className="flex flex-col items-center justify-center gap-2 text-center">
+          <Trophy className="h-7 w-7 shrink-0 text-primary" />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold truncate">
+            <h3 className="text-sm font-semibold">
               {getCurrentMonth()} Reward - {reward}
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -367,10 +367,6 @@ export default function Leaderboard() {
   return (
     <div className="min-h-screen bg-background pb-24">
       <div className="max-w-4xl mx-auto px-4 pt-5 pb-6">
-        <div className="mb-4 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md px-4 py-3 text-center">
-          <h1 className="text-3xl font-semibold tracking-tight" data-testid="page-title">Leaderboard</h1>
-        </div>
-
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "artists")} className="mb-6">
           <div className="sticky top-3 z-20 mb-4 space-y-2 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-2">
