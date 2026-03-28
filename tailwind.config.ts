@@ -83,11 +83,16 @@ export default {
           "0%": { transform: "rotate(0deg)" },
           "100%": { transform: "rotate(360deg)" },
         },
+        "submit-edge-trace": {
+          "0%": { transform: "rotate(0deg)" },
+          "100%": { transform: "rotate(360deg)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "dice-spin": "dice-spin 0.42s cubic-bezier(0.33, 1, 0.68, 1) both",
+        "submit-edge-trace": "submit-edge-trace 18s linear infinite",
       },
     },
   },

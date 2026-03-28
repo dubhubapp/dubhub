@@ -45,7 +45,7 @@ export default function TrimVideo() {
         description: "Please select a video first",
         variant: "destructive",
       });
-      setLocation('/submit');
+      setLocation('/');
       return;
     }
     
@@ -247,7 +247,7 @@ export default function TrimVideo() {
     
     localStorage.removeItem('dubhub-trim-state');
     localStorage.removeItem('dubhub-trim-times');
-    setLocation('/submit');
+    setLocation('/');
   };
 
   const formatTime = (time: number) => {

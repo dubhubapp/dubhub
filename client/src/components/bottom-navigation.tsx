@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useSubmitClip } from "@/lib/submit-clip-context";
 import { Home, Plus, Calendar, User, Shield, Trophy } from "lucide-react";
 import { useUser } from "@/lib/user-context";
 import { useQuery } from "@tanstack/react-query";
@@ -21,6 +22,7 @@ function isModeratorQueueNotificationMessage(message: unknown): boolean {
 
 export function BottomNavigation() {
   const [location] = useLocation();
+  const { openSubmitClip, isSubmitClipOpen } = useSubmitClip();
   const { userType, currentUser } = useUser();
 
   // Unified profile path for all users and artists
@@ -103,12 +105,15 @@ export function BottomNavigation() {
           </button>
         </Link>
 
-        <Link href="/submit">
-          <button className={`flex flex-col items-center space-y-1 ${location === "/submit" ? "text-primary" : "text-gray-400"}`} data-testid="nav-submit">
-            <Plus className="w-6 h-6" />
-            <span className="text-xs">Submit</span>
-          </button>
-        </Link>
+        <button
+          type="button"
+          className={`flex flex-col items-center space-y-1 ${location === "/submit" || isSubmitClipOpen ? "text-primary" : "text-gray-400"}`}
+          data-testid="nav-submit"
+          onClick={() => openSubmitClip()}
+        >
+          <Plus className="w-6 h-6" />
+          <span className="text-xs">Submit</span>
+        </button>
 
         <Link href="/releases">
           <button className={`flex flex-col items-center space-y-1 ${location === "/releases" ? "text-primary" : "text-gray-400"}`} data-testid="nav-releases">

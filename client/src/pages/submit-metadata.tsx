@@ -10,8 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { ArrowLeft } from "lucide-react";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { ArrowLeft, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -56,12 +64,79 @@ const genres = [
   { value: "Other", label: "Other" },
 ];
 
+const GENRE_VALUE_SET = new Set(genres.map((g) => g.value));
+
+function isTitleComplete(title: string | undefined) {
+  const t = (title ?? "").trim();
+  return t.length > 0 && t.length <= INPUT_LIMITS.postTitle;
+}
+
+function isGenreComplete(genre: string | undefined) {
+  return !!genre && GENRE_VALUE_SET.has(genre);
+}
+
+function isDescriptionComplete(description: string | undefined) {
+  const raw = description ?? "";
+  const t = raw.trim();
+  return t.length > 0 && raw.length <= INPUT_LIMITS.postDescription;
+}
+
+function isPlayedDateComplete(playedDate: string | undefined) {
+  const v = playedDate?.trim() ?? "";
+  if (!v) return false;
+  return v <= todayInputValue;
+}
+
+function isLocationComplete(location: string | undefined) {
+  const t = (location ?? "").trim();
+  return t.length > 0 && t.length <= INPUT_LIMITS.postLocation;
+}
+
+function isDjNameComplete(djName: string | undefined) {
+  const t = (djName ?? "").trim();
+  return t.length > 0 && t.length <= INPUT_LIMITS.postDjName;
+}
+
+type TrackFieldKey =
+  | "title"
+  | "description"
+  | "playedDate"
+  | "location"
+  | "djName"
+  | "genre";
+
+/** Turquoise outline is the primary success cue; tick is secondary. */
+const fieldSuccessOutlineClass =
+  "border-cyan-400/50 bg-cyan-950/20 shadow-[0_0_0_1px_rgba(34,211,238,0.35)] ring-1 ring-cyan-400/25";
+
+function FieldCompleteCheck({
+  className,
+  variant = "overlay",
+}: {
+  className?: string;
+  variant?: "overlay" | "inline";
+}) {
+  return (
+    <span
+      className={cn(
+        "pointer-events-none z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 ring-1 ring-cyan-400/20",
+        variant === "overlay" && "absolute",
+        className,
+      )}
+      aria-hidden
+    >
+      <Check className="h-3 w-3 text-cyan-300/85" strokeWidth={2.25} />
+    </span>
+  );
+}
+
 export default function SubmitMetadata() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { currentUser } = useUser();
   const uploadSuccessHapticFiredRef = useRef(false);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -89,6 +164,8 @@ export default function SubmitMetadata() {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     const savedState = localStorage.getItem('dubhub-trim-state');
     const savedTimes = localStorage.getItem('dubhub-trim-times');
     
@@ -98,7 +175,7 @@ export default function SubmitMetadata() {
         description: "Please start from the beginning",
         variant: "destructive",
       });
-      setLocation('/submit');
+      setLocation('/');
       return;
     }
     
@@ -151,7 +228,7 @@ export default function SubmitMetadata() {
             description: "Please select your video again.",
             variant: "destructive",
           });
-          setLocation('/submit');
+          setLocation('/');
         }
       });
     
@@ -161,6 +238,27 @@ export default function SubmitMetadata() {
       isMountedRef.current = false;
     };
   }, [toast, setLocation]);
+
+  useEffect(() => {
+    const v = previewVideoRef.current;
+    if (!v || !trimTimes || !trimState?.videoUrl) return;
+    const start = trimTimes.startTime;
+    const onMeta = () => {
+      const dur = v.duration;
+      const safeStart =
+        Number.isFinite(dur) && dur > 0
+          ? Math.min(Math.max(0, start), Math.max(0, dur - 0.05))
+          : Math.max(0, start);
+      try {
+        v.currentTime = safeStart;
+      } catch {
+        /* seek may fail before data is ready */
+      }
+    };
+    v.addEventListener("loadedmetadata", onMeta);
+    if (v.readyState >= 1) onMeta();
+    return () => v.removeEventListener("loadedmetadata", onMeta);
+  }, [trimState?.videoUrl, trimTimes?.startTime, trimTimes?.endTime]);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -182,6 +280,16 @@ export default function SubmitMetadata() {
       playedDate: "",
     },
   });
+
+  const [fieldFocused, setFieldFocused] = useState<
+    Partial<Record<TrackFieldKey, boolean>>
+  >({});
+  const [fieldConfirmed, setFieldConfirmed] = useState<
+    Partial<Record<TrackFieldKey, boolean>>
+  >({});
+
+  const showFieldSuccess = (key: TrackFieldKey, valid: boolean) =>
+    valid && !!fieldConfirmed[key] && !fieldFocused[key];
 
   const uploadMutation = useMutation({
     onMutate: () => {
@@ -493,173 +601,404 @@ export default function SubmitMetadata() {
     setLocation('/trim-video');
   };
 
+  const watched = form.watch();
+  const requiredFieldsReady =
+    isTitleComplete(watched.title) && isGenreComplete(watched.genre);
+  const submitBusy = isUploading || submitMutation.isPending;
+  const submitEnabled = requiredFieldsReady && !submitBusy;
+
   if (!trimState || !trimTimes) {
     return null;
   }
 
+  const clipSeconds = Math.round(trimTimes.endTime - trimTimes.startTime);
+
   return (
     <div className="flex-1 bg-dark overflow-y-auto">
-      <div className="p-6 pb-24">
-        <div className="max-w-md mx-auto">
-          <div className="flex items-center gap-3 mb-6">
+      <div className="p-5 pb-28 sm:p-6 sm:pb-24">
+        <div className="max-w-md mx-auto space-y-4">
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
+              className="shrink-0 text-gray-300 hover:text-white hover:bg-white/10 -ml-2"
               onClick={handleBack}
               data-testid="button-back-metadata"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-2xl font-bold">Track Details</h1>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold text-white tracking-tight">Track details</h1>
+            </div>
           </div>
 
-          <div className="bg-surface/50 p-4 rounded-lg mb-6">
-            <p className="text-sm text-gray-400">
-              Clip duration: {Math.round(trimTimes.endTime - trimTimes.startTime)}s
-            </p>
+          <div className="rounded-2xl overflow-hidden border border-gray-800/90 bg-black shadow-sm w-full">
+            <div className="relative w-full aspect-video">
+              <video
+                ref={previewVideoRef}
+                src={trimState.videoUrl}
+                className="absolute inset-0 h-full w-full object-cover object-center"
+                muted
+                playsInline
+                preload="metadata"
+                data-testid="video-metadata-preview"
+              />
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 to-transparent pt-10 pb-3 px-3">
+                <p className="text-xs font-medium text-white/95">
+                  Selected clip · {clipSeconds}s
+                </p>
+                <p className="text-[11px] text-gray-300/90 mt-0.5 truncate" title={trimState.fileName}>
+                  {trimState.fileName}
+                </p>
+              </div>
+            </div>
           </div>
           
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
                 name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Title *</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="e.g., Amazing DnB track from Fabric"
-                        className="bg-surface border-gray-600 text-white placeholder-gray-400"
-                        data-testid="input-title"
-                        maxLength={INPUT_LIMITS.postTitle}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <p className="text-xs text-gray-500 text-right">
-                      {(field.value?.length ?? 0)} / {INPUT_LIMITS.postTitle}
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="genre"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Genre *</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || undefined}>
-                      <FormControl>
-                        <SelectTrigger className="bg-surface border-gray-600 text-white" data-testid="select-genre">
-                          <SelectValue placeholder="Select genre..." />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {genres.map((genre) => (
-                          <SelectItem key={genre.value} value={genre.value}>
-                            {genre.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const valid = isTitleComplete(field.value);
+                  const success = showFieldSuccess("title", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Title *</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Amazing DnB track from Fabric"
+                            className={cn(
+                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                            )}
+                            data-testid="input-title"
+                            maxLength={INPUT_LIMITS.postTitle}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value || ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, title: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, title: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                title: isTitleComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isTitleComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, title: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <p className="text-xs leading-none text-gray-500 text-right">
+                        {(field.value?.length ?? 0)} / {INPUT_LIMITS.postTitle}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               <FormField
                 control={form.control}
                 name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Description</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        placeholder="what makes this special? how long have you been looking for this track? when did you first hear it?"
-                        className="bg-surface border-gray-600 text-white placeholder-gray-400 resize-none"
-                        rows={4}
-                        data-testid="textarea-description"
-                        maxLength={INPUT_LIMITS.postDescription}
-                        {...field} 
-                      />
-                    </FormControl>
-                    <p className="text-xs text-gray-500 text-right">
-                      {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-1 gap-4">
-                <FormField
-                  control={form.control}
-                  name="playedDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm font-medium text-gray-300">Date</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="date" 
-                          max={todayInputValue}
-                          className="bg-surface border-gray-600 text-white"
-                          data-testid="input-date"
-                          {...field} 
-                        />
-                      </FormControl>
+                render={({ field }) => {
+                  const valid = isDescriptionComplete(field.value);
+                  const success = showFieldSuccess("description", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">
+                        Description
+                      </FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Textarea
+                            placeholder="What makes this track special? How long have you been looking for this tune? Where did you first hear this?"
+                            className={cn(
+                              "min-h-[72px] resize-none py-2 text-white placeholder-gray-400 transition-[border-color,box-shadow,background-color]",
+                              success ? "pr-9" : "",
+                              success
+                                ? fieldSuccessOutlineClass
+                                : "border-gray-600 bg-surface",
+                            )}
+                            rows={4}
+                            data-testid="textarea-description"
+                            maxLength={INPUT_LIMITS.postDescription}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value ?? ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, description: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, description: false }));
+                              const v = (e.target as HTMLTextAreaElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                description: isDescriptionComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isDescriptionComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, description: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-2" />
+                        ) : null}
+                      </div>
+                      <p className="text-xs leading-none text-gray-500 text-right">
+                        {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
+                      </p>
                       <FormMessage />
                     </FormItem>
-                  )}
-                />
-              </div>
+                  );
+                }}
+              />
+
+              <FormField
+                control={form.control}
+                name="playedDate"
+                render={({ field }) => {
+                  const valid = isPlayedDateComplete(field.value);
+                  const success = showFieldSuccess("playedDate", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Date</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            type="date"
+                            max={todayInputValue}
+                            className={cn(
+                              "bg-surface text-white pr-10 transition-[border-color,box-shadow,background-color] [color-scheme:dark]",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                            )}
+                            data-testid="input-date"
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value ?? ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, playedDate: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, playedDate: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                playedDate: isPlayedDateComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isPlayedDateComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, playedDate: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
 
               <FormField
                 control={form.control}
                 name="location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Location</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="e.g., Fabric London, Printworks"
-                        className="bg-surface border-gray-600 text-white placeholder-gray-400"
-                        data-testid="input-location"
-                        maxLength={INPUT_LIMITS.postLocation}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const valid = isLocationComplete(field.value);
+                  const success = showFieldSuccess("location", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Location</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Fabric London, Printworks"
+                            className={cn(
+                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                            )}
+                            data-testid="input-location"
+                            maxLength={INPUT_LIMITS.postLocation}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value || ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, location: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, location: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                location: isLocationComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isLocationComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, location: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               <FormField
                 control={form.control}
                 name="djName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-gray-300">Played by</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="e.g., DJ Name"
-                        className="bg-surface border-gray-600 text-white placeholder-gray-400"
-                        data-testid="input-dj"
-                        maxLength={INPUT_LIMITS.postDjName}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const valid = isDjNameComplete(field.value);
+                  const success = showFieldSuccess("djName", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Played by</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., DJ Name"
+                            className={cn(
+                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                            )}
+                            data-testid="input-dj"
+                            maxLength={INPUT_LIMITS.postDjName}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value || ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, djName: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, djName: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                djName: isDjNameComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isDjNameComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, djName: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <FormField
+                control={form.control}
+                name="genre"
+                render={({ field }) => {
+                  const valid = isGenreComplete(field.value);
+                  const success = showFieldSuccess("genre", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Genre *</FormLabel>
+                      <div className="flex items-center gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <Select
+                            value={field.value || undefined}
+                            onValueChange={(v) => {
+                              field.onChange(v);
+                              if (!isGenreComplete(v)) {
+                                setFieldConfirmed((c) => ({ ...c, genre: false }));
+                              }
+                            }}
+                            onOpenChange={(open) => {
+                              setFieldFocused((f) => ({ ...f, genre: open }));
+                              if (!open) {
+                                field.onBlur();
+                                queueMicrotask(() => {
+                                  const g = form.getValues("genre");
+                                  setFieldConfirmed((c) => ({
+                                    ...c,
+                                    genre: isGenreComplete(g),
+                                  }));
+                                });
+                              }
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger
+                                ref={field.ref}
+                                className={cn(
+                                  "w-full bg-surface text-white transition-[border-color,box-shadow,background-color]",
+                                  success ? fieldSuccessOutlineClass : "border-gray-600",
+                                )}
+                                data-testid="select-genre"
+                              >
+                                <SelectValue placeholder="Select genre..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {genres.map((genre) => (
+                                <SelectItem key={genre.value} value={genre.value}>
+                                  {genre.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {success ? (
+                          <div
+                            className="flex h-10 w-10 shrink-0 items-center justify-center"
+                            aria-hidden
+                          >
+                            <FieldCompleteCheck variant="inline" />
+                          </div>
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               {isUploading && (
-                <div className="rounded-lg bg-surface/80 border border-gray-700/50 p-4 space-y-3">
+                <div className="rounded-xl bg-surface/80 border border-gray-700/50 p-4 space-y-3">
                   <Progress
                     value={uploadProgress}
                     className="h-2.5 bg-gray-800"
@@ -669,21 +1008,59 @@ export default function SubmitMetadata() {
                   </p>
                 </div>
               )}
-              <Button
-                type="submit"
-                className="w-full bg-primary hover:bg-primary/90"
-                disabled={isUploading || submitMutation.isPending}
-                data-testid="button-submit"
-              >
-                {isUploading || submitMutation.isPending ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    {isUploading ? "Uploading..." : "Submitting..."}
-                  </>
-                ) : (
-                  "Submit Track ID"
+              <div
+                className={cn(
+                  "relative w-full rounded-xl transition-[filter,box-shadow] duration-700",
+                  submitEnabled &&
+                    !submitBusy &&
+                    "shadow-[0_0_28px_rgba(34,211,238,0.38),0_0_56px_rgba(34,211,238,0.18)]",
                 )}
-              </Button>
+              >
+                <div
+                  className={cn(
+                    "relative w-full overflow-hidden rounded-xl",
+                    submitEnabled && !submitBusy && "p-[2px]",
+                  )}
+                >
+                  {submitEnabled && !submitBusy ? (
+                    <div
+                      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[10px]"
+                      aria-hidden
+                    >
+                      <div
+                        className="absolute left-1/2 top-1/2 h-[240%] w-[240%] min-h-[260px] min-w-[260px] -translate-x-1/2 -translate-y-1/2 animate-submit-edge-trace"
+                        style={{
+                          background:
+                            "conic-gradient(from 0deg, rgba(34,211,238,0.08) 0deg, transparent 58deg, transparent 302deg, rgba(224,249,255,0.95) 322deg, rgba(103,232,249,0.65) 332deg, rgba(34,211,238,0.25) 342deg, transparent 352deg)",
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <Button
+                    type="submit"
+                    className={cn(
+                      "relative z-[2] w-full h-12 text-base font-semibold transition-colors duration-500",
+                      submitEnabled && !submitBusy ? "rounded-[10px]" : "rounded-xl",
+                      submitBusy
+                        ? "border-0 bg-primary/85 text-primary-foreground hover:bg-primary/85"
+                        : submitEnabled
+                          ? "border-0 bg-primary text-primary-foreground hover:bg-primary/92"
+                          : "cursor-not-allowed border border-white/10 bg-primary/20 text-primary-foreground/45 shadow-none hover:bg-primary/20",
+                    )}
+                    disabled={!submitEnabled}
+                    data-testid="button-submit"
+                  >
+                    {submitBusy ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        {isUploading ? "Uploading..." : "Submitting..."}
+                      </>
+                    ) : (
+                      "Submit Track ID"
+                    )}
+                  </Button>
+                </div>
+              </div>
             </form>
           </Form>
         </div>
