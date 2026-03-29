@@ -738,15 +738,14 @@ export class DatabaseStorage implements IStorage {
     try {
       // Comment likes are stored in comment_votes. If that table hasn't been created
       // in the connected DB yet, we still want comments to load (likes will be 0).
+      // Use pg pool directly here so row keys match the SQL aliases reliably (moderator flag for UI).
       const commentVotesRegResult = await pool.query<{
         regclass: string | null;
-      }>(`SELECT to_regclass('public.comment_votes') AS "regclass"`);
+      }>(`SELECT to_regclass('public.comment_votes') AS regclass`);
 
       const hasCommentVotes = !!commentVotesRegResult.rows?.[0]?.regclass;
 
-      const result = hasCommentVotes
-        ? await db.execute(sql`
-            SELECT
+      const commentSelectBase = `
               c.id,
               c.post_id,
               c.user_id,
@@ -758,50 +757,64 @@ export class DatabaseStorage implements IStorage {
               p.avatar_url,
               p.account_type,
               p.verified_artist,
-              COALESCE(cv_counts.likes_count, 0)    AS likes_count,
-              ${
-                currentUserId
-                  ? sql`EXISTS (
-                       SELECT 1 FROM comment_votes cv2
-                       WHERE cv2.comment_id = c.id AND cv2.user_id = ${currentUserId} AND cv2.vote_type = 'upvote'
-                     )`
-                  : sql`false`
-              } AS has_liked
+              COALESCE(p.moderator, false) AS profile_moderator`;
+
+      let rows: any[];
+      if (hasCommentVotes) {
+        if (currentUserId) {
+          const res = await pool.query(
+            `SELECT
+              ${commentSelectBase},
+              COALESCE(cv_counts.likes_count, 0) AS likes_count,
+              EXISTS (
+                SELECT 1 FROM comment_votes cv2
+                WHERE cv2.comment_id = c.id AND cv2.user_id = $2 AND cv2.vote_type = 'upvote'
+              ) AS has_liked
             FROM comments c
-            LEFT JOIN profiles p
-              ON p.id = c.user_id
+            LEFT JOIN profiles p ON p.id = c.user_id
             LEFT JOIN LATERAL (
               SELECT COUNT(*)::int AS likes_count
               FROM comment_votes cv
-              WHERE cv.comment_id = c.id
-                AND cv.vote_type = 'upvote'
+              WHERE cv.comment_id = c.id AND cv.vote_type = 'upvote'
             ) cv_counts ON TRUE
-            WHERE c.post_id = ${postId}
-            ORDER BY c.created_at DESC
-          `)
-        : await db.execute(sql`
-            SELECT
-              c.id,
-              c.post_id,
-              c.user_id,
-              c.body,
-              c.artist_tag,
-              c.parent_id,
-              c.created_at,
-              p.username,
-              p.avatar_url,
-              p.account_type,
-              p.verified_artist,
-              0::int AS likes_count,
+            WHERE c.post_id = $1
+            ORDER BY c.created_at DESC`,
+            [postId, currentUserId],
+          );
+          rows = res.rows;
+        } else {
+          const res = await pool.query(
+            `SELECT
+              ${commentSelectBase},
+              COALESCE(cv_counts.likes_count, 0) AS likes_count,
               false AS has_liked
             FROM comments c
-            LEFT JOIN profiles p
-              ON p.id = c.user_id
-            WHERE c.post_id = ${postId}
-            ORDER BY c.created_at DESC
-          `);
-
-      const rows = (result as any).rows || [];
+            LEFT JOIN profiles p ON p.id = c.user_id
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS likes_count
+              FROM comment_votes cv
+              WHERE cv.comment_id = c.id AND cv.vote_type = 'upvote'
+            ) cv_counts ON TRUE
+            WHERE c.post_id = $1
+            ORDER BY c.created_at DESC`,
+            [postId],
+          );
+          rows = res.rows;
+        }
+      } else {
+        const res = await pool.query(
+          `SELECT
+            ${commentSelectBase},
+            0::int AS likes_count,
+            false AS has_liked
+          FROM comments c
+          LEFT JOIN profiles p ON p.id = c.user_id
+          WHERE c.post_id = $1
+          ORDER BY c.created_at DESC`,
+          [postId],
+        );
+        rows = res.rows;
+      }
 
       const flatComments: any[] = rows.map((row: any) => ({
         id: row.id,
@@ -817,6 +830,7 @@ export class DatabaseStorage implements IStorage {
           avatar_url: row.avatar_url,
           account_type: row.account_type,
           verified_artist: row.verified_artist,
+          moderator: row.profile_moderator === true,
         },
         voteScore: Number(row.likes_count ?? 0),
         userVote: row.has_liked ? "upvote" : null,

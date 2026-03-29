@@ -4,3 +4,13 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
+
+/** Single leading @ for UI; strips any existing @ prefix. Does not change stored/API values. */
+export function formatUsernameDisplay(username: string | null | undefined): string {
+  if (username == null) return ""
+  const trimmed = String(username).trim()
+  if (!trimmed) return ""
+  const core = trimmed.startsWith("@") ? trimmed.slice(1).trim() : trimmed
+  if (!core) return ""
+  return `@${core}`
+}

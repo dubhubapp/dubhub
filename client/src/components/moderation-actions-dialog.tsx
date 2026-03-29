@@ -8,9 +8,15 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/user-context";
 import { AlertTriangle, Ban, Clock, Shield } from "lucide-react";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 const MIN_SUSPEND_DAYS = 1;
 const MAX_SUSPEND_DAYS = 31;
+
+function trimEnforcementReason(reason: string | null | undefined): string | null {
+  const t = typeof reason === "string" ? reason.trim() : "";
+  return t.length > 0 ? t : null;
+}
 
 function clampSuspendDaysInput(raw: string): string {
   if (raw === "" || raw === "-") return raw;
@@ -62,12 +68,13 @@ export function ModerationActionsDialog({
     return d.toLocaleString();
   };
 
-  const suspendedUntilRaw = enforcementHistory?.profile.suspendedUntil ?? null;
-  const isCurrentlySuspended =
-    !!suspendedUntilRaw &&
-    !Number.isNaN(new Date(suspendedUntilRaw).getTime()) &&
-    new Date(suspendedUntilRaw).getTime() > Date.now();
-  const suspensionLabel = isCurrentlySuspended ? formatDateTime(suspendedUntilRaw) : "N/A";
+  /** Compact date for enforcement log lines (mobile-friendly). */
+  const formatEnforcementDate = (value: string | null) => {
+    if (!value) return "Unknown";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "Unknown";
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  };
 
   const warnMutation = useMutation({
     mutationFn: async () => {
@@ -79,16 +86,14 @@ export function ModerationActionsDialog({
       queryClient.refetchQueries({ queryKey: ["/api/posts"] });
       // Invalidate notifications for the affected user (to show notification icon instantly)
       queryClient.invalidateQueries({ queryKey: ["/api/user", reportedUserId, "notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/user", reportedUserId, "notifications", "unread-count"] });
       queryClient.refetchQueries({ queryKey: ["/api/user", reportedUserId, "notifications"] });
-      queryClient.refetchQueries({ queryKey: ["/api/user", reportedUserId, "notifications", "unread-count"] });
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
       toast({
         title: "User Warned",
-        description: `${reportedUsername} has been warned, content removed, and notified.`,
+        description: `${formatUsernameDisplay(reportedUsername)} has been warned, content removed, and notified.`,
       });
       onClose();
     },
@@ -111,16 +116,14 @@ export function ModerationActionsDialog({
       queryClient.refetchQueries({ queryKey: ["/api/posts"] });
       // Invalidate notifications for the affected user (to show notification icon instantly)
       queryClient.invalidateQueries({ queryKey: ["/api/user", reportedUserId, "notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/user", reportedUserId, "notifications", "unread-count"] });
       queryClient.refetchQueries({ queryKey: ["/api/user", reportedUserId, "notifications"] });
-      queryClient.refetchQueries({ queryKey: ["/api/user", reportedUserId, "notifications", "unread-count"] });
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
       toast({
         title: "User Suspended",
-        description: `${reportedUsername} has been suspended for ${days} days, content removed, and notified.`,
+        description: `${formatUsernameDisplay(reportedUsername)} has been suspended for ${days} days, content removed, and notified.`,
       });
       onClose();
     },
@@ -148,16 +151,14 @@ export function ModerationActionsDialog({
       queryClient.refetchQueries({ queryKey: ["/api/posts"] });
       // Invalidate notifications for the affected user (to show notification icon instantly)
       queryClient.invalidateQueries({ queryKey: ["/api/user", reportedUserId, "notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/user", reportedUserId, "notifications", "unread-count"] });
       queryClient.refetchQueries({ queryKey: ["/api/user", reportedUserId, "notifications"] });
-      queryClient.refetchQueries({ queryKey: ["/api/user", reportedUserId, "notifications", "unread-count"] });
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
       toast({
         title: "User Banned",
-        description: `${reportedUsername} has been permanently banned, content removed, and notified.`,
+        description: `${formatUsernameDisplay(reportedUsername)} has been permanently banned, content removed, and notified.`,
         variant: "destructive",
       });
       onClose();
@@ -172,7 +173,7 @@ export function ModerationActionsDialog({
   });
 
   const handleWarn = () => {
-    if (confirm(`Are you sure you want to warn @${reportedUsername}? They will be notified.`)) {
+    if (confirm(`Are you sure you want to warn ${formatUsernameDisplay(reportedUsername)}? They will be notified.`)) {
       warnMutation.mutate();
     }
   };
@@ -187,7 +188,7 @@ export function ModerationActionsDialog({
       });
       return;
     }
-    if (confirm(`Are you sure you want to suspend @${reportedUsername} for ${days} days? They will be notified.`)) {
+    if (confirm(`Are you sure you want to suspend ${formatUsernameDisplay(reportedUsername)} for ${days} days? They will be notified.`)) {
       suspendMutation.mutate(days);
     }
   };
@@ -200,8 +201,8 @@ export function ModerationActionsDialog({
   };
 
   const handleBan = () => {
-    if (confirm(`⚠️ WARNING: Are you absolutely sure you want to PERMANENTLY BAN @${reportedUsername}? This action cannot be undone and they will be notified.`)) {
-      if (confirm(`This is your final confirmation. @${reportedUsername} will be permanently banned. Continue?`)) {
+    if (confirm(`⚠️ WARNING: Are you absolutely sure you want to PERMANENTLY BAN ${formatUsernameDisplay(reportedUsername)}? This action cannot be undone and they will be notified.`)) {
+      if (confirm(`This is your final confirmation. ${formatUsernameDisplay(reportedUsername)} will be permanently banned. Continue?`)) {
         banMutation.mutate();
       }
     }
@@ -213,7 +214,7 @@ export function ModerationActionsDialog({
         <DialogHeader>
           <DialogTitle>Moderation Actions</DialogTitle>
           <DialogDescription>
-            Take action against @{reportedUsername}
+            Take action against {formatUsernameDisplay(reportedUsername)}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -227,28 +228,96 @@ export function ModerationActionsDialog({
               <p>Currently suspended until: <span className="text-foreground font-medium">{formatDateTime(enforcementHistory?.profile.suspendedUntil ?? null)}</span></p>
               <p>Currently banned: <span className="text-foreground font-medium">{enforcementHistory?.profile.banned ? "Yes" : "No"}</span></p>
             </div>
-            <div className="grid grid-cols-1 gap-2 text-[11px]">
-              <p className="text-muted-foreground">
-                Warning dates:{" "}
-                <span className="text-foreground">
-                  {(enforcementHistory?.history.warnings ?? []).map((w) => formatDateTime(w.at)).join(" | ") || "None"}
-                </span>
-              </p>
-              <p className="text-muted-foreground">
-                Suspension dates:{" "}
-                <span className="text-foreground">
-                  {(enforcementHistory?.history.suspensions ?? [])
-                    .slice(0, 3)
-                    .map((s) => `${formatDateTime(s.at)}${s.days ? ` (${s.days}d)` : ""}`)
-                    .join(" | ") || "None"}
-                </span>
-              </p>
-              <p className="text-muted-foreground">
-                Ban dates:{" "}
-                <span className="text-foreground">
-                  {(enforcementHistory?.history.bans ?? []).slice(0, 3).map((b) => formatDateTime(b.at)).join(" | ") || "None"}
-                </span>
-              </p>
+            <div className="space-y-3 text-[11px]">
+              <div>
+                <p className="text-muted-foreground font-medium mb-1.5">Warnings</p>
+                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-0.5">
+                  {(enforcementHistory?.history.warnings ?? []).length === 0 ? (
+                    <p className="text-muted-foreground">None</p>
+                  ) : (
+                    (enforcementHistory?.history.warnings ?? []).map((w, i) => {
+                      const r = trimEnforcementReason(w.reason);
+                      return (
+                        <div
+                          key={w.reportId ?? `warn-${w.at ?? ""}-${i}`}
+                          className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5"
+                        >
+                          <p className="font-medium text-foreground">Warning</p>
+                          {r ? (
+                            <p className="text-muted-foreground mt-0.5 leading-snug line-clamp-2 break-words">
+                              Reason: <span className="text-foreground/90">{r}</span>
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground mt-0.5">
+                            Date: <span className="text-foreground/90">{formatEnforcementDate(w.at)}</span>
+                          </p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-muted-foreground font-medium mb-1.5">Suspensions</p>
+                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-0.5">
+                  {(enforcementHistory?.history.suspensions ?? []).length === 0 ? (
+                    <p className="text-muted-foreground">None</p>
+                  ) : (
+                    (enforcementHistory?.history.suspensions ?? []).map((s, i) => {
+                      const r = trimEnforcementReason(s.reason);
+                      return (
+                        <div
+                          key={s.reportId ?? `sus-${s.at ?? ""}-${i}`}
+                          className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5"
+                        >
+                          <p className="font-medium text-foreground">Suspension</p>
+                          {typeof s.days === "number" && Number.isFinite(s.days) ? (
+                            <p className="text-muted-foreground mt-0.5">
+                              Duration: <span className="text-foreground/90">{s.days} days</span>
+                            </p>
+                          ) : null}
+                          {r ? (
+                            <p className="text-muted-foreground mt-0.5 leading-snug line-clamp-2 break-words">
+                              Reason: <span className="text-foreground/90">{r}</span>
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground mt-0.5">
+                            Date: <span className="text-foreground/90">{formatEnforcementDate(s.at)}</span>
+                          </p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-muted-foreground font-medium mb-1.5">Bans</p>
+                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-0.5">
+                  {(enforcementHistory?.history.bans ?? []).length === 0 ? (
+                    <p className="text-muted-foreground">None</p>
+                  ) : (
+                    (enforcementHistory?.history.bans ?? []).map((b, i) => {
+                      const r = trimEnforcementReason(b.reason);
+                      return (
+                        <div
+                          key={b.reportId ?? `ban-${b.at ?? ""}-${i}`}
+                          className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5"
+                        >
+                          <p className="font-medium text-foreground">Permanent ban</p>
+                          {r ? (
+                            <p className="text-muted-foreground mt-0.5 leading-snug line-clamp-2 break-words">
+                              Reason: <span className="text-foreground/90">{r}</span>
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground mt-0.5">
+                            Date: <span className="text-foreground/90">{formatEnforcementDate(b.at)}</span>
+                          </p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 

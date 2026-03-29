@@ -12,6 +12,7 @@ import type { CommentWithUser } from "@shared/schema";
 import { useUser } from "@/lib/user-context";
 import { formatDate } from "@/pages/release-tracker";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -321,7 +322,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                           {comment.user.avatar_url ? (
                             <img
                               src={comment.user.avatar_url}
-                              alt={comment.user.username}
+                              alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
                               className="w-full h-full object-cover"
                             />
                           ) : (
@@ -329,7 +330,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">@{comment.user.username}</span>
+                          <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
                           {comment.user.verified_artist && (
                             <CheckCircle className="w-4 h-4 text-primary" />
                           )}
@@ -367,7 +368,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                     <p className="text-sm text-foreground">{comment.body}</p>
                     {comment.taggedArtist && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Tagged artist: @{comment.taggedArtist.username}
+                        Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
                       </p>
                     )}
                   </Label>

@@ -16,6 +16,7 @@ import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 function formatModeratorReportTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
@@ -77,7 +78,7 @@ export default function ModeratorPage() {
         
         // Invalidate queries to update the badge count instantly
         if (notificationsToMark.length > 0) {
-          queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
         }
       } catch (error) {
         console.error("Failed to mark report notifications as read:", error);
@@ -205,8 +206,8 @@ export default function ModeratorPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
       // Invalidate and refetch notification queries for instant updates
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
       toast({
         title: "Report Dismissed",
@@ -248,14 +249,11 @@ export default function ModeratorPage() {
       const report = context?.report;
       if (report?.reported_user_id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications", "unread-count"] });
         queryClient.refetchQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications"] });
-        queryClient.refetchQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications", "unread-count"] });
       }
-      // Invalidate and refetch notification queries for instant updates
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
       toast({
         title: "Comment Removed",
@@ -295,8 +293,8 @@ export default function ModeratorPage() {
       queryClient.refetchQueries({ queryKey: ["/api/posts"] });
       // Invalidate and refetch notification queries for instant updates
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-        queryClient.refetchQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
       toast({
         title: "Post Removed",
@@ -434,7 +432,7 @@ export default function ModeratorPage() {
                                 </p>
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                                   <User className="w-4 h-4" />
-                                  <span>Uploaded by @{post.user.username}</span>
+                                  <span>Uploaded by {formatUsernameDisplay(post.user.username)}</span>
                                 </div>
                               </div>
 
@@ -451,7 +449,11 @@ export default function ModeratorPage() {
                                   <div className="rounded-lg border border-white/10 bg-black/25 p-2">
                                     <div className="flex items-center gap-2 mb-1">
                                       <User className="w-3 h-3" />
-                                      <span className="text-xs font-medium">@{post.verifiedComment.user?.username || 'Unknown'}</span>
+                                      <span className="text-xs font-medium">
+                                        {post.verifiedComment.user?.username
+                                          ? formatUsernameDisplay(post.verifiedComment.user.username)
+                                          : "Unknown"}
+                                      </span>
                                     </div>
                                     <p className="text-sm">{post.verifiedComment.body || post.verifiedComment.content || 'No comment text'}</p>
                                   </div>
@@ -626,7 +628,8 @@ export default function ModeratorPage() {
                                   <div className="mt-2 rounded-xl border border-yellow-500/25 bg-yellow-500/10 p-2">
                                     <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ User Comment Report</p>
                                     <p className="text-sm text-muted-foreground">
-                                      Reported user: <span className="font-semibold">@{report.reportedUser.username}</span>
+                                      Reported user:{" "}
+                                      <span className="font-semibold">{formatUsernameDisplay(report.reportedUser.username)}</span>
                                     </p>
                                     {report.reported_comment_body && (
                                       <div className="mt-2 pt-2 border-t border-yellow-500/20">
@@ -638,7 +641,7 @@ export default function ModeratorPage() {
                                 )}
                                 {report.post?.user && (
                                   <p className="text-sm text-muted-foreground mt-1">
-                                    Post by: @{report.post.user.username}
+                                    Post by: {formatUsernameDisplay(report.post.user.username)}
                                   </p>
                                 )}
                                 <div
@@ -660,7 +663,7 @@ export default function ModeratorPage() {
                                     <p className="text-foreground">
                                       <span className="text-muted-foreground">Reported by </span>
                                       <span className="font-semibold">
-                                        @{report.reporter?.username ?? "unknown"}
+                                        {report.reporter?.username ? formatUsernameDisplay(report.reporter.username) : "unknown"}
                                       </span>
                                     </p>
                                     <p className="flex items-center gap-1 text-muted-foreground">
@@ -809,7 +812,9 @@ export default function ModeratorPage() {
               {/* Post info summary */}
               <div className="rounded-lg border border-white/10 bg-black/25 p-3">
                 <p className="font-semibold text-sm mb-1">{selectedPost.description}</p>
-                <p className="text-xs text-muted-foreground">Uploaded by @{selectedPost.user.username}</p>
+                <p className="text-xs text-muted-foreground">
+                  Uploaded by {formatUsernameDisplay(selectedPost.user.username)}
+                </p>
               </div>
 
               {/* Comments list */}
@@ -854,7 +859,7 @@ export default function ModeratorPage() {
                               <User className="w-4 h-4 text-primary" />
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">@{comment.user.username}</span>
+                              <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
                               {comment.user.verified_artist && (
                                 <CheckCircle className="w-4 h-4 text-primary" />
                               )}

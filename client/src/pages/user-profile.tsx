@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
@@ -15,11 +15,14 @@ import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/sche
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
+import { formatUsernameDisplay } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
-import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "@/components/verified-artist";
+import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
+import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
+import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -193,15 +196,19 @@ function GenreBreakdownSection({
 export default function UserProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage, username, updateProfileImage, currentUser, verifiedArtist, userType } = useUser();
+  const { profileImage, username, updateProfileImage, currentUser, verifiedArtist, isModerator, userType } = useUser();
   const [activeTab, setActiveTab] = useState("profile");
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
+  /** Shell height for the Artist/User 3D flip so tall faces don’t overlap Rep; updated from face measurements. */
+  const [artistUserFlipShellPx, setArtistUserFlipShellPx] = useState(430);
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
   const [likesViewerStartIndex, setLikesViewerStartIndex] = useState<number | null>(null);
   const [postsViewerStartIndex, setPostsViewerStartIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const likesViewerRef = useRef<HTMLDivElement | null>(null);
   const postsViewerRef = useRef<HTMLDivElement | null>(null);
+  const artistFlipFaceRef = useRef<HTMLDivElement | null>(null);
+  const userFlipFaceRef = useRef<HTMLDivElement | null>(null);
   const [, navigate] = useLocation();
   const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
     queryKey: ["/api/user", currentUser?.id, "stats"],
@@ -291,17 +298,48 @@ export default function UserProfile() {
   const notificationsDebugEnabled =
     typeof window !== "undefined" && window.localStorage.getItem("debugNotifications") === "1";
 
-  const { data: unreadCountData, isError: unreadCountError } = useQuery<{ count: number }>({
-    queryKey: ["/api/user", currentUser?.id, "notifications", "unread-count"],
+  const notificationPrefs = useNotificationPreferences();
+
+  const { data: navFeedNotifications = [] } = useQuery<NotificationWithUser[]>({
+    queryKey: ["/api/user", currentUser?.id, "notifications", "nav-feed"],
     enabled: !!currentUser?.id,
     retry: false,
     staleTime: 0,
+    refetchInterval: 20000,
     refetchOnMount: "always",
+    queryFn: async () => {
+      if (!currentUser?.id) return [];
+      const res = await apiRequest("GET", `/api/user/${currentUser.id}/notifications?limit=100`);
+      const payload = await res.json();
+      return Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.notifications)
+          ? payload.notifications
+          : [];
+    },
   });
 
-  const unreadCount = userType === "moderator"
-    ? notifications.filter((n) => !n.read && !isModeratorQueueNotificationMessage(n.message)).length
-    : unreadCountData?.count || 0;
+  const unreadCount = useMemo(() => {
+    const feed = Array.isArray(navFeedNotifications) ? navFeedNotifications : [];
+    const list = notifications.length > 0 ? notifications : feed;
+    if (!Array.isArray(list)) return 0;
+    try {
+      return list.filter(
+        (n) =>
+          n &&
+          !n.read &&
+          isNotificationVisibleByUserPreferences(n, notificationPrefs) &&
+          !(userType === "moderator" && isModeratorQueueNotificationMessage(n.message)),
+      ).length;
+    } catch {
+      return list.filter(
+        (n) =>
+          n &&
+          !n.read &&
+          !(userType === "moderator" && isModeratorQueueNotificationMessage(n.message)),
+      ).length;
+    }
+  }, [notifications, navFeedNotifications, notificationPrefs, userType]);
 
   const mergeUniqueNotifications = (incoming: NotificationWithUser[], mode: "prepend" | "append") => {
     setNotifications((prev) => {
@@ -568,6 +606,26 @@ export default function UserProfile() {
     },
   ];
 
+  useLayoutEffect(() => {
+    if (userType !== "artist" || !artistStats) {
+      setArtistUserFlipShellPx((prev) => (prev === 430 ? prev : 430));
+      return;
+    }
+    const elArtist = artistFlipFaceRef.current;
+    const elUser = userFlipFaceRef.current;
+    const updateShell = () => {
+      const ha = elArtist?.getBoundingClientRect().height ?? 0;
+      const hu = elUser?.getBoundingClientRect().height ?? 0;
+      const next = Math.max(430, Math.ceil(ha), Math.ceil(hu));
+      setArtistUserFlipShellPx((prev) => (prev === next ? prev : next));
+    };
+    updateShell();
+    const ro = new ResizeObserver(updateShell);
+    if (elArtist) ro.observe(elArtist);
+    if (elUser) ro.observe(elUser);
+    return () => ro.disconnect();
+  }, [userType, artistStats, userStats, userReputation, hasAnyArtistImpact]);
+
   const handleProfileImageChange = () => {
     fileInputRef.current?.click();
   };
@@ -648,7 +706,6 @@ export default function UserProfile() {
       setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)));
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
       }
     },
   });
@@ -662,7 +719,6 @@ export default function UserProfile() {
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
       }
       toast({ title: "All notifications marked as read" });
     },
@@ -679,7 +735,6 @@ export default function UserProfile() {
     onSuccess: (_, { status }) => {
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
         queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       }
       toast({ title: status === "confirmed" ? "Track confirmed as yours" : "Tag declined" });
@@ -804,19 +859,38 @@ export default function UserProfile() {
   }, [notifications]);
 
   const visibleNotifications = useMemo<GroupedNotification[]>(() => {
-    if (groupedNotifications.length > 0) return groupedNotifications;
-    if (notifications.length === 0) return [];
-    // Safety fallback: keep notifications visible even if grouping derivation returns empty unexpectedly.
-    return notifications.map((n) => ({
-      id: n.id,
-      representative: n,
-      notifications: [n],
-      count: 1,
-      unreadCount: n.read ? 0 : 1,
-      kind: getNotificationKind(n),
-      isGrouped: false,
-    }));
-  }, [groupedNotifications, notifications]);
+    try {
+      const passesPrefs = (n: NotificationWithUser) => isNotificationVisibleByUserPreferences(n, notificationPrefs);
+
+      const groupedFiltered = groupedNotifications.filter((g) => g?.representative && passesPrefs(g.representative));
+      if (groupedFiltered.length > 0) return groupedFiltered;
+
+      if (notifications.length === 0) return [];
+      const visibleRaw = notifications.filter(passesPrefs);
+      if (visibleRaw.length === 0) return [];
+      return visibleRaw.map((n) => ({
+        id: n.id,
+        representative: n,
+        notifications: [n],
+        count: 1,
+        unreadCount: n.read ? 0 : 1,
+        kind: getNotificationKind(n),
+        isGrouped: false,
+      }));
+    } catch {
+      if (groupedNotifications.length > 0) return groupedNotifications;
+      if (notifications.length === 0) return [];
+      return notifications.map((n) => ({
+        id: n.id,
+        representative: n,
+        notifications: [n],
+        count: 1,
+        unreadCount: n.read ? 0 : 1,
+        kind: getNotificationKind(n),
+        isGrouped: false,
+      }));
+    }
+  }, [groupedNotifications, notifications, notificationPrefs]);
 
   useEffect(() => {
     if (!notificationsDebugEnabled || activeTab !== "notifications") return;
@@ -831,7 +905,7 @@ export default function UserProfile() {
 
   const notificationsRenderState = useMemo<"loading" | "empty" | "list">(() => {
     if (isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0) return "loading";
-    if (hasLoadedNotifications && notifications.length === 0 && visibleNotifications.length === 0) return "empty";
+    if (hasLoadedNotifications && visibleNotifications.length === 0) return "empty";
     return "list";
   }, [isInitialNotificationsLoading, hasLoadedNotifications, notifications.length, visibleNotifications.length]);
 
@@ -1012,7 +1086,7 @@ export default function UserProfile() {
         });
       }
       if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications", "unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
     } catch {
       toast({ title: "Refresh failed", variant: "destructive" });
@@ -1123,13 +1197,13 @@ export default function UserProfile() {
       const [first, second] = uniqueUsernames;
       const remaining = Math.max(group.count - 2, 0);
       if (first && second && remaining > 0) {
-        return `@${first}, @${second} and ${remaining} others liked your post`;
+        return `${formatUsernameDisplay(first)}, ${formatUsernameDisplay(second)} and ${remaining} others liked your post`;
       }
       if (first && second) {
-        return `@${first} and @${second} liked your post`;
+        return `${formatUsernameDisplay(first)} and ${formatUsernameDisplay(second)} liked your post`;
       }
       if (first) {
-        return `@${first} and ${Math.max(group.count - 1, 0)} others liked your post`;
+        return `${formatUsernameDisplay(first)} and ${Math.max(group.count - 1, 0)} others liked your post`;
       }
       return `${group.count} people liked your post`;
     }
@@ -1342,8 +1416,8 @@ export default function UserProfile() {
   const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
 
   return (
-    <div className="min-h-0 min-w-0 w-full flex-1 bg-dark overflow-x-hidden overflow-y-auto">
-      <div className={`p-6 ${activeTab === "profile" ? "pb-20" : "pb-24"}`}>
+    <div className="min-h-0 min-w-0 w-full flex-1 bg-dark overflow-x-hidden overflow-y-auto overscroll-y-contain">
+      <div className="px-6 pt-6 pb-[calc(6.25rem+env(safe-area-inset-bottom,0px))]">
         <div className="max-w-md mx-auto">
           {/* User Header */}
           <div className="text-center mb-0">
@@ -1376,14 +1450,19 @@ export default function UserProfile() {
             <div className="mt-3">
               <div className="inline-flex items-center justify-center gap-1.5">
                 <h1
-                  className={`text-xl font-bold ${
+                  className={`text-xl font-bold leading-none ${
                     verifiedArtist ? "text-[#FFD700]" : "text-foreground"
                   }`}
                 >
-                  {userData.username ? `@${userData.username}` : "@user"}
+                  {userData.username ? formatUsernameDisplay(userData.username) : "@user"}
                 </h1>
-                {userData.username && verifiedArtist && (
-                  <GoldVerifiedTick className="w-4 h-4 -mt-0.5 shrink-0" />
+                {userData.username && (verifiedArtist || isModerator) && (
+                  <UserRoleInlineIcons
+                    verifiedArtist={verifiedArtist}
+                    moderator={isModerator}
+                    tickClassName="h-4 w-4 -mt-0.5 shrink-0"
+                    shieldSizeClass="h-4 w-4"
+                  />
                 )}
               </div>
             </div>
@@ -1469,40 +1548,54 @@ export default function UserProfile() {
                     </div>
                   </div>
 
-                  <div className="[perspective:1200px]">
+                  <div className="w-full [perspective:1200px]">
                     <div
-                      className="relative min-h-[430px] transition-transform duration-500 ease-out [transform-style:preserve-3d]"
-                      style={{
-                        transform: artistStatsMode === "artist" ? "rotateY(0deg)" : "rotateY(180deg)",
-                      }}
+                      className="relative w-full min-h-[430px] overflow-visible"
+                      style={{ height: `${artistUserFlipShellPx}px` }}
                     >
-                      <div className="absolute inset-0 [backface-visibility:hidden]">
-                        <StatsCardSection
-                          title="Your Impact"
-                          titleInfo={PROFILE_HELP.sectionImpact}
-                          items={artistImpactItems}
-                          className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                          helperText={
-                            hasAnyArtistImpact
-                              ? undefined
-                              : "Your impact stats will grow as tracks are confirmed and clips get linked to your releases."
-                          }
-                        />
-                      </div>
-                      <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                        <StatsCardSection
-                          title="Your Activity"
-                          titleInfo={PROFILE_HELP.sectionUserActivity}
-                          items={userOverviewItems}
-                          className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                        />
+                      <div
+                        className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
+                        style={{
+                          transform: artistStatsMode === "artist" ? "rotateY(0deg)" : "rotateY(180deg)",
+                          WebkitTransformStyle: "preserve-3d",
+                        }}
+                      >
+                        <div
+                          ref={artistFlipFaceRef}
+                          className="absolute left-0 right-0 top-0 w-full [transform-style:preserve-3d] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+                          style={{ transform: "translateZ(1px)" }}
+                        >
+                          <StatsCardSection
+                            title="Your Impact"
+                            titleInfo={PROFILE_HELP.sectionImpact}
+                            items={artistImpactItems}
+                            className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                            helperText={
+                              hasAnyArtistImpact
+                                ? undefined
+                                : "Your impact stats will grow as tracks are confirmed and clips get linked to your releases."
+                            }
+                          />
+                        </div>
+                        <div
+                          ref={userFlipFaceRef}
+                          className="absolute left-0 right-0 top-0 w-full [transform-style:preserve-3d] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+                          style={{ transform: "translateZ(1px) rotateY(180deg)" }}
+                        >
+                          <StatsCardSection
+                            title="Your Activity"
+                            titleInfo={PROFILE_HELP.sectionUserActivity}
+                            items={userOverviewItems}
+                            className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               ) : (
                 <StatsCardSection
-                  title="Your overview"
+                  title="Your Activity"
                   titleInfo={PROFILE_HELP.sectionOverview}
                   items={userOverviewItems}
                   className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
@@ -1726,7 +1819,9 @@ export default function UserProfile() {
                         </span>
 
                         <div className="absolute bottom-2 left-2 right-2">
-                          <p className="text-xs text-white/95 font-medium truncate">@{post.user.username}</p>
+                          <p className="text-xs text-white/95 font-medium truncate">
+                            {formatUsernameDisplay(post.user.username)}
+                          </p>
                           {post.description ? (
                             <p className="text-[11px] text-white/80 truncate">{post.description}</p>
                           ) : null}
@@ -1795,7 +1890,7 @@ export default function UserProfile() {
                         onClick={() => openLikedPostViewer(index)}
                         className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
                         data-testid={`liked-thumbnail-${post.id}`}
-                        aria-label={`Open liked post by @${post.user.username}`}
+                        aria-label={`Open liked post by ${formatUsernameDisplay(post.user.username)}`}
                       >
                         {thumbnailSrc ? (
                           <img
@@ -1824,7 +1919,9 @@ export default function UserProfile() {
                         </span>
 
                         <div className="absolute bottom-2 left-2 right-2">
-                          <p className="text-xs text-white/95 font-medium truncate">@{post.user.username}</p>
+                          <p className="text-xs text-white/95 font-medium truncate">
+                            {formatUsernameDisplay(post.user.username)}
+                          </p>
                           {post.description ? (
                             <p className="text-[11px] text-white/80 truncate">{post.description}</p>
                           ) : null}
@@ -1856,11 +1953,22 @@ export default function UserProfile() {
                   <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                   <p className="text-gray-400">Loading notifications...</p>
                 </div>
-              ) : hasLoadedNotifications && notifications.length === 0 && visibleNotifications.length === 0 ? (
+              ) : hasLoadedNotifications && visibleNotifications.length === 0 ? (
                 <div className="text-center py-12">
                   <Bell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 text-lg mb-2">No notifications yet</p>
-                  <p className="text-gray-500 text-sm">You'll see activity updates here</p>
+                  {notifications.length === 0 ? (
+                    <>
+                      <p className="text-gray-400 text-lg mb-2">No notifications yet</p>
+                      <p className="text-gray-500 text-sm">You'll see activity updates here</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-400 text-lg mb-2">Nothing to show here</p>
+                      <p className="text-gray-500 text-sm">
+                        These updates are hidden by your notification settings. Turn categories back on under Settings → Notifications.
+                      </p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div
@@ -1945,7 +2053,11 @@ export default function UserProfile() {
                               notification.message
                             ) : (
                               <>
-                                <span className="font-semibold">{notification.triggeredByUser?.username ?? "Someone"}</span>
+                                <span className="font-semibold">
+                                  {notification.triggeredByUser?.username
+                                    ? formatUsernameDisplay(notification.triggeredByUser.username)
+                                    : "Someone"}
+                                </span>
                                 {' '}{notification.message}
                               </>
                             )}

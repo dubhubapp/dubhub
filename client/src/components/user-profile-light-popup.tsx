@@ -2,13 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import type { PublicLightProfileStats } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
-import { CheckCircle, TrendingUp, Upload, X } from "lucide-react";
+import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 type LightPopupOptions = {
   /** When false, skips the verified-artists query (e.g. comments drawer closed). */
@@ -62,6 +64,7 @@ type ProfilePopupUser = {
   avatar_url?: string | null;
   profileImage?: string | null;
   verified_artist?: boolean;
+  moderator?: boolean;
   account_type?: string;
   publicLight?: PublicLightProfileStats;
   /** Hardened trust score (`user_karma.score`). */
@@ -472,7 +475,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
         <div className="flex min-w-0 items-start gap-2 pr-7">
           <img
             src={avatarSrc ?? undefined}
-            alt={user.username ? `@${user.username}` : "Profile"}
+            alt={user.username ? formatUsernameDisplay(user.username) : "Profile"}
             className={`avatar-media h-9 w-9 shrink-0 rounded-full border-2 ${
               avatarIsDefault ? "avatar-default-media" : ""
             } ${avatarBorderClass}`}
@@ -487,11 +490,14 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                     className="min-w-0 max-w-[10rem] break-words text-sm font-semibold leading-tight sm:max-w-[11rem]"
                     style={{ color: primaryTextColor }}
                   >
-                    @{user.username}
+                    {formatUsernameDisplay(user.username)}
                   </h3>
-                  {isVerifiedArtist && (
-                    <GoldVerifiedTick className="h-3.5 w-3.5 shrink-0" title="Verified Artist" />
-                  )}
+                  <UserRoleInlineIcons
+                    verifiedArtist={isVerifiedArtist}
+                    moderator={user.moderator === true}
+                    tickClassName="h-3.5 w-3.5 shrink-0"
+                    shieldSizeClass="h-4 w-4"
+                  />
                 </div>
                 <div
                   className="mt-0.5 text-[9px] font-medium leading-none"
@@ -545,7 +551,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                 style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
               />
               <StatLine
-                Icon={CheckCircle}
+                Icon={Check}
                 label="IDs"
                 value={idsValue}
                 labelStyle={{ color: tileLabelColor }}

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
+import { formatUsernameDisplay } from '@/lib/utils';
 
 interface SignInProps {
   onToggleMode: () => void;
@@ -98,7 +99,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
 
         toast({
           title: "Signed In",
-          description: `Welcome back, ${profileData.username}!`,
+          description: `Welcome back, ${formatUsernameDisplay(profileData.username) || profileData.username || 'there'}!`,
         });
 
         onAuthSuccess(userRole);

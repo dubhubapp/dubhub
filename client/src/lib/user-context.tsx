@@ -24,6 +24,8 @@ interface UserContextType {
   profileImage: string | null;
   username: string | null;
   verifiedArtist: boolean; // Whether current user is a verified artist
+  /** True when the profile has moderator privileges (independent of artist verification). */
+  isModerator: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
   updateProfileImage: (url: string) => void;
@@ -37,6 +39,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [verifiedArtist, setVerifiedArtist] = useState<boolean>(false);
+  const [isModerator, setIsModerator] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
@@ -49,6 +52,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (sessionError) {
           console.error('[UserContext] Error getting session:', sessionError);
           setIsAuthenticated(false);
+          setIsModerator(false);
           setIsLoading(false);
           return;
         }
@@ -60,6 +64,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setUserType("user");
           setCurrentUser(null);
           setVerifiedArtist(false);
+          setIsModerator(false);
           setIsAuthenticated(false);
           setIsLoading(false);
           return;
@@ -77,6 +82,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (profileError || !profileData) {
           console.error('[UserContext] Error loading profile:', profileError);
           setIsAuthenticated(false);
+          setIsModerator(false);
           setIsLoading(false);
           return;
         }
@@ -107,7 +113,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Set verified artist status
         const isVerifiedArtist = profileData.account_type === "artist" && profileData.verified_artist === true;
         setVerifiedArtist(isVerifiedArtist);
-        
+        setIsModerator(!!profileData.moderator);
+
         // Set user type
         let role: "user" | "artist" | "moderator" = "user";
         if (profileData.moderator) {
@@ -140,6 +147,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('[UserContext] Error loading profile:', error);
         setIsAuthenticated(false);
+        setIsModerator(false);
         setIsLoading(false);
       }
     };
@@ -180,6 +188,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       profileImage, 
       username,
       verifiedArtist,
+      isModerator,
       isLoading,
       isAuthenticated,
       updateProfileImage,

@@ -9,6 +9,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 interface CommunityVerificationDialogProps {
   postId: string;
@@ -143,7 +144,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                             {comment.user.avatar_url ? (
                               <img
                                 src={comment.user.avatar_url}
-                                alt={comment.user.username}
+                                alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
                                 className="w-full h-full object-cover"
                               />
                             ) : (
@@ -151,7 +152,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">@{comment.user.username}</span>
+                            <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
                             {comment.user.verified_artist && (
                               <CheckCircle className="w-4 h-4 text-primary" />
                             )}
@@ -181,7 +182,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                       <p className="text-sm text-foreground">{comment.body}</p>
                       {comment.taggedArtist && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Tagged artist: @{comment.taggedArtist.username}
+                          Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
                         </p>
                       )}
                     </Label>

@@ -7,6 +7,8 @@
  * - Without: "@owner — title"
  */
 
+import { formatUsernameDisplay } from "@/lib/utils";
+
 export type CollaboratorLike = { artistId?: string; username?: string; status?: string };
 
 /** Compute display title line: "@owner & @collab1 — title" */
@@ -16,9 +18,16 @@ export function formatReleaseTitleLine(
   collaborators?: CollaboratorLike[] | null
 ): string {
   const accepted = (collaborators || []).filter((c) => c.status === "ACCEPTED");
-  const parts = [`@${ownerUsername}`];
+  const parts: string[] = [];
+  const ownerDisp = formatUsernameDisplay(ownerUsername);
+  if (ownerDisp) parts.push(ownerDisp);
+  else {
+    const raw = String(ownerUsername ?? "").trim().replace(/^@+/, "");
+    parts.push(raw ? `@${raw}` : "@");
+  }
   for (const c of accepted) {
-    if (c.username) parts.push(`@${c.username}`);
+    const seg = formatUsernameDisplay(c.username);
+    if (seg) parts.push(seg);
   }
   const byline = parts.length > 1 ? parts.join(" & ") : parts[0];
   return `${byline} — ${title}`;

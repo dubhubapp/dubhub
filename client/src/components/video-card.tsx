@@ -7,6 +7,7 @@ import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { UserRoleInlineIcons } from "./moderator-shield";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
@@ -24,6 +25,7 @@ import { isReleaseUpcoming } from "@/lib/release-status";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
+import { formatUsernameDisplay } from "@/lib/utils";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -389,6 +391,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
   // Check if artist is verified
   const isVerifiedArtist = post.user.account_type === 'artist' && post.user.verified_artist === true;
+  const isModeratorUser = !!post.user.moderator;
   const postAvatarSrc =
     contextUser && post.userId === contextUser.id
       ? (userProfileImage || post.user.avatar_url || undefined)
@@ -588,7 +591,7 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                   if (post.user?.username) openByUsername(post.user.username);
                 }}
                 aria-label={
-                  post.user.username ? `View profile @${post.user.username}` : "View profile"
+                  post.user.username ? `View profile ${formatUsernameDisplay(post.user.username)}` : "View profile"
                 }
                 data-testid="post-author-identity"
               >
@@ -609,13 +612,17 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                         className={`min-w-0 truncate font-semibold text-sm ${
                           isVerifiedArtist ? "text-[#FFD700]" : "text-white"
                         }`}
-                        title={post.user.username ? `@${post.user.username}` : undefined}
+                        title={post.user.username ? formatUsernameDisplay(post.user.username) : undefined}
                       >
-                        @{post.user.username}
+                        {formatUsernameDisplay(post.user.username)}
                       </span>
-                      {isVerifiedArtist && (
-                        <GoldVerifiedTick className="h-4 w-4 shrink-0 -mt-0.5" />
-                      )}
+                      <UserRoleInlineIcons
+                        verifiedArtist={isVerifiedArtist}
+                        moderator={isModeratorUser}
+                        tickClassName="h-4 w-4 shrink-0 -mt-0.5"
+                        shieldSizeClass="h-[1.125rem] w-[1.125rem]"
+                        shieldTone="onDark"
+                      />
                     </div>
                   </div>
                 </div>

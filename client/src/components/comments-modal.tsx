@@ -18,9 +18,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GoldVerifiedArtistPill, GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { GoldVerifiedArtistPill, goldAvatarGlowShadowClass } from "./verified-artist";
+import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -479,7 +481,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               <div className="relative flex-shrink-0">
                 <img
                   src={comment.user.avatar_url || undefined}
-                  alt={comment.user.username}
+                  alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
                   className={`avatar-media w-8 h-8 rounded-full border-2 ${isDefaultAvatarUrl(comment.user.avatar_url) ? "avatar-default-media" : ""} ${
                     comment.user.account_type === "artist" && comment.user.verified_artist
                       ? "border-[#FFD700] " + goldAvatarGlowShadowClass
@@ -502,11 +504,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         });
                       }}
                     >
-                      {comment.user.username}
+                      {formatUsernameDisplay(comment.user.username)}
                     </span>
-                    {comment.user.account_type === "artist" && comment.user.verified_artist && (
-                      <GoldVerifiedTick className="w-3 h-3 -mt-0.5" />
-                    )}
+                    <UserRoleInlineIcons
+                      verifiedArtist={
+                        comment.user.account_type === "artist" && comment.user.verified_artist === true
+                      }
+                      moderator={!!comment.user.moderator}
+                      tickClassName="h-3 w-3 -mt-0.5"
+                      shieldSizeClass="h-4 w-4"
+                    />
                   </div>
                   {/* Artist Verified Badge - on the artist/system confirmation comment, GOLD */}
                   {isArtistConfirmationComment && isArtistVerifiedPost && (
@@ -575,7 +582,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     className="text-xs text-gray-500 hover:text-gray-700"
                     onClick={() => {
                       setReplyingTo({id: comment.id, username: comment.user.username});
-                      setNewComment(`@${comment.user.username} `);
+                      setNewComment(`${formatUsernameDisplay(comment.user.username)} `);
                     }}
                     data-testid={`reply-button-${comment.id}`}
                   >
@@ -678,7 +685,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         <div className="relative flex-shrink-0">
                           <img
                             src={reply.user.avatar_url || undefined}
-                            alt={reply.user.username}
+                            alt={formatUsernameDisplay(reply.user.username) || reply.user.username || ""}
                             className={`avatar-media w-6 h-6 rounded-full border-2 ${isDefaultAvatarUrl(reply.user.avatar_url) ? "avatar-default-media" : ""} ${
                               reply.user.account_type === "artist" && reply.user.verified_artist
                                 ? "border-[#FFD700] " + goldAvatarGlowShadowClass
@@ -701,11 +708,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                   });
                                 }}
                               >
-                                {reply.user.username}
+                                {formatUsernameDisplay(reply.user.username)}
                               </span>
-                              {reply.user.account_type === "artist" && reply.user.verified_artist && (
-                                <GoldVerifiedTick className="w-3 h-3 -mt-0.5" />
-                              )}
+                              <UserRoleInlineIcons
+                                verifiedArtist={
+                                  reply.user.account_type === "artist" && reply.user.verified_artist === true
+                                }
+                                moderator={!!reply.user.moderator}
+                                tickClassName="h-3 w-3 -mt-0.5"
+                                shieldSizeClass="h-4 w-4"
+                              />
                             </div>
                             {/* Verified by Artist Badge for Reply */}
                             {reply.isVerifiedByArtist && (
@@ -747,7 +759,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                               className="text-xs text-gray-500 hover:text-gray-700"
                               onClick={() => {
                                 setReplyingTo({id: comment.id, username: reply.user.username});
-                                setNewComment(`@${reply.user.username} `);
+                                setNewComment(`${formatUsernameDisplay(reply.user.username)} `);
                               }}
                               data-testid={`reply-button-${reply.id}`}
                             >
@@ -774,7 +786,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-blue-600">Replying to</span>
-                  <span className="text-xs font-medium text-blue-800">@{replyingTo.username}</span>
+                  <span className="text-xs font-medium text-blue-800">{formatUsernameDisplay(replyingTo.username)}</span>
                 </div>
                 <button 
                   onClick={() => {
@@ -803,17 +815,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   >
                     <img
                       src={artist.avatar_url || artist.profileImage || undefined}
-                      alt={artist.username}
+                      alt={formatUsernameDisplay(artist.username) || artist.username || ""}
                       className={`avatar-media w-8 h-8 rounded-full ${isDefaultAvatarUrl(artist.avatar_url || artist.profileImage) ? "avatar-default-media" : ""}`}
                     />
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
                         <span className="text-sm font-medium text-yellow-600">
-                          @{artist.username}
+                          {formatUsernameDisplay(artist.username)}
                         </span>
                         <CheckCircle className="w-3 h-3 text-yellow-400" />
                       </div>
-                      <span className="text-xs text-gray-500">@{artist.username}</span>
+                      <span className="text-xs text-gray-500">{formatUsernameDisplay(artist.username)}</span>
                     </div>
                   </button>
                 ))}
@@ -834,7 +846,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <Textarea
                   value={newComment}
                   onChange={handleCommentChange}
-                  placeholder={replyingTo ? `Replying to @${replyingTo.username}...` : "Add a comment... (Use @ to tag artists)"}
+                  placeholder={
+                    replyingTo
+                      ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
+                      : "Add a comment... (Use @ to tag artists)"
+                  }
                   className="min-h-[38px] max-h-28 flex-1 resize-y rounded-2xl border-gray-300"
                   disabled={addCommentMutation.isPending}
                   data-testid="comment-input"

@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 export default function ReleaseEdit() {
   const [, params] = useRoute("/releases/:id/edit");
@@ -562,7 +563,7 @@ export default function ReleaseEdit() {
                           setCollabSearch("");
                         }}
                       >
-                        @{artist.username}
+                        {formatUsernameDisplay(artist.username)}
                         <UserPlus className="w-4 h-4 text-primary" />
                       </button>
                     ))}
@@ -573,7 +574,7 @@ export default function ReleaseEdit() {
                   <p className="text-xs text-muted-foreground">Pending invite:</p>
                   {stagedCollaborators.map((c) => (
                     <div key={c.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-muted">
-                      <span className="text-sm">@{c.username}</span>
+                      <span className="text-sm">{formatUsernameDisplay(c.username)}</span>
                       <Button
                         type="button"
                         variant="ghost"
@@ -593,7 +594,7 @@ export default function ReleaseEdit() {
             {(release.collaborators || []).map((c: any) => (
               <div key={c.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">@{c.username}</span>
+                  <span className="text-sm font-medium">{formatUsernameDisplay(c.username)}</span>
                   <span
                     className={`text-xs px-2 py-0.5 rounded ${
                       c.status === "ACCEPTED"

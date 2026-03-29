@@ -5,6 +5,7 @@ import { useUser } from "@/lib/user-context";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
+import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 
 const MODERATOR_QUEUE_KEYWORDS = [
   "community verification",
@@ -24,28 +25,20 @@ export function BottomNavigation() {
   const [location] = useLocation();
   const { openSubmitClip, isSubmitClipOpen } = useSubmitClip();
   const { userType, currentUser } = useUser();
+  const notificationPrefs = useNotificationPreferences();
 
   // Unified profile path for all users and artists
   const profilePath = "/profile";
   const profileText = "Profile";
   const isModerator = userType === "moderator";
 
-  // Get unread notification count (refetch so badge updates when tagged etc.)
-  const { data: unreadCountData } = useQuery<{ count: number }>({
-    queryKey: ["/api/user", currentUser?.id, "notifications", "unread-count"],
-    enabled: !!currentUser?.id,
-    staleTime: 0,
-    refetchInterval: 20000,
-  });
-
-  const { data: navNotificationsForModerator = [] } = useQuery<any[]>({
+  const { data: navNotifications = [] } = useQuery<any[]>({
     queryKey: ["/api/user", currentUser?.id, "notifications", "nav-feed"],
-    enabled: isModerator && !!currentUser?.id,
+    enabled: !!currentUser?.id,
     staleTime: 0,
     refetchInterval: 20000,
     queryFn: async () => {
       if (!currentUser?.id) return [];
-      // Use authenticated helper so Authorization header is attached (prevents stray 401s).
       const res = await apiRequest("GET", `/api/user/${currentUser.id}/notifications?limit=100`);
       const payload = await res.json();
       return Array.isArray(payload)
@@ -56,11 +49,17 @@ export function BottomNavigation() {
     },
   });
 
-  const unreadCount = isModerator
-    ? navNotificationsForModerator.filter(
-        (n: any) => !n?.read && !isModeratorQueueNotificationMessage(n?.message),
-      ).length
-    : unreadCountData?.count || 0;
+  const navList = Array.isArray(navNotifications) ? navNotifications : [];
+  let unreadCount = 0;
+  try {
+    unreadCount = navList.filter((n: any) => {
+      if (!n || n.read) return false;
+      if (isModerator && isModeratorQueueNotificationMessage(n.message)) return false;
+      return isNotificationVisibleByUserPreferences(n, notificationPrefs);
+    }).length;
+  } catch {
+    unreadCount = navList.filter((n: any) => !n?.read && !(isModerator && isModeratorQueueNotificationMessage(n?.message))).length;
+  }
 
   const { data: pendingVerifications = [] } = useQuery<any[]>({
     queryKey: ["/api/moderator/pending-verifications"],

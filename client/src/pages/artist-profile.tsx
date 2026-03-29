@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import type { PostWithUser } from "@shared/schema";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 type FilterMode = "pending" | "confirmed" | "all";
 type ArtistStats = {
@@ -308,7 +309,7 @@ export default function ArtistProfile() {
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-semibold text-sm">@{track.user.username}</span>
+                        <span className="font-semibold text-sm">{formatUsernameDisplay(track.user.username)}</span>
                         <span className="text-xs text-gray-400">{track.createdAt ? formatTimeAgo(track.createdAt) : 'Recently'}</span>
                       </div>
                       <p className="text-sm text-gray-300 mb-2">{track.description}</p>

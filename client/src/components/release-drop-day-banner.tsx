@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { isReleaseDayToday, toLocalDateKey } from "@/lib/release-status";
 import type { ReleaseFeedItem } from "@/pages/release-tracker";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { runConfetti } from "@/lib/confetti";
 import { playReleaseDayHaptic } from "@/lib/haptic";
 
@@ -167,7 +167,7 @@ export function ReleaseDropDayBanner() {
     if (r.artistId === currentUser?.id) {
       message = "Your release is out today.";
     } else {
-      message = `${r.artistUsername ? `${r.artistUsername} — ` : ""}${r.title} drops today.`;
+      message = `${r.artistUsername ? `${formatUsernameDisplay(r.artistUsername)} — ` : ""}${r.title} drops today.`;
     }
   } else if (ownCount > 0 && savedOnlyCount > 0) {
     message = `${releases.length} releases you care about drop today.`;

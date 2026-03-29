@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { formatUsernameDisplay } from "@/lib/utils";
 
 export default function ReleaseCreate() {
   const [, navigate] = useLocation();
@@ -393,7 +394,7 @@ export default function ReleaseCreate() {
                         setCollabSearch("");
                       }}
                     >
-                      @{artist.username}
+                      {formatUsernameDisplay(artist.username)}
                       <UserPlus className="w-4 h-4 text-primary" />
                     </button>
                   ))}
@@ -407,7 +408,7 @@ export default function ReleaseCreate() {
                     key={c.id}
                     className="flex items-center justify-between py-1.5 px-2 rounded bg-muted"
                   >
-                    <span className="text-sm">@{c.username}</span>
+                    <span className="text-sm">{formatUsernameDisplay(c.username)}</span>
                     <Button
                       type="button"
                       variant="ghost"

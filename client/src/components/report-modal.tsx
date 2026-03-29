@@ -6,7 +6,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useUser } from "@/lib/user-context";
 import { cn } from "@/lib/utils";
 
 interface ReportModalProps {
@@ -65,7 +64,6 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
   const [isReasonSelectOpen, setIsReasonSelectOpen] = useState<boolean>(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { currentUser } = useUser();
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const attemptIdRef = useRef<number>(0);
   const isMountedRef = useRef(true);
@@ -134,9 +132,6 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
         description: "Thanks — our moderation team will review this shortly.",
       });
 
-      if (currentUser?.id && isMountedRef.current) {
-        queryClient.invalidateQueries({ queryKey: ["/api/moderator", currentUser.id, "notifications", "unread-count"] });
-      }
       if (isMountedRef.current) {
         queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
       }
