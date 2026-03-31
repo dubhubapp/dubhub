@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3 } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
@@ -16,6 +16,7 @@ import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
@@ -189,6 +190,62 @@ function GenreBreakdownSection({
           {emptyMessage}
         </p>
       )}
+    </div>
+  );
+}
+
+function ProfilePostThumbnail({
+  thumbnailSrc,
+  videoSrc,
+}: {
+  thumbnailSrc: string | null;
+  videoSrc: string | null;
+}) {
+  const [failed, setFailed] = useState(false);
+  const shouldRenderImage = !!thumbnailSrc && !failed;
+  const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed;
+  const showFallback = failed || (!thumbnailSrc && !videoSrc);
+
+  return (
+    <div className="relative h-full w-full bg-surface">
+      {shouldRenderImage ? (
+        <img
+          src={thumbnailSrc ?? undefined}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {shouldRenderVideo ? (
+        <video
+          src={videoSrc ?? undefined}
+          className="w-full h-full object-cover"
+          muted
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          onLoadedData={(e) => {
+            // Keep tile previews static; nudge frame selection on iOS without playing.
+            const el = e.currentTarget;
+            try {
+              if (el.currentTime < 0.05) el.currentTime = 0.05;
+              el.pause();
+            } catch {
+              // no-op
+            }
+          }}
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {showFallback ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/70 text-muted-foreground">
+          <div className="flex flex-col items-center gap-1">
+            <ImageOff className="h-5 w-5" aria-hidden />
+            <span className="text-[10px] font-medium">No preview</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -606,25 +663,48 @@ export default function UserProfile() {
     },
   ];
 
-  useLayoutEffect(() => {
+  const measureArtistUserFlipShell = useCallback(() => {
     if (userType !== "artist" || !artistStats) {
       setArtistUserFlipShellPx((prev) => (prev === 430 ? prev : 430));
       return;
     }
     const elArtist = artistFlipFaceRef.current;
     const elUser = userFlipFaceRef.current;
-    const updateShell = () => {
-      const ha = elArtist?.getBoundingClientRect().height ?? 0;
-      const hu = elUser?.getBoundingClientRect().height ?? 0;
-      const next = Math.max(430, Math.ceil(ha), Math.ceil(hu));
-      setArtistUserFlipShellPx((prev) => (prev === next ? prev : next));
-    };
-    updateShell();
-    const ro = new ResizeObserver(updateShell);
+    const ha = Math.max(
+      elArtist?.scrollHeight ?? 0,
+      elArtist?.offsetHeight ?? 0,
+      Math.ceil(elArtist?.getBoundingClientRect().height ?? 0),
+    );
+    const hu = Math.max(
+      elUser?.scrollHeight ?? 0,
+      elUser?.offsetHeight ?? 0,
+      Math.ceil(elUser?.getBoundingClientRect().height ?? 0),
+    );
+    const next = Math.max(430, Math.ceil(ha), Math.ceil(hu));
+    setArtistUserFlipShellPx((prev) => (prev === next ? prev : next));
+  }, [userType, artistStats]);
+
+  useLayoutEffect(() => {
+    if (userType !== "artist" || !artistStats) return;
+    const elArtist = artistFlipFaceRef.current;
+    const elUser = userFlipFaceRef.current;
+    measureArtistUserFlipShell();
+    const ro = new ResizeObserver(measureArtistUserFlipShell);
     if (elArtist) ro.observe(elArtist);
     if (elUser) ro.observe(elUser);
     return () => ro.disconnect();
-  }, [userType, artistStats, userStats, userReputation, hasAnyArtistImpact]);
+  }, [userType, artistStats, userStats, userReputation, hasAnyArtistImpact, measureArtistUserFlipShell]);
+
+  useEffect(() => {
+    if (activeTab !== "profile") return;
+    const rafA = requestAnimationFrame(() => {
+      const rafB = requestAnimationFrame(() => {
+        measureArtistUserFlipShell();
+      });
+      return () => cancelAnimationFrame(rafB);
+    });
+    return () => cancelAnimationFrame(rafA);
+  }, [activeTab, artistStatsMode, measureArtistUserFlipShell]);
 
   const handleProfileImageChange = () => {
     fileInputRef.current?.click();
@@ -1372,8 +1452,15 @@ export default function UserProfile() {
       (post as any).thumbnail_url ??
       (post as any).previewImage ??
       (post as any).preview_image ??
+      (post as any).posterUrl ??
+      (post as any).poster_url ??
       null;
-    return typeof maybePreview === "string" && maybePreview.trim() ? maybePreview : null;
+    return resolveMediaUrl(maybePreview);
+  };
+
+  const getPostVideoPreview = (post: PostWithUser) => {
+    const rawVideo = (post as any).videoUrl ?? (post as any).video_url ?? null;
+    return resolveMediaUrl(rawVideo);
   };
 
   const openLikedPostViewer = (startIndex: number) => {
@@ -1417,7 +1504,7 @@ export default function UserProfile() {
 
   return (
     <div className="min-h-0 min-w-0 w-full flex-1 bg-dark overflow-x-hidden overflow-y-auto overscroll-y-contain">
-      <div className="px-6 pt-6 pb-[calc(6.25rem+env(safe-area-inset-bottom,0px))]">
+      <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           {/* User Header */}
           <div className="text-center mb-0">
@@ -1441,7 +1528,7 @@ export default function UserProfile() {
               )}
               <button 
                 onClick={handleProfileImageChange}
-                className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
+                className="ios-press ios-press-soft absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
                 data-testid="button-edit-profile-picture"
               >
                 <Camera className="w-4 h-4 text-black" />
@@ -1480,7 +1567,7 @@ export default function UserProfile() {
               <TabsTrigger
                 value="profile"
                 data-testid="tab-profile"
-                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 <User className="w-4 h-4 mr-1" />
                 Profile
@@ -1488,7 +1575,7 @@ export default function UserProfile() {
               <TabsTrigger
                 value="posts"
                 data-testid="tab-posts"
-                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 <Upload className="w-4 h-4 mr-1" />
                 Posts
@@ -1496,7 +1583,7 @@ export default function UserProfile() {
               <TabsTrigger
                 value="liked"
                 data-testid="tab-liked"
-                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 <Heart className="w-4 h-4 mr-1" />
                 Likes
@@ -1504,7 +1591,7 @@ export default function UserProfile() {
               <TabsTrigger
                 value="notifications"
                 data-testid="tab-notifications"
-                className="relative rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press relative rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 <Bell className="w-4 h-4 mr-1" />
                 Notif.
@@ -1524,7 +1611,7 @@ export default function UserProfile() {
                       <button
                         type="button"
                         onClick={() => setArtistStatsMode("artist")}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
+                        className={`ios-press px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
                           artistStatsMode === "artist"
                             ? "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
                             : "bg-black/20 text-white/70 hover:text-white"
@@ -1536,7 +1623,7 @@ export default function UserProfile() {
                       <button
                         type="button"
                         onClick={() => setArtistStatsMode("user")}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
+                        className={`ios-press px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
                           artistStatsMode === "user"
                             ? "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
                             : "bg-black/20 text-white/70 hover:text-white"
@@ -1548,46 +1635,56 @@ export default function UserProfile() {
                     </div>
                   </div>
 
-                  <div className="w-full [perspective:1200px]">
+                  <div className="w-full">
                     <div
-                      className="relative w-full min-h-[430px] overflow-visible"
+                      className="relative w-full min-h-[430px]"
                       style={{ height: `${artistUserFlipShellPx}px` }}
                     >
-                      <div
-                        className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
-                        style={{
-                          transform: artistStatsMode === "artist" ? "rotateY(0deg)" : "rotateY(180deg)",
-                          WebkitTransformStyle: "preserve-3d",
-                        }}
-                      >
+                      <div className="relative h-full w-full overflow-hidden [perspective:1200px]">
                         <div
-                          ref={artistFlipFaceRef}
-                          className="absolute left-0 right-0 top-0 w-full [transform-style:preserve-3d] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                          style={{ transform: "translateZ(1px)" }}
+                          className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
+                          style={{
+                            transform: artistStatsMode === "artist" ? "rotateY(0deg)" : "rotateY(180deg)",
+                            WebkitTransformStyle: "preserve-3d",
+                          }}
                         >
-                          <StatsCardSection
-                            title="Your Impact"
-                            titleInfo={PROFILE_HELP.sectionImpact}
-                            items={artistImpactItems}
-                            className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                            helperText={
-                              hasAnyArtistImpact
-                                ? undefined
-                                : "Your impact stats will grow as tracks are confirmed and clips get linked to your releases."
-                            }
-                          />
-                        </div>
-                        <div
-                          ref={userFlipFaceRef}
-                          className="absolute left-0 right-0 top-0 w-full [transform-style:preserve-3d] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                          style={{ transform: "translateZ(1px) rotateY(180deg)" }}
-                        >
-                          <StatsCardSection
-                            title="Your Activity"
-                            titleInfo={PROFILE_HELP.sectionUserActivity}
-                            items={userOverviewItems}
-                            className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                          />
+                          <div
+                            ref={artistFlipFaceRef}
+                            className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+                            style={{
+                              backfaceVisibility: "hidden",
+                              WebkitBackfaceVisibility: "hidden",
+                              transform: "rotateY(0deg)",
+                            }}
+                          >
+                            <StatsCardSection
+                              title="Your Impact"
+                              titleInfo={PROFILE_HELP.sectionImpact}
+                              items={artistImpactItems}
+                              className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                              helperText={
+                                hasAnyArtistImpact
+                                  ? undefined
+                                  : "Your impact stats will grow as tracks are confirmed and clips get linked to your releases."
+                              }
+                            />
+                          </div>
+                          <div
+                            ref={userFlipFaceRef}
+                            className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+                            style={{
+                              backfaceVisibility: "hidden",
+                              WebkitBackfaceVisibility: "hidden",
+                              transform: "rotateY(180deg)",
+                            }}
+                          >
+                            <StatsCardSection
+                              title="Your Activity"
+                              titleInfo={PROFILE_HELP.sectionUserActivity}
+                              items={userOverviewItems}
+                              className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1670,7 +1767,7 @@ export default function UserProfile() {
             <Button
               variant="ghost"
               type="button"
-              className="w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+              className="ios-press w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
               data-testid="button-settings"
               onClick={() => navigate("/settings")}
             >
@@ -1684,7 +1781,7 @@ export default function UserProfile() {
             </TabsContent>
 
             {/* Posts Tab */}
-            <TabsContent value="posts" className="mt-6">
+            <TabsContent value="posts" className="mt-6" forceMount>
               {postsViewerStartIndex === null && (
                 <div className="flex flex-wrap gap-2 mb-4">
                   <Button
@@ -1749,7 +1846,7 @@ export default function UserProfile() {
                 </div>
               ) : postsViewerStartIndex !== null ? (
                 <div
-                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-13rem))] min-h-[20rem]"
+                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-var(--app-bottom-nav-block)-10rem))] min-h-[20rem]"
                   role="region"
                   aria-label="Your posts"
                 >
@@ -1783,31 +1880,17 @@ export default function UserProfile() {
                     const statusMeta = getPostStatusMeta(post);
                     const StatusBadgeIcon = statusMeta.Icon;
                     const thumbnailSrc = getPostThumbnail(post);
+                    const videoSrc = getPostVideoPreview(post);
                     return (
                       <button
                         key={post.id}
                         type="button"
                         onClick={() => openPostsPostViewer(index)}
-                        className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
+                        className="ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
                         data-testid={`posts-thumbnail-${post.id}`}
                         aria-label={`Open your post: ${post.description?.slice(0, 40) || post.id}`}
                       >
-                        {thumbnailSrc ? (
-                          <img
-                            src={thumbnailSrc}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <video
-                            src={post.videoUrl || ""}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                            preload="metadata"
-                          />
-                        )}
+                        <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
 
@@ -1834,7 +1917,7 @@ export default function UserProfile() {
             </TabsContent>
 
             {/* Liked Tab */}
-            <TabsContent value="liked" className="mt-6">
+            <TabsContent value="liked" className="mt-6" forceMount>
               {likedLoading ? (
                 <div className="text-center py-8">
                   <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
@@ -1848,7 +1931,7 @@ export default function UserProfile() {
                 </div>
               ) : likesViewerStartIndex !== null ? (
                 <div
-                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-13rem))] min-h-[20rem]"
+                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-var(--app-bottom-nav-block)-10rem))] min-h-[20rem]"
                   role="region"
                   aria-label="Liked posts"
                 >
@@ -1883,31 +1966,17 @@ export default function UserProfile() {
                     const statusMeta = getPostStatusMeta(post);
                     const StatusBadgeIcon = statusMeta.Icon;
                     const thumbnailSrc = getPostThumbnail(post);
+                    const videoSrc = getPostVideoPreview(post);
                     return (
                       <button
                         key={post.id}
                         type="button"
                         onClick={() => openLikedPostViewer(index)}
-                        className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
+                        className="ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
                         data-testid={`liked-thumbnail-${post.id}`}
                         aria-label={`Open liked post by ${formatUsernameDisplay(post.user.username)}`}
                       >
-                        {thumbnailSrc ? (
-                          <img
-                            src={thumbnailSrc}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <video
-                            src={post.videoUrl || ""}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                            preload="metadata"
-                          />
-                        )}
+                        <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
 
@@ -2046,7 +2115,9 @@ export default function UserProfile() {
 
                         {/* Notification Content: tag and acceptance include @username in message */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${(isCollabResponse || isRelease) ? "font-medium text-foreground" : "text-foreground"}`}>
+                          <p
+                            className={`text-sm whitespace-pre-line ${isCollabResponse || isRelease ? "font-medium text-foreground" : "text-foreground"}`}
+                          >
                             {summaryText ? (
                               summaryText
                             ) : isTag || isCollabResponse ? (
@@ -2058,7 +2129,8 @@ export default function UserProfile() {
                                     ? formatUsernameDisplay(notification.triggeredByUser.username)
                                     : "Someone"}
                                 </span>
-                                {' '}{notification.message}
+                                {" "}
+                                {notification.message}
                               </>
                             )}
                           </p>

@@ -126,7 +126,7 @@ export function SubmitClipDrawer() {
         <DrawerContent
           overlayClassName="z-40 bg-transparent pointer-events-auto"
           className="z-40 mx-auto mt-0 max-h-[min(420px,85dvh)] w-full max-w-xl gap-0 rounded-t-3xl border border-gray-800 bg-surface/98 p-0 shadow-2xl backdrop-blur-md outline-none"
-          style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+          style={{ bottom: "var(--app-bottom-nav-block)" }}
         >
           <DrawerTitle className="sr-only">Add your clip</DrawerTitle>
           <DrawerDescription className="sr-only">

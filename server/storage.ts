@@ -1380,6 +1380,47 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  private looksLikeImageDataUri(value: string | null | undefined): boolean {
+    if (!value) return false;
+    return /^data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value.trim());
+  }
+
+  private containsImageDataUri(value: string | null | undefined): boolean {
+    if (!value) return false;
+    return /data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value);
+  }
+
+  private stripEmbeddedImageDataUris(value: string): string {
+    return value
+      .replace(/\b[a-z]*data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,\S*/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private normalizeReleaseDisplayFields(title: unknown, artworkUrl: unknown): {
+    title: string;
+    artworkUrl: string | null;
+  } {
+    const rawTitle = typeof title === "string" ? title.trim() : "";
+    const rawArtwork = typeof artworkUrl === "string" ? artworkUrl.trim() : "";
+    const titleIsDataUri = this.looksLikeImageDataUri(rawTitle);
+    const artworkIsDataUri = this.looksLikeImageDataUri(rawArtwork);
+
+    // Legacy malformed rows can have artwork data URI accidentally persisted in title.
+    if (titleIsDataUri && !rawArtwork) {
+      return { title: "", artworkUrl: rawTitle };
+    }
+
+    const sanitizedTitle = this.containsImageDataUri(rawTitle)
+      ? this.stripEmbeddedImageDataUris(rawTitle)
+      : rawTitle;
+
+    return {
+      title: titleIsDataUri ? "" : sanitizedTitle,
+      artworkUrl: rawArtwork || (artworkIsDataUri ? rawArtwork : null),
+    };
+  }
+
   async getUserNotifications(
     userId: string,
     options?: { limit?: number; before?: string; beforeId?: string; after?: string; afterId?: string },
@@ -2060,12 +2101,13 @@ export class DatabaseStorage implements IStorage {
         const ac = row.accepted_collaborators;
         collaborators = Array.isArray(ac) ? ac : (typeof ac === "string" ? JSON.parse(ac || "[]") : []);
       } catch {}
+      const normalized = this.normalizeReleaseDisplayFields(row.title, row.artwork_url);
       return {
         id: row.id,
         artistId: row.artist_id,
-        title: row.title,
+        title: normalized.title,
         releaseDate: row.release_date ?? null,
-        artworkUrl: row.artwork_url,
+        artworkUrl: normalized.artworkUrl,
         notifiedAt: row.notified_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -2104,12 +2146,13 @@ export class DatabaseStorage implements IStorage {
       const links = await this.getReleaseLinks(id);
       const postIds = await this.getReleasePostIds(id);
       const collaborators = await this.getReleaseCollaborators(id);
+      const normalized = this.normalizeReleaseDisplayFields(row.title, row.artwork_url);
       return {
         id: row.id,
         artistId: row.artist_id,
-        title: row.title,
+        title: normalized.title,
         releaseDate: row.release_date ?? null,
-        artworkUrl: row.artwork_url,
+        artworkUrl: normalized.artworkUrl,
         notifiedAt: row.notified_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,

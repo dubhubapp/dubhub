@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { runConfetti } from "@/lib/confetti";
 import { playReleaseDayHaptic } from "@/lib/haptic";
+import { apiUrl } from "@/lib/apiBase";
 
 const SESSION_DISMISS_KEY = "dubhub-release-drop-day-banner-dismissed";
 const SESSION_CELEBRATION_FIRED_KEY = "dubhub-release-drop-day-celebration-fired";
@@ -97,7 +98,7 @@ export function ReleaseDropDayBanner() {
       } = await supabase.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-      const res = await fetch("/api/releases/drop-day-banner", {
+      const res = await fetch(apiUrl("/api/releases/drop-day-banner"), {
         headers,
         credentials: "include",
         cache: "no-store",
@@ -182,7 +183,7 @@ export function ReleaseDropDayBanner() {
   return (
     <div
       className="fixed left-0 right-0 z-40 px-3 pointer-events-none"
-      style={{ bottom: "calc(5.25rem + env(safe-area-inset-bottom, 0px))" }}
+      style={{ bottom: "var(--app-above-bottom-nav)" }}
       role="dialog"
       aria-label="Release day"
     >

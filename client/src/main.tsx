@@ -5,4 +5,9 @@ import { applyTheme, getStoredTheme } from "./lib/theme";
 
 applyTheme(getStoredTheme());
 
-createRoot(document.getElementById("root")!).render(<App />);
+const rootEl = document.getElementById("root")!;
+createRoot(rootEl).render(
+  <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden">
+    <App />
+  </div>,
+);

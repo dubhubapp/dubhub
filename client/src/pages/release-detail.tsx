@@ -4,11 +4,12 @@ import { useRoute, useLocation } from "wouter";
 import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
+import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "./release-tracker";
-import { formatReleaseTitleLine } from "@/lib/release-display";
+import { formatReleaseTitleLine, sanitizeReleaseText } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
@@ -100,7 +101,7 @@ export default function ReleaseDetail() {
       const { data: { session } } = await supabase.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-      const res = await fetch(`/api/releases/${id}`, { credentials: "include", headers });
+      const res = await fetch(apiUrl(`/api/releases/${id}`), { credentials: "include", headers });
       if (!res.ok) {
         if (process.env.NODE_ENV === "development") {
           console.warn("[ReleaseDetail] Fetch failed for release", id, "status:", res.status);
@@ -118,7 +119,7 @@ export default function ReleaseDetail() {
       const { data: { session } } = await supabase.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-      const res = await fetch(`/api/releases/${id}/stats`, { credentials: "include", headers });
+      const res = await fetch(apiUrl(`/api/releases/${id}/stats`), { credentials: "include", headers });
       if (!res.ok) {
         throw new Error("Failed to fetch release stats");
       }
@@ -277,9 +278,9 @@ export default function ReleaseDetail() {
     : [];
 
   return (
-    <div className="flex-1 bg-background overflow-y-auto pb-24">
-      <div className="p-4 max-w-md mx-auto">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate(releasesBackUrl)}>
+    <div className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]">
+      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
+        <Button variant="ghost" size="sm" className="ios-press mb-4 -ml-1" onClick={() => navigate(releasesBackUrl)}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
@@ -297,7 +298,7 @@ export default function ReleaseDetail() {
           </div>
         )}
 
-        <div className="flex gap-4 mb-6">
+        <div className="mb-6 flex min-w-0 gap-4 overflow-hidden">
           <div className="w-32 h-32 rounded-xl bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
             {release.artworkUrl ? (
               <img src={release.artworkUrl} alt="" className="w-full h-full object-cover" />
@@ -305,11 +306,11 @@ export default function ReleaseDetail() {
               <span className="text-4xl text-muted-foreground">🎵</span>
             )}
           </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold leading-tight break-words whitespace-normal">
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <h1 className="text-xl font-bold leading-tight break-all whitespace-normal">
               {formatReleaseTitleLine(
                 release.artistUsername,
-                release.title,
+                sanitizeReleaseText(release.title),
                 release.collaborators
               )}
             </h1>
@@ -334,18 +335,18 @@ export default function ReleaseDetail() {
         {release.links?.length > 0 && (
           <div className="mb-6">
             <h2 className="text-sm font-medium text-muted-foreground mb-2">Links</h2>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex min-w-0 flex-wrap gap-2">
               {sortLinksByPlatform((release.links as ReleaseLink[]) || []).map((link) => (
                 <a
                   key={link.id}
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 bg-muted hover:bg-muted/80 rounded-lg px-3 py-2 text-sm"
+                  className="ios-press ios-press-soft inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-sm hover:bg-muted/80"
                 >
                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                  <span>{getPlatformLabel(link.platform)}</span>
-                  <span className="text-primary">{getLinkCtaLabel(link.platform, upcoming)}</span>
+                  <span className="truncate">{getPlatformLabel(link.platform)}</span>
+                  <span className="truncate text-primary">{getLinkCtaLabel(link.platform, upcoming)}</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               ))}
@@ -378,6 +379,7 @@ export default function ReleaseDetail() {
             <p className="text-sm text-muted-foreground">You were invited as a collaborator. Accept or reject:</p>
             <div className="flex gap-2">
               <Button
+                className="ios-press"
                 onClick={async () => {
                   try {
                     await apiRequest("POST", `/api/releases/${id}/collaborators/${myCollab.id}/accept`);
@@ -394,6 +396,7 @@ export default function ReleaseDetail() {
               </Button>
               <Button
                 variant="outline"
+                className="ios-press"
                 onClick={async () => {
                   try {
                     await apiRequest("POST", `/api/releases/${id}/collaborators/${myCollab.id}/reject`);
@@ -416,7 +419,7 @@ export default function ReleaseDetail() {
           <div className="space-y-2">
             <Button
               variant="outline"
-              className="w-full justify-start"
+              className="ios-press w-full justify-start"
               onClick={() => navigate(`/releases/${id}/edit`)}
             >
               <Edit2 className="w-4 h-4 mr-2" />

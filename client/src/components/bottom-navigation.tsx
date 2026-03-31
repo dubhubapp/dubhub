@@ -87,70 +87,105 @@ export function BottomNavigation() {
   ).length;
   const moderatorPendingQueueCount = pendingVerificationCount + unresolvedReportsCount;
 
+  const itemBase =
+    "flex min-h-[var(--app-nav-row-min-h)] min-w-0 flex-1 flex-col items-center justify-between gap-0.5 px-0.5 pt-1 pb-0.5 touch-manipulation min-[840px]:pt-0.5 min-[840px]:pb-0";
+  const iconSlot =
+    "flex h-7 shrink-0 items-center justify-center min-[840px]:h-[1.625rem]";
+  const labelClass = "max-w-full truncate text-center text-[10px] font-medium leading-none";
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-surface border-t border-gray-800 px-6 py-3 z-50">
-      <div className={`flex items-center justify-around max-w-md mx-auto ${isModerator ? 'max-w-lg' : ''}`}>
-        <Link href="/">
-          <button className={`flex flex-col items-center space-y-1 ${location === "/" ? "text-primary" : "text-gray-400"}`} data-testid="nav-home">
-            <Home className="w-6 h-6" />
-            <span className="text-xs font-medium">Home</span>
+    <div
+      data-app-bottom-nav="true"
+      className={`fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-surface pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[var(--app-nav-pad-y)] pb-[calc(var(--app-nav-pad-y)+env(safe-area-inset-bottom,0px))]`}
+    >
+      <div
+        className={`mx-auto flex max-w-md items-stretch justify-between gap-0.5 ${isModerator ? "max-w-lg" : ""}`}
+      >
+        <Link href="/" className="min-w-0 flex-1">
+          <button
+            type="button"
+            className={`${itemBase} w-full ${location === "/" ? "text-primary" : "text-gray-400"}`}
+            data-testid="nav-home"
+          >
+            <span className={iconSlot}>
+              <Home className="h-6 w-6" strokeWidth={location === "/" ? 2.25 : 2} />
+            </span>
+            <span className={labelClass}>Home</span>
           </button>
         </Link>
 
-        <Link href="/leaderboard">
-          <button className={`flex flex-col items-center space-y-1 ${location === "/leaderboard" ? "text-primary" : "text-gray-400"}`} data-testid="nav-leaderboard">
-            <Trophy className="w-6 h-6" />
-            <span className="text-xs">Leaderboard</span>
+        <Link href="/leaderboard" className="min-w-0 flex-1">
+          <button
+            type="button"
+            className={`${itemBase} w-full ${location === "/leaderboard" ? "text-primary" : "text-gray-400"}`}
+            data-testid="nav-leaderboard"
+          >
+            <span className={iconSlot}>
+              <Trophy className="h-6 w-6" strokeWidth={location === "/leaderboard" ? 2.25 : 2} />
+            </span>
+            <span className={labelClass}>Leaderboard</span>
           </button>
         </Link>
 
         <button
           type="button"
-          className={`flex flex-col items-center space-y-1 ${location === "/submit" || isSubmitClipOpen ? "text-primary" : "text-gray-400"}`}
+          className={`${itemBase} min-w-0 flex-1 ${location === "/submit" || isSubmitClipOpen ? "text-primary" : "text-gray-400"}`}
           data-testid="nav-submit"
           onClick={() => openSubmitClip()}
         >
-          <Plus className="w-6 h-6" />
-          <span className="text-xs">Submit</span>
+          <span className={iconSlot}>
+            <Plus className="h-6 w-6" strokeWidth={location === "/submit" || isSubmitClipOpen ? 2.25 : 2} />
+          </span>
+          <span className={labelClass}>Submit</span>
         </button>
 
-        <Link href="/releases">
-          <button className={`flex flex-col items-center space-y-1 ${location === "/releases" ? "text-primary" : "text-gray-400"}`} data-testid="nav-releases">
-            <Calendar className="w-6 h-6" />
-            <span className="text-xs">Releases</span>
+        <Link href="/releases" className="min-w-0 flex-1">
+          <button
+            type="button"
+            className={`${itemBase} w-full ${location === "/releases" ? "text-primary" : "text-gray-400"}`}
+            data-testid="nav-releases"
+          >
+            <span className={iconSlot}>
+              <Calendar className="h-6 w-6" strokeWidth={location === "/releases" ? 2.25 : 2} />
+            </span>
+            <span className={labelClass}>Releases</span>
           </button>
         </Link>
 
-        <Link href={profilePath}>
-          <button 
-            className={`flex flex-col items-center space-y-1 ${location === "/profile" ? "text-primary" : "text-gray-400"}`}
+        <Link href={profilePath} className="min-w-0 flex-1">
+          <button
+            type="button"
+            className={`${itemBase} w-full ${location === "/profile" ? "text-primary" : "text-gray-400"}`}
             data-testid="nav-profile"
           >
-            <div className="relative">
-              <User className="w-6 h-6" />
+            <span className={`${iconSlot} relative`}>
+              <User className="h-6 w-6" strokeWidth={location === "/profile" ? 2.25 : 2} />
               {unreadCount > 0 && (
-                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </div>
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
               )}
-            </div>
-            <span className="text-xs">{profileText}</span>
+            </span>
+            <span className={labelClass}>{profileText}</span>
           </button>
         </Link>
 
-        {/* Show moderator panel for moderators */}
         {isModerator && (
-          <Link href="/moderator">
-            <button className={`flex flex-col items-center space-y-1 ${location === "/moderator" ? "text-primary" : "text-gray-400"}`} data-testid="nav-moderator">
-              <div className="relative">
-                <Shield className="w-6 h-6" />
+          <Link href="/moderator" className="min-w-0 flex-1">
+            <button
+              type="button"
+              className={`${itemBase} w-full ${location === "/moderator" ? "text-primary" : "text-gray-400"}`}
+              data-testid="nav-moderator"
+            >
+              <span className={`${iconSlot} relative`}>
+                <Shield className="h-6 w-6" strokeWidth={location === "/moderator" ? 2.25 : 2} />
                 {moderatorPendingQueueCount > 0 && (
-                  <div className="absolute -top-1 -right-1">
+                  <span className="absolute -right-1 -top-1">
                     <ModeratorQueueCountBadge count={moderatorPendingQueueCount} />
-                  </div>
+                  </span>
                 )}
-              </div>
-              <span className="text-xs">Moderate</span>
+              </span>
+              <span className={labelClass}>Moderate</span>
             </button>
           </Link>
         )}

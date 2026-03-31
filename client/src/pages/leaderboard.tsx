@@ -9,9 +9,11 @@ import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-av
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle } from "@/lib/genre-styles";
+import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -83,12 +85,19 @@ export default function Leaderboard() {
   const { currentUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
   const [activeTab, setActiveTab] = useState<"users" | "artists">("users");
+  const [isFlipAnimating, setIsFlipAnimating] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const leaderboardUsersFaceRef = useRef<HTMLDivElement | null>(null);
   const leaderboardArtistsFaceRef = useRef<HTMLDivElement | null>(null);
   /** Match Profile flip: shell height from both faces so 3D rotation stays in-band and doesn’t intrude under the sticky header. */
   const [leaderboardFlipShellPx, setLeaderboardFlipShellPx] = useState(520);
   const currentUserId = currentUser?.id;
+  const handleLeaderboardTabChange = (v: string) => {
+    const next = v as "users" | "artists";
+    if (next === activeTab) return;
+    setIsFlipAnimating(true);
+    setActiveTab(next);
+  };
 
   // Fetch user leaderboard
   const { data: userLeaderboard = [], isLoading: isLoadingUsers } = useQuery<LeaderboardEntry[]>({
@@ -118,7 +127,7 @@ export default function Leaderboard() {
         userId: currentUserId!,
         timeFilter,
       });
-      const res = await fetch(`/api/leaderboard/users/my-rank?${params.toString()}`, {
+      const res = await fetch(apiUrl(`/api/leaderboard/users/my-rank?${params.toString()}`), {
         credentials: "include",
       });
       if (res.status === 404) return { rank: 0, entry: null };
@@ -136,7 +145,7 @@ export default function Leaderboard() {
         userId: currentUserId!,
         timeFilter,
       });
-      const res = await fetch(`/api/leaderboard/artists/my-rank?${params.toString()}`, {
+      const res = await fetch(apiUrl(`/api/leaderboard/artists/my-rank?${params.toString()}`), {
         credentials: "include",
       });
       if (res.status === 404) return { rank: 0, entry: null };
@@ -203,10 +212,12 @@ export default function Leaderboard() {
     entry,
     rank,
     forceCurrentUser = false,
+    suppressEffects = false,
   }: {
     entry: LeaderboardEntry;
     rank: number;
     forceCurrentUser?: boolean;
+    suppressEffects?: boolean;
   }) => {
     const isCurrentUser = entry.user_id === currentUserId;
     const highlightAsCurrent = forceCurrentUser || isCurrentUser;
@@ -224,10 +235,10 @@ export default function Leaderboard() {
 
     return (
       <div
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${suppressEffects ? "" : "transition-colors"} ${
           highlightAsCurrent
             ? "bg-primary/10 border-primary/60 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
-            : "bg-black/25 backdrop-blur-md border-white/10 hover:bg-black/35"
+            : `bg-black/25 ${suppressEffects ? "backdrop-blur-0" : "backdrop-blur-md"} border-white/10 ${suppressEffects ? "" : "hover:bg-black/35"}`
         }`}
         data-testid={`leaderboard-entry-${entry.user_id}`}
       >
@@ -263,7 +274,7 @@ export default function Leaderboard() {
           <div className="flex items-center gap-2 mb-0.5">
             <button
               type="button"
-              className={`flex items-center gap-1.5 font-semibold text-base leading-none truncate ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+              className={`ios-press ios-press-soft flex items-center gap-1.5 font-semibold text-base leading-none truncate ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
               data-testid={`username-${entry.user_id}`}
               onClick={(e) => {
                 e.preventDefault();
@@ -316,12 +327,12 @@ export default function Leaderboard() {
     );
   };
 
-  const RewardsBanner = ({ tab }: { tab: "users" | "artists" }) => {
+  const RewardsBanner = ({ tab, suppressEffects = false }: { tab: "users" | "artists"; suppressEffects?: boolean }) => {
     const reward = tab === "users" ? MONTHLY_REWARDS.users : MONTHLY_REWARDS.artists;
 
     return (
       <div
-        className="relative mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30 px-4 py-3 backdrop-blur-md"
+        className={`relative mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30 px-4 py-3 ${suppressEffects ? "backdrop-blur-0" : "backdrop-blur-md"}`}
         data-testid="rewards-banner"
       >
         <div className="flex flex-col items-center justify-center gap-2 text-center">
@@ -344,11 +355,13 @@ export default function Leaderboard() {
     emptyLabel,
     isLoading,
     outsideTop,
+    suppressEffects = false,
   }: {
     entries: LeaderboardEntry[];
     emptyLabel: string;
     isLoading: boolean;
     outsideTop: LeaderboardRankResponse | null;
+    suppressEffects?: boolean;
   }) => {
     if (isLoading) {
       return (
@@ -379,7 +392,7 @@ export default function Leaderboard() {
     return (
       <div className="space-y-2.5">
         {entries.map((entry, index) => (
-          <LeaderboardEntryRow key={entry.user_id} entry={entry} rank={index + 1} />
+          <LeaderboardEntryRow key={entry.user_id} entry={entry} rank={index + 1} suppressEffects={suppressEffects} />
         ))}
 
         {outsideTop?.entry && (
@@ -388,6 +401,7 @@ export default function Leaderboard() {
               entry={outsideTop.entry}
               rank={outsideTop.rank}
               forceCurrentUser
+              suppressEffects={suppressEffects}
             />
           </div>
         )}
@@ -396,23 +410,23 @@ export default function Leaderboard() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      <div className="max-w-4xl mx-auto px-4 pt-5 pb-6">
+    <div className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}>
+      <div className="app-page-top-pad max-w-4xl mx-auto px-4 pb-6">
         {/* Main Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "artists")} className="mb-6">
-          <div className="sticky top-3 z-30 mb-4 space-y-2 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-2">
+        <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange} className="mb-6">
+          <div className="sticky top-2 z-30 mb-4 space-y-2 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-2">
             <TabsList className="grid w-full grid-cols-2 bg-transparent p-0" data-testid="leaderboard-tabs">
               <TabsTrigger
                 value="users"
                 data-testid="tab-users"
-                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 Users
               </TabsTrigger>
               <TabsTrigger
                 value="artists"
                 data-testid="tab-artists"
-                className="rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 Artists
               </TabsTrigger>
@@ -433,43 +447,56 @@ export default function Leaderboard() {
             </div>
           </div>
 
-          <div className="relative z-0 mt-0 w-full [perspective:1200px]">
+          <div className="relative z-0 mt-0 w-full">
             <div
               className="relative w-full min-h-[520px]"
               style={{ height: `${leaderboardFlipShellPx}px` }}
             >
-              <div
-                className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
-                style={{
-                  transform: activeTab === "users" ? "rotateY(0deg)" : "rotateY(180deg)",
-                  WebkitTransformStyle: "preserve-3d",
-                }}
-              >
+              <div className="relative h-full w-full overflow-hidden [perspective:1200px]">
                 <div
-                  ref={leaderboardUsersFaceRef}
-                  className="absolute left-0 right-0 top-0 w-full [transform-style:preserve-3d] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                  style={{ transform: "translateZ(1px)" }}
+                  className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
+                  onTransitionEnd={() => setIsFlipAnimating(false)}
+                  style={{
+                    transform: activeTab === "users" ? "rotateY(0deg)" : "rotateY(180deg)",
+                    WebkitTransformStyle: "preserve-3d",
+                  }}
                 >
-                  <RewardsBanner tab="users" />
-                  <LeaderboardList
-                    entries={userTopEntries}
-                    emptyLabel="No users found for this period"
-                    isLoading={isLoadingUsers}
-                    outsideTop={userOutsideTop}
-                  />
-                </div>
-                <div
-                  ref={leaderboardArtistsFaceRef}
-                  className="absolute left-0 right-0 top-0 w-full [transform-style:preserve-3d] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                  style={{ transform: "translateZ(1px) rotateY(180deg)" }}
-                >
-                  <RewardsBanner tab="artists" />
-                  <LeaderboardList
-                    entries={artistTopEntries}
-                    emptyLabel="No artists found for this period"
-                    isLoading={isLoadingArtists}
-                    outsideTop={artistOutsideTop}
-                  />
+                  <div
+                    ref={leaderboardUsersFaceRef}
+                    className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+                    style={{
+                      backfaceVisibility: "hidden",
+                      WebkitBackfaceVisibility: "hidden",
+                      transform: "rotateY(0deg)",
+                    }}
+                  >
+                    <RewardsBanner tab="users" suppressEffects={isFlipAnimating} />
+                    <LeaderboardList
+                      entries={userTopEntries}
+                      emptyLabel="No users found for this period"
+                      isLoading={isLoadingUsers}
+                      outsideTop={userOutsideTop}
+                      suppressEffects={isFlipAnimating}
+                    />
+                  </div>
+                  <div
+                    ref={leaderboardArtistsFaceRef}
+                    className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+                    style={{
+                      backfaceVisibility: "hidden",
+                      WebkitBackfaceVisibility: "hidden",
+                      transform: "rotateY(180deg)",
+                    }}
+                  >
+                    <RewardsBanner tab="artists" suppressEffects={isFlipAnimating} />
+                    <LeaderboardList
+                      entries={artistTopEntries}
+                      emptyLabel="No artists found for this period"
+                      isLoading={isLoadingArtists}
+                      outsideTop={artistOutsideTop}
+                      suppressEffects={isFlipAnimating}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

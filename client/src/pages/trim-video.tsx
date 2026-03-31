@@ -262,9 +262,9 @@ export default function TrimVideo() {
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+    <div className="fixed inset-0 z-50 flex flex-col bg-black pt-[env(safe-area-inset-top,0px)]">
       {/* Header */}
-      <div className="bg-surface/95 backdrop-blur-sm border-b border-gray-800 px-4 py-3 flex items-center justify-between z-30 relative">
+      <div className="relative z-30 flex items-center justify-between border-b border-gray-800 bg-surface/95 px-4 py-3 backdrop-blur-sm pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -353,8 +353,8 @@ export default function TrimVideo() {
         </div>
 
         {/* Bottom Waveform & Timeline Overlay */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-24 pb-20 sm:pb-24">
-          <div className="pointer-events-auto px-4 pb-safe space-y-4">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-24 pb-[calc(1rem+var(--app-bottom-nav-block))]">
+          <div className="pointer-events-auto space-y-4 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
             {/* Time Info */}
             <div className="flex items-center justify-between text-sm">
               <div data-testid="text-current-time">

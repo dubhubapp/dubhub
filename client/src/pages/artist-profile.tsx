@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/user-context";
@@ -36,7 +37,7 @@ export default function ArtistProfile() {
   const { data: artistTracks = [], isLoading } = useQuery({
     queryKey: ["/api/artist", "artist1", "posts", filterMode],
     queryFn: async () => {
-      const response = await fetch(`/api/artist/artist1/posts`);
+      const response = await fetch(apiUrl(`/api/artist/artist1/posts`));
       if (!response.ok) throw new Error("Failed to fetch artist posts");
       const posts = await response.json() as PostWithUser[];
       // Filter client-side based on verification status
@@ -52,7 +53,7 @@ export default function ArtistProfile() {
   const { data: artistStats } = useQuery<ArtistStats>({
     queryKey: ["/api/artists", currentUser?.id, "stats"],
     queryFn: async () => {
-      const response = await fetch(`/api/artists/${currentUser?.id}/stats`, { credentials: "include" });
+      const response = await fetch(apiUrl(`/api/artists/${currentUser?.id}/stats`), { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch artist stats");
       return response.json();
     },
@@ -200,7 +201,7 @@ export default function ArtistProfile() {
 
   return (
     <div className="flex-1 bg-dark overflow-y-auto">
-      <div className="p-6 pb-24">
+      <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           {/* Artist Header */}
           <div className="text-center mb-6">

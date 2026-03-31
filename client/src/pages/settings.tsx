@@ -43,8 +43,8 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   };
 
   return (
-    <div className="flex-1 bg-dark overflow-y-auto">
-      <div className="p-6 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]">
+    <div className="flex-1 min-h-0 bg-dark overflow-y-auto">
+      <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           <div className="flex items-center mb-6">
             <Button

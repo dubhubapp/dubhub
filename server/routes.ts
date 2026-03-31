@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { supabase } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { MODERATION_REASON_MAX_LENGTH } from "@shared/moderation-reasons";
 import { insertCommentSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { db } from "./db";
@@ -58,6 +59,45 @@ function parseReportedCommentId(description: unknown): string | null {
   if (typeof description !== "string" || !description) return null;
   const m = description.match(/COMMENT_ID:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
   return m ? m[1] : null;
+}
+
+function moderationReasonFromRequest(
+  req: AuthenticatedRequest,
+  reportReasonFallback: string | null | undefined
+): string {
+  const raw = typeof req.body?.moderationReason === "string" ? req.body.moderationReason.trim() : "";
+  const fb = (reportReasonFallback ?? "").trim();
+  const resolved = raw || fb || "Community guidelines violation";
+  return resolved.slice(0, MODERATION_REASON_MAX_LENGTH);
+}
+
+function composeModerationUserNotification(params: {
+  contentKind: "post" | "comment";
+  finalReason: string;
+  accountAction: "remove_only" | "warn" | "suspend" | "ban";
+  suspendDays?: number;
+}): string {
+  const { contentKind, finalReason, accountAction, suspendDays } = params;
+  const subject = contentKind === "post" ? "Your post" : "Your comment";
+
+  if (accountAction === "warn") {
+    return [
+      `${subject} was removed for ${finalReason}.`,
+      "You've received a warning.",
+      "",
+      "If you receive further warnings, your account may be suspended or permanently banned.",
+      "",
+      "We're all just getting by IDing tracks, so don't ruin it for everyone else.",
+    ].join("\n");
+  }
+
+  let msg = `${subject} was removed for ${finalReason}.`;
+  if (accountAction === "suspend" && suspendDays != null) {
+    msg += ` Your account has been suspended for ${suspendDays} days.`;
+  } else if (accountAction === "ban") {
+    msg += " Your account has been permanently banned.";
+  }
+  return msg;
 }
 
 /**
@@ -621,6 +661,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get posts feed — decode JWT via optionalSupabaseUser; attach viewer_id and consistent owner/status fields
   app.get("/api/posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[/api/posts][dev-diagnostics] request received", {
+        path: req.path,
+        query: req.query,
+        origin: req.headers.origin ?? "(no Origin header)",
+        referer: req.headers.referer ?? "(none)",
+        host: req.headers.host ?? "(none)",
+      });
+    }
     const currentUserId = req.dbUser?.id ?? null;
     if (process.env.NODE_ENV === "development") {
       console.log("[/api/posts] currentUserId from JWT:", currentUserId ?? "(none)");
@@ -2447,17 +2496,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "This report does not have an associated user/comment" });
       }
 
+      const finalReason = moderationReasonFromRequest(req, report.reason);
+
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
+        VALUES (${report.reported_post_id}, ${moderatorId}, 'remove_comment', ${finalReason}, NOW())
+      `);
+
       await db.execute(sql`DELETE FROM comment_votes WHERE comment_id = ${commentId}`);
       await db.execute(sql`DELETE FROM comments WHERE id = ${commentId}`);
 
-      // Notify the comment owner about the removal
+      const notificationMessage = composeModerationUserNotification({
+        contentKind: "comment",
+        finalReason,
+        accountAction: "remove_only",
+      });
+
       await db.execute(sql`
         INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
         VALUES (
           ${targetUserId},
           ${moderatorId},
           ${report.reported_post_id},
-          'Your comment was removed: ' || ${report.reason || 'Violation of community guidelines'},
+          ${notificationMessage},
           false,
           NOW()
         )
@@ -2468,7 +2529,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE reports
         SET status = 'resolved',
             resolution_action = 'comment_removed',
-            resolved_at = NOW()
+            resolved_at = NOW(),
+            reason = ${finalReason}
         WHERE id = ${reportId}
       `);
 
@@ -2521,6 +2583,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Unable to resolve reported user for this report" });
       }
 
+      const finalReason = moderationReasonFromRequest(req, report.reason);
+
       let removedContentKind: "comment" | "post";
       try {
         removedContentKind = await enforceRemoveReportedContentFromReport(report);
@@ -2550,10 +2614,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // If warning_count column doesn't exist, that's okay
       }
 
-      const notificationMessage =
-        removedContentKind === "comment"
-          ? `Your comment was removed for breaking our content guidelines following a report for ${report.reason || "violation of community guidelines"}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`
-          : `Your post was removed for breaking our content guidelines following a report for ${report.reason || "violation of community guidelines"}. If you continue to break the rules then we'll be forced to suspend your account, or even ban you. You're here to get tracks ID'd, so please respect our platform.`;
+      const notificationMessage = composeModerationUserNotification({
+        contentKind: removedContentKind,
+        finalReason,
+        accountAction: "warn",
+      });
 
       // Post was deleted — avoid FK to posts.id on notifications.post_id
       const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
@@ -2572,7 +2637,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
       await db.execute(sql`
         INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
-        VALUES (${notificationPostId}, ${moderatorId}, 'warn_user', ${report.reason ?? 'content guideline violation'}, NOW())
+        VALUES (${notificationPostId}, ${moderatorId}, 'warn_user', ${finalReason}, NOW())
       `);
 
       // Mark report as resolved
@@ -2580,7 +2645,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE reports
         SET status = 'resolved',
             resolution_action = 'user_warned',
-            resolved_at = NOW()
+            resolved_at = NOW(),
+            reason = ${finalReason}
         WHERE id = ${reportId}
       `);
 
@@ -2650,6 +2716,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Unable to resolve reported user for this report" });
       }
 
+      const finalReason = moderationReasonFromRequest(req, report.reason);
+
       let removedContentKind: "comment" | "post";
       try {
         removedContentKind = await enforceRemoveReportedContentFromReport(report);
@@ -2675,10 +2743,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE id = ${targetUserId}
       `);
 
-      const notificationMessage =
-        removedContentKind === "comment"
-          ? `Your comment was removed and your account has been suspended for ${days} days following a report for ${report.reason || "violation of community guidelines"}. You're here to get tracks ID'd, so please respect our platform.`
-          : `Your post was removed and your account has been suspended for ${days} days following a report for ${report.reason || "violation of community guidelines"}. You're here to get tracks ID'd, so please respect our platform.`;
+      const notificationMessage = composeModerationUserNotification({
+        contentKind: removedContentKind,
+        finalReason,
+        accountAction: "suspend",
+        suspendDays: days,
+      });
 
       const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
@@ -2696,7 +2766,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
       await db.execute(sql`
         INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
-        VALUES (${notificationPostId}, ${moderatorId}, 'suspend_user', ${report.reason ?? 'content guideline violation'}, NOW())
+        VALUES (${notificationPostId}, ${moderatorId}, 'suspend_user', ${finalReason}, NOW())
       `);
 
       // Mark report as resolved
@@ -2704,7 +2774,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE reports
         SET status = 'resolved',
             resolution_action = ${`user_suspended_${days}_days`},
-            resolved_at = NOW()
+            resolved_at = NOW(),
+            reason = ${finalReason}
         WHERE id = ${reportId}
       `);
 
@@ -2756,6 +2827,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Unable to resolve reported user for this report" });
       }
 
+      const finalReason = moderationReasonFromRequest(req, report.reason);
+
       let removedContentKind: "comment" | "post";
       try {
         removedContentKind = await enforceRemoveReportedContentFromReport(report);
@@ -2792,10 +2865,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `);
       }
 
-      const notificationMessage =
-        removedContentKind === "comment"
-          ? `Your comment was removed and your account has been permanently banned following a report for ${report.reason || "violation of community guidelines"}.`
-          : `Your post was removed and your account has been permanently banned following a report for ${report.reason || "violation of community guidelines"}.`;
+      const notificationMessage = composeModerationUserNotification({
+        contentKind: removedContentKind,
+        finalReason,
+        accountAction: "ban",
+      });
 
       const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
@@ -2813,7 +2887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
       await db.execute(sql`
         INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
-        VALUES (${notificationPostId}, ${moderatorId}, 'ban_user', ${report.reason ?? 'content guideline violation'}, NOW())
+        VALUES (${notificationPostId}, ${moderatorId}, 'ban_user', ${finalReason}, NOW())
       `);
 
       // Mark report as resolved
@@ -2821,7 +2895,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE reports
         SET status = 'resolved',
             resolution_action = 'user_banned_permanently',
-            resolved_at = NOW()
+            resolved_at = NOW(),
+            reason = ${finalReason}
         WHERE id = ${reportId}
       `);
 
@@ -2862,18 +2937,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "This report does not have an associated post" });
       }
 
-      // Delete the post
+      const finalReason = moderationReasonFromRequest(req, report.reason);
+
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
+        VALUES (${report.reported_post_id}, ${moderatorId}, 'remove_post', ${finalReason}, NOW())
+      `);
+
       await storage.deletePost(report.reported_post_id);
 
-      // Notify the post owner about the removal
       if (report.post_owner_id) {
+        const notificationMessage = composeModerationUserNotification({
+          contentKind: "post",
+          finalReason,
+          accountAction: "remove_only",
+        });
         await db.execute(sql`
           INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
           VALUES (
             ${report.post_owner_id},
             ${moderatorId},
             ${report.reported_post_id},
-            'Your post was removed: ' || ${report.reason || 'Violation of community guidelines'},
+            ${notificationMessage},
             false,
             NOW()
           )
@@ -2894,7 +2979,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE reports
         SET status = 'resolved',
             resolution_action = 'post_removed',
-            resolved_at = NOW()
+            resolved_at = NOW(),
+            reason = ${finalReason}
         WHERE id = ${reportId}
       `);
 
@@ -3239,6 +3325,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return data?.publicUrl ?? null;
   }
 
+  function looksLikeImageDataUri(value: string | null | undefined): boolean {
+    if (!value) return false;
+    return /^data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value.trim());
+  }
+
+  function containsImageDataUri(value: string | null | undefined): boolean {
+    if (!value) return false;
+    return /data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value);
+  }
+
   app.get("/api/releases/drop-day-banner", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.dbUser?.id) return res.json([]);
@@ -3383,6 +3479,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (titleTrim.length > INPUT_LIMITS.releaseTitle) {
         return res.status(400).json({ message: `title must be at most ${INPUT_LIMITS.releaseTitle} characters` });
       }
+      if (looksLikeImageDataUri(titleTrim) || containsImageDataUri(titleTrim)) {
+        return res.status(400).json({ message: "title appears to be image data, not release text" });
+      }
       let releaseDate: Date | null = null;
       if (!coming) {
         if (!release_date) return res.status(400).json({ message: "release_date is required unless coming soon" });
@@ -3416,6 +3515,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!t) return res.status(400).json({ message: "title cannot be empty" });
         if (t.length > INPUT_LIMITS.releaseTitle) {
           return res.status(400).json({ message: `title must be at most ${INPUT_LIMITS.releaseTitle} characters` });
+        }
+        if (looksLikeImageDataUri(t) || containsImageDataUri(t)) {
+          return res.status(400).json({ message: "title appears to be image data, not release text" });
         }
         updates.title = t;
       }

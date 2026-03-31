@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus } from "lucide-react";
+import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus, ImageOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +19,47 @@ import { supabase } from "@/lib/supabaseClient";
 import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { apiUrl } from "@/lib/apiBase";
+import { resolveMediaUrl } from "@/lib/media-url";
+
+function EligiblePostPreview({ src }: { src: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const shouldShowVideo = !!src && !failed;
+  const showFallback = !src || failed;
+
+  return (
+    <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-muted relative">
+      {shouldShowVideo ? (
+        <video
+          src={src ?? undefined}
+          muted
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          className="w-full h-full object-cover pointer-events-none"
+          onLoadedData={(e) => {
+            const el = e.currentTarget;
+            try {
+              if (el.currentTime < 0.05) el.currentTime = 0.05;
+              el.pause();
+            } catch {
+              // no-op
+            }
+          }}
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {showFallback ? (
+        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+          <div className="flex flex-col items-center gap-1">
+            <ImageOff className="h-4 w-4" />
+            <span className="text-[10px] font-medium">No preview</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function ReleaseEdit() {
   const [, params] = useRoute("/releases/:id/edit");
@@ -51,7 +92,7 @@ export default function ReleaseEdit() {
   const { data: release, isLoading } = useQuery({
     queryKey: ["/api/releases", releaseId],
     queryFn: async () => {
-      const res = await fetch(`/api/releases/${releaseId}`, { credentials: "include" });
+      const res = await fetch(apiUrl(`/api/releases/${releaseId}`), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -87,7 +128,7 @@ export default function ReleaseEdit() {
       const url = collabSearch
         ? `/api/artists/verified?search=${encodeURIComponent(collabSearch)}`
         : "/api/artists/verified";
-      const res = await fetch(url);
+      const res = await fetch(apiUrl(url));
       if (!res.ok) return [];
       return res.json();
     },
@@ -102,7 +143,7 @@ export default function ReleaseEdit() {
       const url = releaseId
         ? `/api/posts/eligible-for-release?release_id=${encodeURIComponent(releaseId)}`
         : "/api/posts/eligible-for-release";
-      const res = await fetch(url, {
+      const res = await fetch(apiUrl(url), {
         headers: { Authorization: `Bearer ${session.access_token}` },
         credentials: "include",
       });
@@ -125,7 +166,7 @@ export default function ReleaseEdit() {
       if (!session?.access_token) throw new Error("Not signed in");
       const form = new FormData();
       form.append("artwork", file);
-      const res = await fetch("/api/releases/upload-artwork", {
+      const res = await fetch(apiUrl("/api/releases/upload-artwork"), {
         method: "POST",
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: form,
@@ -152,6 +193,10 @@ export default function ReleaseEdit() {
     created_at?: string;
   };
 
+  const getEligiblePostPreviewUrl = (post: EligiblePost) => {
+    return resolveMediaUrl(post.video_url);
+  };
+
   const filteredEligiblePosts = useMemo(() => {
     const posts = (eligiblePosts as EligiblePost[]) || [];
     if (!searchTerm.trim()) return posts;
@@ -169,7 +214,7 @@ export default function ReleaseEdit() {
     const { data: { session } } = await supabase.auth.getSession();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-    const res = await fetch(`/api/releases/${targetReleaseId}/attach-posts`, {
+    const res = await fetch(apiUrl(`/api/releases/${targetReleaseId}/attach-posts`), {
       method: "POST",
       headers,
       credentials: "include",
@@ -304,7 +349,7 @@ export default function ReleaseEdit() {
         const { data: { session } } = await supabase.auth.getSession();
         const detachHeaders: Record<string, string> = { "Content-Type": "application/json" };
         if (session?.access_token) detachHeaders["Authorization"] = `Bearer ${session.access_token}`;
-        const detachRes = await fetch(`/api/releases/${releaseId}/attach-posts`, {
+        const detachRes = await fetch(apiUrl(`/api/releases/${releaseId}/attach-posts`), {
           method: "DELETE",
           headers: detachHeaders,
           credentials: "include",
@@ -368,8 +413,8 @@ export default function ReleaseEdit() {
   const existingCollaboratorsCount = (release.collaborators || []).length;
 
   return (
-    <div className="flex-1 bg-background overflow-y-auto pb-24">
-      <div className="p-4 max-w-md mx-auto">
+    <div className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]">
+      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
         <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate("/releases")}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to Releases
@@ -686,15 +731,7 @@ export default function ReleaseEdit() {
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex gap-3">
-                    <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-muted">
-                      <video
-                        src={p.video_url?.startsWith("/") || p.video_url?.startsWith("http") ? (p.video_url || "") : `/${p.video_url || ""}`}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        className="w-full h-full object-cover pointer-events-none"
-                      />
-                    </div>
+                    <EligiblePostPreview src={getEligiblePostPreviewUrl(p)} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground">
                         {p.dj_name || "DJ unknown"}
@@ -774,7 +811,7 @@ export default function ReleaseEdit() {
                     const { data: { session } } = await supabase.auth.getSession();
                     const headers: Record<string, string> = {};
                     if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-                    const res = await fetch(`/api/releases/${releaseId}`, {
+                    const res = await fetch(apiUrl(`/api/releases/${releaseId}`), {
                       method: "DELETE",
                       credentials: "include",
                       headers,

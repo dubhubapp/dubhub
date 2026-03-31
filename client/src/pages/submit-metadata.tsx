@@ -615,7 +615,7 @@ export default function SubmitMetadata() {
 
   return (
     <div className="flex-1 bg-dark overflow-y-auto">
-      <div className="p-5 pb-28 sm:p-6 sm:pb-24">
+      <div className="app-page-top-pad p-5 pb-10 sm:p-6 sm:pb-12">
         <div className="max-w-md mx-auto space-y-4">
           <div className="flex items-center gap-2">
             <Button

@@ -3,6 +3,38 @@
 @tailwind utilities;
 
 :root {
+  /* iOS safe areas + fixed bottom nav — keep `--app-bottom-nav-block` aligned with `bottom-navigation.tsx` */
+  --app-safe-top: env(safe-area-inset-top, 0px);
+  --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-left: env(safe-area-inset-left, 0px);
+  --app-safe-right: env(safe-area-inset-right, 0px);
+  --app-nav-pad-y: 0.375rem;
+  --app-nav-row-min-h: 2.875rem;
+  --app-bottom-nav-block: calc(
+    var(--app-nav-pad-y) + var(--app-nav-row-min-h) + var(--app-nav-pad-y) + var(--app-safe-bottom)
+  );
+  --app-above-bottom-nav: calc(var(--app-bottom-nav-block) + 0.375rem);
+  /**
+   * Releases page — fixed “Add Release” stack (release-tracker.tsx).
+   * Keeps CTA clearly above the tab bar, aligns scroll end padding with fade + button occluder.
+   */
+  --releases-cta-gap-above-nav: 0.1875rem;
+  /** Opaque band bleed beneath the fade so list content never shows through the tab bar. */
+  --releases-cta-stack-bleed: 1.5rem;
+  --releases-cta-button-block: 3.5rem;
+  --releases-cta-fade-block: 8rem;
+  --releases-cta-scroll-extra: 0.625rem;
+  /**
+   * Scroll padding for the list only — shell `pb-[var(--app-bottom-nav-block)]` already clears the tab bar.
+   * This matches the fixed CTA stack (gap + fade + button + buffer) so the last card clears the occluder.
+   */
+  --releases-feed-bottom-pad: calc(
+    var(--releases-cta-gap-above-nav) + var(--releases-cta-fade-block) + var(--releases-cta-button-block) +
+      var(--releases-cta-scroll-extra)
+  );
+  /** Home VideoCard: reserve horizontal space for the action rail (icons + labels). */
+  --video-feed-rail-width: clamp(3.375rem, 10.5vw, 4.375rem);
+
   --background: hsl(227, 96%, 54%);
   --foreground: hsl(0, 0%, 100%);
   --muted: hsl(227, 96%, 50%);
@@ -25,6 +57,52 @@
   --radius: 0.5rem;
   --surface: hsl(227, 96%, 50%);
   --dark: hsl(227, 96%, 54%);
+}
+
+/*
+ * TikTok-style shell: the document must not scroll (iOS keyboard focus was driving
+ * window.scrollY). No body position:fixed — containment via fixed dvh + overflow hidden.
+ *
+ * Scroll ownership:
+ * - Home vertical feed / snap: `[data-home-video-feed]` (`overflow-y-auto`, home.tsx).
+ * - Comments thread: drawer panel inner list (`overflow-y-auto`, comments-modal.tsx).
+ * - Other routes: `APP_PAGE_SCROLL_CLASS` / page-local scroll roots (see `app-shell-layout.ts`).
+ */
+html {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100%;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.comments-modal-open [data-app-bottom-nav="true"] {
+  display: none !important;
+}
+
+/*
+ * Comments modal: hide chrome that would leave fake “nav” inset and reflow the shell
+ * when the keyboard toggles safe-area / dynamic viewport.
+ */
+body.comments-modal-open {
+  /* Constant shell inset while drawer is open — env(safe-area) can change with keyboard and reflow the feed */
+  --app-bottom-nav-block: 0px;
+}
+
+/* Taller viewports: slightly tighter bottom nav chrome (more video area). SE / short phones keep :root defaults. */
+@media (min-height: 840px) {
+  :root {
+    --app-nav-pad-y: 0.1875rem;
+    --app-nav-row-min-h: 2.5625rem;
+    /* Slightly more air above the nav on taller iPhones; SE / short phones keep :root gap. */
+    --releases-cta-gap-above-nav: 0.4375rem;
+  }
 }
 
 .dark {
@@ -57,7 +135,10 @@
   }
 
   body {
-    @apply font-sans antialiased bg-dark text-foreground overflow-hidden;
+    @apply font-sans antialiased bg-dark text-foreground overflow-hidden min-h-0;
+    height: 100%;
+    max-height: 100dvh;
+    overscroll-behavior: none;
   }
 
   .scrollbar-hide {
@@ -106,5 +187,31 @@
   
   .bg-dark {
     background-color: var(--dark);
+  }
+
+  /** Below shell safe-top: responsive rhythm (avoids huge gaps on SE). */
+  .app-page-top-pad {
+    padding-top: clamp(0.75rem, 2.8vw, 1.25rem);
+  }
+
+  /* Subtle iOS-style press feedback for tap targets. */
+  .ios-press {
+    transform: translateZ(0);
+    transition:
+      transform 110ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      filter 110ms ease,
+      opacity 110ms ease;
+    will-change: transform, filter;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ios-press:active {
+    transform: scale(0.9825);
+    filter: brightness(0.985);
+  }
+
+  .ios-press-soft:active {
+    transform: scale(0.9885);
   }
 }

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { MODERATION_REPORT_REASONS } from "@shared/moderation-reasons";
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -16,18 +17,6 @@ interface ReportModalProps {
   commentId?: string;
   reportedUserId?: string;
 }
-
-const REPORT_REASONS = [
-  "Sexual or graphic content",
-  "Violent or disturbing content",
-  "Non-music content",
-  "Copyright / stolen content",
-  "Spam / advertising",
-  "Harassment / hate speech",
-  "False or misleading track ID",
-  "Impersonation",
-  "Other",
-];
 
 /** Report reason menu: full-height list (no inner scroll), subtle dividers, tick-only selection */
 const reportReasonSelectTriggerClass = cn(
@@ -314,7 +303,7 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
                 viewportClassName={reportReasonSelectViewportClass}
                 position="popper"
               >
-                {REPORT_REASONS.map((r) => (
+                {MODERATION_REPORT_REASONS.map((r) => (
                   <SelectItem key={r} value={r} className={reportReasonSelectItemClass}>
                     {r}
                   </SelectItem>

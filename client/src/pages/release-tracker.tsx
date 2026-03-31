@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Calendar, Music, ExternalLink, Disc3, Plus } from "lucide-react";
-import { formatReleaseTitleLine } from "@/lib/release-display";
+import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import {
@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { isReleaseDayToday } from "@/lib/release-status";
 import { ReleaseDayCelebration } from "@/components/release-day-celebration";
 import { cn } from "@/lib/utils";
+import { apiUrl } from "@/lib/apiBase";
 
 export type ReleaseFeedItem = {
   id: string;
@@ -33,6 +34,29 @@ export type ReleaseFeedItem = {
 };
 
 export { PLATFORM_ICONS, PLATFORM_LABELS, getPlatformIcon, getPlatformLabel } from "@/lib/platforms";
+
+function looksLikeImageDataUri(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value.trim());
+}
+
+function stripEmbeddedImageDataUris(value: string): string {
+  return value
+    .replace(/\b[a-z]*data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,\S*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeReleaseCardFields(r: ReleaseFeedItem): { title: string; artworkUrl: string | null } {
+  const rawTitle = String(r.title ?? "").trim();
+  const rawArtwork = typeof r.artworkUrl === "string" ? r.artworkUrl.trim() : "";
+  const titleIsDataUri = looksLikeImageDataUri(rawTitle);
+  const safeTitle = sanitizeReleaseText(stripEmbeddedImageDataUris(rawTitle));
+  if (titleIsDataUri && !rawArtwork) {
+    return { title: "", artworkUrl: rawTitle };
+  }
+  return { title: titleIsDataUri ? "" : safeTitle, artworkUrl: rawArtwork || null };
+}
 
 function formatDate(d: string | null) {
   if (!d) return "";
@@ -154,12 +178,12 @@ export default function ReleaseTracker() {
   const tabGroupClass =
     "flex gap-1 p-1.5 rounded-xl border border-white/10 bg-black/35 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
   const tabButtonBaseClass =
-    "flex-1 py-2 text-sm font-medium rounded-lg border border-white/10 transition-all";
+    "ios-press flex-1 py-2 text-sm font-medium rounded-lg border border-white/10 transition-all";
   const activeTabClass =
     "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]";
   const inactiveTabClass = "bg-black/20 text-white/70 hover:text-white hover:bg-black/30";
   const releaseCardBaseClass =
-    "w-full text-left rounded-xl p-4 transition-all border flex gap-4 bg-black/30 backdrop-blur-md border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] hover:bg-black/40 hover:border-white/20";
+    "ios-press w-full text-left rounded-xl p-4 transition-all border flex gap-4 bg-black/30 backdrop-blur-md border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] hover:bg-black/40 hover:border-white/20";
 
   const { data: feed = [], isLoading } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
@@ -168,7 +192,7 @@ export default function ReleaseTracker() {
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
       const params = new URLSearchParams({ view: effectiveView, scope: effectiveScope });
-      const res = await fetch(`/api/releases/feed?${params}`, {
+      const res = await fetch(apiUrl(`/api/releases/feed?${params}`), {
         headers,
         credentials: "include",
         cache: "no-store",
@@ -201,6 +225,7 @@ export default function ReleaseTracker() {
   );
 
   const renderReleaseCard = (r: ReleaseFeedItem, opts?: { featured?: boolean }) => {
+    const normalized = normalizeReleaseCardFields(r);
     const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
     const releaseDayHighlight = isReleaseDayHighlight(r);
     const isOwnerReleaseDay = r.artistId === currentUser?.id && releaseDayHighlight;
@@ -217,6 +242,7 @@ export default function ReleaseTracker() {
         }}
         className={cn(
           releaseCardBaseClass,
+          "min-w-0 overflow-hidden",
           featured
             ? "bg-transparent border-0 px-1 py-2 shadow-none hover:bg-transparent"
             : "",
@@ -229,19 +255,21 @@ export default function ReleaseTracker() {
         )}
       >
         <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-          {r.artworkUrl ? (
-            <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
+          {normalized.artworkUrl ? (
+            <img src={normalized.artworkUrl} alt="" className="w-full h-full object-cover" />
           ) : (
             <Music className="w-10 h-10 text-muted-foreground" />
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-foreground">
-            {formatReleaseTitleLine(r.artistUsername, "", r.collaborators).replace(" — ", "")}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="min-w-0 truncate text-xs font-semibold leading-snug text-foreground">
+            {formatReleaseByline(r.artistUsername, r.collaborators)}
           </p>
-          <p className="text-sm text-foreground mt-0.5 line-clamp-2 break-words">
-            {r.title}
-          </p>
+          {normalized.title ? (
+            <p className="text-sm leading-snug text-foreground mt-0.5 min-w-0 line-clamp-2 break-all">
+              {normalized.title}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground mt-1">
             {r.isComingSoon ? "Coming soon..." : formatDate(r.releaseDate)}
           </p>
@@ -287,11 +315,13 @@ export default function ReleaseTracker() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
+                  className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
                   title={getPlatformLabel(link.platform)}
                 >
                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                  <span>{getLinkCtaLabel(link.platform, r.isComingSoon || isUpcoming(r.releaseDate || null))}</span>
+                  <span className="max-w-[10rem] truncate">
+                    {getLinkCtaLabel(link.platform, r.isComingSoon || isUpcoming(r.releaseDate || null))}
+                  </span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               ))}
@@ -314,8 +344,8 @@ export default function ReleaseTracker() {
   }
 
   return (
-    <div className="flex-1 bg-background overflow-y-auto pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]">
-      <div className="p-4 max-w-md mx-auto">
+    <div className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[var(--releases-feed-bottom-pad)]">
+      <div className="app-page-top-pad px-4 max-w-md mx-auto">
         {currentUser?.id && (
           <div className="space-y-3 mb-4">
             {isArtist && (
@@ -418,7 +448,9 @@ export default function ReleaseTracker() {
                 <div className="space-y-4">
                   {feed
                     .filter((r) => r.isComingSoon)
-                    .map((r) => (
+                    .map((r) => {
+                      const normalized = normalizeReleaseCardFields(r);
+                      return (
                       <button
                         key={r.id}
                         type="button"
@@ -428,22 +460,24 @@ export default function ReleaseTracker() {
                           params.set("view", feedView);
                           navigate(`/releases/${r.id}?${params}`);
                         }}
-                        className={releaseCardBaseClass}
+                        className={`${releaseCardBaseClass} min-w-0 overflow-hidden`}
                       >
                         <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-                          {r.artworkUrl ? (
-                            <img src={r.artworkUrl} alt="" className="w-full h-full object-cover" />
+                          {normalized.artworkUrl ? (
+                            <img src={normalized.artworkUrl} alt="" className="w-full h-full object-cover" />
                           ) : (
                             <Music className="w-10 h-10 text-muted-foreground" />
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-foreground">
-                            {formatReleaseTitleLine(r.artistUsername, "", r.collaborators).replace(" — ", "")}
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <p className="min-w-0 truncate text-xs font-semibold leading-snug text-foreground">
+                            {formatReleaseByline(r.artistUsername, r.collaborators)}
                           </p>
-                          <p className="text-sm text-foreground mt-0.5 line-clamp-2 break-words">
-                            {r.title}
-                          </p>
+                          {normalized.title ? (
+                            <p className="text-sm leading-snug text-foreground mt-0.5 min-w-0 line-clamp-2 break-all">
+                              {normalized.title}
+                            </p>
+                          ) : null}
                           <p className="text-xs text-muted-foreground mt-1">Coming soon...</p>
                           {getBannerFromLinks(r.links, true) && (
                             <p className="text-xs text-primary mt-1">
@@ -476,11 +510,13 @@ export default function ReleaseTracker() {
                                   href={link.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
+                                  className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
                                   title={getPlatformLabel(link.platform)}
                                 >
                                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                                  <span>{getLinkCtaLabel(link.platform, true)}</span>
+                                  <span className="max-w-[10rem] truncate">
+                                    {getLinkCtaLabel(link.platform, true)}
+                                  </span>
                                   <ExternalLink className="w-3 h-3" />
                                 </a>
                               ))}
@@ -488,7 +524,8 @@ export default function ReleaseTracker() {
                           )}
                         </div>
                       </button>
-                    ))}
+                    );
+                    })}
                 </div>
               </section>
             )}
@@ -496,18 +533,16 @@ export default function ReleaseTracker() {
         )}
       </div>
 
-      <div
-        className="fixed inset-x-0 z-30 pointer-events-none"
-        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
-      >
-        <div className="absolute inset-x-0 bottom-0 h-[calc(6.25rem+env(safe-area-inset-bottom,0px))] bg-background" />
-        <div className="absolute inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom,0px))] h-32 bg-gradient-to-t from-background via-background/95 via-45% to-transparent" />
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-nav-block)] bg-background" />
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-gap-above-nav))] z-30">
+        <div className="absolute inset-x-0 bottom-0 h-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] bg-background" />
+        <div className="absolute inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] h-[var(--releases-cta-fade-block)] bg-gradient-to-t from-background via-background/95 via-45% to-transparent" />
         <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-background/90 via-background/60 to-transparent" />
         <div className="relative mx-auto max-w-md px-4">
-          <div className="relative pb-0 pt-1">
+          <div className="relative pt-1 pb-0.5">
             <Button
               onClick={() => navigate("/releases/new")}
-              className="pointer-events-auto h-12 w-full rounded-xl border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]"
+              className="ios-press pointer-events-auto h-12 w-full rounded-xl border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]"
             >
               <Plus className="mr-1 h-4 w-4" />
               Add Release

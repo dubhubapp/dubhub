@@ -28,6 +28,7 @@ import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
+import { APP_MAIN_SHELL_CLASS } from "@/lib/app-shell-layout";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -213,7 +214,7 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <div className="h-screen bg-background flex items-center justify-center">
+          <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-background px-6 py-8">
             <div className="text-foreground text-center">
               <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
               <p>Loading...</p>
@@ -229,13 +230,15 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Switch>
-            <Route path="/reset-password" component={ResetPasswordPage} />
-            <Route>
-              <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
-            </Route>
-          </Switch>
-          <Toaster />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <Switch>
+              <Route path="/reset-password" component={ResetPasswordPage} />
+              <Route>
+                <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
+              </Route>
+            </Switch>
+            <Toaster />
+          </div>
         </TooltipProvider>
       </QueryClientProvider>
     );
@@ -248,7 +251,8 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <div className="h-screen bg-background flex items-center justify-center px-6">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-background px-6 py-8">
             <div className="max-w-md w-full rounded-xl border border-red-500/40 bg-red-500/10 p-6 text-center">
               <h1 className="text-2xl font-bold text-red-300 mb-2">
                 {enforcementState.banned ? "Account permanently banned" : "Account temporarily suspended"}
@@ -267,6 +271,7 @@ function App() {
             </div>
           </div>
           <Toaster />
+          </div>
         </TooltipProvider>
       </QueryClientProvider>
     );
@@ -280,10 +285,14 @@ function App() {
       <TooltipProvider>
         <UserProvider>
           <SubmitClipProvider>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <PasswordRecoveryRedirect />
           <Toaster />
-          <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
-            <div className="flex min-h-0 flex-1 flex-col w-full">
+          <div
+            data-app-root="true"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground"
+          >
+            <div data-app-shell className={APP_MAIN_SHELL_CLASS}>
             <Switch>
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route path="/" component={Home} />
@@ -304,6 +313,7 @@ function App() {
             <SubmitClipDrawer />
             <ConditionalBottomNavigation />
             <ReleaseDropDayBanner />
+          </div>
           </div>
           </SubmitClipProvider>
         </UserProvider>

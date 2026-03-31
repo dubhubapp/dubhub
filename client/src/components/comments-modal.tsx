@@ -1,12 +1,11 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, CheckCircle, Award, XCircle, Filter, Flag, MoreHorizontal } from "lucide-react";
+import { X, Send, Heart, CheckCircle, Award, XCircle, Flag, MoreHorizontal } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
@@ -23,11 +22,43 @@ import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 
 interface CommentsModalProps {
   post: PostWithUser;
   isOpen: boolean;
   onClose: () => void;
+}
+
+/** Matches previous sheet cap: min(66vh, 33rem). */
+const COMMENTS_SHEET_VH_FRACTION = 0.66;
+const COMMENTS_SHEET_REM_CAP = 33;
+
+/**
+ * Space below the physical top of the visual viewport reserved for status / notch,
+ * Vaul drag handle, and Comments header so the sheet never grows under the notch.
+ * Single constant — not per-device.
+ */
+const COMMENTS_SHEET_TOP_RESERVE_PX = 72;
+
+const COMMENTS_SHEET_MIN_PX = 160;
+
+/**
+ * Max sheet height: prefer the established large-phone cap, but never exceed what
+ * fits in the *visual* viewport (critical when the iOS keyboard is open — `100dvh`
+ * / layout height often stay large, which over-shrinks nothing and the OS scrolls
+ * the sheet past the top).
+ */
+function computeCommentsSheetMaxPx(): number {
+  if (typeof window === "undefined") {
+    return COMMENTS_SHEET_REM_CAP * 16;
+  }
+  const innerH = window.innerHeight;
+  const vv = window.visualViewport;
+  const visibleH = vv?.height ?? innerH;
+  const preferredCap = Math.min(innerH * COMMENTS_SHEET_VH_FRACTION, COMMENTS_SHEET_REM_CAP * 16);
+  const visibleBudget = Math.max(COMMENTS_SHEET_MIN_PX, Math.floor(visibleH - COMMENTS_SHEET_TOP_RESERVE_PX));
+  return Math.min(preferredCap, visibleBudget);
 }
 
 export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
@@ -42,6 +73,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist } = useUser();
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
+  const composerFieldId = useId();
 
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     verifiedArtistsEnabled: isOpen,
@@ -56,6 +88,54 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       });
     }
   }, [isOpen, post.id, debugComments]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const body = document.body;
+    if (isOpen) {
+      root.classList.add("comments-modal-open");
+      body.classList.add("comments-modal-open");
+      if (commentsKeyboardDebugEnabled()) {
+        queueMicrotask(() => logCommentsKeyboardSnapshot("after-modal-open", { postId: post.id }));
+      }
+    } else {
+      root.classList.remove("comments-modal-open");
+      body.classList.remove("comments-modal-open");
+    }
+    return () => {
+      if (isOpen) {
+        root.classList.remove("comments-modal-open");
+        body.classList.remove("comments-modal-open");
+      }
+    };
+  }, [isOpen, post.id]);
+
+  useEffect(() => {
+    if (!isOpen || !commentsKeyboardDebugEnabled()) return;
+    const vv = window.visualViewport;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onVv = () => {
+      clearTimeout(t);
+      t = setTimeout(() => logCommentsKeyboardSnapshot("visual-viewport-resize"), 80);
+    };
+    vv?.addEventListener("resize", onVv);
+    vv?.addEventListener("scroll", onVv);
+    let moT: ReturnType<typeof setTimeout> | undefined;
+    const mo = new MutationObserver(() => {
+      clearTimeout(moT);
+      moT = setTimeout(() => logCommentsKeyboardSnapshot("html-body-style-mutation"), 80);
+    });
+    mo.observe(document.body, { attributes: true, attributeFilter: ["style", "class"] });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+    return () => {
+      vv?.removeEventListener("resize", onVv);
+      vv?.removeEventListener("scroll", onVv);
+      mo.disconnect();
+      clearTimeout(t);
+      clearTimeout(moT);
+    };
+  }, [isOpen]);
 
   // Format time ago helper function
   const formatTimeAgo = (date: string | Date | null) => {
@@ -118,6 +198,25 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [visibleReplyCountByParent, setVisibleReplyCountByParent] = useState<Record<string, number>>({});
   const [replyingTo, setReplyingTo] = useState<{id: string, username: string} | null>(null);
   const [commentFilter, setCommentFilter] = useState<'all' | 'newest' | 'top'>('all');
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [, bumpForVisualViewport] = useReducer((x: number) => x + 1, 0);
+
+  useEffect(() => {
+    if (!isOpen || typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    const bump = () => bumpForVisualViewport();
+    bump();
+    vv?.addEventListener("resize", bump);
+    vv?.addEventListener("scroll", bump);
+    window.addEventListener("resize", bump);
+    return () => {
+      vv?.removeEventListener("resize", bump);
+      vv?.removeEventListener("scroll", bump);
+      window.removeEventListener("resize", bump);
+    };
+  }, [isOpen]);
+
+  const commentsSheetMaxPx = isOpen ? computeCommentsSheetMaxPx() : null;
 
   const { data: comments = [] } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", post.id, "comments"],
@@ -149,7 +248,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
   // Handle comment input changes and artist mention detection
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value.slice(0, INPUT_LIMITS.commentBody);
+    const value = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
     
     setNewComment(value);
@@ -348,6 +447,26 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     setReplyingTo(null); // Clear reply state after submitting
   };
 
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    e.preventDefault();
+    const trimmed = newComment.trim();
+    if (!trimmed || trimmed.length > INPUT_LIMITS.commentBody || addCommentMutation.isPending) return;
+    addCommentMutation.mutate({
+      content: trimmed,
+      parentId: replyingTo?.id,
+    } as any);
+    setReplyingTo(null);
+  };
+
+  useLayoutEffect(() => {
+    const el = commentInputRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const nextHeight = Math.min(el.scrollHeight, 112);
+    el.style.height = `${nextHeight}px`;
+  }, [newComment, isOpen, replyingTo]);
+
   return (
     <>
       <ReportModal
@@ -367,44 +486,75 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           if (!open) onClose();
         }}
         shouldScaleBackground={false}
+        repositionInputs={false}
+        noBodyStyles
       >
       <DrawerContent
         overlayClassName="z-40 bg-transparent"
-        className="z-40 mx-auto h-[34vh] max-h-[34vh] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm"
-        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+        className="bottom-0 z-40 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm"
+        style={commentsSheetMaxPx != null ? { maxHeight: commentsSheetMaxPx } : undefined}
       >
         <DrawerTitle className="sr-only">Comments for track</DrawerTitle>
         <DrawerDescription className="sr-only">View and add comments for this track</DrawerDescription>
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-          <div className="flex items-center space-x-3">
-            <h3 className="text-base font-semibold text-gray-900">Comments ({comments.reduce((total, comment) => total + 1 + (comment.replies?.length || 0), 0)})</h3>
-            <div className="flex items-center space-x-2">
-              <Filter className="h-3.5 w-3.5 text-gray-500" />
-              <Select value={commentFilter} onValueChange={(value: 'all' | 'newest' | 'top') => setCommentFilter(value)}>
-                <SelectTrigger className="h-7 w-[96px] border-gray-200 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="newest">Newest</SelectItem>
-                  <SelectItem value="top">Top Rated</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="relative flex items-center justify-between border-b border-gray-200 px-4 py-3">
+          <div className="h-8 w-[4.5rem]" aria-hidden />
+          <h3 className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base font-semibold text-gray-900">
+            Comments
+          </h3>
+          <div className="flex items-center gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
+                  aria-label="Comment filter options"
+                  data-testid="comments-filter-menu-trigger"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                className="min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg"
+              >
+                <DropdownMenuItem
+                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                  onSelect={() => setCommentFilter("all")}
+                  data-testid="comments-filter-all"
+                >
+                  {commentFilter === "all" ? "✓ " : ""}All
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                  onSelect={() => setCommentFilter("newest")}
+                  data-testid="comments-filter-newest"
+                >
+                  {commentFilter === "newest" ? "✓ " : ""}Newest
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                  onSelect={() => setCommentFilter("top")}
+                  data-testid="comments-filter-top"
+                >
+                  {commentFilter === "top" ? "✓ " : ""}Top rated
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="h-7 w-7 rounded-full p-0 hover:bg-gray-100"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="h-7 w-7 rounded-full p-0 hover:bg-gray-100"
-          >
-            <X className="h-4 w-4" />
-          </Button>
         </div>
 
         {/* Comments List */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2 space-y-3">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 pb-2.5 pt-2 sm:px-4 sm:pb-3 sm:pt-2.5">
           {(() => {
             let filteredComments = [...comments];
             
@@ -470,19 +620,19 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
 
               const highlightClass = isArtistConfirmationComment
-                ? "p-3 rounded-lg border-2 border-[#FFD700] bg-amber-50/70"
+                ? "rounded-lg border-2 border-[#FFD700] bg-amber-50/70 p-2"
                 : isVerifiedComment
-                ? "p-3 rounded-lg border-2 border-green-500 bg-green-50/40"
+                ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-2"
                 : isTaggedSuggestion
-                  ? "p-3 rounded-lg border border-amber-300 bg-amber-50/30"
+                  ? "rounded-lg border border-amber-300 bg-amber-50/30 p-2"
                   : "";
               return (
-                <div key={comment.id} className={`flex space-x-3 ${highlightClass}`}>
+                <div key={comment.id} className={`flex space-x-2 ${highlightClass}`}>
               <div className="relative flex-shrink-0">
                 <img
                   src={comment.user.avatar_url || undefined}
                   alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
-                  className={`avatar-media w-8 h-8 rounded-full border-2 ${isDefaultAvatarUrl(comment.user.avatar_url) ? "avatar-default-media" : ""} ${
+                  className={`avatar-media h-6 w-6 rounded-full border-2 sm:h-7 sm:w-7 ${isDefaultAvatarUrl(comment.user.avatar_url) ? "avatar-default-media" : ""} ${
                     comment.user.account_type === "artist" && comment.user.verified_artist
                       ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                       : "border-transparent"
@@ -490,10 +640,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-1.5">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <div className="flex items-center space-x-1">
                     <span 
-                      className={`text-sm font-medium cursor-pointer hover:underline ${
+                      className={`text-xs font-medium cursor-pointer hover:underline sm:text-[13px] ${
                         comment.user.account_type === 'artist' && comment.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
                       }`}
                       onClick={(e) => {
@@ -524,49 +674,49 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   )}
                   {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge, only pre-artist verification) */}
                   {isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
-                    <div className="flex items-center space-x-1 bg-amber-100 px-2 py-0.5 rounded-full" data-testid={`badge-tagged-artist-${comment.id}`}>
+                    <div className="flex items-center space-x-1 rounded-full bg-amber-100 px-1.5 py-0.5" data-testid={`badge-tagged-artist-${comment.id}`}>
                       <span className="text-xs text-amber-800 font-medium">Tagged artist</span>
                     </div>
                   )}
                   {/* Community Identified Badge - Blue for pending moderator review (only when no artist verification) */}
                   {post.verificationStatus === "community" && post.verifiedCommentId === comment.id && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
-                    <div className="flex items-center space-x-1 bg-blue-500 px-2 py-0.5 rounded-full" data-testid={`badge-community-identified-${comment.id}`}>
+                    <div className="flex items-center space-x-1 rounded-full bg-blue-500 px-1.5 py-0.5" data-testid={`badge-community-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Community Identified</span>
                     </div>
                   )}
                   {/* Identified Track ID Badge - Green for moderator confirmed (fallback when no artist verification) */}
                   {isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
-                    <div className="flex items-center space-x-1 bg-green-500 px-2 py-0.5 rounded-full" data-testid={`badge-identified-${comment.id}`}>
+                    <div className="flex items-center space-x-1 rounded-full bg-green-500 px-1.5 py-0.5" data-testid={`badge-identified-${comment.id}`}>
                       <CheckCircle className="w-3 h-3 text-white" />
                       <span className="text-xs text-white font-bold">Identified Track ID</span>
                     </div>
                   )}
                   {/* Artist ID Badge - on the artist-selected community comment when artist verification is present */}
                   {isVerifiedComment && isArtistVerifiedPost && (
-                    <div className="flex items-center space-x-1 bg-green-50 px-2 py-0.5 rounded-full">
+                    <div className="flex items-center space-x-1 rounded-full bg-green-50 px-1.5 py-0.5">
                       <CheckCircle className="w-3 h-3 text-green-600" />
                       <span className="text-xs text-green-600 font-medium">Artist ID</span>
                     </div>
                   )}
                   {/* Denied Tag Badge */}
                   {comment.tagStatus === "denied" && (
-                    <div className="flex items-center space-x-1 bg-red-50 px-2 py-0.5 rounded-full">
+                    <div className="flex items-center space-x-1 rounded-full bg-red-50 px-1.5 py-0.5">
                       <XCircle className="w-3 h-3 text-red-600" />
                       <span className="text-xs text-red-600 font-medium">Denied</span>
                     </div>
                   )}
-                  <span className="text-xs text-gray-500">
+                  <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs">
                     {formatTimeAgo(comment.createdAt)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-sm text-gray-700">
+                <p className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm">
                   {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
-                <div className="mt-1.5 flex items-center gap-2 sm:gap-3">
+                <div className="mt-0.5 flex items-center gap-2">
                   {/* Comment likes (separate from post likes) */}
                   <button
-                    className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-1 text-xs ${
+                    className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs ${
                       comment.userVote === "upvote" ? "text-pink-600 bg-pink-50" : "text-gray-500"
                     }`}
                     onClick={() => handleToggleCommentLike(comment.id)}
@@ -579,7 +729,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     <span>{comment.voteScore ?? 0}</span>
                   </button>
                   <button 
-                    className="text-xs text-gray-500 hover:text-gray-700"
+                    className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs"
                     onClick={() => {
                       setReplyingTo({id: comment.id, username: comment.user.username});
                       setNewComment(`${formatUsernameDisplay(comment.user.username)} `);
@@ -592,7 +742,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
+                        className="inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 sm:h-8 sm:w-8"
                         aria-label="Comment actions"
                         data-testid={`comment-actions-trigger-${comment.id}`}
                       >
@@ -779,7 +929,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         </div>
 
         {/* Comment Input */}
-        <div className="border-t border-gray-200 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3">
+        <div className="border-t border-gray-200 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
           {/* Reply indicator */}
           {replyingTo && (
             <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5">
@@ -832,31 +982,67 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               </div>
             )}
             
-            <form onSubmit={handleSubmit} className="flex flex-col gap-1">
-              <div className="flex items-center space-x-2">
-                <img
-                  src={userProfileImage || undefined}
-                  alt="Your profile"
-                  className={`avatar-media h-8 w-8 flex-shrink-0 rounded-full border-2 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""} ${
-                    verifiedArtist
-                      ? "border-[#FFD700] " + goldAvatarGlowShadowClass
-                      : "border-gray-200"
-                  }`}
-                />
-                <Textarea
-                  value={newComment}
-                  onChange={handleCommentChange}
-                  placeholder={
-                    replyingTo
-                      ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
-                      : "Add a comment... (Use @ to tag artists)"
-                  }
-                  className="min-h-[38px] max-h-28 flex-1 resize-y rounded-2xl border-gray-300"
-                  disabled={addCommentMutation.isPending}
-                  data-testid="comment-input"
-                  maxLength={INPUT_LIMITS.commentBody}
-                  rows={2}
-                />
+            <form onSubmit={handleSubmit}>
+              <div className="flex items-end space-x-2">
+                <label
+                  htmlFor={composerFieldId}
+                  className="flex min-w-0 flex-1 cursor-text touch-manipulation items-end gap-2"
+                  onPointerDown={(e) => {
+                    const t = e.target as HTMLElement;
+                    if (t.closest("textarea")) return;
+                    if (addCommentMutation.isPending) return;
+                    e.preventDefault();
+                    commentInputRef.current?.focus({ preventScroll: true });
+                  }}
+                >
+                  <img
+                    src={userProfileImage || undefined}
+                    alt=""
+                    className={`avatar-media pointer-events-none h-7 w-7 flex-shrink-0 rounded-full border-2 sm:h-8 sm:w-8 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""} ${
+                      verifiedArtist
+                        ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                        : "border-gray-200"
+                    }`}
+                  />
+                  <Textarea
+                    id={composerFieldId}
+                    ref={commentInputRef}
+                    value={newComment}
+                    onChange={handleCommentChange}
+                    onKeyDown={handleComposerKeyDown}
+                    onFocus={() => {
+                      if (commentsKeyboardDebugEnabled()) {
+                        queueMicrotask(() =>
+                          logCommentsKeyboardSnapshot("textarea-focus", { postId: post.id }),
+                        );
+                        window.setTimeout(() => {
+                          logCommentsKeyboardSnapshot("textarea-focus+~350ms", { postId: post.id });
+                        }, 350);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (commentsKeyboardDebugEnabled()) {
+                        queueMicrotask(() =>
+                          logCommentsKeyboardSnapshot("textarea-blur", { postId: post.id }),
+                        );
+                      }
+                    }}
+                    placeholder={
+                      replyingTo
+                        ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
+                        : "Who do you think this is?"
+                    }
+                    className="max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-1.5 text-sm leading-5"
+                    disabled={addCommentMutation.isPending}
+                    data-testid="comment-input"
+                    maxLength={INPUT_LIMITS.commentBody}
+                    rows={1}
+                    enterKeyHint="send"
+                    autoComplete="on"
+                    autoCorrect="on"
+                    spellCheck={true}
+                  />
+                </label>
                 <Button
                   type="submit"
                   size="sm"
@@ -865,15 +1051,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     newComment.length > INPUT_LIMITS.commentBody ||
                     addCommentMutation.isPending
                   }
-                  className="rounded-full px-4 flex-shrink-0"
+                  className="h-10 w-10 flex-shrink-0 rounded-full p-0"
                   data-testid="comment-submit"
                 >
                   <Send className="w-4 h-4" />
                 </Button>
               </div>
-              <p className="text-[11px] text-gray-500 text-right">
-                {newComment.length} / {INPUT_LIMITS.commentBody}
-              </p>
+              {newComment.length > INPUT_LIMITS.commentBody && (
+                <p className="mt-1 text-right text-[11px] text-red-500">
+                  Comment is too long. Keep it under {INPUT_LIMITS.commentBody} characters.
+                </p>
+              )}
             </form>
           </div>
         </div>

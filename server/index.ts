@@ -1,5 +1,6 @@
 import "dotenv/config";
 import cron from "node-cron";
+import cors from "cors";
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
@@ -8,22 +9,50 @@ import { storage } from "./storage";
 
 const app = express();
 
-// CORS middleware - allow requests from Vite dev server
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  // Allow requests from Vite dev server (ports 5173, 5174, etc.)
-  if (origin && (origin.includes('localhost:517') || origin.includes('127.0.0.1:517'))) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
+const isDev = process.env.NODE_ENV !== "production";
+
+/** Explicit dev origins; LAN Vite + Capacitor. Production still uses the previous localhost:517* rule only. */
+const DEV_CORS_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://192.168.1.184:5173",
+  "capacitor://localhost",
+  "ionic://localhost",
+]);
+
+function isDevOriginAllowed(origin: string): boolean {
+  if (DEV_CORS_ORIGINS.has(origin)) return true;
+  // Vite on LAN (device opens http://192.168.x.x:5173)
+  if (/^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}:5173$/.test(origin)) return true;
+  // Same as legacy middleware: Vite on localhost / 127.0.0.1 (5173, 5174, …)
+  if (origin.includes("localhost:517") || origin.includes("127.0.0.1:517")) return true;
+  return false;
+}
+
+function corsOriginAllowed(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
+  if (!origin) {
+    cb(null, true);
+    return;
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+  if (isDev) {
+    cb(null, isDevOriginAllowed(origin));
+    return;
   }
-  next();
-});
+  // Production: preserve previous behaviour (Vite-style localhost only)
+  const legacy =
+    origin.includes("localhost:517") || origin.includes("127.0.0.1:517");
+  cb(null, legacy);
+}
+
+app.use(
+  cors({
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
+    origin: corsOriginAllowed,
+  }),
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

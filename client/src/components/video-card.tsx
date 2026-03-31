@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users } from "lucide-react";
+import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
@@ -26,6 +27,7 @@ import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { resolveMediaUrl } from "@/lib/media-url";
 // Removed placeholder video import - now using real uploaded videos
 
 interface VideoCardProps {
@@ -36,7 +38,12 @@ interface VideoCardProps {
   embeddedFeed?: boolean;
 }
 
-export function VideoCard({ post, isHighlighted = false, showStatusBadge = false, embeddedFeed = false }: VideoCardProps) {
+export function VideoCard({
+  post,
+  isHighlighted = false,
+  showStatusBadge = false,
+  embeddedFeed = false,
+}: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
     id: string;
@@ -96,9 +103,11 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   }, [post.id, post.hasLiked, post.likes]); // Avoid depending on `post` reference — cache updates replace the object every time
 
   const videoSrc =
-    (post.videoUrl && String(post.videoUrl)) ||
-    ((post as any).video_url != null && String((post as any).video_url)) ||
-    "";
+    resolveMediaUrl(
+      (post.videoUrl && String(post.videoUrl)) ||
+        ((post as any).video_url != null && String((post as any).video_url)) ||
+        ""
+    ) || "";
 
   // Ensure video plays immediately and loops properly
   useEffect(() => {
@@ -259,15 +268,16 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
   const { data: currentUser } = useQuery({
     queryKey: ["/api/user/current"],
     queryFn: async () => {
-      const response = await fetch("/api/user/current");
+      const response = await fetch(apiUrl("/api/user/current"));
       if (!response.ok) throw new Error("Failed to fetch user");
       return response.json();
     },
   });
 
   const getStatusBadge = () => {
+    /** Padding matches Home `GenreFilter` trigger + `HomeFeedTopChrome` inset (`px-2.5 pt-2` / `sm:` tiers) so the chip reads level with the genre / sort row once snapped. */
     const statusPillBase =
-      "inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-3 py-2 text-xs font-semibold leading-none text-white backdrop-blur-xl shadow-[0_6px_22px_-12px_rgba(0,0,0,0.85)]";
+      "inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-3 py-1.5 text-xs font-semibold leading-none text-white backdrop-blur-xl shadow-[0_6px_22px_-12px_rgba(0,0,0,0.85)] sm:px-3.5 sm:py-2";
     const identifiedPillClass = "border-green-300/40 bg-green-500/30";
     const iconBaseClass = "h-3.5 w-3.5 shrink-0";
     const renderStatus = (
@@ -399,14 +409,13 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
 
   const genreChip = getGenreChipStyle(post.genre);
 
-  const snapHeightClass = embeddedFeed
-    ? "min-h-full h-full"
-    : "min-h-screen h-screen";
+  /** Match scrollport height (not 100vh) so mandatory snap + slow drags settle reliably. */
+  const snapHeightClass = "min-h-full h-full";
 
   return (
-    <div 
-      className={`${snapHeightClass} w-full relative snap-start snap-always flex-shrink-0 transition-all duration-300 ${
-        isHighlighted ? 'ring-4 ring-primary ring-inset' : ''
+    <div
+      className={`${snapHeightClass} relative w-full shrink-0 snap-start snap-always [scroll-snap-stop:always] ${
+        isHighlighted ? "ring-4 ring-inset ring-primary" : ""
       }`}
       data-post-id={post.id}
     >
@@ -439,148 +448,199 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
       </div>
-      {/* Top overlay status chip aligned with top floating controls row */}
-      <div className="pointer-events-none absolute left-4 right-24 top-[calc(env(safe-area-inset-top)+0.5rem)] z-30">
+      {/* Top overlay status chip — inset + top offset stay in sync with `HomeFeedTopChrome` (genre / sort row). */}
+      <div className="pointer-events-none absolute left-2.5 right-[calc(var(--video-feed-rail-width)+0.75rem)] top-2 z-30 sm:left-4 sm:top-2.5">
         <div className="flex min-h-9 items-center gap-2">
           {getStatusBadge()}
         </div>
       </div>
-      {/* Right side actions */}
-      <div className="absolute right-4 bottom-36 z-20 flex flex-col items-center space-y-6">
-        {/* Like button */}
-        <button 
-          className="flex flex-col items-center group"
-          onClick={() => likeMutation.mutate()}
-          disabled={likeMutation.isPending}
-        >
-          <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-            <Heart className={`w-6 h-6 ${hasLiked ? "text-red-500 fill-red-500" : "text-white"}`} />
-          </div>
-          <span className="text-xs mt-1 font-medium text-white">{formatCount(likes)}</span>
-        </button>
+      {(() => {
+        const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
+        const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
+        const status = post.verificationStatus ?? (post as any).verification_status;
+        const isUnverified = !status || status === "unverified";
+        const isOwner = currentUserId != null && postOwnerId != null && currentUserId === postOwnerId;
+        const commentCount = Number((post as any).comments ?? post.comments ?? (post as any).comments_count ?? 0);
+        const hasComments = commentCount >= 1;
+        const isTaggedArtist = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
+        const deniedByArtist = !!((post as any).deniedByArtist ?? (post as any).denied_by_artist);
+        const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
+        const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+        const alreadyArtistConfirmed = isArtistVerified && artistVerifiedBy === currentUserId;
+        const alreadyArtistVerifiedBySomeone = isArtistVerified && !!artistVerifiedBy;
+        const canVerifyOwner = isUnverified && isOwner && hasComments;
+        const canVerifyArtist = isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
+        const canVerify = !alreadyArtistVerifiedBySomeone && (canVerifyOwner || canVerifyArtist);
 
-        {/* Comment button */}
-        <button 
-          className="flex flex-col items-center group"
-          onClick={() => {
-            if (debugComments) {
-              console.log("[CommentsOpen] click", {
-                feedPostId: post.id,
-                handlerPostId: post.id,
-                showCommentsBefore: showComments,
-              });
-            }
-            setCommentsPost(post);
-            setShowComments(true);
-          }}
-        >
-          <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-            <MessageCircle className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xs mt-1 font-medium text-white">{formatCount(post.comments)}</span>
-        </button>
+        if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+          (window as any).__VERIFY_DEBUG = (window as any).__VERIFY_DEBUG ?? {};
+          (window as any).__VERIFY_DEBUG[post.id] = {
+            currentUserId,
+            postOwnerId,
+            isOwner,
+            canVerify,
+            hasComments,
+            isTaggedArtist,
+            status,
+          };
+        }
 
-        {/* Save button removed - functionality no longer supported */}
+        const debugInfo = showVerifyDebug
+          ? { currentUserId, postOwnerId, isOwner, canVerify, hasComments, isTaggedArtist, status }
+          : null;
 
-        {/* Mark comment as correct (owner) / ID Track (tagged artist): owner needs unverified + comments; artist can confirm/deny even if community verified */}
-        {(() => {
-          const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
-          const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
-          const status = post.verificationStatus ?? (post as any).verification_status;
-          const isUnverified = !status || status === "unverified";
-          const isOwner = currentUserId != null && postOwnerId != null && currentUserId === postOwnerId;
-          const commentCount = Number((post as any).comments ?? post.comments ?? (post as any).comments_count ?? 0);
-          const hasComments = commentCount >= 1;
-          const isTaggedArtist = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
-          const deniedByArtist = !!((post as any).deniedByArtist ?? (post as any).denied_by_artist);
-          const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
-          const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
-          const alreadyArtistConfirmed = isArtistVerified && artistVerifiedBy === currentUserId;
-          const alreadyArtistVerifiedBySomeone = isArtistVerified && !!artistVerifiedBy;
-          const canVerifyOwner = isUnverified && isOwner && hasComments;
-          const canVerifyArtist = isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
-          // Once a post is artist-verified by anyone, no more artist confirmations/denials should be possible
-          const canVerify = !alreadyArtistVerifiedBySomeone && (canVerifyOwner || canVerifyArtist);
+        const railBtn =
+          "group flex w-full flex-col items-center gap-1 touch-manipulation";
+        /** 44px min tap target (iOS HIG); no circular pill — icons read via stroke + drop shadow on varied video. */
+        const railIconWrap =
+          "flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center active:scale-[0.94] sm:min-h-12 sm:min-w-12 [&_svg]:drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]";
 
-          if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
-            (window as any).__VERIFY_DEBUG = (window as any).__VERIFY_DEBUG ?? {};
-            (window as any).__VERIFY_DEBUG[post.id] = {
-              currentUserId,
-              postOwnerId,
-              isOwner,
-              canVerify,
-              hasComments,
-              isTaggedArtist,
-              status,
-            };
-          }
-
-          const debugInfo = showVerifyDebug
-            ? { currentUserId, postOwnerId, isOwner, canVerify, hasComments, isTaggedArtist, status }
-            : null;
-
-          return (
-            <>
-              {showVerifyDebug && debugInfo && (
-                <div className="absolute top-2 left-2 right-2 z-20 rounded bg-black/80 text-xs text-green-400 p-2 font-mono">
-                  <div>viewer_id (currentUserId): {String(debugInfo.currentUserId ?? "null")}</div>
-                  <div>user_id (postOwnerId): {String(debugInfo.postOwnerId ?? "null")}</div>
-                  <div>isOwner: {String(debugInfo.isOwner)}</div>
-                  <div>canVerify: {String(debugInfo.canVerify)}</div>
-                  <div>hasComments: {String(debugInfo.hasComments)} | isTaggedArtist: {String(debugInfo.isTaggedArtist)} | status: {String(debugInfo.status)}</div>
+        return (
+          <>
+            {showVerifyDebug && debugInfo && (
+              <div className="absolute left-2 right-2 top-14 z-20 rounded bg-black/80 p-2 font-mono text-xs text-green-400">
+                <div>viewer_id (currentUserId): {String(debugInfo.currentUserId ?? "null")}</div>
+                <div>user_id (postOwnerId): {String(debugInfo.postOwnerId ?? "null")}</div>
+                <div>isOwner: {String(debugInfo.isOwner)}</div>
+                <div>canVerify: {String(debugInfo.canVerify)}</div>
+                <div>
+                  hasComments: {String(debugInfo.hasComments)} | isTaggedArtist: {String(debugInfo.isTaggedArtist)} |
+                  status: {String(debugInfo.status)}
                 </div>
-              )}
-              {canVerify ? (
-            <button
-              className="flex flex-col items-center group"
-              onClick={() => (isOwner ? setShowVerificationDialog(true) : setShowArtistVerificationDialog(true))}
-              data-testid={isOwner ? "button-community-verify" : "button-artist-verify"}
-              title={isOwner ? "Mark comment as correct" : "Confirm or deny track"}
-            >
-              <div className="w-12 h-12 rounded-full bg-blue-500/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-                <ShieldCheck className="w-6 h-6 text-blue-400" />
               </div>
-              <span className="text-xs mt-1 font-medium text-blue-400">
-                {isOwner ? "Mark correct" : "ID Track"}
-              </span>
-            </button>
-          ) : null}
-            </>
-          );
-        })()}
+            )}
+            {/* Right action rail — top→bottom: Like, Comment, optional verify/delete, More (short-form pattern) */}
+            <div
+              data-video-action-rail
+              className="absolute bottom-[clamp(calc(6rem+env(safe-area-inset-bottom,0px)),20lvh,9rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-20 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4"
+            >
+              <button
+                type="button"
+                className={railBtn}
+                onClick={() => likeMutation.mutate()}
+                disabled={likeMutation.isPending}
+              >
+                <div className={railIconWrap}>
+                  <Heart className={`h-7 w-7 ${hasLiked ? "fill-red-500 text-red-500" : "text-white"}`} />
+                </div>
+                <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                  {formatCount(likes)}
+                </span>
+              </button>
 
-        {/* Delete button - only show for post owner (use same owner check as verify) */}
-        {(() => {
-          const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
-          const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
-          const isOwner = currentUserId != null && postOwnerId != null && currentUserId === postOwnerId;
-          return isOwner;
-        })() && (
-          <button 
-            className="flex flex-col items-center group"
-            onClick={() => {
-              if (confirm("Are you sure you want to delete this post?")) {
-                deleteMutation.mutate();
-              }
-            }}
-            disabled={deleteMutation.isPending}
-            data-testid="button-delete-post"
-          >
-            <div className="w-12 h-12 rounded-full bg-red-500/30 backdrop-blur-sm flex items-center justify-center group-active:scale-95">
-              <Trash2 className="w-6 h-6 text-red-400" />
+              <button
+                type="button"
+                className={railBtn}
+                onClick={() => {
+                  if (debugComments) {
+                    console.log("[CommentsOpen] click", {
+                      feedPostId: post.id,
+                      handlerPostId: post.id,
+                      showCommentsBefore: showComments,
+                    });
+                  }
+                  setCommentsPost(post);
+                  setShowComments(true);
+                }}
+              >
+                <div className={railIconWrap}>
+                  <MessageCircle className="h-7 w-7 text-white" />
+                </div>
+                <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                  {formatCount(post.comments)}
+                </span>
+              </button>
+
+              {canVerify ? (
+                <button
+                  type="button"
+                  className={railBtn}
+                  onClick={() => (isOwner ? setShowVerificationDialog(true) : setShowArtistVerificationDialog(true))}
+                  data-testid={isOwner ? "button-community-verify" : "button-artist-verify"}
+                  title={isOwner ? "Mark comment as correct" : "Confirm or deny track"}
+                >
+                  <div className={railIconWrap}>
+                    <ShieldCheck className="h-6 w-6 text-blue-400" />
+                  </div>
+                  <span className="max-w-[3.25rem] text-center text-[10px] font-medium leading-tight text-blue-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
+                    {isOwner ? "Mark" : "ID"}
+                  </span>
+                </button>
+              ) : null}
+
+              {isOwner ? (
+                <button
+                  type="button"
+                  className={railBtn}
+                  onClick={() => {
+                    if (confirm("Are you sure you want to delete this post?")) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                  data-testid="button-delete-post"
+                >
+                  <div className={railIconWrap}>
+                    <Trash2 className="h-6 w-6 text-red-400" />
+                  </div>
+                  <span className="text-[10px] font-medium leading-none text-red-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">Del</span>
+                </button>
+              ) : null}
+
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    ref={menuTriggerRef}
+                    aria-label="More options"
+                    className={`${railBtn} !gap-0 outline-none ring-0 ring-offset-0 [-webkit-tap-highlight-color:transparent] focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-transparent data-[state=open]:outline-none data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:shadow-none`}
+                    data-testid="button-more-options"
+                  >
+                    <div className={railIconWrap}>
+                      <MoreVertical className="h-6 w-6 text-white" />
+                    </div>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm">
+                  <DropdownMenuItem
+                    onClick={handleShare}
+                    className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 pl-[6px] pr-[6px] pt-[6px] pb-[6px] text-sm font-normal text-[#000000] outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled:pointer-events-none] data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+                    data-testid="menu-item-share"
+                  >
+                    <LinkIcon className="mr-2 h-4 w-4" />
+                    Share Video
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleReport();
+                    }}
+                    className="cursor-pointer text-red-600 focus:text-red-600"
+                    data-testid="menu-item-report"
+                  >
+                    <Flag className="mr-2 h-4 w-4" />
+                    Report Video
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Reserved slot: mute/unmute — same tap target as railIconWrap; keep gap-4 rhythm above nav. */}
+              <div
+                className="pointer-events-none flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center sm:min-h-12 sm:min-w-12"
+                aria-hidden
+                data-video-action-rail-mute-slot
+              />
             </div>
-            <span className="text-xs mt-1 font-medium text-red-400">Delete</span>
-          </button>
-        )}
-      </div>
-      {/* Bottom content overlay - right-20 leaves room for action buttons; bottom clears BottomNavigation */}
+          </>
+        );
+      })()}
+      {/* Bottom content — padding-right reserves rail (scrollport already clears shell nav). */}
       <div
-        className="absolute left-0 right-20 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-6 pt-16 pointer-events-none"
-        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+        className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent py-5 pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] pt-12 sm:py-6 sm:pl-4 sm:pt-14 ${embeddedFeed ? "pb-3" : ""}`}
       >
         {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets */}
-        <div className="pointer-events-none flex flex-col gap-2">
-          <div className="overflow-x-clip py-0.5 pl-0.5 pr-1">
+        <div className="pointer-events-none flex flex-col gap-2 overflow-visible">
+          <div className="overflow-x-visible py-0.5 pl-0.5 pr-1">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -694,31 +754,31 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                 e.stopPropagation();
                 navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
               }}
-              className="pointer-events-auto mt-3 w-full flex items-center gap-3 p-2 rounded-lg bg-black/40 hover:bg-black/50 transition-colors text-left"
+              className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
             >
-              <div className="w-12 h-12 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted sm:h-12 sm:w-12">
                 {releasePreview.artworkUrl ? (
-                  <img src={releasePreview.artworkUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={releasePreview.artworkUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <Music className="w-6 h-6 text-gray-500" />
+                  <Music className="h-5 w-5 text-gray-500 sm:h-6 sm:w-6" />
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-white truncate">
+              <div className="min-w-0 flex-1 overflow-visible">
+                <p className="line-clamp-2 text-[11px] font-medium leading-snug text-white sm:text-xs">
                   {formatReleaseTitleLine(
                     releasePreview.ownerUsername,
                     releasePreview.title,
                     releasePreview.collaborators
                   )}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
                   {releasePreview.isComingSoon
                     ? "Coming soon..."
                     : releasePreview.releaseDate
-                    ? formatDate(releasePreview.releaseDate)
-                    : ""}
+                      ? formatDate(releasePreview.releaseDate)
+                      : ""}
                   <span
-                    className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${
+                    className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px] ${
                       isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
                         ? "bg-amber-500/20 text-amber-400"
                         : "bg-green-500/20 text-green-600 dark:text-green-400"
@@ -729,68 +789,30 @@ export function VideoCard({ post, isHighlighted = false, showStatusBadge = false
                       : "Released"}
                   </span>
                 </p>
-                <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
                   {isReleaseOwner ? (
                     <>
-                      <Edit2 className="w-3 h-3 text-primary flex-shrink-0" />
-                      Edit release
+                      <Edit2 className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+                      <span>Edit release</span>
                     </>
                   ) : isPostUploader && isPostIdentified ? (
                     <>
-                      <Check className="w-3 h-3 text-green-400 flex-shrink-0" />
-                      Your post has been ID&apos;d and has been added to your Releases
+                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
+                      <span className="line-clamp-3">Saved to your Releases</span>
                     </>
                   ) : hasLiked ? (
                     <>
-                      <Check className="w-3 h-3 text-green-400 flex-shrink-0" />
-                      This track is in your Releases
+                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
+                      <span>In your Releases</span>
                     </>
                   ) : (
-                    "Like this post to add this track to your Releases"
+                    <span className="line-clamp-3">Like to add this track to your Releases</span>
                   )}
                 </p>
               </div>
             </button>
           )}
         </div>
-      </div>
-      {/* 3-dot menu - positioned above fixed BottomNavigation (5rem) + safe-area */}
-      <div 
-        className="absolute right-4 z-30"
-        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
-      >
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button 
-              ref={menuTriggerRef}
-              className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center hover:bg-black/50 transition-colors"
-              data-testid="button-more-options"
-            >
-              <MoreVertical className="w-5 h-5 text-white" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm">
-            <DropdownMenuItem 
-              onClick={handleShare}
-              className="relative flex select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer text-[#000000] pl-[6px] pr-[6px] pt-[6px] pb-[6px] ml-[0px] mr-[0px] font-normal"
-              data-testid="menu-item-share"
-            >
-              <LinkIcon className="w-4 h-4 mr-2" />
-              Share Video
-            </DropdownMenuItem>
-            <DropdownMenuItem 
-              onSelect={(e) => {
-                e.preventDefault();
-                handleReport();
-              }}
-              className="cursor-pointer text-red-600 focus:text-red-600"
-              data-testid="menu-item-report"
-            >
-              <Flag className="w-4 h-4 mr-2" />
-              Report Video
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
       {/* Report Modal */}
       <ReportModal

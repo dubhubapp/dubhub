@@ -17,6 +17,7 @@ import { VideoCard } from "@/components/video-card";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 
 function formatModeratorReportTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
@@ -35,7 +36,13 @@ export default function ModeratorPage() {
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [postForComments, setPostForComments] = useState<PostWithUser | null>(null);
   const [moderationDialogOpen, setModerationDialogOpen] = useState(false);
-  const [selectedReportForModeration, setSelectedReportForModeration] = useState<{ reportId: string; userId: string; username: string } | null>(null);
+  const [selectedReportForModeration, setSelectedReportForModeration] = useState<{
+    reportId: string;
+    userId: string;
+    username: string;
+    contentTarget: "post" | "comment";
+    defaultReportReason: string;
+  } | null>(null);
 
   // Route protection - redirect non-moderators
   useEffect(() => {
@@ -227,93 +234,6 @@ export default function ModeratorPage() {
     },
   });
 
-  const removeCommentMutation = useMutation({
-    mutationFn: async (reportId: string) => {
-      return apiRequest("POST", `/api/moderator/reports/${reportId}/remove-comment`);
-    },
-    onMutate: async (reportId: string) => {
-      // Optimistically remove the report from the list
-      await queryClient.cancelQueries({ queryKey: ["/api/moderator/reports"] });
-      const previousReports = queryClient.getQueryData<any[]>(["/api/moderator/reports"]);
-      const report = previousReports?.find((r: any) => r.id === reportId);
-      queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) => 
-        old.filter((r: any) => r.id !== reportId)
-      );
-      return { previousReports, report };
-    },
-    onSuccess: (_, reportId: string, context) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
-      queryClient.refetchQueries({ queryKey: ["/api/posts"] });
-      // Get the reported user ID from context (stored before removal)
-      const report = context?.report;
-      if (report?.reported_user_id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications"] });
-        queryClient.refetchQueries({ queryKey: ["/api/user", report.reported_user_id, "notifications"] });
-      }
-      if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-      }
-      toast({
-        title: "Comment Removed",
-        description: "Reported comment has been removed and user notified",
-      });
-    },
-    onError: (error, reportId, context) => {
-      // Rollback on error
-      if (context?.previousReports) {
-        queryClient.setQueryData(["/api/moderator/reports"], context.previousReports);
-      }
-      toast({
-        title: "Error",
-        description: "Failed to remove comment",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const removePostMutation = useMutation({
-    mutationFn: async (reportId: string) => {
-      return apiRequest("POST", `/api/moderator/reports/${reportId}/remove-post`);
-    },
-    onMutate: async (reportId: string) => {
-      // Optimistically remove the report from the list
-      await queryClient.cancelQueries({ queryKey: ["/api/moderator/reports"] });
-      const previousReports = queryClient.getQueryData<any[]>(["/api/moderator/reports"]);
-      queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) => 
-        old.filter((r: any) => r.id !== reportId)
-      );
-      return { previousReports };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
-      // Force refetch to ensure deleted post is removed from feed
-      queryClient.refetchQueries({ queryKey: ["/api/posts"] });
-      // Invalidate and refetch notification queries for instant updates
-      if (currentUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-        queryClient.refetchQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-      }
-      toast({
-        title: "Post Removed",
-        description: "Reported post has been removed",
-      });
-    },
-    onError: (error, reportId, context) => {
-      // Rollback on error
-      if (context?.previousReports) {
-        queryClient.setQueryData(["/api/moderator/reports"], context.previousReports);
-      }
-      toast({
-        title: "Error",
-        description: "Failed to remove post",
-        variant: "destructive",
-      });
-    },
-  });
-
   // Additional security check - don't render if not moderator
   if (userType !== "moderator") {
     return null;
@@ -325,8 +245,8 @@ export default function ModeratorPage() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      <div className="mx-auto w-full max-w-4xl space-y-5 px-4 pb-6 pt-5">
+    <div className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}>
+      <div className="app-page-top-pad mx-auto w-full max-w-4xl space-y-5 px-4 pb-6">
         {/* Moderator Badge */}
         <div className="flex items-center justify-center">
           <Badge
@@ -698,77 +618,43 @@ export default function ModeratorPage() {
                                   <CheckCircle className="w-4 h-4 mr-1" />
                                   Dismiss Report
                                 </Button>
-                                {report.is_user_report ? (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => {
-                                        if (confirm("Are you sure you want to remove this comment? The user will be notified. This action cannot be undone.")) {
-                                          removeCommentMutation.mutate(report.id);
-                                        }
-                                      }}
-                                      disabled={removeCommentMutation.isPending}
-                                      data-testid={`button-remove-comment-${report.id}`}
-                                    >
-                                      <XCircle className="w-4 h-4 mr-1" />
-                                      Remove Comment
-                                    </Button>
-                                    {report.reportedUser && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setSelectedReportForModeration({
-                                            reportId: report.id,
-                                            userId: report.reported_user_id,
-                                            username: report.reportedUser.username,
-                                          });
-                                          setModerationDialogOpen(true);
-                                        }}
-                                        data-testid={`button-moderate-user-${report.id}`}
-                                      >
-                                        <Shield className="w-4 h-4 mr-1" />
-                                        Moderate User
-                                      </Button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => {
-                                        if (confirm("Are you sure you want to remove this post? This action cannot be undone.")) {
-                                          removePostMutation.mutate(report.id);
-                                        }
-                                      }}
-                                      disabled={removePostMutation.isPending}
-                                      data-testid={`button-remove-${report.id}`}
-                                    >
-                                      <XCircle className="w-4 h-4 mr-1" />
-                                      Remove Post
-                                    </Button>
-                                    {report.post?.user && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setSelectedReportForModeration({
-                                            reportId: report.id,
-                                            userId: report.post.user.id,
-                                            username: report.post.user.username,
-                                          });
-                                          setModerationDialogOpen(true);
-                                        }}
-                                        data-testid={`button-moderate-user-${report.id}`}
-                                      >
-                                        <Shield className="w-4 h-4 mr-1" />
-                                        Moderate User
-                                      </Button>
-                                    )}
-                                  </>
-                                )}
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={
+                                    report.is_user_report
+                                      ? !report.reported_user_id
+                                      : !report.post?.user?.id
+                                  }
+                                  title={
+                                    report.is_user_report && !report.reported_user_id
+                                      ? "Missing reported user for this comment report"
+                                      : !report.is_user_report && !report.post?.user?.id
+                                        ? "Missing post author for this report"
+                                        : undefined
+                                  }
+                                  onClick={() => {
+                                    const userId = report.is_user_report
+                                      ? report.reported_user_id
+                                      : report.post?.user?.id;
+                                    if (!userId) return;
+                                    const username = report.is_user_report
+                                      ? report.reportedUser?.username ?? "Unknown"
+                                      : report.post?.user?.username ?? "Unknown";
+                                    setSelectedReportForModeration({
+                                      reportId: report.id,
+                                      userId,
+                                      username,
+                                      contentTarget: report.is_user_report ? "comment" : "post",
+                                      defaultReportReason:
+                                        typeof report.reason === "string" ? report.reason : "",
+                                    });
+                                    setModerationDialogOpen(true);
+                                  }}
+                                  data-testid={`button-remove-moderate-${report.id}`}
+                                >
+                                  Remove &amp; Moderate
+                                </Button>
                               </div>
                             </div>
                           </div>
@@ -794,6 +680,8 @@ export default function ModeratorPage() {
           reportId={selectedReportForModeration.reportId}
           reportedUserId={selectedReportForModeration.userId}
           reportedUsername={selectedReportForModeration.username}
+          contentTarget={selectedReportForModeration.contentTarget}
+          defaultReportReason={selectedReportForModeration.defaultReportReason}
         />
       )}
 
