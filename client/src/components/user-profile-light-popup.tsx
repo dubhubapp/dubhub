@@ -12,6 +12,15 @@ import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay } from "@/lib/utils";
 
+/** Aligns with dropdown/popover: ~150ms motion, slightly softer than raw tailwind zoom. */
+const POPUP_OPEN_MS = 200;
+const POPUP_CLOSE_MS = 160;
+const POPUP_OPEN_EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
+const POPUP_CLOSE_EASE = "cubic-bezier(0.4, 0, 1, 1)";
+const POPUP_ENTER_Y_PX = 6;
+const POPUP_ENTER_SCALE = 0.96;
+const POPUP_EXIT_SCALE = 0.97;
+
 type LightPopupOptions = {
   /** When false, skips the verified-artists query (e.g. comments drawer closed). */
   verifiedArtistsEnabled?: boolean;
@@ -23,6 +32,12 @@ type OpenByUsernameOptions = {
    * Expected to be viewport-based coordinates.
    */
   anchor?: { x: number; y: number };
+  /**
+   * The viewed user’s known favorite genre from tap context (e.g. leaderboard `favorite_genre`).
+   * Do not pass the post/track genre — that is not the profile fav genre and will mismatch the pill.
+   * Used for card chrome when `publicLight` has no top genre yet (avoids a grey “other” flash).
+   */
+  surfaceGenreHint?: string | null;
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -50,6 +65,21 @@ function mixToward(base: { r: number; g: number; b: number }, target: { r: numbe
   };
 }
 
+/**
+ * Popup-only: preserves luma but stretches chroma so genre hues survive neutral blending.
+ * Does not affect the fav-genre pill (still uses raw `accentChip.bgColor`).
+ */
+function boostChromaForPopup({ r, g, b }: { r: number; g: number; b: number }, factor = 1.16) {
+  const L = 0.299 * r + 0.587 * g + 0.114 * b;
+  const o = (c: number) => Math.max(0, Math.min(255, Math.round(L + (c - L) * factor)));
+  return { r: o(r), g: o(g), b: o(b) };
+}
+
+/** Blend toward light/dark neutral — lower = more genre colour in the card (was ~0.52, too grey). */
+const POPUP_SURFACE_NEUTRAL_BLEND = 0.37;
+/** Top gradient pulls stronger toward the genre hue (was 0.22). */
+const POPUP_TOP_WASH_GENRE_BLEND = 0.46;
+
 function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }) {
   const lin = (c: number) => {
     const v = c / 255;
@@ -73,6 +103,8 @@ type ProfilePopupUser = {
   correct_ids?: number;
   // Back-compat: same as `reputation` on some responses.
   karma?: number;
+  /** Set by `openByUsername` from tap context; not from API. */
+  surfaceGenreHint?: string | null;
 };
 
 export function useUserProfileLightPopup(options?: LightPopupOptions) {
@@ -95,7 +127,11 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
         const userData = (await response.json()) as ProfilePopupUser;
 
         const artist = verifiedArtists.find((a: any) => a.username === username);
-        const merged: ProfilePopupUser = { ...userData, username: userData.username ?? username };
+        const merged: ProfilePopupUser = {
+          ...userData,
+          username: userData.username ?? username,
+          surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
+        };
         if (artist) {
           merged.avatar_url = merged.avatar_url ?? artist.avatar_url ?? null;
           merged.profileImage = merged.profileImage ?? artist.profileImage ?? artist.avatar_url ?? null;
@@ -115,8 +151,9 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
                 verified_artist: true,
                 avatar_url: artist.avatar_url ?? null,
                 profileImage: artist.profileImage ?? artist.avatar_url ?? null,
+                surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
               }
-            : { username, account_type: "user" },
+            : { username, account_type: "user", surfaceGenreHint: openOptions?.surfaceGenreHint ?? null },
         );
         setShowUserPopup(true);
       }
@@ -180,6 +217,10 @@ function StatLine({
 
 export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfileLightPopupProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const prevOpenRef = useRef(false);
+  const exitFinishFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [exiting, setExiting] = useState(false);
+  const [exitCommitted, setExitCommitted] = useState(false);
   const [entered, setEntered] = useState(false);
   const [cardPosStyle, setCardPosStyle] = useState<CSSProperties>({
     position: "fixed",
@@ -187,6 +228,9 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     top: "50%",
     transform: "translate(-50%, -50%)",
   });
+
+  const justClosedLatch = Boolean(user && prevOpenRef.current && !open);
+  const holdPopupSubscriptions = open || exiting || justClosedLatch;
 
   const isArtist = user?.account_type === "artist";
   const isVerifiedArtist = user?.verified_artist === true;
@@ -197,7 +241,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   // (Used as a robust fallback if `publicLight` is missing/incomplete for any account type.)
   const { data: karmaData } = useQuery<any>({
     queryKey: ["/api/user", userId, "karma"],
-    enabled: open && !!user && !!userId,
+    enabled: holdPopupSubscriptions && !!user && !!userId,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/karma`);
@@ -207,7 +251,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
 
   const { data: statsData } = useQuery<any>({
     queryKey: ["/api/user", userId, "stats"],
-    enabled: open && !!user && !!userId,
+    enabled: holdPopupSubscriptions && !!user && !!userId,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/stats`);
@@ -219,7 +263,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     queryKey: ["/api/user", userId, "identified-posts-genres"],
     // Only when profile payload did not include a top genre (e.g. stale cache / partial user).
     enabled:
-      open &&
+      holdPopupSubscriptions &&
       !!user &&
       !!userId &&
       !(user.publicLight?.topGenreKey ?? (user.publicLight as any)?.accentGenreKey),
@@ -244,15 +288,20 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const anyLight = light as any;
 
   const legacyTopGenreKey = anyLight?.topGenreKey ?? anyLight?.accentGenreKey ?? null;
-  // Prefer profile `publicLight` for fav genre so styling stays stable (no repaint when genres query returns).
-  const topGenreKeyDisplay = legacyTopGenreKey ?? derivedTopGenreKey;
-  const hasTopGenreDisplay = topGenreKeyDisplay !== null;
-  const topGenreKeyForStyle = topGenreKeyDisplay ?? "other";
+  const surfaceGenreHintNormalized =
+    user?.surfaceGenreHint != null && String(user.surfaceGenreHint).trim() ? user.surfaceGenreHint : null;
+  /** Single chain for pill + card chrome: profile first, leaderboard fav hint, then identified-posts fallback (feed/comments). */
+  const topGenreKeyResolved =
+    legacyTopGenreKey ?? surfaceGenreHintNormalized ?? derivedTopGenreKey ?? null;
+  const hasTopGenreDisplay = topGenreKeyResolved !== null;
+  const topGenreKeyForChrome = topGenreKeyResolved ?? "other";
 
-  const accentChip = getGenreChipStyle(topGenreKeyForStyle);
+  const accentChip = getGenreChipStyle(topGenreKeyForChrome);
+  const pillLabelChip = hasTopGenreDisplay ? getGenreChipStyle(topGenreKeyResolved) : null;
 
   const baseRgb = useMemo(() => hexToRgb(accentChip.bgColor), [accentChip.bgColor]);
-  const { r, g, b } = baseRgb;
+  const tintRgb = useMemo(() => boostChromaForPopup(baseRgb), [baseRgb]);
+  const { r, g, b } = tintRgb;
 
   const inferredAccountType = user?.account_type ?? (user?.verified_artist ? "artist" : "user");
   const avatarSrc = user
@@ -264,16 +313,19 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const resolvedReputationRaw =
     anyLight?.reputation ?? derivedReputation ?? user?.reputation ?? user?.karma;
 
-  const pillStyle = useMemo(() => getGenreGlowPillStyle(accentChip.bgColor, accentChip.textClass), [accentChip.bgColor, accentChip.textClass]);
+  const pillStyle = useMemo(
+    () => getGenreGlowPillStyle(accentChip.bgColor, accentChip.textClass),
+    [accentChip.bgColor, accentChip.textClass],
+  );
 
   const cardRgb = useMemo(
     () =>
       mixToward(
-        baseRgb,
-        relativeLuminance(baseRgb) > 0.52 ? { r: 248, g: 249, b: 252 } : { r: 17, g: 20, b: 28 },
-        0.52,
+        tintRgb,
+        relativeLuminance(tintRgb) > 0.52 ? { r: 248, g: 249, b: 252 } : { r: 17, g: 20, b: 28 },
+        POPUP_SURFACE_NEUTRAL_BLEND,
       ),
-    [baseRgb],
+    [tintRgb],
   );
   const isLightSurface = relativeLuminance(cardRgb) > 0.52;
 
@@ -283,7 +335,10 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
 
   const joinedDateLine = formatJoinedDateLine((user as any)?.created_at ?? (user as any)?.memberSince);
 
-  const topWashRgb = useMemo(() => mixToward(cardRgb, baseRgb, 0.22), [cardRgb, baseRgb]);
+  const topWashRgb = useMemo(
+    () => mixToward(cardRgb, tintRgb, POPUP_TOP_WASH_GENRE_BLEND),
+    [cardRgb, tintRgb],
+  );
   const topWash = rgbToHex(topWashRgb.r, topWashRgb.g, topWashRgb.b);
   const cardHex = rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b);
 
@@ -291,9 +346,9 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     borderColor: isLightSurface ? "rgba(15,23,42,0.2)" : "rgba(248,250,252,0.22)",
     background: `linear-gradient(180deg, ${topWash} 0%, ${cardHex} 100%)`,
     boxShadow: [
-      `0 0 0 1px rgba(${r},${g},${b},0.35)`,
-      `0 12px 36px -24px rgba(${r},${g},${b},0.6)`,
-      `0 0 36px -10px rgba(${r},${g},${b},0.33)`,
+      `0 0 0 1px rgba(${r},${g},${b},0.4)`,
+      `0 12px 36px -24px rgba(${r},${g},${b},0.55)`,
+      `0 0 36px -10px rgba(${r},${g},${b},0.38)`,
     ].join(", "),
   };
 
@@ -315,6 +370,56 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     resolvedReputationRaw != null && Number.isFinite(reputationNum)
       ? deriveTrustLevel(reputationNum).displayName
       : "—";
+
+  useLayoutEffect(() => {
+    if (open && user) {
+      setExiting(false);
+    } else if (prevOpenRef.current && !open && user) {
+      setExiting(true);
+    }
+    prevOpenRef.current = open;
+  }, [open, user]);
+
+  useLayoutEffect(() => {
+    if (!exiting || open) {
+      setExitCommitted(false);
+      return;
+    }
+    setExitCommitted(false);
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setExitCommitted(true));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [exiting, open]);
+
+  useEffect(() => {
+    return () => {
+      if (exitFinishFallbackRef.current) {
+        window.clearTimeout(exitFinishFallbackRef.current);
+        exitFinishFallbackRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!exiting || !exitCommitted || open) return;
+    if (exitFinishFallbackRef.current) window.clearTimeout(exitFinishFallbackRef.current);
+    exitFinishFallbackRef.current = window.setTimeout(() => {
+      exitFinishFallbackRef.current = null;
+      setExiting(false);
+    }, POPUP_CLOSE_MS + 100);
+    return () => {
+      if (exitFinishFallbackRef.current) {
+        window.clearTimeout(exitFinishFallbackRef.current);
+        exitFinishFallbackRef.current = null;
+      }
+    };
+  }, [exiting, exitCommitted, open]);
 
   useLayoutEffect(() => {
     if (!open || !user) return;
@@ -392,10 +497,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   }, [open, onClose]);
 
   useLayoutEffect(() => {
-    if (!open || !user) {
-      setEntered(false);
-      return;
-    }
+    if (!open || !user) return;
     setEntered(false);
     let raf1 = 0;
     let raf2 = 0;
@@ -408,22 +510,74 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     };
   }, [open, user?.id]);
 
-  if (!open || !user) return null;
+  const portalActive = !!user && (open || exiting || justClosedLatch);
+  if (!portalActive) return null;
 
   if (typeof document === "undefined") return null;
 
-  const baseTransform =
-    typeof cardPosStyle.transform === "string" && cardPosStyle.transform
-      ? cardPosStyle.transform
-      : "translate(-50%, -50%)";
-  const cardMotionStyle: CSSProperties = {
-    ...cardSurfaceStyle,
-    ...cardPosStyle,
-    opacity: entered ? 1 : 0,
-    transform: `${baseTransform} scale(${entered ? 1 : 0.97})`,
-    transition:
-      "opacity 180ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms cubic-bezier(0.22, 1, 0.36, 1)",
+  const closing = exiting && !open;
+
+  const enterFromTransform = `translate3d(-50%, calc(-50% + ${POPUP_ENTER_Y_PX}px), 0) scale(${POPUP_ENTER_SCALE})`;
+  const enterToTransform = "translate3d(-50%, -50%, 0) scale(1)";
+  const exitToTransform = `translate3d(-50%, calc(-50% + ${POPUP_ENTER_Y_PX}px), 0) scale(${POPUP_EXIT_SCALE})`;
+
+  const isEnterPrep = open && !closing && !entered;
+  const isEnterAnim = open && !closing && entered;
+  const isExitPrep = closing && !exitCommitted;
+  const isExitAnim = closing && exitCommitted;
+
+  let opacity: number;
+  let transform: string;
+  let transition: string;
+
+  if (isExitAnim) {
+    opacity = 0;
+    transform = exitToTransform;
+    transition = `opacity ${POPUP_CLOSE_MS}ms ${POPUP_CLOSE_EASE}, transform ${POPUP_CLOSE_MS}ms ${POPUP_CLOSE_EASE}`;
+  } else if (isExitPrep) {
+    opacity = 1;
+    transform = enterToTransform;
+    transition = "none";
+  } else if (isEnterPrep) {
+    opacity = 0;
+    transform = enterFromTransform;
+    transition = "none";
+  } else if (isEnterAnim) {
+    opacity = 1;
+    transform = enterToTransform;
+    transition = `opacity ${POPUP_OPEN_MS}ms ${POPUP_OPEN_EASE}, transform ${POPUP_OPEN_MS}ms ${POPUP_OPEN_EASE}`;
+  } else {
+    opacity = 1;
+    transform = enterToTransform;
+    transition = "none";
+  }
+
+  const cardFrameStyle: CSSProperties = {
+    position: cardPosStyle.position,
+    left: cardPosStyle.left,
+    top: cardPosStyle.top,
+    zIndex: 2147483646,
+  };
+
+  const cardMotionLayerStyle: CSSProperties = {
+    opacity,
+    transform,
+    transition,
     pointerEvents: "auto",
+    willChange: open || exiting ? "opacity, transform" : "auto",
+    backfaceVisibility: "hidden",
+    transformOrigin: "center center",
+  };
+
+  const handleMotionTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.propertyName !== "opacity") return;
+    if (!closing || !exitCommitted) return;
+    if (exitFinishFallbackRef.current) {
+      window.clearTimeout(exitFinishFallbackRef.current);
+      exitFinishFallbackRef.current = null;
+    }
+    setExiting(false);
   };
 
   return createPortal(
@@ -441,15 +595,20 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
       />
       <div
         ref={cardRef}
-        className="relative z-[2147483646] box-border w-full max-w-[19.5rem] overflow-hidden rounded-xl border px-3 py-2.5 sm:max-w-[21rem]"
-        style={cardMotionStyle}
+        className="relative box-border w-full max-w-[19.5rem] sm:max-w-[21rem]"
+        style={{ ...cardFrameStyle, ...cardMotionLayerStyle }}
         role="dialog"
         aria-modal="false"
         aria-labelledby="user-profile-light-popup-title"
         onPointerDownCapture={(e) => {
           e.stopPropagation();
         }}
+        onTransitionEnd={handleMotionTransitionEnd}
       >
+        <div
+          className="relative overflow-hidden rounded-xl border px-3 py-2.5"
+          style={cardSurfaceStyle}
+        >
         <button
           type="button"
           className="absolute right-1.5 top-1.5 z-[1] inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
@@ -513,18 +672,18 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                 )}
               </div>
 
-              <div className="min-w-0 max-w-[42%] shrink-0 text-right">
+              <div className="min-w-0 max-w-[42%] shrink-0 text-center">
                 <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: tileLabelColor }}>
                   Fav Genre
                 </div>
-                <div className="mt-0.5 flex justify-end">
+                <div className="mt-0.5 flex flex-wrap justify-center">
                   {hasTopGenreDisplay ? (
                     <span
                       className="inline-flex max-w-full items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-tight shadow-sm"
                       style={pillStyle as any}
-                      title={accentChip.label}
+                      title={pillLabelChip?.label ?? accentChip.label}
                     >
-                      <span className="truncate">{accentChip.label}</span>
+                      <span className="truncate">{pillLabelChip?.label ?? accentChip.label}</span>
                     </span>
                   ) : (
                     <span className="text-[11px] font-semibold" style={{ color: primaryTextColor }}>
@@ -571,6 +730,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
               />
             </div>
           </div>
+        </div>
         </div>
       </div>
     </>,

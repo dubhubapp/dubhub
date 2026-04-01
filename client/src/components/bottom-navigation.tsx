@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
+import { formatNotificationBadgeCount } from "@/lib/utils";
 
 const MODERATOR_QUEUE_KEYWORDS = [
   "community verification",
@@ -161,8 +162,8 @@ export function BottomNavigation() {
             <span className={`${iconSlot} relative`}>
               <User className="h-6 w-6" strokeWidth={location === "/profile" ? 2.25 : 2} />
               {unreadCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                  {unreadCount > 9 ? "9+" : unreadCount}
+                <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white tabular-nums">
+                  {formatNotificationBadgeCount(unreadCount)}
                 </span>
               )}
             </span>

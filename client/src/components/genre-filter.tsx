@@ -1,10 +1,77 @@
-import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useCallback, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Flame, Clock } from "lucide-react";
 import { GENRE_ENTRIES, getGenreLabel } from "@/lib/genre-styles";
 import { cn } from "@/lib/utils";
+import { RandomDiceButton } from "@/components/random-dice-button";
+
+/** Matches former home feed sort row: idle / active chrome for icon controls. */
+const feedSortPillIdle = "text-white/78 hover:text-white";
+const feedSortPillActive =
+  "text-white [filter:drop-shadow(0_0_10px_rgba(255,255,255,0.28))] scale-[1.03]";
+const feedSortIconButtonWrap =
+  "relative inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md px-2 transition-[transform,color,filter] duration-150 touch-manipulation [-webkit-tap-highlight-color:transparent] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/45 focus-visible:ring-offset-0 sm:min-h-12 sm:min-w-12";
+
+function FeedSortMenuIconButton({
+  variant,
+  active,
+  onPress,
+  "aria-label": ariaLabel,
+  children,
+}: {
+  variant: "flame" | "clock";
+  active: boolean;
+  onPress: () => void;
+  "aria-label": string;
+  children: ReactNode;
+}) {
+  const [burstKey, setBurstKey] = useState(0);
+  const [pressPlaying, setPressPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!pressPlaying) return;
+    const ms = variant === "flame" ? 400 : 280;
+    const t = window.setTimeout(() => setPressPlaying(false), ms);
+    return () => window.clearTimeout(t);
+  }, [pressPlaying, burstKey, variant]);
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-pressed={active}
+      onClick={() => {
+        onPress();
+        setBurstKey((k) => k + 1);
+        setPressPlaying(true);
+      }}
+      className={cn(
+        feedSortIconButtonWrap,
+        active ? feedSortPillActive : feedSortPillIdle,
+        "touch-manipulation active:scale-[0.97]",
+      )}
+    >
+      <span
+        key={burstKey}
+        className={cn(
+          "inline-flex size-[22px] transform-gpu items-center justify-center will-change-[transform,filter,color] text-inherit [&>svg]:size-[22px] [&>svg]:shrink-0 [&>svg]:stroke-current",
+          pressPlaying && variant === "flame" && "animate-feed-flame-ignite",
+          pressPlaying && variant === "clock" && "animate-feed-clock-sweep",
+          !pressPlaying && active && variant === "flame" && "animate-feed-flame-active-pulse text-red-200",
+          !pressPlaying && active && variant === "clock" && "animate-feed-clock-active-pulse text-cyan-100",
+          !pressPlaying && !active && "text-white/70",
+        )}
+      >
+        {children}
+      </span>
+    </button>
+  );
+}
 
 const MENU_MAX_WIDTH = 320;
 const VIEWPORT_GUTTER = 8;
+
+export type FeedSortMode = "hottest" | "newest" | "random";
 
 interface GenreFilterProps {
   selectedGenres: string[];
@@ -14,6 +81,9 @@ interface GenreFilterProps {
   isCollapsed?: boolean;
   /** Home feed: hide green/red ID ring on the genre trigger — status lives in this menu only. */
   omitIdentificationRing?: boolean;
+  /** When set with `onSortChange`, collapsed menu includes Feed order (Hottest / Newest / Random). */
+  sortMode?: FeedSortMode;
+  onSortChange?: (mode: FeedSortMode) => void;
 }
 
 const genres = GENRE_ENTRIES.map((g) => ({
@@ -28,6 +98,8 @@ export function GenreFilter({
   onIdentificationChange,
   isCollapsed = false,
   omitIdentificationRing = false,
+  sortMode,
+  onSortChange,
 }: GenreFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -90,7 +162,7 @@ export function GenreFilter({
 
   useLayoutEffect(() => {
     updateMenuPos();
-  }, [updateMenuPos, isOpen, collapsedLabel, selectedGenres.length, identificationFilter]);
+  }, [updateMenuPos, isOpen, collapsedLabel, selectedGenres.length, identificationFilter, sortMode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -174,6 +246,40 @@ export function GenreFilter({
             </button>
           </div>
         </div>
+
+        {sortMode != null && onSortChange ? (
+          <div className="border-t border-white/20 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-white">Feed order</h3>
+            <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5">
+              <FeedSortMenuIconButton
+                variant="flame"
+                active={sortMode === "hottest"}
+                onPress={() => onSortChange("hottest")}
+                aria-label="Sort by hottest"
+              >
+                <Flame className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
+              </FeedSortMenuIconButton>
+              <FeedSortMenuIconButton
+                variant="clock"
+                active={sortMode === "newest"}
+                onPress={() => onSortChange("newest")}
+                aria-label="Sort by newest"
+              >
+                <Clock className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
+              </FeedSortMenuIconButton>
+              <RandomDiceButton
+                active={sortMode === "random"}
+                onPress={() => onSortChange("random")}
+                aria-label={
+                  sortMode === "random"
+                    ? "Random feed order selected"
+                    : "Discover random unidentified tracks"
+                }
+                className={feedSortIconButtonWrap}
+              />
+            </div>
+          </div>
+        ) : null}
       </>
     );
 

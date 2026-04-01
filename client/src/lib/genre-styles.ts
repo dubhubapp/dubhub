@@ -95,6 +95,13 @@ function mixTowardWhite(r: number, g: number, b: number, t: number) {
  * One recipe for every genre: hue varies, structure is identical (tinted fill, same-hue glow,
  * lighter same-hue text). `textClass` is ignored for rendering — filter UI may still use it.
  */
+/** Hue anchors for post identification pills — same glow recipe as `getGenreGlowPillStyle`. */
+export const STATUS_GLOW_PILL_BG = {
+  identified: "#22c55e",
+  unidentified: "#ef4444",
+  underReview: "#ca8a04",
+} as const;
+
 export function getGenreGlowPillStyle(bgColor: string, _textClass: string): CSSProperties {
   const { r, g, b } = hexToRgb(bgColor);
   const lum = relativeLuminance(r, g, b);

@@ -137,6 +137,38 @@ export default {
           "0%": { transform: "rotate(0deg)" },
           "100%": { transform: "rotate(360deg)" },
         },
+        "random-dice-rail-enter": {
+          "0%": { opacity: "0", transform: "translateX(12px) scale(0.96)" },
+          "70%": { opacity: "1", transform: "translateX(0) scale(1.02)" },
+          "100%": { opacity: "1", transform: "translateX(0) scale(1)" },
+        },
+        "random-dice-rail-exit": {
+          "0%": { opacity: "1", transform: "translateX(0) scale(1)" },
+          "100%": { opacity: "0", transform: "translateX(12px) scale(0.98)" },
+        },
+        /** Rail dice attention cue: bright white bloom, then long ease-out to neutral. */
+        "random-dice-rail-glow-once": {
+          "0%": {
+            filter:
+              "drop-shadow(0 0 0 rgba(255,255,255,0)) drop-shadow(0 0 0 rgba(255,255,255,0))",
+          },
+          "22%": {
+            filter:
+              "drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 10px rgba(255,255,255,0.9)) drop-shadow(0 0 22px rgba(255,255,255,0.65)) drop-shadow(0 0 36px rgba(255,255,255,0.4))",
+          },
+          "32%": {
+            filter:
+              "drop-shadow(0 0 4px rgba(255,255,255,1)) drop-shadow(0 0 14px rgba(255,255,255,0.95)) drop-shadow(0 0 28px rgba(255,255,255,0.75)) drop-shadow(0 0 48px rgba(255,255,255,0.45))",
+          },
+          "52%": {
+            filter:
+              "drop-shadow(0 0 3px rgba(255,255,255,0.55)) drop-shadow(0 0 12px rgba(255,255,255,0.4)) drop-shadow(0 0 24px rgba(255,255,255,0.22))",
+          },
+          "100%": {
+            filter:
+              "drop-shadow(0 0 0 rgba(255,255,255,0)) drop-shadow(0 0 0 rgba(255,255,255,0))",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -148,6 +180,10 @@ export default {
         "feed-clock-sweep": "feed-clock-sweep 0.24s cubic-bezier(0.33, 1, 0.68, 1) both",
         "feed-clock-active-pulse": "feed-clock-active-pulse 1.75s ease-in-out infinite",
         "submit-edge-trace": "submit-edge-trace 18s linear infinite",
+        "random-dice-rail-enter": "random-dice-rail-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "random-dice-rail-exit": "random-dice-rail-exit 0.175s cubic-bezier(0.33, 1, 0.68, 1) both",
+        "random-dice-rail-glow-once":
+          "random-dice-rail-glow-once 1.7s cubic-bezier(0.25, 0.1, 0.25, 1) 0.2s 1 both",
       },
     },
   },

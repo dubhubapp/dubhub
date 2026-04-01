@@ -15,7 +15,7 @@ import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/sche
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
@@ -349,6 +349,8 @@ export default function UserProfile() {
   const loadedNotificationsForUserRef = useRef<string | null>(null);
   const prevActiveTabRef = useRef<string>("profile");
   const lastSentinelActivationRef = useRef<string | null>(null);
+  /** Once per visit to the Notifications tab: mark-all-read (avoids re-firing when new unreads arrive while still on tab). */
+  const markAllReadOnNotificationsTabRef = useRef(false);
 
   const NOTIFICATIONS_PAGE_SIZE = 20;
   const MAX_INITIAL_PAGES = 6;
@@ -790,17 +792,46 @@ export default function UserProfile() {
     },
   });
 
+  type MarkAllNotificationsVars = { silent?: boolean };
+
   const markAllNotificationsAsReadMutation = useMutation({
-    mutationFn: async () => {
-      if (!currentUser?.id) return;
-      return apiRequest("PATCH", `/api/user/${currentUser.id}/notifications/mark-all-read`);
+    mutationFn: async (variables: MarkAllNotificationsVars = {}) => {
+      if (!currentUser?.id) throw new Error("Not authenticated");
+      await apiRequest("PATCH", `/api/user/${currentUser.id}/notifications/mark-all-read`);
+      return variables;
     },
-    onSuccess: () => {
+    onMutate: async () => {
+      const userId = currentUser?.id;
+      if (!userId) return;
+      await queryClient.cancelQueries({ queryKey: ["/api/user", userId, "notifications"] });
+      const previousNav = queryClient.getQueryData<NotificationWithUser[]>([
+        "/api/user",
+        userId,
+        "notifications",
+        "nav-feed",
+      ]);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      queryClient.setQueryData<NotificationWithUser[]>(
+        ["/api/user", userId, "notifications", "nav-feed"],
+        (old) => (old ?? []).map((n) => ({ ...n, read: true })),
+      );
+      return { previousNav };
+    },
+    onError: (_err, _variables, context) => {
+      const userId = currentUser?.id;
+      if (userId && context?.previousNav !== undefined) {
+        queryClient.setQueryData(["/api/user", userId, "notifications", "nav-feed"], context.previousNav);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser?.id, "notifications"] });
+    },
+    onSuccess: (_data, variables) => {
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
       }
-      toast({ title: "All notifications marked as read" });
+      if (!variables?.silent) {
+        toast({ title: "All notifications marked as read" });
+      }
     },
   });
 
@@ -1024,12 +1055,24 @@ export default function UserProfile() {
     });
   }
 
-  // Mark all notifications as read when Notifications tab is opened
+  // Mark all notifications as read when opening the Notifications tab (once per visit; not on new arrivals while staying on tab).
   useEffect(() => {
-    if (userType !== "moderator" && activeTab === "notifications" && unreadCount > 0) {
-      markAllNotificationsAsReadMutation.mutate();
+    if (activeTab !== "notifications") {
+      markAllReadOnNotificationsTabRef.current = false;
+      return;
     }
-  }, [activeTab, unreadCount, userType]);
+    if (unreadCount <= 0 || !currentUser?.id) return;
+    if (markAllReadOnNotificationsTabRef.current) return;
+    markAllReadOnNotificationsTabRef.current = true;
+    markAllNotificationsAsReadMutation.mutate(
+      { silent: true },
+      {
+        onError: () => {
+          markAllReadOnNotificationsTabRef.current = false;
+        },
+      },
+    );
+  }, [activeTab, unreadCount, currentUser?.id, markAllNotificationsAsReadMutation]);
 
   useEffect(() => {
     if (import.meta.env.DEV && activeTab === "notifications" && currentUser?.id) {
@@ -1547,7 +1590,8 @@ export default function UserProfile() {
                   <UserRoleInlineIcons
                     verifiedArtist={verifiedArtist}
                     moderator={isModerator}
-                    tickClassName="h-4 w-4 -mt-0.5 shrink-0"
+                    tickClassName="h-4 w-4 shrink-0"
+                    shieldClassName="mt-0"
                     shieldSizeClass="h-4 w-4"
                   />
                 )}
@@ -1596,8 +1640,8 @@ export default function UserProfile() {
                 <Bell className="w-4 h-4 mr-1" />
                 Notif.
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                    {unreadCount}
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold tabular-nums">
+                    {formatNotificationBadgeCount(unreadCount)}
                   </span>
                 )}
               </TabsTrigger>
@@ -2009,7 +2053,7 @@ export default function UserProfile() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => markAllNotificationsAsReadMutation.mutate()}
+                    onClick={() => markAllNotificationsAsReadMutation.mutate({ silent: false })}
                     data-testid="mark-all-read"
                     disabled={markAllNotificationsAsReadMutation.isPending}
                   >

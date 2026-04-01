@@ -1,7 +1,7 @@
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -23,12 +23,70 @@ import { useLocation } from "wouter";
 import { formatReleaseTitleLine } from "@/lib/release-display";
 import { formatDate } from "@/pages/release-tracker";
 import { isReleaseUpcoming } from "@/lib/release-status";
-import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
+import { getGenreChipStyle, getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { resolveMediaUrl } from "@/lib/media-url";
+import { RandomDiceButton } from "@/components/random-dice-button";
 // Removed placeholder video import - now using real uploaded videos
+
+/**
+ * Feed video fit: aspect-ratio tiers + estimated `object-cover` crop in the actual video stage
+ * (no raw video pixel-height heuristics). Square / landscape stays contained.
+ *
+ * r = displayWidth / displayHeight (portrait ⇒ r < 1).
+ */
+const PORTRAIT_R_9_16 = 9 / 16;
+/** Band around 9:16 for encoder rounding / slight reframings (original near-9:16 fix). */
+const NEAR_9_16_TOLERANCE = 0.03;
+/** Immersive portrait through ~3:5 and a bit beyond — always cover in the feed. */
+const IMMERSIVE_PORTRAIT_R_MAX = 0.63;
+/** If cover would crop more than this fraction of the scaled frame on either axis, use contain. */
+const MAX_ACCEPTABLE_COVER_CROP = 0.13;
+
+function estimateCoverMaxCropFraction(
+  vw: number,
+  vh: number,
+  cw: number,
+  ch: number,
+): number {
+  if (vw <= 0 || vh <= 0 || cw <= 0 || ch <= 0) return 1;
+  const s = Math.max(cw / vw, ch / vh);
+  const dw = s * vw;
+  const dh = s * vh;
+  let fh = 0;
+  let fv = 0;
+  if (dw > cw) fh = (dw - cw) / dw;
+  if (dh > ch) fv = (dh - ch) / dh;
+  return Math.max(fh, fv);
+}
+
+function resolveFeedVideoObjectFit(
+  vw: number,
+  vh: number,
+  cw: number,
+  ch: number,
+): "cover" | "contain" {
+  if (vw <= 0 || vh <= 0 || cw <= 0 || ch <= 0) return "contain";
+  if (vh <= vw) return "contain";
+
+  const r = vw / vh;
+  const crop = estimateCoverMaxCropFraction(vw, vh, cw, ch);
+
+  // Taller / narrower than near-9:16 (e.g. 9:18): cover only when crop stays mild.
+  if (r < PORTRAIT_R_9_16 - NEAR_9_16_TOLERANCE) {
+    return crop <= MAX_ACCEPTABLE_COVER_CROP ? "cover" : "contain";
+  }
+
+  // True / near 9:16 through moderately tall portrait — edge-fill (fixes iPhone letterboxing).
+  if (r <= IMMERSIVE_PORTRAIT_R_MAX) {
+    return "cover";
+  }
+
+  // Squarer portrait (4:5, etc.): fill only when cover barely trims; otherwise full frame + black.
+  return crop <= MAX_ACCEPTABLE_COVER_CROP ? "cover" : "contain";
+}
 
 interface VideoCardProps {
   post: PostWithUser;
@@ -36,6 +94,20 @@ interface VideoCardProps {
   showStatusBadge?: boolean;
   /** Use scrollport height (e.g. Profile Likes snap viewer) instead of full viewport. */
   embeddedFeed?: boolean;
+  isMuted?: boolean;
+  isActive?: boolean;
+  shouldLoadVideo?: boolean;
+  videoPreload?: "none" | "metadata" | "auto";
+  onToggleMute?: () => void;
+  /** Home random mode: dice above Like; `enterGeneration` bumps each time Random mode is entered. */
+  feedRandomDice?: {
+    onPress: () => void;
+    delayPressMs?: number;
+    disabled?: boolean;
+    enterGeneration: number;
+    exiting?: boolean;
+    showIntroGlow?: boolean;
+  };
 }
 
 export function VideoCard({
@@ -43,6 +115,12 @@ export function VideoCard({
   isHighlighted = false,
   showStatusBadge = false,
   embeddedFeed = false,
+  isMuted = true,
+  isActive = true,
+  shouldLoadVideo = true,
+  videoPreload = "metadata",
+  onToggleMute,
+  feedRandomDice,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -85,8 +163,16 @@ export function VideoCard({
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const isPlayingRef = useRef(true);
+  const wasActiveRef = useRef<boolean>(isActive);
+  const activationRunRef = useRef(0);
+  const primedAtStartRef = useRef(false);
   const hasManuallyToggledLike = useRef(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const [showLoadingFallback, setShowLoadingFallback] = useState(false);
+  const videoStageRef = useRef<HTMLDivElement>(null);
+  const [videoIntrinsic, setVideoIntrinsic] = useState<{ w: number; h: number } | null>(null);
+  const [stageSize, setStageSize] = useState<{ w: number; h: number } | null>(null);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -109,20 +195,40 @@ export function VideoCard({
         ""
     ) || "";
 
-  // Ensure video plays immediately and loops properly
+  useEffect(() => {
+    setVideoIntrinsic(null);
+  }, [post.id, videoSrc]);
+
+  useLayoutEffect(() => {
+    const el = videoStageRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    const apply = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) setStageSize({ w, h });
+    };
+    apply();
+
+    const ro = new ResizeObserver(() => apply());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const feedVideoObjectFit = useMemo(() => {
+    if (!videoIntrinsic || !stageSize) return "contain" as const;
+    return resolveFeedVideoObjectFit(
+      videoIntrinsic.w,
+      videoIntrinsic.h,
+      stageSize.w,
+      stageSize.h,
+    );
+  }, [videoIntrinsic, stageSize]);
+
+  // Ensure looping remains seamless once a clip is actively playing.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    // Handle when video metadata is loaded
-    const handleLoadedMetadata = () => {
-      if (isPlayingRef.current) {
-        video.play().catch((error) => {
-          // Autoplay might be blocked by browser, but we have muted + playsInline
-          console.log("Video autoplay prevented:", error);
-        });
-      }
-    };
 
     // Seamless loop: restart video before it actually ends to prevent buffering delay
     const handleTimeUpdate = () => {
@@ -145,24 +251,186 @@ export function VideoCard({
     };
 
     // Add event listeners
-    video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('ended', handleEnded);
 
-    // Attempt to play immediately if metadata is already loaded
-    if (video.readyState >= 2) {
-      video.play().catch((error) => {
-        console.log("Video initial play prevented:", error);
-      });
-    }
-
     // Cleanup
     return () => {
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('ended', handleEnded);
     };
   }, [post.id, videoSrc]);
+
+  // Keep DOM media muted state aligned with feed-level preference + active post gating.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const shouldMute = isMuted || !isActive;
+    video.muted = shouldMute;
+    if (!isActive || !shouldLoadVideo) {
+      if (!video.paused) video.pause();
+      setIsVideoReady(false);
+    }
+  }, [isMuted, isActive, post.id, shouldLoadVideo]);
+
+  // Pre-warm nearby inactive videos to frame 0 so next swipe can reveal instantly.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !shouldLoadVideo || isActive) return;
+    primedAtStartRef.current = false;
+
+    const primeToStart = () => {
+      try {
+        video.currentTime = 0;
+      } catch {
+        return;
+      }
+      primedAtStartRef.current = true;
+    };
+
+    if (video.readyState >= 1) {
+      primeToStart();
+      return;
+    }
+
+    const onLoadedMetadata = () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      primeToStart();
+    };
+    video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+
+    return () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+    };
+  }, [isActive, shouldLoadVideo, post.id]);
+
+  // Deterministic activation pipeline:
+  // hide video -> loadedmetadata -> seek(0) -> play -> reveal on "playing".
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!shouldLoadVideo || !isActive) {
+      setIsVideoReady(false);
+      return;
+    }
+
+    const runId = activationRunRef.current + 1;
+    activationRunRef.current = runId;
+    setIsVideoReady(false);
+    setShowLoadingFallback(false);
+
+    const stillCurrent = () => activationRunRef.current === runId && isActive;
+    const reveal = () => {
+      if (stillCurrent()) setIsVideoReady(true);
+    };
+    let revealFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearFallbackTimer = () => {
+      if (revealFallbackTimer) {
+        clearTimeout(revealFallbackTimer);
+        revealFallbackTimer = null;
+      }
+    };
+    const playAndReveal = () => {
+      if (!stillCurrent()) return;
+      const onPlaying = () => {
+        clearFallbackTimer();
+        reveal();
+      };
+      video.addEventListener("playing", onPlaying, { once: true });
+      if (isPlayingRef.current) {
+        video.play().then(() => {
+          // playing event usually follows; keep fallback for WebKit edge cases.
+        }).catch(() => {
+          // If autoplay is blocked, still reveal frame-0 so UI doesn't stay in loading state.
+          clearFallbackTimer();
+          reveal();
+        });
+      } else {
+        clearFallbackTimer();
+        reveal();
+      }
+      // iOS/WebKit can miss a "playing" callback occasionally; reveal after a short grace period.
+      revealFallbackTimer = setTimeout(() => {
+        reveal();
+      }, 260);
+    };
+
+    const revealNowAndPlay = () => {
+      if (!stillCurrent()) return;
+      reveal();
+      if (isPlayingRef.current && video.paused) {
+        video.play().catch(() => {
+          // Ignore autoplay races; frame-0 is already visible.
+        });
+      }
+    };
+
+    const seekToStart = () => {
+      if (!stillCurrent()) return;
+      const onSeeked = () => {
+        video.removeEventListener("seeked", onSeeked);
+        playAndReveal();
+      };
+      video.addEventListener("seeked", onSeeked, { once: true });
+      try {
+        video.currentTime = 0;
+      } catch {
+        // If seek throws transiently, reveal once media is still playable.
+        video.removeEventListener("seeked", onSeeked);
+        playAndReveal();
+        return;
+      }
+      // currentTime already 0 can skip seeked in some browsers.
+      if (Math.abs(video.currentTime) < 0.01) {
+        video.removeEventListener("seeked", onSeeked);
+        playAndReveal();
+      }
+    };
+
+    if (primedAtStartRef.current && video.readyState >= 2) {
+      // Fast path for prewarmed neighbors: reveal immediately, then play.
+      // This removes the visible wait on `playing` for normal swipe handoff.
+      revealNowAndPlay();
+      return () => {
+        clearFallbackTimer();
+      };
+    }
+
+    if (video.readyState >= 1) {
+      seekToStart();
+      return;
+    }
+
+    const onLoadedMetadata = () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      seekToStart();
+    };
+    video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+
+    return () => {
+      clearFallbackTimer();
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+    };
+  }, [isActive, post.id, shouldLoadVideo]);
+
+  useEffect(() => {
+    if (!shouldLoadVideo) {
+      const video = videoRef.current;
+      if (video && !video.paused) video.pause();
+      setIsVideoReady(false);
+      setShowLoadingFallback(false);
+      primedAtStartRef.current = false;
+    }
+  }, [shouldLoadVideo, post.id]);
+
+  useEffect(() => {
+    if (!isActive || isVideoReady) {
+      setShowLoadingFallback(false);
+      return;
+    }
+    const t = window.setTimeout(() => setShowLoadingFallback(true), 160);
+    return () => window.clearTimeout(t);
+  }, [isActive, isVideoReady, post.id]);
 
   const likeMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/posts/${post.id}/like`),
@@ -275,18 +543,21 @@ export function VideoCard({
   });
 
   const getStatusBadge = () => {
-    /** Padding matches Home `GenreFilter` trigger + `HomeFeedTopChrome` inset (`px-2.5 pt-2` / `sm:` tiers) so the chip reads level with the genre / sort row once snapped. */
+    /** Same footprint as `post-genre-tag`: padding, type size, leading, radius; glow from `getGenreGlowPillStyle`. */
     const statusPillBase =
-      "inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-3 py-1.5 text-xs font-semibold leading-none text-white backdrop-blur-xl shadow-[0_6px_22px_-12px_rgba(0,0,0,0.85)] sm:px-3.5 sm:py-2";
-    const identifiedPillClass = "border-green-300/40 bg-green-500/30";
-    const iconBaseClass = "h-3.5 w-3.5 shrink-0";
+      "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
+    const iconBaseClass = "h-3 w-3 shrink-0";
     const renderStatus = (
       icon: JSX.Element,
       label: string,
       testId: string,
-      className?: string,
+      glowBgHex: string,
     ) => (
-      <span className={`${statusPillBase} ${className ?? ""}`} data-testid={testId}>
+      <span
+        className={statusPillBase}
+        style={getGenreGlowPillStyle(glowBgHex, "text-white")}
+        data-testid={testId}
+      >
         {icon}
         {label}
       </span>
@@ -300,7 +571,7 @@ export function VideoCard({
         <Users className={iconBaseClass} />,
         "Identified",
         "badge-community-identified",
-        identifiedPillClass,
+        STATUS_GLOW_PILL_BG.identified,
       );
     }
 
@@ -312,7 +583,7 @@ export function VideoCard({
         <GoldVerifiedTick className={`${iconBaseClass} text-[#FFD700]`} />,
         "Identified",
         "badge-artist-verified",
-        identifiedPillClass,
+        STATUS_GLOW_PILL_BG.identified,
       );
     }
     
@@ -322,7 +593,7 @@ export function VideoCard({
         <Check className={`${iconBaseClass} text-white`} />,
         "Identified",
         "badge-identified",
-        identifiedPillClass,
+        STATUS_GLOW_PILL_BG.identified,
       );
     }
     
@@ -330,7 +601,8 @@ export function VideoCard({
     if (verificationStatus === "under_review") {
       return (
         <span
-          className={`${statusPillBase} border-yellow-300/35 bg-yellow-500/20 text-yellow-100`}
+          className={statusPillBase}
+          style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.underReview, "text-white")}
           data-testid="badge-under-review"
         >
           <ShieldCheck className={iconBaseClass} />
@@ -343,7 +615,8 @@ export function VideoCard({
     if (verificationStatus === "unverified") {
       return (
         <span
-          className={`${statusPillBase} border-red-300/35 bg-red-500/25`}
+          className={statusPillBase}
+          style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.unidentified, "text-white")}
           data-testid="badge-unidentified"
         >
           <Clock className={iconBaseClass} />
@@ -408,6 +681,7 @@ export function VideoCard({
       : (post.user.avatar_url || undefined);
 
   const genreChip = getGenreChipStyle(post.genre);
+  const statusBadgeEl = getStatusBadge();
 
   /** Match scrollport height (not 100vh) so mandatory snap + slow drags settle reliably. */
   const snapHeightClass = "min-h-full h-full";
@@ -419,23 +693,30 @@ export function VideoCard({
       }`}
       data-post-id={post.id}
     >
-      {/* Video background - object-contain preserves full frame; muted required for autoplay, unmute on tap */}
-      <div className="absolute inset-0 flex items-center justify-center bg-black">
+      {/* Video background: ratio-tiered cover vs contain; black shows only when contained. */}
+      <div ref={videoStageRef} className="absolute inset-0 flex items-center justify-center bg-black">
         <video
           key={`${post.id}-${videoSrc}`}
           ref={videoRef}
-          className="w-full h-full object-contain cursor-pointer"
-          src={videoSrc || undefined}
+          className={`w-full h-full cursor-pointer transition-opacity duration-150 ${
+            feedVideoObjectFit === "cover" ? "object-cover object-center" : "object-contain"
+          } ${isVideoReady ? "opacity-100" : "opacity-0"}`}
+          src={shouldLoadVideo ? (videoSrc || undefined) : undefined}
           autoPlay
-          muted
+          muted={isMuted || !isActive}
           loop
           playsInline
-          preload="auto"
+          preload={videoPreload}
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth > 0 && v.videoHeight > 0) {
+              setVideoIntrinsic({ w: v.videoWidth, h: v.videoHeight });
+            }
+          }}
           onClick={(e) => {
             e.preventDefault();
             const video = videoRef.current;
             if (video) {
-              video.muted = false; // Unmute on user interaction (browsers require this for autoplay)
               if (video.paused) {
                 video.play();
                 setIsPlaying(true);
@@ -446,13 +727,15 @@ export function VideoCard({
             }
           }}
         />
+        {isActive && !isVideoReady && showLoadingFallback ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-gradient-to-b from-zinc-900/85 via-zinc-900/75 to-zinc-950/90">
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-8 w-8 rounded-full border-2 border-white/60 border-t-transparent animate-spin" aria-hidden />
+              <span className="text-[10px] font-medium tracking-wide text-white/70">Loading video</span>
+            </div>
+          </div>
+        ) : null}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
-      </div>
-      {/* Top overlay status chip — inset + top offset stay in sync with `HomeFeedTopChrome` (genre / sort row). */}
-      <div className="pointer-events-none absolute left-2.5 right-[calc(var(--video-feed-rail-width)+0.75rem)] top-2 z-30 sm:left-4 sm:top-2.5">
-        <div className="flex min-h-9 items-center gap-2">
-          {getStatusBadge()}
-        </div>
       </div>
       {(() => {
         const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
@@ -512,8 +795,43 @@ export function VideoCard({
             {/* Right action rail — top→bottom: Like, Comment, optional verify/delete, More (short-form pattern) */}
             <div
               data-video-action-rail
-              className="absolute bottom-[clamp(calc(6rem+env(safe-area-inset-bottom,0px)),20lvh,9rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-20 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4"
+              className="absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-20 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4"
             >
+              {feedRandomDice ? (
+                <div
+                  key={feedRandomDice.enterGeneration}
+                  className={cn(
+                    "flex w-full flex-col items-center gap-1 motion-reduce:animate-none",
+                    feedRandomDice.exiting
+                      ? "animate-random-dice-rail-exit"
+                      : "animate-random-dice-rail-enter",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex items-center justify-center rounded-full motion-reduce:animate-none",
+                      feedRandomDice.showIntroGlow && !feedRandomDice.exiting
+                        ? "animate-random-dice-rail-glow-once transform-gpu will-change-[filter] motion-reduce:will-change-auto"
+                        : null,
+                    )}
+                  >
+                    <RandomDiceButton
+                      active
+                      disabled={feedRandomDice.disabled}
+                      delayPressMs={feedRandomDice.delayPressMs}
+                      onPress={feedRandomDice.onPress}
+                      aria-label="Next random track"
+                      className={cn(
+                        railIconWrap,
+                        "!min-h-[44px] !min-w-[44px] border-0 bg-transparent p-0 shadow-none ring-0 sm:!min-h-12 sm:!min-w-12",
+                      )}
+                      iconWrapClassName="!size-7 sm:!size-7"
+                      iconClassName="!h-full !w-full !text-white"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 className={railBtn}
@@ -624,12 +942,21 @@ export function VideoCard({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* Reserved slot: mute/unmute — same tap target as railIconWrap; keep gap-4 rhythm above nav. */}
-              <div
-                className="pointer-events-none flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center sm:min-h-12 sm:min-w-12"
-                aria-hidden
-                data-video-action-rail-mute-slot
-              />
+              <button
+                type="button"
+                className={`${railBtn} transition-transform duration-150 active:scale-95`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleMute?.();
+                }}
+                aria-label={isMuted ? "Unmute video" : "Mute video"}
+                data-testid="button-toggle-mute"
+              >
+                <div className={`${railIconWrap} transition-all duration-150`}>
+                  {isMuted ? <VolumeX className="h-6 w-6 text-white/95" /> : <Volume2 className="h-6 w-6 text-white" />}
+                </div>
+              </button>
             </div>
           </>
         );
@@ -710,6 +1037,14 @@ export function VideoCard({
 
           <div className="shrink-0 overflow-visible px-0.5 py-2">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
+              {statusBadgeEl ? (
+                <>
+                  {statusBadgeEl}
+                  <span className="text-gray-500 select-none" aria-hidden>
+                    •
+                  </span>
+                </>
+              ) : null}
               <span
                 data-testid="post-genre-tag"
                 className="inline-block rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"

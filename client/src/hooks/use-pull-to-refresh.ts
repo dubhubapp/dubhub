@@ -15,6 +15,19 @@ const DEFAULT_MIN_REFRESH_VISIBLE_MS = 560;
 /** Top-of-feed: tolerate subpixel / elastic settle */
 const TOP_SCROLL_EPSILON = 8;
 
+/**
+ * Pull must not arm while comments UI is up, during drawer close, or while a Vaul drawer is still
+ * marked open (avoids dismiss swipe leaking to the feed on the first post).
+ */
+export function isHomeFeedPullSuppressed(): boolean {
+  if (typeof document === "undefined") return false;
+  const body = document.body;
+  if (body.classList.contains("comments-modal-open")) return true;
+  if (body.classList.contains("comments-dismiss-pull-guard")) return true;
+  if (document.querySelector('[data-vaul-drawer][data-state="open"]')) return true;
+  return false;
+}
+
 export type PullToRefreshPhase = "idle" | "pulling" | "threshold" | "refreshing" | "completing";
 
 export type UsePullToRefreshOptions = {
@@ -130,6 +143,7 @@ export function usePullToRefresh({
   const handleTouchStart = useCallback(
     (e: TouchEvent<HTMLElement>) => {
       if (!enabled || isRefreshing || isCompleting || refreshInFlightRef.current) return;
+      if (isHomeFeedPullSuppressed()) return;
       const el = scrollRef.current;
       if (!el || !canArmPullAtFirstPost(el)) return;
       pullStartYRef.current = e.touches[0]?.clientY ?? null;
@@ -145,6 +159,11 @@ export function usePullToRefresh({
   const handleTouchMove = useCallback(
     (_e: TouchEvent<HTMLElement>) => {
       if (!isPullingRef.current || pullStartYRef.current == null) return;
+      if (isHomeFeedPullSuppressed()) {
+        cancelRafPull();
+        resetPullVisual();
+        return;
+      }
       const el = scrollRef.current;
       if (!el || el.scrollTop > TOP_SCROLL_EPSILON) {
         cancelRafPull();
@@ -177,6 +196,16 @@ export function usePullToRefresh({
 
     if (!isPullingRef.current || pullStartYRef.current == null) {
       if (!isRefreshing && !isCompleting) resetPullVisual();
+      return;
+    }
+
+    if (isHomeFeedPullSuppressed()) {
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      isPullingRef.current = false;
+      setIsPulling(false);
+      pullStartYRef.current = null;
+      blocksSnapSettleRef.current = false;
       return;
     }
 

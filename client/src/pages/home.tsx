@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useMemo, useId, useCallback, type ReactNode } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
-import { GenreFilter } from "@/components/genre-filter";
+import { GenreFilter, type FeedSortMode } from "@/components/genre-filter";
 import { VinylPullRefreshIndicator } from "@/components/vinyl-pull-refresh-indicator";
 import type { PostWithUser } from "@shared/schema";
 import { supabase } from "@/lib/supabaseClient";
@@ -18,314 +18,49 @@ import { useUser } from "@/lib/user-context";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
-import { Flame, Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-/** Polished “5” dice: subtle 3D face + pips; tint via currentColor (matches Lucide sort icons). */
-function DiceDiscoverIcon({ className }: { className?: string }) {
-  const uid = useId().replace(/:/g, "");
-  const gFace = `dice-face-${uid}`;
-  const gShade = `dice-shade-${uid}`;
-
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-      className={cn("block size-full shrink-0", className)}
-    >
-      <defs>
-        <linearGradient id={gFace} x1="4" y1="5" x2="21" y2="20" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.98" />
-          <stop offset="55%" stopColor="currentColor" stopOpacity="0.88" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.72" />
-        </linearGradient>
-        <linearGradient id={gShade} x1="18" y1="6" x2="8" y2="19" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.35" />
-          <stop offset="45%" stopColor="#ffffff" stopOpacity="0.06" />
-          <stop offset="100%" stopColor="#0f172a" stopOpacity="0.22" />
-        </linearGradient>
-        <filter id={`dice-soft-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="1" stdDeviation="0.8" floodColor="#0f172a" floodOpacity="0.35" />
-        </filter>
-      </defs>
-      <rect
-        x="4.5"
-        y="4.75"
-        width="15"
-        height="15"
-        rx="3.25"
-        ry="3.25"
-        fill={`url(#${gFace})`}
-        filter={`url(#dice-soft-${uid})`}
-      />
-      <rect
-        x="4.5"
-        y="4.75"
-        width="15"
-        height="15"
-        rx="3.25"
-        ry="3.25"
-        fill={`url(#${gShade})`}
-      />
-      <rect
-        x="4.5"
-        y="4.75"
-        width="15"
-        height="15"
-        rx="3.25"
-        ry="3.25"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="0.85"
-        strokeOpacity={0.35}
-      />
-      <circle cx="9" cy="9" r="1.35" fill="currentColor" fillOpacity="0.92" />
-      <circle cx="15" cy="9" r="1.35" fill="currentColor" fillOpacity="0.92" />
-      <circle cx="12" cy="12" r="1.45" fill="currentColor" fillOpacity="0.98" />
-      <circle cx="9" cy="15" r="1.35" fill="currentColor" fillOpacity="0.92" />
-      <circle cx="15" cy="15" r="1.35" fill="currentColor" fillOpacity="0.92" />
-    </svg>
-  );
-}
-
-const feedSortPillIdle =
-  "border-white/25 bg-white/10 text-white/90 shadow-sm hover:border-white/40 hover:bg-white/16 hover:text-white";
-const feedSortPillActive =
-  "border-white/60 bg-white/32 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_4px_20px_-6px_rgba(15,23,42,0.55)] ring-2 ring-white/45 ring-offset-0";
-
-const feedSortDiceWrapBase =
-  "relative inline-flex h-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full border px-2.5 transition-all duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55 focus-visible:ring-offset-0 sm:px-3";
-/** Same border / fill / ring language as Hottest & Newest pills. */
-const feedSortDiceWrapIdle = feedSortPillIdle;
-const feedSortDiceWrapActive = feedSortPillActive;
+import { RandomDiceButton } from "@/components/random-dice-button";
 
 /** Keep in sync with `animation.dice-spin` duration in `tailwind.config.ts` (0.42s). */
 const DICE_SPIN_ANIMATION_MS = 420;
+const RANDOM_DICE_RAIL_EXIT_MS = 175;
 const feedTopOverlayGradient =
   "pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/28 via-black/10 to-transparent";
 
-/** Home-only: centered genre + icon sort row (identification filters live in the genre menu). */
+/** Home-only: centered genre menu (identification + feed order live in the genre menu). */
 function HomeFeedTopChrome({
   selectedGenres,
   onGenresChange,
   identificationFilter,
   onIdentificationChange,
   sortMode,
-  onHottest,
-  onNewest,
-  onRandomPress,
-  randomDiceDelayPressMs,
+  onSortChange,
 }: {
   selectedGenres: string[];
   onGenresChange: (next: string[]) => void;
   identificationFilter: "all" | "identified" | "unidentified";
   onIdentificationChange: (next: "all" | "identified" | "unidentified") => void;
-  sortMode: "hottest" | "newest" | "random";
-  onHottest: () => void;
-  onNewest: () => void;
-  onRandomPress: () => void;
-  randomDiceDelayPressMs?: number;
+  sortMode: FeedSortMode;
+  onSortChange: (mode: FeedSortMode) => void;
 }) {
   return (
     <>
       <div className={feedTopOverlayGradient} />
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-2.5 pt-2 sm:px-4 sm:pt-2.5">
-        {/* 1fr | auto | 1fr keeps genre at true horizontal center; sort cluster is end-aligned in the right column. */}
-        <div className="pointer-events-auto grid w-full min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-x-2 gap-y-2">
-          <div className="min-w-0" aria-hidden="true" />
-          <div className="flex min-w-0 max-w-[min(100%,10.25rem)] justify-self-center sm:max-w-[min(46vw,12.25rem)]">
+        <div className="pointer-events-auto flex w-full min-w-0 justify-center">
+          <div className="flex min-w-0 max-w-[min(100%,10.25rem)] justify-center sm:max-w-[min(46vw,12.25rem)]">
             <GenreFilter
               selectedGenres={selectedGenres}
               onGenresChange={onGenresChange}
               identificationFilter={identificationFilter}
               onIdentificationChange={onIdentificationChange}
-              isCollapsed
-            />
-          </div>
-          <div className="flex min-w-0 justify-end justify-self-end">
-            <FeedSortControls
               sortMode={sortMode}
-              onHottest={onHottest}
-              onNewest={onNewest}
-              onRandomPress={onRandomPress}
-              randomDiceDelayPressMs={randomDiceDelayPressMs}
+              onSortChange={onSortChange}
+              isCollapsed
             />
           </div>
         </div>
       </div>
     </>
-  );
-}
-
-function FeedSortIconButton({
-  variant,
-  active,
-  onPress,
-  "aria-label": ariaLabel,
-  children,
-}: {
-  variant: "flame" | "clock";
-  active: boolean;
-  onPress: () => void;
-  "aria-label": string;
-  children: ReactNode;
-}) {
-  const [burstKey, setBurstKey] = useState(0);
-  const [pressPlaying, setPressPlaying] = useState(false);
-
-  useEffect(() => {
-    if (!pressPlaying) return;
-    const ms = variant === "flame" ? 400 : 280;
-    const t = window.setTimeout(() => setPressPlaying(false), ms);
-    return () => window.clearTimeout(t);
-  }, [pressPlaying, burstKey, variant]);
-
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      aria-pressed={active}
-      onClick={() => {
-        onPress();
-        setBurstKey((k) => k + 1);
-        setPressPlaying(true);
-      }}
-      className={cn(
-        feedSortDiceWrapBase,
-        active ? feedSortDiceWrapActive : feedSortDiceWrapIdle,
-        "touch-manipulation active:scale-[0.97]",
-      )}
-    >
-      <span
-        key={burstKey}
-        className={cn(
-          "inline-flex size-[22px] transform-gpu items-center justify-center will-change-[transform,filter,color] text-inherit [&>svg]:size-[22px] [&>svg]:shrink-0 [&>svg]:stroke-current",
-          pressPlaying && variant === "flame" && "animate-feed-flame-ignite",
-          pressPlaying && variant === "clock" && "animate-feed-clock-sweep",
-          !pressPlaying && active && variant === "flame" && "animate-feed-flame-active-pulse text-red-200",
-          !pressPlaying && active && variant === "clock" && "animate-feed-clock-active-pulse text-cyan-100",
-          !pressPlaying && !active && "text-white/70",
-        )}
-      >
-        {children}
-      </span>
-    </button>
-  );
-}
-
-/** Dice used in the sort row and for Random exhausted restart — same icon, spin, and chrome. */
-function FeedSortDiceButton({
-  active,
-  onPress,
-  "aria-label": ariaLabel,
-  /** When set, `onPress` runs after this many ms so work starts as the spin animation ends. */
-  delayPressMs,
-}: {
-  active: boolean;
-  onPress: () => void;
-  "aria-label": string;
-  delayPressMs?: number;
-}) {
-  const [diceSpinNonce, setDiceSpinNonce] = useState(0);
-  const [pressPending, setPressPending] = useState(false);
-  const pressDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (pressDelayTimeoutRef.current) {
-        clearTimeout(pressDelayTimeoutRef.current);
-        pressDelayTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  const handleClick = () => {
-    const useDelay = delayPressMs != null && delayPressMs > 0;
-    if (useDelay && pressPending) return;
-
-    setDiceSpinNonce((n) => n + 1);
-
-    if (useDelay) {
-      if (pressDelayTimeoutRef.current) clearTimeout(pressDelayTimeoutRef.current);
-      setPressPending(true);
-      pressDelayTimeoutRef.current = setTimeout(() => {
-        pressDelayTimeoutRef.current = null;
-        setPressPending(false);
-        onPress();
-      }, delayPressMs);
-    } else {
-      onPress();
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={!!delayPressMs && pressPending}
-      aria-busy={!!delayPressMs && pressPending}
-      aria-label={ariaLabel}
-      className={cn(
-        feedSortDiceWrapBase,
-        active ? feedSortDiceWrapActive : feedSortDiceWrapIdle,
-        "touch-manipulation active:scale-[0.97] disabled:pointer-events-none disabled:opacity-70",
-      )}
-    >
-      <span
-        key={diceSpinNonce}
-        className={cn(
-          "inline-flex size-[22px] transform-gpu items-center justify-center will-change-transform transition-colors duration-150",
-          diceSpinNonce > 0 ? "animate-dice-spin" : "",
-        )}
-      >
-        <DiceDiscoverIcon className={active ? "text-white" : "text-white/70"} />
-      </span>
-    </button>
-  );
-}
-
-function FeedSortControls({
-  sortMode,
-  onHottest,
-  onNewest,
-  onRandomPress,
-  randomDiceDelayPressMs,
-}: {
-  sortMode: "hottest" | "newest" | "random";
-  onHottest: () => void;
-  onNewest: () => void;
-  onRandomPress: () => void;
-  /** When Random pool is exhausted, delay the restart callback until the dice spin finishes. */
-  randomDiceDelayPressMs?: number;
-}) {
-  const isRandom = sortMode === "random";
-
-  return (
-    <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
-      <FeedSortIconButton
-        variant="flame"
-        active={sortMode === "hottest"}
-        onPress={onHottest}
-        aria-label="Sort by hottest"
-      >
-        <Flame className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
-      </FeedSortIconButton>
-      <FeedSortIconButton
-        variant="clock"
-        active={sortMode === "newest"}
-        onPress={onNewest}
-        aria-label="Sort by newest"
-      >
-        <Clock className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
-      </FeedSortIconButton>
-      <FeedSortDiceButton
-        active={isRandom}
-        onPress={onRandomPress}
-        delayPressMs={randomDiceDelayPressMs}
-        aria-label={isRandom ? "Next random unidentified track" : "Discover random unidentified tracks"}
-      />
-    </div>
   );
 }
 
@@ -402,13 +137,17 @@ async function homeFeedFetchJson<T>(
 }
 
 export default function Home() {
-  console.log("[Home] component mounted");
-  console.log("[Home] render checkpoint 1");
-  
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
-  const [sortMode, setSortMode] = useState<"hottest" | "newest" | "random">("hottest");
+  const [sortMode, setSortMode] = useState<FeedSortMode>("hottest");
+  /** True while the rail dice plays exit before leaving Random mode. */
+  const [randomViewExiting, setRandomViewExiting] = useState(false);
+  /** Bumps when Random mode is entered so the rail dice can play its intro motion. */
+  const [diceRailEnterGen, setDiceRailEnterGen] = useState(0);
+  const randomExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [isFeedMuted, setIsFeedMuted] = useState(true);
+  const [activePostId, setActivePostId] = useState<string | null>(null);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
   const lastScrolledPostId = useRef<string | null>(null);
@@ -422,6 +161,54 @@ export default function Home() {
   const { currentUser } = useUser();
 
   const genresKey = [...selectedGenres].sort().join(",");
+
+  useEffect(() => {
+    return () => {
+      if (randomExitTimerRef.current) {
+        clearTimeout(randomExitTimerRef.current);
+        randomExitTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleFeedSortChange = useCallback(
+    (mode: FeedSortMode) => {
+      if (mode === "random" && randomViewExiting) {
+        if (randomExitTimerRef.current) {
+          clearTimeout(randomExitTimerRef.current);
+          randomExitTimerRef.current = null;
+        }
+        setRandomViewExiting(false);
+        return;
+      }
+      if (mode === sortMode && !randomViewExiting) return;
+
+      if (mode !== "random" && sortMode === "random") {
+        setRandomViewExiting(true);
+        if (randomExitTimerRef.current) clearTimeout(randomExitTimerRef.current);
+        randomExitTimerRef.current = setTimeout(() => {
+          randomExitTimerRef.current = null;
+          setSortMode(mode);
+          setRandomViewExiting(false);
+        }, RANDOM_DICE_RAIL_EXIT_MS);
+        return;
+      }
+
+      setRandomViewExiting(false);
+      if (randomExitTimerRef.current) {
+        clearTimeout(randomExitTimerRef.current);
+        randomExitTimerRef.current = null;
+      }
+      setSortMode(mode);
+    },
+    [sortMode, randomViewExiting],
+  );
+
+  useEffect(() => {
+    if (sortMode === "random" && !randomViewExiting) {
+      setDiceRailEnterGen((g) => g + 1);
+    }
+  }, [sortMode, randomViewExiting]);
 
   // Random discovery mode (one post at a time, no repeats per session).
   const [randomPost, setRandomPost] = useState<PostWithUser | null>(null);
@@ -527,6 +314,38 @@ export default function Home() {
 
   const homeFeedPullRefreshEnabled =
     sortMode !== "random" && !isLoading && !isError && uiPosts.length > 0;
+  const activePostIndex = useMemo(
+    () => (activePostId ? uiPosts.findIndex((post) => post.id === activePostId) : -1),
+    [uiPosts, activePostId],
+  );
+
+  /**
+   * Hottest mode re-sorts client-side when like counts change; scrollTop stays fixed so the viewport
+   * can land on the wrong post. After any feed order change, snap back to the post the user was
+   * viewing (activePostId) before paint.
+   */
+  const prevUiPostsOrderKeyRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (sortMode === "random") return;
+    const orderKey = uiPosts.map((p) => p.id).join("\0");
+    const prev = prevUiPostsOrderKeyRef.current;
+    prevUiPostsOrderKeyRef.current = orderKey;
+    if (prev === null || prev === orderKey || !activePostId) return;
+
+    const el = videoFeedRef.current;
+    if (!el) return;
+
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(activePostId)
+        : activePostId;
+    const node = el.querySelector<HTMLElement>(`[data-post-id="${escaped}"]`);
+    if (!node) return;
+
+    const targetTop = node.offsetTop;
+    if (Math.abs(el.scrollTop - targetTop) <= 2) return;
+    el.scrollTo({ top: targetTop, behavior: "auto" });
+  }, [uiPosts, activePostId, sortMode]);
 
   const handleHomeFeedPullRefresh = useCallback(async () => {
     const result = await refetchPosts();
@@ -558,13 +377,34 @@ export default function Home() {
     onPullThresholdCrossed: onHomePullThresholdCrossed,
   });
 
-  /** Slow drags can rest between snap points; scrollend / debounced scroll + touchend nudge to nearest post. */
+  /**
+   * Drag = native scroll (content follows the finger). Release applies distance vs anchor + flick
+   * velocity from recent touchmoves; completion uses smooth scroll from the current offset so it
+   * stays visually tied to the gesture (no instant jump, no competing debounced settle).
+   */
   useEffect(() => {
     const el = videoFeedRef.current;
     if (!el) return;
 
+    const getSnapNodes = () => Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
+
+    const nearestPostIndexForTop = (scrollTop: number): number => {
+      const nodes = getSnapNodes();
+      if (nodes.length === 0) return -1;
+      let bestIndex = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < nodes.length; i += 1) {
+        const d = Math.abs(scrollTop - nodes[i].offsetTop);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIndex = i;
+        }
+      }
+      return bestIndex;
+    };
+
     const nearestPostTop = (): { top: number; dist: number } | null => {
-      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
+      const nodes = getSnapNodes();
       if (nodes.length === 0) return null;
       const st = el.scrollTop;
       let bestTop = 0;
@@ -580,40 +420,194 @@ export default function Home() {
       return { top: bestTop, dist: bestDist };
     };
 
-    const settle = () => {
+    /** If inertia leaves the scroller slightly off a snap, ease the last few pixels only. */
+    const onScrollEndNudge = () => {
       if (sortMode === "random") return;
       if (homePullBlocksSnapRef.current) return;
-      const h = el.clientHeight;
-      if (h <= 0) return;
       const n = nearestPostTop();
       if (!n) return;
-      if (n.dist < 12 || n.dist > h * 0.42) return;
-      el.scrollTo({ top: n.top, behavior: "auto" });
+      if (n.dist < 6 || n.dist > 80) return;
+      el.scrollTo({ top: n.top, behavior: "smooth" });
     };
 
-    let debounce: ReturnType<typeof setTimeout> | null = null;
-    const onScroll = () => {
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        debounce = null;
-        settle();
-      }, 110);
+    const gesture = {
+      armed: false,
+      anchorIndex: -1,
+      anchorSnapTop: 0,
+      lastMoveScrollTop: 0,
+      lastMoveTime: 0,
+      /** Blended scroll speed (px/ms). Positive = scrolling down = next post. */
+      velPxPerMs: 0,
+      /** Last in-gesture sample — fast flicks often need this, not averaged touchstart→end delta. */
+      lastInstVelPxPerMs: 0,
     };
 
-    el.addEventListener("scrollend", settle);
-    el.addEventListener("scroll", onScroll, { passive: true });
+    const isInteractiveTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return false;
+      return !!target.closest(
+        "button, a, input, textarea, select, label, [role='button'], [data-video-action-rail], [data-radix-popper-content-wrapper]",
+      );
+    };
+
+    const resetGestureTracking = () => {
+      gesture.armed = false;
+      gesture.anchorIndex = -1;
+      gesture.anchorSnapTop = 0;
+      gesture.lastMoveScrollTop = 0;
+      gesture.lastMoveTime = 0;
+      gesture.velPxPerMs = 0;
+      gesture.lastInstVelPxPerMs = 0;
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (sortMode === "random") return;
+      if (homePullBlocksSnapRef.current) return;
+      if (event.touches.length !== 1) return;
+      if (isInteractiveTarget(event.target)) return;
+
+      const nodes = getSnapNodes();
+      if (nodes.length === 0) return;
+
+      const now = performance.now();
+      const idx = nearestPostIndexForTop(el.scrollTop);
+      if (idx < 0) return;
+
+      gesture.armed = true;
+      gesture.anchorIndex = idx;
+      gesture.anchorSnapTop = nodes[idx].offsetTop;
+      gesture.lastMoveScrollTop = el.scrollTop;
+      gesture.lastMoveTime = now;
+      gesture.velPxPerMs = 0;
+      gesture.lastInstVelPxPerMs = 0;
+    };
+
+    const onTouchMove = () => {
+      if (!gesture.armed) return;
+      const now = performance.now();
+      const st = el.scrollTop;
+      const dt = now - gesture.lastMoveTime;
+      if (dt > 0 && dt < 56) {
+        const inst = (st - gesture.lastMoveScrollTop) / dt;
+        gesture.lastInstVelPxPerMs = inst;
+        gesture.velPxPerMs = gesture.velPxPerMs * 0.28 + inst * 0.72;
+      }
+      gesture.lastMoveScrollTop = st;
+      gesture.lastMoveTime = now;
+    };
+
     const onTouchEnd = () => {
-      requestAnimationFrame(() => requestAnimationFrame(settle));
+      if (!gesture.armed) return;
+      gesture.armed = false;
+
+      if (sortMode === "random") return;
+      if (homePullBlocksSnapRef.current) return;
+
+      const nodes = getSnapNodes();
+      if (nodes.length === 0) return;
+
+      const i0 = gesture.anchorIndex;
+      if (i0 < 0 || i0 >= nodes.length) return;
+
+      const h = el.clientHeight;
+      if (h <= 0) return;
+
+      const runFinish = () => {
+        const endTop = el.scrollTop;
+        const offsetFromAnchor = endTop - gesture.anchorSnapTop;
+        const vBlend = gesture.velPxPerMs;
+        const vInst = gesture.lastInstVelPxPerMs;
+        const v =
+          Math.abs(vInst) > Math.abs(vBlend) ? vInst : vBlend;
+
+        const distanceCommitPx = Math.round(Math.min(140, Math.max(52, h * 0.14)));
+        const flickThreshold = 0.24;
+        const flickCommit = Math.abs(v) >= flickThreshold;
+        const flickNext = v > flickThreshold;
+        const flickPrev = v < -flickThreshold;
+        const distanceNext = offsetFromAnchor >= distanceCommitPx;
+        const distancePrev = offsetFromAnchor <= -distanceCommitPx;
+
+        let targetIndex = i0;
+        if (flickCommit) {
+          if (flickNext) targetIndex = Math.min(nodes.length - 1, i0 + 1);
+          else if (flickPrev) targetIndex = Math.max(0, i0 - 1);
+        } else if (distanceNext) {
+          targetIndex = Math.min(nodes.length - 1, i0 + 1);
+        } else if (distancePrev) {
+          targetIndex = Math.max(0, i0 - 1);
+        }
+
+        const targetTop = nodes[targetIndex].offsetTop;
+        if (Math.abs(targetTop - endTop) < 4) return;
+        el.scrollTo({ top: targetTop, behavior: "smooth" });
+      };
+
+      requestAnimationFrame(runFinish);
     };
+
+    el.addEventListener("scrollend", onScrollEndNudge);
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
     el.addEventListener("touchend", onTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", resetGestureTracking, { passive: true });
 
     return () => {
-      el.removeEventListener("scrollend", settle);
-      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("scrollend", onScrollEndNudge);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
-      if (debounce) clearTimeout(debounce);
+      el.removeEventListener("touchcancel", resetGestureTracking);
     };
   }, [sortMode, uiPosts.length]);
+
+  // Track the snapped/nearest post as the active one (source of truth for audible output).
+  useEffect(() => {
+    const el = videoFeedRef.current;
+    if (!el) return;
+    if (sortMode === "random") {
+      setActivePostId(randomPost?.id ?? null);
+      return;
+    }
+
+    let raf: number | null = null;
+    const updateActivePost = () => {
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
+      if (nodes.length === 0) return;
+      const st = el.scrollTop;
+      let bestId: string | null = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const node of nodes) {
+        const dist = Math.abs(st - node.offsetTop);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestId = node.dataset.postId ?? null;
+        }
+      }
+      if (bestId) {
+        setActivePostId((prev) => (prev === bestId ? prev : bestId));
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (raf != null) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = null;
+        updateActivePost();
+      });
+    };
+
+    scheduleUpdate();
+    el.addEventListener("scroll", scheduleUpdate, { passive: true });
+    el.addEventListener("scrollend", scheduleUpdate);
+    el.addEventListener("touchend", scheduleUpdate, { passive: true });
+
+    return () => {
+      if (raf != null) window.cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", scheduleUpdate);
+      el.removeEventListener("scrollend", scheduleUpdate);
+      el.removeEventListener("touchend", scheduleUpdate);
+    };
+  }, [sortMode, uiPosts.length, randomPost?.id]);
 
   const shuffleArray = <T,>(arr: T[]): T[] => {
     // Fisher-Yates shuffle
@@ -782,11 +776,6 @@ export default function Home() {
   // Scroll-to-top must run only when the user changes sort or filters — not when feed data
   // updates (e.g. like/unlike), or every like would retrigger this and reset scroll.
   useEffect(() => {
-    console.log("[Home][SortDebug]", {
-      sortMode,
-      identificationFilter,
-      selectedGenres,
-    });
     if (sortMode === "random") return;
     if (videoFeedRef.current) {
       // Jump to top so reordering is immediately visible after sort/filter change.
@@ -963,23 +952,13 @@ export default function Home() {
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           sortMode="random"
-          onHottest={() => setSortMode("hottest")}
-          onNewest={() => setSortMode("newest")}
-          randomDiceDelayPressMs={randomExhausted ? DICE_SPIN_ANIMATION_MS : undefined}
-          onRandomPress={() => {
-            if (randomExhausted) {
-              resetRandomSession();
-              void loadNextRandom({ afterRestart: true });
-              return;
-            }
-            void loadNextRandom();
-          }}
+          onSortChange={handleFeedSortChange}
         />
 
         <div
           ref={videoFeedRef}
           data-home-video-feed
-          className="h-full snap-y snap-mandatory overflow-x-hidden overflow-y-auto scrollbar-hide [overflow-anchor:auto]"
+          className="h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto scrollbar-hide [overflow-anchor:auto]"
         >
           {randomLoading && !randomPost ? (
             <div className="h-full flex items-center justify-center pt-32">
@@ -990,18 +969,33 @@ export default function Home() {
             </div>
           ) : randomPost ? (
             <VideoCard
-              key={randomPost.id}
+              key="home-random-feed-item"
               post={randomPost}
               isHighlighted={false}
               embeddedFeed={true}
+              isMuted={isFeedMuted}
+              isActive={activePostId === randomPost.id}
+              shouldLoadVideo={true}
+              videoPreload="auto"
+              onToggleMute={() => setIsFeedMuted((prev) => !prev)}
+              feedRandomDice={{
+                onPress: () => {
+                  void loadNextRandom();
+                },
+                disabled: randomLoading,
+                enterGeneration: diceRailEnterGen,
+                exiting: randomViewExiting,
+                showIntroGlow: true,
+              }}
             />
           ) : randomExhausted ? (
             <div className="h-full flex items-center justify-center pt-32">
               <div className="flex max-w-sm flex-col items-center px-6 text-center text-muted-foreground">
                 <p className="text-lg mb-2">You’ll find that tune eventually…</p>
                 <p className="text-sm mb-5">Want to start fresh?</p>
-                <FeedSortDiceButton
+                <RandomDiceButton
                   active
+                  className="min-h-[44px] min-w-[44px] px-2 sm:min-h-12 sm:min-w-12"
                   delayPressMs={DICE_SPIN_ANIMATION_MS}
                   onPress={() => {
                     resetRandomSession();
@@ -1030,7 +1024,7 @@ export default function Home() {
           ) : (
             <div className="h-full flex items-center justify-center pt-32">
               <div className="text-center text-muted-foreground">
-                <p className="text-lg mb-2">Try tapping Random.</p>
+                <p className="text-lg mb-2">Choose Random in the Genre menu.</p>
                 <p className="text-sm">We’ll show one unidentified track at a time.</p>
               </div>
             </div>
@@ -1049,15 +1043,7 @@ export default function Home() {
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           sortMode={sortMode}
-          onHottest={() => {
-            console.log("[Home][SortDebug] click hottest (before):", sortMode);
-            setSortMode("hottest");
-          }}
-          onNewest={() => {
-            console.log("[Home][SortDebug] click newest (before):", sortMode);
-            setSortMode("newest");
-          }}
-          onRandomPress={() => setSortMode("random")}
+          onSortChange={handleFeedSortChange}
         />
         <div className="h-full flex items-center justify-center pt-32">
           <div className="text-center text-muted-foreground">
@@ -1077,21 +1063,13 @@ export default function Home() {
         identificationFilter={identificationFilter}
         onIdentificationChange={setIdentificationFilter}
         sortMode={sortMode}
-        onHottest={() => {
-          console.log("[Home][SortDebug] click hottest (before):", sortMode);
-          setSortMode("hottest");
-        }}
-        onNewest={() => {
-          console.log("[Home][SortDebug] click newest (before):", sortMode);
-          setSortMode("newest");
-        }}
-        onRandomPress={() => setSortMode("random")}
+        onSortChange={handleFeedSortChange}
       />
 
       <div
         ref={videoFeedRef}
         data-home-video-feed
-        className="h-full snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain scrollbar-hide [overflow-anchor:auto]"
+        className="h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain scrollbar-hide [overflow-anchor:auto]"
         {...homeFeedPullTouchHandlers}
       >
         <div
@@ -1104,13 +1082,25 @@ export default function Home() {
             phase={homePullPhase}
           />
         </div>
-        {uiPosts.map((post) => (
+        {uiPosts.map((post, index) => {
+          const distanceToActive = activePostIndex === -1 ? 0 : Math.abs(index - activePostIndex);
+          const shouldLoadVideo = distanceToActive <= 1;
+          const videoPreload: "none" | "metadata" | "auto" =
+            distanceToActive === 0 ? "auto" : shouldLoadVideo ? "metadata" : "none";
+
+          return (
           <VideoCard 
             key={post.id} 
             post={post}
             isHighlighted={highlightedPostId === post.id}
+            isMuted={isFeedMuted}
+            isActive={activePostId === post.id}
+            shouldLoadVideo={shouldLoadVideo}
+            videoPreload={videoPreload}
+            onToggleMute={() => setIsFeedMuted((prev) => !prev)}
           />
-        ))}
+          );
+        })}
       </div>
     </div>
   );

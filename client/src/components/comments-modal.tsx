@@ -93,7 +93,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
     const body = document.body;
+    let dismissPullGuardTimer: number | null = null;
+
+    const clearDismissPullGuardTimer = () => {
+      if (dismissPullGuardTimer != null) {
+        clearTimeout(dismissPullGuardTimer);
+        dismissPullGuardTimer = null;
+      }
+    };
+
     if (isOpen) {
+      clearDismissPullGuardTimer();
+      body.classList.remove("comments-dismiss-pull-guard");
       root.classList.add("comments-modal-open");
       body.classList.add("comments-modal-open");
       if (commentsKeyboardDebugEnabled()) {
@@ -102,8 +113,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     } else {
       root.classList.remove("comments-modal-open");
       body.classList.remove("comments-modal-open");
+      clearDismissPullGuardTimer();
+      body.classList.add("comments-dismiss-pull-guard");
+      dismissPullGuardTimer = window.setTimeout(() => {
+        dismissPullGuardTimer = null;
+        body.classList.remove("comments-dismiss-pull-guard");
+      }, 520);
     }
+
     return () => {
+      clearDismissPullGuardTimer();
+      body.classList.remove("comments-dismiss-pull-guard");
       if (isOpen) {
         root.classList.remove("comments-modal-open");
         body.classList.remove("comments-modal-open");
@@ -1032,7 +1052,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
                         : "Who do you think this is?"
                     }
-                    className="max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-1.5 text-sm leading-5"
+                    className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5"
                     disabled={addCommentMutation.isPending}
                     data-testid="comment-input"
                     maxLength={INPUT_LIMITS.commentBody}

@@ -271,33 +271,39 @@ export default function Leaderboard() {
 
         {/* User Info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="relative z-[1] flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
             <button
               type="button"
-              className={`ios-press ios-press-soft flex items-center gap-1.5 font-semibold text-base leading-none truncate ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+              className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 basis-0 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
               data-testid={`username-${entry.user_id}`}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                openByUsername(entry.username, { anchor: { x: e.clientX, y: e.clientY } });
+                openByUsername(entry.username, {
+                  anchor: { x: e.clientX, y: e.clientY },
+                  surfaceGenreHint: entry.favorite_genre,
+                });
               }}
             >
-              {formatUsernameDisplay(entry.username) || entry.username}
+              <span className="min-w-0 truncate">
+                {formatUsernameDisplay(entry.username) || entry.username}
+              </span>
               <UserRoleInlineIcons
                 verifiedArtist={isVerifiedArtist}
                 moderator={entry.moderator}
-                tickClassName="h-4 w-4 -mt-0.5"
+                tickClassName="h-4 w-4 shrink-0"
+                shieldClassName="mt-0"
                 shieldSizeClass="h-4 w-4"
               />
             </button>
             {highlightAsCurrent && (
-              <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
+              <span className="inline-flex shrink-0 items-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">
                 You
               </span>
             )}
           </div>
-          
-            <div className="flex items-center gap-2">
+
+          <div className="relative z-0 flex items-center gap-2">
             <span className="text-[11px] text-muted-foreground whitespace-nowrap">{trustLevel.displayName}</span>
             <div className="flex-1 h-2 bg-black/55 rounded-full overflow-hidden">
               <div 

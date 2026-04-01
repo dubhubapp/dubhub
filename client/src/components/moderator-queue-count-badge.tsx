@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatNotificationBadgeCount } from "@/lib/utils";
 
 /**
  * Red circular count used for moderator queue (nav + section headers).
@@ -11,7 +11,7 @@ export function ModeratorQueueCountBadge({
   ...rest
 }: { count: number } & HTMLAttributes<HTMLSpanElement>) {
   if (count < 1) return null;
-  const label = count > 9 ? "9+" : String(count);
+  const label = formatNotificationBadgeCount(count);
   return (
     <span
       className={cn(

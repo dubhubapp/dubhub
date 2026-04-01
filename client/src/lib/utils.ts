@@ -14,3 +14,8 @@ export function formatUsernameDisplay(username: string | null | undefined): stri
   if (!core) return ""
   return `@${core}`
 }
+
+/** Red notification badge label: show count up to 99, then "99+". */
+export function formatNotificationBadgeCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
