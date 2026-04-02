@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { playSuccessNotification } from "@/lib/haptic";
 
 interface CommunityVerificationDialogProps {
   postId: string;
@@ -62,6 +63,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
       });
     },
     onSuccess: () => {
+      playSuccessNotification();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       toast({

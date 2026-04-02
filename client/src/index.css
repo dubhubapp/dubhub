@@ -34,6 +34,10 @@
   );
   /** Home VideoCard: reserve horizontal space for the action rail (icons + labels). */
   --video-feed-rail-width: clamp(3.375rem, 10.5vw, 4.375rem);
+  /**
+   * Fixed feed scrub sits on the tab bar: nav border (1px) + tiny lift so the line/thumb aren’t clipped under z-50 chrome.
+   */
+  --video-feed-scrub-bottom: calc(var(--app-bottom-nav-block) + 1px + 2px);
 
   --background: hsl(227, 96%, 54%);
   --foreground: hsl(0, 0%, 100%);
@@ -80,19 +84,6 @@ html {
   max-height: 100dvh;
   min-height: 0;
   overflow: hidden;
-}
-
-body.comments-modal-open [data-app-bottom-nav="true"] {
-  display: none !important;
-}
-
-/*
- * Comments modal: hide chrome that would leave fake “nav” inset and reflow the shell
- * when the keyboard toggles safe-area / dynamic viewport.
- */
-body.comments-modal-open {
-  /* Constant shell inset while drawer is open — env(safe-area) can change with keyboard and reflow the feed */
-  --app-bottom-nav-block: 0px;
 }
 
 /* Taller viewports: slightly tighter bottom nav chrome (more video area). SE / short phones keep :root defaults. */

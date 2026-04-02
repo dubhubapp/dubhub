@@ -1,5 +1,5 @@
 
-import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Send, Heart, CheckCircle, Award, XCircle, Flag, MoreHorizontal } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
@@ -23,6 +23,7 @@ import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
+import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -43,6 +44,21 @@ const COMMENTS_SHEET_TOP_RESERVE_PX = 72;
 
 const COMMENTS_SHEET_MIN_PX = 160;
 
+function getAppViewportHostEl(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const root = document.getElementById("root");
+  const inner = root?.firstElementChild;
+  return inner instanceof HTMLElement ? inner : root;
+}
+
+/** Lifts a `position:fixed; bottom:0` sheet to sit above the on-screen keyboard. */
+function computeCommentsKeyboardBottomInset(): number {
+  if (typeof window === "undefined") return 0;
+  const vv = window.visualViewport;
+  if (!vv) return 0;
+  return Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+}
+
 /**
  * Max sheet height: prefer the established large-phone cap, but never exceed what
  * fits in the *visual* viewport (critical when the iOS keyboard is open — `100dvh`
@@ -62,6 +78,15 @@ function computeCommentsSheetMaxPx(): number {
 }
 
 export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
+  const closeCommittedRef = useRef(false);
+
+  const handleClose = useCallback(() => {
+    if (closeCommittedRef.current) return;
+    closeCommittedRef.current = true;
+    playInteractionLight();
+    onClose();
+  }, [onClose]);
+
   const [newComment, setNewComment] = useState("");
   const [showArtistDropdown, setShowArtistDropdown] = useState(false);
   const [artistSearchTerm, setArtistSearchTerm] = useState("");
@@ -74,10 +99,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
   const composerFieldId = useId();
+  /** Set while comments viewport lock is active; used to resync offset immediately on composer focus. */
+  const viewportHostVvSyncRef = useRef<(() => void) | null>(null);
 
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     verifiedArtistsEnabled: isOpen,
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    closeCommittedRef.current = false;
+    playInteractionLight();
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -88,6 +121,108 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       });
     }
   }, [isOpen, post.id, debugComments]);
+
+  /**
+   * Keep shell `pb-[var(--app-bottom-nav-block)]` identical for the whole time comments are open.
+   * Freezing avoids iOS keyboard / dynamic safe-area changes fighting `--app-bottom-nav-block`
+   * (which includes `env(safe-area-inset-bottom)`) and shifting the feed.
+   */
+  useLayoutEffect(() => {
+    if (typeof document === "undefined" || !isOpen) return;
+    const frozen = getComputedStyle(document.documentElement).getPropertyValue("--app-bottom-nav-block").trim();
+    if (!frozen) return;
+    document.body.style.setProperty("--app-bottom-nav-block", frozen);
+    return () => {
+      document.body.style.removeProperty("--app-bottom-nav-block");
+    };
+  }, [isOpen]);
+
+  /**
+   * Pin the React viewport host (everything under #root except portaled drawers) while comments
+   * are open, and counteract Mobile Safari’s visual-viewport pan when the composer focuses so the
+   * feed/video does not slide upward. The drawer stays outside this host and gets its own
+   * `bottom` inset from `computeCommentsKeyboardBottomInset()` so only the sheet rides above the keyboard.
+   */
+  useLayoutEffect(() => {
+    if (typeof document === "undefined" || !isOpen) return;
+    const host = getAppViewportHostEl();
+    if (!host) return;
+
+    const lockH = Math.round(Math.max(window.innerHeight, window.visualViewport?.height ?? 0));
+
+    if (commentsKeyboardDebugEnabled()) {
+      document.documentElement.style.setProperty("--comments-app-lock-px", `${lockH}px`);
+    }
+
+    let rafFollowUpId = 0;
+
+    const syncVvOffset = () => {
+      const vv = window.visualViewport;
+      const y = vv ? Math.round(vv.offsetTop) : 0;
+      if (y) {
+        host.style.transform = `translate3d(0, ${y}px, 0)`;
+      } else {
+        host.style.removeProperty("transform");
+      }
+    };
+
+    /** Apply immediately (same tick as WebKit’s viewport change) plus one rAF so we match layout after paint. */
+    const syncVvOffsetThorough = () => {
+      syncVvOffset();
+      if (rafFollowUpId) cancelAnimationFrame(rafFollowUpId);
+      rafFollowUpId = requestAnimationFrame(() => {
+        rafFollowUpId = 0;
+        syncVvOffset();
+      });
+    };
+
+    viewportHostVvSyncRef.current = syncVvOffsetThorough;
+
+    const applyLock = () => {
+      host.style.position = "fixed";
+      host.style.top = "0";
+      host.style.left = "0";
+      host.style.width = "100%";
+      host.style.height = `${lockH}px`;
+      host.style.maxHeight = `${lockH}px`;
+      host.style.overflow = "hidden";
+      host.style.boxSizing = "border-box";
+      /* Interpolating `transform` lags behind `offsetTop` during the iOS keyboard animation → visible jump. */
+      host.style.transition = "none";
+      host.style.willChange = "transform";
+      syncVvOffsetThorough();
+    };
+
+    applyLock();
+
+    const vv = window.visualViewport;
+    const onVv = () => syncVvOffsetThorough();
+    vv?.addEventListener("resize", onVv);
+    vv?.addEventListener("scroll", onVv);
+    window.addEventListener("resize", onVv);
+
+    return () => {
+      viewportHostVvSyncRef.current = null;
+      if (rafFollowUpId) cancelAnimationFrame(rafFollowUpId);
+      vv?.removeEventListener("resize", onVv);
+      vv?.removeEventListener("scroll", onVv);
+      window.removeEventListener("resize", onVv);
+      host.style.removeProperty("position");
+      host.style.removeProperty("top");
+      host.style.removeProperty("left");
+      host.style.removeProperty("width");
+      host.style.removeProperty("height");
+      host.style.removeProperty("max-height");
+      host.style.removeProperty("overflow");
+      host.style.removeProperty("box-sizing");
+      host.style.removeProperty("transform");
+      host.style.removeProperty("transition");
+      host.style.removeProperty("will-change");
+      if (commentsKeyboardDebugEnabled()) {
+        document.documentElement.style.removeProperty("--comments-app-lock-px");
+      }
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -188,9 +323,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           : "text-[#4ae9df] font-medium cursor-pointer hover:underline"; // Blue for regular users
         
         if (tagStatus === "confirmed") {
-          className = "text-green-600 font-medium bg-green-50 px-1 rounded cursor-pointer hover:underline";
+          className =
+            "text-green-600 font-medium bg-green-50 px-1 rounded cursor-pointer hover:underline dark:bg-green-950/55 dark:text-green-400";
         } else if (tagStatus === "denied") {
-          className = "text-gray-400 font-medium line-through";
+          className = "text-gray-400 font-medium line-through dark:text-white/45";
         }
         
         return (
@@ -237,6 +373,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   }, [isOpen]);
 
   const commentsSheetMaxPx = isOpen ? computeCommentsSheetMaxPx() : null;
+  const commentsKeyboardBottomInset = isOpen ? computeCommentsKeyboardBottomInset() : 0;
 
   const { data: comments = [] } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", post.id, "comments"],
@@ -327,6 +464,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       return created as { id: string; post_id: string; user_id: string; body: string; artist_tag: string | null; created_at: string };
     },
     onSuccess: (data, variables) => {
+      playSuccessNotification();
       setNewComment("");
       const newCommentWithUser: CommentWithUser = {
         id: data.id,
@@ -499,27 +637,32 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         postId={post.id}
         commentId={reportingComment?.id}
         reportedUserId={reportingComment?.userId}
+        dialogStackClassName="z-[70]"
       />
       <Drawer
         open={isOpen}
         onOpenChange={(open) => {
-          if (!open) onClose();
+          if (!open) handleClose();
         }}
         shouldScaleBackground={false}
         repositionInputs={false}
         noBodyStyles
       >
       <DrawerContent
-        overlayClassName="z-40 bg-transparent"
-        className="bottom-0 z-40 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm"
-        style={commentsSheetMaxPx != null ? { maxHeight: commentsSheetMaxPx } : undefined}
+        overlayClassName="z-[60] bg-transparent"
+        className="bottom-0 z-[60] mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm dark:border dark:border-border/55 dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md"
+        style={
+          commentsSheetMaxPx != null
+            ? { maxHeight: commentsSheetMaxPx, bottom: commentsKeyboardBottomInset }
+            : undefined
+        }
       >
         <DrawerTitle className="sr-only">Comments for track</DrawerTitle>
         <DrawerDescription className="sr-only">View and add comments for this track</DrawerDescription>
         {/* Header */}
-        <div className="relative flex items-center justify-between border-b border-gray-200 px-4 py-3">
+        <div className="relative flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-border">
           <div className="h-8 w-[4.5rem]" aria-hidden />
-          <h3 className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base font-semibold text-gray-900">
+          <h3 className="pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 text-base font-semibold text-gray-900 dark:text-white">
             Comments
           </h3>
           <div className="flex items-center gap-1">
@@ -527,7 +670,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
+                  className="inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/80 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)]"
                   aria-label="Comment filter options"
                   data-testid="comments-filter-menu-trigger"
                 >
@@ -537,24 +680,24 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               <DropdownMenuContent
                 align="end"
                 sideOffset={6}
-                className="min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg"
+                className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
               >
                 <DropdownMenuItem
-                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
                   onSelect={() => setCommentFilter("all")}
                   data-testid="comments-filter-all"
                 >
                   {commentFilter === "all" ? "✓ " : ""}All
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
                   onSelect={() => setCommentFilter("newest")}
                   data-testid="comments-filter-newest"
                 >
                   {commentFilter === "newest" ? "✓ " : ""}Newest
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                  className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
                   onSelect={() => setCommentFilter("top")}
                   data-testid="comments-filter-top"
                 >
@@ -565,8 +708,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={onClose}
-              className="h-7 w-7 rounded-full p-0 hover:bg-gray-100"
+              onClick={handleClose}
+              className="h-7 w-7 rounded-full p-0 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-white/10"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -640,11 +783,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
 
               const highlightClass = isArtistConfirmationComment
-                ? "rounded-lg border-2 border-[#FFD700] bg-amber-50/70 p-2"
+                ? "rounded-lg border-2 border-[#FFD700] bg-amber-50/70 p-2 dark:bg-amber-500/[0.14] dark:shadow-[inset_0_0_0_1px_rgba(250,204,21,0.2)]"
                 : isVerifiedComment
-                ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-2"
+                ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-2 dark:border-green-500/75 dark:bg-green-500/[0.11]"
                 : isTaggedSuggestion
-                  ? "rounded-lg border border-amber-300 bg-amber-50/30 p-2"
+                  ? "rounded-lg border border-amber-300 bg-amber-50/30 p-2 dark:border-amber-500/45 dark:bg-amber-500/[0.09]"
                   : "";
               return (
                 <div key={comment.id} className={`flex space-x-2 ${highlightClass}`}>
@@ -664,7 +807,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <div className="flex items-center space-x-1">
                     <span 
                       className={`text-xs font-medium cursor-pointer hover:underline sm:text-[13px] ${
-                        comment.user.account_type === 'artist' && comment.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
+                        comment.user.account_type === 'artist' && comment.user.verified_artist
+                          ? "text-[#FFD700]"
+                          : "text-gray-900 dark:text-white"
                       }`}
                       onClick={(e) => {
                         e.preventDefault();
@@ -694,8 +839,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   )}
                   {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge, only pre-artist verification) */}
                   {isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
-                    <div className="flex items-center space-x-1 rounded-full bg-amber-100 px-1.5 py-0.5" data-testid={`badge-tagged-artist-${comment.id}`}>
-                      <span className="text-xs text-amber-800 font-medium">Tagged artist</span>
+                    <div
+                      className="flex items-center space-x-1 rounded-full bg-amber-100 px-1.5 py-0.5 dark:bg-amber-500/18 dark:ring-1 dark:ring-amber-400/25"
+                      data-testid={`badge-tagged-artist-${comment.id}`}
+                    >
+                      <span className="text-xs text-amber-800 font-medium dark:text-amber-200">Tagged artist</span>
                     </div>
                   )}
                   {/* Community Identified Badge - Blue for pending moderator review (only when no artist verification) */}
@@ -714,30 +862,32 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   )}
                   {/* Artist ID Badge - on the artist-selected community comment when artist verification is present */}
                   {isVerifiedComment && isArtistVerifiedPost && (
-                    <div className="flex items-center space-x-1 rounded-full bg-green-50 px-1.5 py-0.5">
-                      <CheckCircle className="w-3 h-3 text-green-600" />
-                      <span className="text-xs text-green-600 font-medium">Artist ID</span>
+                    <div className="flex items-center space-x-1 rounded-full bg-green-50 px-1.5 py-0.5 dark:bg-green-500/16 dark:ring-1 dark:ring-green-400/25">
+                      <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
+                      <span className="text-xs text-green-600 font-medium dark:text-green-400">Artist ID</span>
                     </div>
                   )}
                   {/* Denied Tag Badge */}
                   {comment.tagStatus === "denied" && (
-                    <div className="flex items-center space-x-1 rounded-full bg-red-50 px-1.5 py-0.5">
-                      <XCircle className="w-3 h-3 text-red-600" />
-                      <span className="text-xs text-red-600 font-medium">Denied</span>
+                    <div className="flex items-center space-x-1 rounded-full bg-red-50 px-1.5 py-0.5 dark:bg-red-950/55 dark:ring-1 dark:ring-red-500/25">
+                      <XCircle className="w-3 h-3 text-red-600 dark:text-red-400" />
+                      <span className="text-xs text-red-600 font-medium dark:text-red-400">Denied</span>
                     </div>
                   )}
-                  <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs">
+                  <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/60">
                     {formatTimeAgo(comment.createdAt)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm">
+                <p className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white">
                   {highlightArtistMentions(comment.body, comment.tagStatus)}
                 </p>
                 <div className="mt-0.5 flex items-center gap-2">
                   {/* Comment likes (separate from post likes) */}
                   <button
-                    className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs ${
-                      comment.userVote === "upvote" ? "text-pink-600 bg-pink-50" : "text-gray-500"
+                    className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs dark:hover:bg-muted ${
+                      comment.userVote === "upvote"
+                        ? "text-pink-600 bg-pink-50 dark:bg-pink-950/50 dark:text-pink-400"
+                        : "text-gray-500 dark:text-white/70"
                     }`}
                     onClick={() => handleToggleCommentLike(comment.id)}
                     data-testid={`button-like-${comment.id}`}
@@ -749,7 +899,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     <span>{comment.voteScore ?? 0}</span>
                   </button>
                   <button 
-                    className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs"
+                    className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/70 dark:hover:text-white"
                     onClick={() => {
                       setReplyingTo({id: comment.id, username: comment.user.username});
                       setNewComment(`${formatUsernameDisplay(comment.user.username)} `);
@@ -762,7 +912,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 sm:h-8 sm:w-8"
+                        className="inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)] sm:h-8 sm:w-8"
                         aria-label="Comment actions"
                         data-testid={`comment-actions-trigger-${comment.id}`}
                       >
@@ -772,10 +922,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     <DropdownMenuContent
                       align="end"
                       sideOffset={4}
-                      className="min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg"
+                      className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
                     >
                       <DropdownMenuItem
-                        className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900"
+                        className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
                         onSelect={() => {
                           setReportingComment({ id: comment.id, userId: comment.userId });
                           setShowReportModal(true);
@@ -795,7 +945,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     if (visibleCount === 0) {
                       return (
                         <button
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                           onClick={() =>
                             setVisibleReplyCountByParent((prev) => ({
                               ...prev,
@@ -812,7 +962,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     if (visibleCount < totalReplies) {
                       return (
                         <button
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                           onClick={() =>
                             setVisibleReplyCountByParent((prev) => ({
                               ...prev,
@@ -828,7 +978,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
                     return (
                       <button
-                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                         onClick={() =>
                           setVisibleReplyCountByParent((prev) => ({
                             ...prev,
@@ -847,7 +997,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 {comment.replies &&
                   comment.replies.length > 0 &&
                   (visibleReplyCountByParent[comment.id] ?? 0) > 0 && (
-                  <div className="ml-7 mt-2 space-y-2.5 border-l-2 border-gray-100 pl-2.5">
+                  <div className="ml-7 mt-2 space-y-2.5 border-l-2 border-gray-100 pl-2.5 dark:border-border">
                     {sortedRepliesChronological(comment.replies)
                       .slice(0, visibleReplyCountByParent[comment.id] ?? 0)
                       .map((reply) => (
@@ -868,7 +1018,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             <div className="flex items-center space-x-1">
                               <span 
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
-                                  reply.user.account_type === 'artist' && reply.user.verified_artist ? "text-[#FFD700]" : "text-gray-900"
+                                  reply.user.account_type === 'artist' && reply.user.verified_artist
+                                    ? "text-[#FFD700]"
+                                    : "text-gray-900 dark:text-white"
                                 }`}
                                 onClick={(e) => {
                                   e.preventDefault();
@@ -891,30 +1043,32 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             </div>
                             {/* Verified by Artist Badge for Reply */}
                             {reply.isVerifiedByArtist && (
-                              <div className="flex items-center space-x-1 bg-green-50 px-1.5 py-0.5 rounded-full">
-                                <CheckCircle className="w-2.5 h-2.5 text-green-600" />
-                                <span className="text-xs text-green-600 font-medium">Verified</span>
+                              <div className="flex items-center space-x-1 rounded-full bg-green-50 px-1.5 py-0.5 dark:bg-green-500/16 dark:ring-1 dark:ring-green-400/25">
+                                <CheckCircle className="w-2.5 h-2.5 text-green-600 dark:text-green-400" />
+                                <span className="text-xs font-medium text-green-600 dark:text-green-400">Verified</span>
                               </div>
                             )}
                             {/* Denied Tag Badge for Reply */}
                             {reply.tagStatus === "denied" && (
-                              <div className="flex items-center space-x-1 bg-red-50 px-1.5 py-0.5 rounded-full">
-                                <XCircle className="w-2.5 h-2.5 text-red-600" />
-                                <span className="text-xs text-red-600 font-medium">Denied</span>
+                              <div className="flex items-center space-x-1 rounded-full bg-red-50 px-1.5 py-0.5 dark:bg-red-950/55 dark:ring-1 dark:ring-red-500/25">
+                                <XCircle className="w-2.5 h-2.5 text-red-600 dark:text-red-400" />
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400">Denied</span>
                               </div>
                             )}
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-500 dark:text-white/60">
                               {formatTimeAgo(reply.createdAt)}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-xs text-gray-700">
+                          <p className="mt-0.5 text-xs text-gray-700 dark:text-white">
                             {highlightArtistMentions(reply.body, reply.tagStatus)}
                           </p>
                           <div className="mt-1 flex items-center space-x-2.5">
                             {/* Comment likes for replies */}
                             <button
-                              className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-xs ${
-                                reply.userVote === "upvote" ? "text-pink-600 bg-pink-50" : "text-gray-500"
+                              className={`flex items-center space-x-1 rounded-full px-2 py-0.5 text-xs hover:bg-gray-100 dark:hover:bg-muted ${
+                                reply.userVote === "upvote"
+                                  ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
+                                  : "text-gray-500 dark:text-white/70"
                               }`}
                               onClick={() => handleToggleCommentLike(reply.id)}
                               data-testid={`button-like-${reply.id}`}
@@ -926,7 +1080,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                               <span>{reply.voteScore ?? 0}</span>
                             </button>
                             <button 
-                              className="text-xs text-gray-500 hover:text-gray-700"
+                              className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/70 dark:hover:text-white"
                               onClick={() => {
                                 setReplyingTo({id: comment.id, username: reply.user.username});
                                 setNewComment(`${formatUsernameDisplay(reply.user.username)} `);
@@ -949,21 +1103,21 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         </div>
 
         {/* Comment Input */}
-        <div className="border-t border-gray-200 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
+        <div className="border-t border-gray-200 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 dark:border-border sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
           {/* Reply indicator */}
           {replyingTo && (
-            <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5">
+            <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 dark:border-blue-500/35 dark:bg-blue-950/45">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <span className="text-xs text-blue-600">Replying to</span>
-                  <span className="text-xs font-medium text-blue-800">{formatUsernameDisplay(replyingTo.username)}</span>
+                  <span className="text-xs text-blue-600 dark:text-blue-400">Replying to</span>
+                  <span className="text-xs font-medium text-blue-800 dark:text-blue-200">{formatUsernameDisplay(replyingTo.username)}</span>
                 </div>
                 <button 
                   onClick={() => {
                     setReplyingTo(null);
                     setNewComment('');
                   }}
-                  className="text-blue-400 hover:text-blue-600"
+                  className="text-blue-400 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
                   data-testid="cancel-reply"
                 >
                   <X className="w-4 h-4" />
@@ -974,13 +1128,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           <div className="relative">
             {/* Artist Auto-complete Dropdown */}
             {showArtistDropdown && filteredArtists.length > 0 && (
-              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-border dark:bg-popover dark:shadow-black/40">
                 {filteredArtists.map((artist: any) => (
                   <button
                     key={artist.id}
                     type="button"
                     onClick={() => handleArtistSelect(artist.username)}
-                    className="flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left hover:bg-gray-50 last:border-b-0"
+                    className="flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left hover:bg-gray-50 last:border-b-0 dark:border-border dark:hover:bg-muted"
                     data-testid={`artist-option-${artist.id}`}
                   >
                     <img
@@ -995,7 +1149,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         </span>
                         <CheckCircle className="w-3 h-3 text-yellow-400" />
                       </div>
-                      <span className="text-xs text-gray-500">{formatUsernameDisplay(artist.username)}</span>
+                      <span className="text-xs text-gray-500 dark:text-muted-foreground">{formatUsernameDisplay(artist.username)}</span>
                     </div>
                   </button>
                 ))}
@@ -1021,7 +1175,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     className={`avatar-media pointer-events-none h-7 w-7 flex-shrink-0 rounded-full border-2 sm:h-8 sm:w-8 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""} ${
                       verifiedArtist
                         ? "border-[#FFD700] " + goldAvatarGlowShadowClass
-                        : "border-gray-200"
+                        : "border-gray-200 dark:border-border"
                     }`}
                   />
                   <Textarea
@@ -1031,6 +1185,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     onChange={handleCommentChange}
                     onKeyDown={handleComposerKeyDown}
                     onFocus={() => {
+                      viewportHostVvSyncRef.current?.();
+                      requestAnimationFrame(() => {
+                        viewportHostVvSyncRef.current?.();
+                        requestAnimationFrame(() => viewportHostVvSyncRef.current?.());
+                      });
                       if (commentsKeyboardDebugEnabled()) {
                         queueMicrotask(() =>
                           logCommentsKeyboardSnapshot("textarea-focus", { postId: post.id }),
@@ -1041,6 +1200,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       }
                     }}
                     onBlur={() => {
+                      viewportHostVvSyncRef.current?.();
+                      requestAnimationFrame(() => {
+                        viewportHostVvSyncRef.current?.();
+                        requestAnimationFrame(() => viewportHostVvSyncRef.current?.());
+                      });
                       if (commentsKeyboardDebugEnabled()) {
                         queueMicrotask(() =>
                           logCommentsKeyboardSnapshot("textarea-blur", { postId: post.id }),
@@ -1052,7 +1216,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
                         : "Who do you think this is?"
                     }
-                    className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5"
+                    className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/20 dark:bg-white/10 dark:text-white dark:placeholder:text-white/45 dark:ring-offset-[color:var(--dark)]"
                     disabled={addCommentMutation.isPending}
                     data-testid="comment-input"
                     maxLength={INPUT_LIMITS.commentBody}
@@ -1078,7 +1242,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 </Button>
               </div>
               {newComment.length > INPUT_LIMITS.commentBody && (
-                <p className="mt-1 text-right text-[11px] text-red-500">
+                <p className="mt-1 text-right text-[11px] text-red-500 dark:text-red-400">
                   Comment is too long. Keep it under {INPUT_LIMITS.commentBody} characters.
                 </p>
               )}

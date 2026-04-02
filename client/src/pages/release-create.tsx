@@ -13,6 +13,7 @@ import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { resolveMediaUrl } from "@/lib/media-url";
+import { playSuccessNotification } from "@/lib/haptic";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -77,15 +78,6 @@ export default function ReleaseCreate() {
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
   const [collabSearch, setCollabSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const triggerReleaseCreateSuccessHaptic = () => {
-    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") {
-      return;
-    }
-
-    // Subtle "small -> slightly stronger" pulse sequence (< 1s total).
-    navigator.vibrate([14, 36, 28]);
-  };
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
@@ -293,7 +285,7 @@ export default function ReleaseCreate() {
       }
 
       if (!releaseCreateHapticFiredRef.current) {
-        triggerReleaseCreateSuccessHaptic();
+        playSuccessNotification();
         releaseCreateHapticFiredRef.current = true;
       }
       toast({ title: "Release created" });

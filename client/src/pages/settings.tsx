@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
+import { playThemeToggleHaptic } from "@/lib/haptic";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import { useUser } from "@/lib/user-context";
 
@@ -22,6 +23,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
 
   const handleThemeToggle = (enabled: boolean) => {
     const next: ThemeMode = enabled ? "dark" : "light";
+    playThemeToggleHaptic();
     applyTheme(next);
     setThemeMode(next);
   };

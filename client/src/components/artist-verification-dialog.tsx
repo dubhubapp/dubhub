@@ -13,6 +13,7 @@ import { useUser } from "@/lib/user-context";
 import { formatDate } from "@/pages/release-tracker";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { playSuccessNotification } from "@/lib/haptic";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -64,6 +65,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
       });
     },
     onSuccess: async () => {
+      playSuccessNotification();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
@@ -129,6 +131,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
       return res.json();
     },
     onSuccess: () => {
+      playSuccessNotification();
       queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({

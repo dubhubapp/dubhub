@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { playInteractionMedium } from "@/lib/haptic";
 import { cn } from "@/lib/utils";
 
 /** Outline-only “5” dice: transparent face + pips (matches Lucide icon language). */
@@ -72,6 +73,7 @@ export function RandomDiceButton({
 
   const handleClick = () => {
     if (disabled) return;
+    playInteractionMedium();
     const useDelay = delayPressMs != null && delayPressMs > 0;
     if (useDelay && pressPending) return;
 

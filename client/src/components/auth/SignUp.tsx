@@ -290,10 +290,10 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto bg-background border-border">
+    <Card className="w-full max-w-md mx-auto border-0 bg-transparent shadow-none">
       <CardHeader className="text-center">
         <div className="flex justify-center mb-4">
-          <Logo size="lg" />
+          <Logo size="xl" />
         </div>
         <CardTitle className="text-2xl font-bold text-foreground bg-transparent">Join dub hub</CardTitle>
         <CardDescription className="text-muted-foreground">

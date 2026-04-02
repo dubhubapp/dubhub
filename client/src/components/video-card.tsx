@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
@@ -29,6 +29,7 @@ import { useUserProfileLightPopup } from "@/components/user-profile-light-popup"
 import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { RandomDiceButton } from "@/components/random-dice-button";
+import { playInteractionLight } from "@/lib/haptic";
 // Removed placeholder video import - now using real uploaded videos
 
 /**
@@ -44,6 +45,13 @@ const NEAR_9_16_TOLERANCE = 0.03;
 const IMMERSIVE_PORTRAIT_R_MAX = 0.63;
 /** If cover would crop more than this fraction of the scaled frame on either axis, use contain. */
 const MAX_ACCEPTABLE_COVER_CROP = 0.13;
+
+/** Press-and-hold on the far-right thumb strip for temporary 2× (longer = clearer vs scroll). */
+const HOLD_2X_DELAY_MS = 400;
+/** Cancel pending 2× if the finger moves farther than this (px) from the start (any direction). */
+const HOLD_2X_MOVE_CANCEL_PX = 22;
+/** If vertical movement dominates and exceeds this (px), treat as feed scroll — cancel 2× (no preventDefault on touch). */
+const HOLD_2X_SCROLL_CANCEL_DY_PX = 14;
 
 function estimateCoverMaxCropFraction(
   vw: number,
@@ -108,6 +116,9 @@ interface VideoCardProps {
     exiting?: boolean;
     showIntroGlow?: boolean;
   };
+  /** Home feed only: when set with `onFeedOverlayCollapsedChange`, enables show less / show more overlay density. */
+  feedOverlayCollapsed?: boolean;
+  onFeedOverlayCollapsedChange?: (collapsed: boolean) => void;
 }
 
 export function VideoCard({
@@ -121,6 +132,8 @@ export function VideoCard({
   videoPreload = "metadata",
   onToggleMute,
   feedRandomDice,
+  feedOverlayCollapsed = false,
+  onFeedOverlayCollapsedChange,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -139,6 +152,14 @@ export function VideoCard({
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
+  const handleOpenPostAuthorProfile = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (post.user?.username) openByUsername(post.user.username);
+    },
+    [openByUsername, post.user?.username],
+  );
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
   const [hasLiked, setHasLiked] = useState(post.hasLiked || false);
@@ -174,6 +195,19 @@ export function VideoCard({
   const [videoIntrinsic, setVideoIntrinsic] = useState<{ w: number; h: number } | null>(null);
   const [stageSize, setStageSize] = useState<{ w: number; h: number } | null>(null);
 
+  /** Slim feed scrub bar: DOM-driven fill via ref + rAF; only mounted when active + finite duration. */
+  const scrubFillRef = useRef<HTMLDivElement>(null);
+  const scrubbingRef = useRef(false);
+  const wasPlayingBeforeScrubRef = useRef(false);
+  const scrubRafRef = useRef(0);
+  const scrubThumbRef = useRef<HTMLDivElement>(null);
+  /** Smoothed 0–1 progress; avoids scrub thumb jumping when `playbackRate` flips (WebKit `currentTime` glitches). */
+  const scrubSmoothedPRef = useRef(-1);
+  const [scrubBarReady, setScrubBarReady] = useState(false);
+  /** Drives overlay fade + readout; kept in sync with scrubbingRef on pointer lifecycle. */
+  const [isScrubbingUi, setIsScrubbingUi] = useState(false);
+  const [scrubReadout, setScrubReadout] = useState<{ current: number; total: number } | null>(null);
+
   // Keep ref in sync with state
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -195,8 +229,133 @@ export function VideoCard({
         ""
     ) || "";
 
+  /** Temporary 2× speed while holding the right thumb zone (active post only). */
+  const hold2xZoneRef = useRef<HTMLDivElement>(null);
+  const hold2xTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hold2xPointerIdRef = useRef<number | null>(null);
+  const hold2xActivatedRef = useRef(false);
+  const hold2xMoveExceededRef = useRef(false);
+  const hold2xWinCleanupRef = useRef<(() => void) | null>(null);
+  const [hold2xUiVisible, setHold2xUiVisible] = useState(false);
+  const isActiveRef = useRef(isActive);
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  const clearHold2xWinListeners = useCallback(() => {
+    const fn = hold2xWinCleanupRef.current;
+    hold2xWinCleanupRef.current = null;
+    fn?.();
+  }, []);
+
+  const endHold2x = useCallback(() => {
+    if (hold2xTimerRef.current) {
+      clearTimeout(hold2xTimerRef.current);
+      hold2xTimerRef.current = null;
+    }
+    clearHold2xWinListeners();
+    hold2xPointerIdRef.current = null;
+    hold2xMoveExceededRef.current = false;
+    if (hold2xActivatedRef.current) {
+      hold2xActivatedRef.current = false;
+      const video = videoRef.current;
+      if (video) {
+        video.playbackRate = 1;
+      }
+      requestAnimationFrame(() => setHold2xUiVisible(false));
+    }
+  }, [clearHold2xWinListeners]);
+
+  /** Pause when the tab/app is hidden or the device locks — limits iOS Now Playing / Control Center session noise. */
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) return;
+      if (!isActiveRef.current) return;
+      const video = videoRef.current;
+      if (!video || video.paused) return;
+      video.pause();
+      setIsPlaying(false);
+      endHold2x();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [endHold2x]);
+
+  const onHold2xPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (!isActiveRef.current || !shouldLoadVideo || !videoSrc) return;
+      if (scrubbingRef.current) return;
+      e.stopPropagation();
+      endHold2x();
+
+      hold2xPointerIdRef.current = e.pointerId;
+      hold2xMoveExceededRef.current = false;
+
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const pointerId = e.pointerId;
+
+      const onWinMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        const looksLikeVerticalScroll =
+          absDy >= HOLD_2X_SCROLL_CANCEL_DY_PX && absDy >= absDx * 1.25;
+        const movedTooFar = Math.hypot(dx, dy) > HOLD_2X_MOVE_CANCEL_PX;
+        if (looksLikeVerticalScroll || movedTooFar) {
+          hold2xMoveExceededRef.current = true;
+          if (hold2xTimerRef.current) {
+            clearTimeout(hold2xTimerRef.current);
+            hold2xTimerRef.current = null;
+          }
+        }
+      };
+
+      const onWinUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        endHold2x();
+      };
+
+      const removeWin = () => {
+        window.removeEventListener("pointermove", onWinMove, true);
+        window.removeEventListener("pointerup", onWinUp, true);
+        window.removeEventListener("pointercancel", onWinUp, true);
+      };
+      hold2xWinCleanupRef.current = removeWin;
+      window.addEventListener("pointermove", onWinMove, true);
+      window.addEventListener("pointerup", onWinUp, true);
+      window.addEventListener("pointercancel", onWinUp, true);
+
+      hold2xTimerRef.current = setTimeout(() => {
+        hold2xTimerRef.current = null;
+        if (hold2xMoveExceededRef.current || !isActiveRef.current || scrubbingRef.current) return;
+        const v = videoRef.current;
+        if (!v) return;
+        hold2xActivatedRef.current = true;
+        requestAnimationFrame(() => {
+          const v2 = videoRef.current;
+          if (!v2 || !hold2xActivatedRef.current) return;
+          v2.playbackRate = 2;
+          setHold2xUiVisible(true);
+        });
+      }, HOLD_2X_DELAY_MS);
+    },
+    [shouldLoadVideo, videoSrc, endHold2x],
+  );
+
+  useEffect(() => {
+    return () => {
+      endHold2x();
+    };
+  }, [endHold2x]);
+
   useEffect(() => {
     setVideoIntrinsic(null);
+    setScrubBarReady(false);
+    scrubSmoothedPRef.current = -1;
   }, [post.id, videoSrc]);
 
   useLayoutEffect(() => {
@@ -232,6 +391,7 @@ export function VideoCard({
 
     // Seamless loop: restart video before it actually ends to prevent buffering delay
     const handleTimeUpdate = () => {
+      if (scrubbingRef.current) return;
       if (isPlayingRef.current && !video.paused && video.duration > 0) {
         // Restart 0.1 seconds before the end for seamless looping
         if (video.currentTime >= video.duration - 0.1) {
@@ -242,6 +402,7 @@ export function VideoCard({
 
     // Fallback for ended event (iOS Safari compatibility)
     const handleEnded = () => {
+      if (scrubbingRef.current) return;
       if (isPlayingRef.current && !video.paused) {
         video.currentTime = 0;
         video.play().catch((error) => {
@@ -260,6 +421,54 @@ export function VideoCard({
       video.removeEventListener('ended', handleEnded);
     };
   }, [post.id, videoSrc]);
+
+  // Smooth progress fill without per-frame React state (active post only).
+  useEffect(() => {
+    if (!isActive || !scrubBarReady || !shouldLoadVideo || !videoSrc) {
+      cancelAnimationFrame(scrubRafRef.current);
+      scrubRafRef.current = 0;
+      return;
+    }
+    const video = videoRef.current;
+    const tick = () => {
+      const fill = scrubFillRef.current;
+      const thumb = scrubThumbRef.current;
+      if (!scrubbingRef.current && video && fill && Number.isFinite(video.duration) && video.duration > 0) {
+        const rawP = Math.min(1, Math.max(0, video.currentTime / video.duration));
+        let displayP = scrubSmoothedPRef.current;
+        if (displayP < 0 || displayP > 1) {
+          displayP = rawP;
+        } else if (rawP + 0.08 < displayP) {
+          displayP = rawP;
+        } else {
+          const d = rawP - displayP;
+          const maxStep = 0.032;
+          displayP = Math.abs(d) <= maxStep ? rawP : displayP + Math.sign(d) * maxStep;
+        }
+        scrubSmoothedPRef.current = displayP;
+        fill.style.transform = `scaleX(${displayP})`;
+        if (thumb) thumb.style.left = `${displayP * 100}%`;
+      }
+      scrubRafRef.current = requestAnimationFrame(tick);
+    };
+    scrubRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(scrubRafRef.current);
+      scrubRafRef.current = 0;
+    };
+  }, [isActive, scrubBarReady, shouldLoadVideo, videoSrc, post.id]);
+
+  useEffect(() => {
+    if (!isActive) {
+      scrubbingRef.current = false;
+      setIsScrubbingUi(false);
+      setScrubReadout(null);
+    }
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive) endHold2x();
+  }, [isActive, endHold2x]);
 
   // Keep DOM media muted state aligned with feed-level preference + active post gating.
   useEffect(() => {
@@ -281,6 +490,7 @@ export function VideoCard({
 
     const primeToStart = () => {
       try {
+        if (!video.paused) video.pause();
         video.currentTime = 0;
       } catch {
         return;
@@ -316,8 +526,19 @@ export function VideoCard({
 
     const runId = activationRunRef.current + 1;
     activationRunRef.current = runId;
-    setIsVideoReady(false);
+    const primedFastHandoff =
+      primedAtStartRef.current && video.readyState >= 2;
+    // Hiding the `<video>` during the primed handoff caused a black flash: opacity-0 until `seeked`
+    // fired (often async on WebKit). Cold activations still hide until playback is ready.
+    if (!primedFastHandoff) {
+      setIsVideoReady(false);
+    }
     setShowLoadingFallback(false);
+    scrubSmoothedPRef.current = 0;
+    const fill = scrubFillRef.current;
+    const thumb = scrubThumbRef.current;
+    if (fill) fill.style.transform = "scaleX(0)";
+    if (thumb) thumb.style.left = "0%";
 
     const stillCurrent = () => activationRunRef.current === runId && isActive;
     const reveal = () => {
@@ -355,60 +576,82 @@ export function VideoCard({
       }, 260);
     };
 
-    const revealNowAndPlay = () => {
-      if (!stillCurrent()) return;
-      reveal();
-      if (isPlayingRef.current && video.paused) {
-        video.play().catch(() => {
-          // Ignore autoplay races; frame-0 is already visible.
-        });
-      }
-    };
+    let detachSeeked: (() => void) | null = null;
 
-    const seekToStart = () => {
+    const seekToStartThen = (
+      afterSeek: () => void,
+      opts?: { optimisticRevealWhileSeeking?: boolean },
+    ) => {
       if (!stillCurrent()) return;
+      if (opts?.optimisticRevealWhileSeeking) {
+        reveal();
+      }
+      if (!video.paused) {
+        video.pause();
+      }
+      let settled = false;
+      const settleAndContinue = () => {
+        if (settled) return;
+        settled = true;
+        detachSeeked?.();
+        detachSeeked = null;
+        afterSeek();
+      };
       const onSeeked = () => {
+        settleAndContinue();
+      };
+      detachSeeked = () => {
         video.removeEventListener("seeked", onSeeked);
-        playAndReveal();
+        detachSeeked = null;
       };
       video.addEventListener("seeked", onSeeked, { once: true });
       try {
         video.currentTime = 0;
       } catch {
-        // If seek throws transiently, reveal once media is still playable.
-        video.removeEventListener("seeked", onSeeked);
-        playAndReveal();
+        settleAndContinue();
         return;
       }
       // currentTime already 0 can skip seeked in some browsers.
       if (Math.abs(video.currentTime) < 0.01) {
-        video.removeEventListener("seeked", onSeeked);
-        playAndReveal();
+        settleAndContinue();
       }
     };
 
-    if (primedAtStartRef.current && video.readyState >= 2) {
-      // Fast path for prewarmed neighbors: reveal immediately, then play.
-      // This removes the visible wait on `playing` for normal swipe handoff.
-      revealNowAndPlay();
-      return () => {
-        clearFallbackTimer();
-      };
+    const finishCleanup = () => {
+      clearFallbackTimer();
+      detachSeeked?.();
+    };
+
+    if (primedFastHandoff) {
+      // True-zero lock + instant handoff: reveal before waiting on `seeked` so we never sit on
+      // a black stage; `afterSeek` only starts playback (reveal already done).
+      seekToStartThen(
+        () => {
+          if (!stillCurrent()) return;
+          if (isPlayingRef.current && video.paused) {
+            video.play().catch(() => {
+              /* ignore */
+            });
+          }
+        },
+        { optimisticRevealWhileSeeking: true },
+      );
+      return finishCleanup;
     }
 
     if (video.readyState >= 1) {
-      seekToStart();
-      return;
+      seekToStartThen(playAndReveal);
+      return finishCleanup;
     }
 
     const onLoadedMetadata = () => {
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
-      seekToStart();
+      seekToStartThen(playAndReveal);
     };
     video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
 
     return () => {
-      clearFallbackTimer();
+      finishCleanup();
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
     };
   }, [isActive, post.id, shouldLoadVideo]);
@@ -682,6 +925,78 @@ export function VideoCard({
 
   const genreChip = getGenreChipStyle(post.genre);
   const statusBadgeEl = getStatusBadge();
+  const overlayDensityControl = typeof onFeedOverlayCollapsedChange === "function";
+  const overlayCollapsed = overlayDensityControl && feedOverlayCollapsed;
+
+  const scrubHitRef = useRef<HTMLDivElement>(null);
+  const applyScrubFromClientX = useCallback((clientX: number, video: HTMLVideoElement) => {
+    const hit = scrubHitRef.current;
+    if (!hit || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const rect = hit.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const fill = scrubFillRef.current;
+    const thumb = scrubThumbRef.current;
+    if (fill) fill.style.transform = `scaleX(${ratio})`;
+    if (thumb) thumb.style.left = `${ratio * 100}%`;
+    scrubSmoothedPRef.current = ratio;
+    try {
+      video.currentTime = ratio * video.duration;
+    } catch {
+      /* ignore */
+    }
+    setScrubReadout({
+      current: Math.floor(video.currentTime),
+      total: Math.floor(video.duration),
+    });
+  }, []);
+
+  const endScrubGesture = useCallback((opts?: { releaseTarget: HTMLElement; pointerId: number }) => {
+    const wasScrubbing = scrubbingRef.current;
+    scrubbingRef.current = false;
+    setIsScrubbingUi(false);
+    setScrubReadout(null);
+    if (opts) {
+      try {
+        opts.releaseTarget.releasePointerCapture(opts.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+    const video = videoRef.current;
+    if (video && Number.isFinite(video.duration) && video.duration > 0) {
+      scrubSmoothedPRef.current = Math.min(1, Math.max(0, video.currentTime / video.duration));
+    }
+    if (wasScrubbing && video && wasPlayingBeforeScrubRef.current && isPlayingRef.current) {
+      video.play().catch(() => {
+        /* ignore */
+      });
+    }
+  }, []);
+
+  const genrePillEl = (
+    <span
+      data-testid="post-genre-tag"
+      className="inline-block rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+      style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
+    >
+      {genreChip.label}
+    </span>
+  );
+
+  /** `min-w` fits the wider of “Show more” / “Show less” so the pill row doesn’t shift when the label swaps. */
+  const overlayDensityToggleClass =
+    "pointer-events-auto inline-flex shrink-0 items-center justify-center min-h-[36px] min-w-[5rem] touch-manipulation rounded-md px-2 py-1.5 text-[11px] font-medium text-white/45 transition-colors hover:text-white/80 active:text-white/90 outline-none focus-visible:ring-2 focus-visible:ring-white/50 sm:min-h-0 sm:px-1.5 sm:py-1";
+
+  /** Home overlay expand/collapse: ~300ms ease + inner fade so height changes feel less abrupt. */
+  const overlayCollapseGridTransition = cn(
+    "transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none",
+  );
+  const overlayCollapseFade = cn(
+    "transition-opacity duration-300 ease-in-out motion-reduce:transition-none",
+  );
+  const overlayCollapseMetaTransition = cn(
+    "transition-[grid-template-rows,opacity] duration-300 ease-in-out motion-reduce:transition-none",
+  );
 
   /** Match scrollport height (not 100vh) so mandatory snap + slow drags settle reliably. */
   const snapHeightClass = "min-h-full h-full";
@@ -694,24 +1009,37 @@ export function VideoCard({
       data-post-id={post.id}
     >
       {/* Video background: ratio-tiered cover vs contain; black shows only when contained. */}
-      <div ref={videoStageRef} className="absolute inset-0 flex items-center justify-center bg-black">
+      <div
+        ref={videoStageRef}
+        className="absolute inset-0 flex select-none items-center justify-center bg-black [-webkit-touch-callout:none] [-webkit-user-select:none]"
+      >
         <video
           key={`${post.id}-${videoSrc}`}
           ref={videoRef}
-          className={`w-full h-full cursor-pointer transition-opacity duration-150 ${
+          className={`w-full h-full cursor-pointer select-none transition-opacity duration-150 [-webkit-touch-callout:none] [-webkit-user-select:none] ${
             feedVideoObjectFit === "cover" ? "object-cover object-center" : "object-contain"
           } ${isVideoReady ? "opacity-100" : "opacity-0"}`}
           src={shouldLoadVideo ? (videoSrc || undefined) : undefined}
-          autoPlay
           muted={isMuted || !isActive}
           loop
           playsInline
+          disablePictureInPicture
+          disableRemotePlayback
+          controlsList="nodownload nofullscreen noremoteplayback"
           preload={videoPreload}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
+            try {
+              v.preservesPitch = true;
+              v.disableRemotePlayback = true;
+            } catch {
+              /* ignore */
+            }
             if (v.videoWidth > 0 && v.videoHeight > 0) {
               setVideoIntrinsic({ w: v.videoWidth, h: v.videoHeight });
             }
+            const d = v.duration;
+            setScrubBarReady(Number.isFinite(d) && d > 0);
           }}
           onClick={(e) => {
             e.preventDefault();
@@ -735,7 +1063,41 @@ export function VideoCard({
             </div>
           </div>
         ) : null}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0 bg-gradient-to-b from-black/20 to-black/60",
+            "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+            isScrubbingUi ? "opacity-[0.35]" : "opacity-100",
+          )}
+        />
+        {/* Narrow far-right strip (middle half vertically); rail z-20 stays tappable above. No touchstart preventDefault — scroll uses pan-y. */}
+        <div
+          ref={hold2xZoneRef}
+          data-feed-2x-hold-zone
+          className={cn(
+            "absolute right-0 top-[25%] z-[12] h-1/2 w-[min(2.875rem,12.5vw)] max-w-[3rem] touch-pan-y select-none",
+            "[-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none]",
+            "pr-[max(0px,env(safe-area-inset-right,0px))]",
+            isActive && shouldLoadVideo && videoSrc ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          onPointerDown={onHold2xPointerDown}
+          onContextMenu={(ev) => ev.preventDefault()}
+          aria-hidden
+        />
+        {isActive ? (
+          <div
+            className={cn(
+              "pointer-events-none absolute left-1/2 top-[26%] z-[13] -translate-x-1/2 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 backdrop-blur-md",
+              "text-[12px] font-medium tabular-nums tracking-[0.12em] text-white/85 shadow-[0_2px_12px_rgba(0,0,0,0.35)]",
+              "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+              hold2xUiVisible ? "opacity-100" : "opacity-0",
+            )}
+            aria-live="polite"
+            aria-hidden={!hold2xUiVisible}
+          >
+            2×
+          </div>
+        ) : null}
       </div>
       {(() => {
         const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
@@ -795,7 +1157,11 @@ export function VideoCard({
             {/* Right action rail — top→bottom: Like, Comment, optional verify/delete, More (short-form pattern) */}
             <div
               data-video-action-rail
-              className="absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-20 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4"
+              className={cn(
+                "absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-20 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
+                "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+                isScrubbingUi ? "opacity-[0.2]" : "opacity-100",
+              )}
             >
               {feedRandomDice ? (
                 <div
@@ -835,7 +1201,10 @@ export function VideoCard({
               <button
                 type="button"
                 className={railBtn}
-                onClick={() => likeMutation.mutate()}
+                onClick={() => {
+                  playInteractionLight();
+                  likeMutation.mutate();
+                }}
                 disabled={likeMutation.isPending}
               >
                 <div className={railIconWrap}>
@@ -963,7 +1332,15 @@ export function VideoCard({
       })()}
       {/* Bottom content — padding-right reserves rail (scrollport already clears shell nav). */}
       <div
-        className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent py-5 pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] pt-12 sm:py-6 sm:pl-4 sm:pt-14 ${embeddedFeed ? "pb-3" : ""}`}
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:pl-4",
+          "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+          isScrubbingUi ? "opacity-[0.18]" : "opacity-100",
+          overlayCollapsed
+            ? "pt-8 pb-3.5 sm:pt-9 sm:pb-4"
+            : "py-5 pt-12 sm:py-6 sm:pt-14",
+          embeddedFeed && "pb-3",
+        )}
       >
         {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets */}
         <div className="pointer-events-none flex flex-col gap-2 overflow-visible">
@@ -971,16 +1348,12 @@ export function VideoCard({
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
-                className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (post.user?.username) openByUsername(post.user.username);
-                }}
+                className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60"
+                onClick={handleOpenPostAuthorProfile}
                 aria-label={
                   post.user.username ? `View profile ${formatUsernameDisplay(post.user.username)}` : "View profile"
                 }
-                data-testid="post-author-identity"
+                data-testid="post-author-avatar"
               >
                 <div className="relative shrink-0">
                   <img
@@ -992,31 +1365,35 @@ export function VideoCard({
                     style={!isVerifiedArtist ? { borderColor: genreChip.bgColor } : undefined}
                   />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <div className="flex min-w-0 items-center gap-1">
-                      <span
-                        className={`min-w-0 truncate font-semibold text-sm ${
-                          isVerifiedArtist ? "text-[#FFD700]" : "text-white"
-                        }`}
-                        title={post.user.username ? formatUsernameDisplay(post.user.username) : undefined}
-                      >
-                        {formatUsernameDisplay(post.user.username)}
-                      </span>
-                      <UserRoleInlineIcons
-                        verifiedArtist={isVerifiedArtist}
-                        moderator={isModeratorUser}
-                        tickClassName="h-4 w-4 shrink-0 -mt-0.5"
-                        shieldSizeClass="h-[1.125rem] w-[1.125rem]"
-                        shieldTone="onDark"
-                      />
-                    </div>
-                  </div>
-                </div>
+              </button>
+              <button
+                type="button"
+                className="pointer-events-auto inline-flex min-h-11 min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 text-left outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60"
+                onClick={handleOpenPostAuthorProfile}
+                aria-label={
+                  post.user.username ? `View profile ${formatUsernameDisplay(post.user.username)}` : "View profile"
+                }
+                data-testid="post-author-identity"
+              >
+                <span
+                  className={`min-w-0 truncate font-semibold text-sm ${
+                    isVerifiedArtist ? "text-[#FFD700]" : "text-white"
+                  }`}
+                  title={post.user.username ? formatUsernameDisplay(post.user.username) : undefined}
+                >
+                  {formatUsernameDisplay(post.user.username)}
+                </span>
+                <UserRoleInlineIcons
+                  verifiedArtist={isVerifiedArtist}
+                  moderator={isModeratorUser}
+                  tickClassName="h-4 w-4 shrink-0 -mt-0.5"
+                  shieldSizeClass="h-[1.125rem] w-[1.125rem]"
+                  shieldTone="onDark"
+                />
               </button>
             </div>
 
-            {(post.title || post.description) ? (
+            {!overlayDensityControl && (post.title || post.description) ? (
               <div className="mt-2 space-y-2">
                 {post.title && (
                   <p className="line-clamp-2 text-sm font-semibold text-white break-words" title={post.title}>
@@ -1035,120 +1412,397 @@ export function VideoCard({
             ) : null}
           </div>
 
-          <div className="shrink-0 overflow-visible px-0.5 py-2">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
-              {statusBadgeEl ? (
-                <>
-                  {statusBadgeEl}
-                  <span className="text-gray-500 select-none" aria-hidden>
-                    •
-                  </span>
-                </>
-              ) : null}
-              <span
-                data-testid="post-genre-tag"
-                className="inline-block rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
-              >
-                {genreChip.label}
-              </span>
-              <span className="text-gray-500 select-none" aria-hidden>
-                •
-              </span>
-              {post.djName && <span>Played by: {post.djName}</span>}
-              {post.djName && (
-                <span className="text-gray-500 select-none" aria-hidden>
-                  •
-                </span>
-              )}
-              <span>
-                {post.playedDate
-                  ? `Played on: ${formatPlayedDate(post.playedDate)}`
-                  : post.createdAt
-                    ? formatTimeAgo(post.createdAt)
-                    : "Recently"}
-              </span>
-              {post.location && (
-                <>
-                  <span className="text-gray-500 select-none" aria-hidden>
-                    •
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 min-w-0">
-                    <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" aria-hidden />
-                    <span className="truncate">{post.location}</span>
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {releasePreview && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
-              }}
-              className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted sm:h-12 sm:w-12">
-                {releasePreview.artworkUrl ? (
-                  <img src={releasePreview.artworkUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <Music className="h-5 w-5 text-gray-500 sm:h-6 sm:w-6" />
+          {overlayDensityControl ? (
+            <>
+              {/* Title/description only — collapses; pills stay outside so glow isn’t clipped by overflow-hidden. */}
+              <div
+                className={cn(
+                  "grid",
+                  overlayCollapseGridTransition,
+                  overlayCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
                 )}
-              </div>
-              <div className="min-w-0 flex-1 overflow-visible">
-                <p className="line-clamp-2 text-[11px] font-medium leading-snug text-white sm:text-xs">
-                  {formatReleaseTitleLine(
-                    releasePreview.ownerUsername,
-                    releasePreview.title,
-                    releasePreview.collaborators
-                  )}
-                </p>
-                <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                  {releasePreview.isComingSoon
-                    ? "Coming soon..."
-                    : releasePreview.releaseDate
-                      ? formatDate(releasePreview.releaseDate)
-                      : ""}
-                  <span
-                    className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px] ${
-                      isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "bg-green-500/20 text-green-600 dark:text-green-400"
-                    }`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div
+                    className={cn(
+                      "pointer-events-none overflow-x-visible px-0.5 pl-0.5 pr-1 will-change-[opacity]",
+                      overlayCollapseFade,
+                      overlayCollapsed ? "opacity-0" : "opacity-100",
+                    )}
+                    aria-hidden={overlayCollapsed}
                   >
-                    {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                      ? "Upcoming"
-                      : "Released"}
-                  </span>
-                </p>
-                <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
-                  {isReleaseOwner ? (
-                    <>
-                      <Edit2 className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-                      <span>Edit release</span>
-                    </>
-                  ) : isPostUploader && isPostIdentified ? (
-                    <>
-                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
-                      <span className="line-clamp-3">Saved to your Releases</span>
-                    </>
-                  ) : hasLiked ? (
-                    <>
-                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
-                      <span>In your Releases</span>
-                    </>
-                  ) : (
-                    <span className="line-clamp-3">Like to add this track to your Releases</span>
-                  )}
-                </p>
+                    {(post.title || post.description) ? (
+                      <div className="mt-2 space-y-2">
+                        {post.title && (
+                          <p className="line-clamp-2 text-sm font-semibold text-white break-words" title={post.title}>
+                            {post.title}
+                          </p>
+                        )}
+                        {post.description && (
+                          <p
+                            className="line-clamp-4 text-sm font-medium text-white break-words"
+                            title={post.description}
+                          >
+                            {post.description}
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-            </button>
+
+              {/* Status + genre + inline toggle (+ extended meta when expanded). Not inside collapse grid — box-shadow glow stays visible. */}
+              <div className="shrink-0 overflow-visible px-0.5 py-3 pl-0.5 pr-1 sm:py-3.5">
+                <div className="pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
+                  {statusBadgeEl ? (
+                    <>
+                      {statusBadgeEl}
+                      <span className="text-gray-500 select-none" aria-hidden>
+                        •
+                      </span>
+                    </>
+                  ) : null}
+                  {genrePillEl}
+                  <button
+                    type="button"
+                    className={overlayDensityToggleClass}
+                    aria-expanded={!overlayCollapsed}
+                    aria-label={overlayCollapsed ? "Show more post details" : "Show less post details"}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onFeedOverlayCollapsedChange?.(!overlayCollapsed);
+                    }}
+                  >
+                    {overlayCollapsed ? "Show more" : "Show less"}
+                  </button>
+                  <div
+                    className={cn(
+                      "inline-grid max-w-full min-w-0 align-middle will-change-[opacity,grid-template-rows]",
+                      overlayCollapseMetaTransition,
+                      overlayCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+                    )}
+                    aria-hidden={overlayCollapsed}
+                  >
+                    <div className="min-h-0 overflow-hidden">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                        <span className="text-gray-500 select-none" aria-hidden>
+                          •
+                        </span>
+                        {post.djName && <span>Played by: {post.djName}</span>}
+                        {post.djName && (
+                          <span className="text-gray-500 select-none" aria-hidden>
+                            •
+                          </span>
+                        )}
+                        <span>
+                          {post.playedDate
+                            ? `Played on: ${formatPlayedDate(post.playedDate)}`
+                            : post.createdAt
+                              ? formatTimeAgo(post.createdAt)
+                              : "Recently"}
+                        </span>
+                        {post.location && (
+                          <>
+                            <span className="text-gray-500 select-none" aria-hidden>
+                              •
+                            </span>
+                            <span className="inline-flex min-w-0 items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-300" aria-hidden />
+                              <span className="truncate">{post.location}</span>
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={cn(
+                  "grid",
+                  overlayCollapseGridTransition,
+                  overlayCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+                )}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div
+                    className={cn(
+                      "pointer-events-none overflow-visible will-change-[opacity]",
+                      overlayCollapseFade,
+                      overlayCollapsed ? "opacity-0" : "opacity-100",
+                    )}
+                    aria-hidden={overlayCollapsed}
+                  >
+                    {releasePreview ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
+                        }}
+                        className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
+                      >
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted sm:h-12 sm:w-12">
+                          {releasePreview.artworkUrl ? (
+                            <img src={releasePreview.artworkUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Music className="h-5 w-5 text-gray-500 sm:h-6 sm:w-6" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 overflow-visible">
+                          <p className="line-clamp-2 text-[11px] font-medium leading-snug text-white sm:text-xs">
+                            {formatReleaseTitleLine(
+                              releasePreview.ownerUsername,
+                              releasePreview.title,
+                              releasePreview.collaborators
+                            )}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
+                            {releasePreview.isComingSoon
+                              ? "Coming soon..."
+                              : releasePreview.releaseDate
+                                ? formatDate(releasePreview.releaseDate)
+                                : ""}
+                            <span
+                              className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px] ${
+                                isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
+                                  ? "bg-amber-500/20 text-amber-400"
+                                  : "bg-green-500/20 text-green-600 dark:text-green-400"
+                              }`}
+                            >
+                              {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
+                                ? "Upcoming"
+                                : "Released"}
+                            </span>
+                          </p>
+                          <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
+                            {isReleaseOwner ? (
+                              <>
+                                <Edit2 className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+                                <span>Edit release</span>
+                              </>
+                            ) : isPostUploader && isPostIdentified ? (
+                              <>
+                                <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
+                                <span className="line-clamp-3">Saved to your Releases</span>
+                              </>
+                            ) : hasLiked ? (
+                              <>
+                                <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
+                                <span>In your Releases</span>
+                              </>
+                            ) : (
+                              <span className="line-clamp-3">Like to add this track to your Releases</span>
+                            )}
+                          </p>
+                        </div>
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="shrink-0 overflow-visible px-0.5 py-3 pl-0.5 pr-1 sm:py-3.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
+                  {statusBadgeEl ? (
+                    <>
+                      {statusBadgeEl}
+                      <span className="text-gray-500 select-none" aria-hidden>
+                        •
+                      </span>
+                    </>
+                  ) : null}
+                  {genrePillEl}
+                  <span className="text-gray-500 select-none" aria-hidden>
+                    •
+                  </span>
+                  {post.djName && <span>Played by: {post.djName}</span>}
+                  {post.djName && (
+                    <span className="text-gray-500 select-none" aria-hidden>
+                      •
+                    </span>
+                  )}
+                  <span>
+                    {post.playedDate
+                      ? `Played on: ${formatPlayedDate(post.playedDate)}`
+                      : post.createdAt
+                        ? formatTimeAgo(post.createdAt)
+                        : "Recently"}
+                  </span>
+                  {post.location && (
+                    <>
+                      <span className="text-gray-500 select-none" aria-hidden>
+                        •
+                      </span>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-300" aria-hidden />
+                        <span className="truncate">{post.location}</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {releasePreview && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
+                  }}
+                  className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted sm:h-12 sm:w-12">
+                    {releasePreview.artworkUrl ? (
+                      <img src={releasePreview.artworkUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <Music className="h-5 w-5 text-gray-500 sm:h-6 sm:w-6" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 overflow-visible">
+                    <p className="line-clamp-2 text-[11px] font-medium leading-snug text-white sm:text-xs">
+                      {formatReleaseTitleLine(
+                        releasePreview.ownerUsername,
+                        releasePreview.title,
+                        releasePreview.collaborators
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
+                      {releasePreview.isComingSoon
+                        ? "Coming soon..."
+                        : releasePreview.releaseDate
+                          ? formatDate(releasePreview.releaseDate)
+                          : ""}
+                      <span
+                        className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px] ${
+                          isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
+                            ? "bg-amber-500/20 text-amber-400"
+                            : "bg-green-500/20 text-green-600 dark:text-green-400"
+                        }`}
+                      >
+                        {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
+                          ? "Upcoming"
+                          : "Released"}
+                      </span>
+                    </p>
+                    <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
+                      {isReleaseOwner ? (
+                        <>
+                          <Edit2 className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+                          <span>Edit release</span>
+                        </>
+                      ) : isPostUploader && isPostIdentified ? (
+                        <>
+                          <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
+                          <span className="line-clamp-3">Saved to your Releases</span>
+                        </>
+                      ) : hasLiked ? (
+                        <>
+                          <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
+                          <span>In your Releases</span>
+                        </>
+                      ) : (
+                        <span className="line-clamp-3">Like to add this track to your Releases</span>
+                      )}
+                    </p>
+                  </div>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
+      {/* Feed scrub: full post width, tall invisible hit zone, thumb + readout; z above overlay fades. */}
+      {isActive && scrubBarReady && shouldLoadVideo && videoSrc ? (
+        <div
+          className={cn(
+            "pointer-events-none z-[40] flex w-full justify-center px-0",
+            /* Home: pin to viewport so the track sits flush on top of the fixed tab bar (matches `--app-bottom-nav-block`). */
+            embeddedFeed
+              ? "absolute inset-x-0 bottom-0 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]"
+              : "fixed inset-x-0 bottom-[var(--video-feed-scrub-bottom)] pb-0",
+          )}
+        >
+          <div
+            ref={scrubHitRef}
+            role="slider"
+            aria-label="Seek video"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="pointer-events-auto relative flex w-full max-w-none min-h-0 touch-none select-none flex-col justify-end pt-1.5 pb-1 [-webkit-tap-highlight-color:transparent]"
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              endHold2x();
+              const video = videoRef.current;
+              if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+              e.preventDefault();
+              e.stopPropagation();
+              scrubbingRef.current = true;
+              setIsScrubbingUi(true);
+              wasPlayingBeforeScrubRef.current = !video.paused;
+              if (wasPlayingBeforeScrubRef.current) video.pause();
+              try {
+                (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+              } catch {
+                /* ignore */
+              }
+              applyScrubFromClientX(e.clientX, video);
+            }}
+            onPointerMove={(e) => {
+              if (!scrubbingRef.current) return;
+              e.preventDefault();
+              const video = videoRef.current;
+              if (!video) return;
+              applyScrubFromClientX(e.clientX, video);
+            }}
+            onPointerUp={(e) => {
+              if (!scrubbingRef.current) return;
+              endScrubGesture({ releaseTarget: e.currentTarget, pointerId: e.pointerId });
+            }}
+            onPointerCancel={(e) => {
+              if (!scrubbingRef.current) return;
+              endScrubGesture({ releaseTarget: e.currentTarget, pointerId: e.pointerId });
+            }}
+            onLostPointerCapture={() => {
+              if (!scrubbingRef.current) return;
+              endScrubGesture();
+            }}
+          >
+            <div className="relative w-full">
+              {isScrubbingUi && scrubReadout ? (
+                <div
+                  className="pointer-events-none absolute bottom-[calc(100%+8px)] left-0 right-0 z-[2] text-center text-[11px] font-medium tabular-nums tracking-tight text-white/90 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
+                  aria-live="polite"
+                >
+                  {scrubReadout.current} / {scrubReadout.total}
+                </div>
+              ) : null}
+              <div className="relative h-1 w-full overflow-visible">
+                <div className="absolute inset-0 rounded-full bg-white/15" aria-hidden />
+                <div
+                  ref={scrubFillRef}
+                  className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white/55 will-change-transform motion-reduce:transition-none"
+                  style={{ transform: "scaleX(0)" }}
+                />
+                <div
+                  ref={scrubThumbRef}
+                  className={cn(
+                    "absolute top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_5px_rgba(0,0,0,0.45)] ring-1 ring-white/75 transition-[width,height,opacity,box-shadow] duration-200 ease-out motion-reduce:transition-none",
+                    isScrubbingUi ? "h-2.5 w-2.5 opacity-100 ring-2 ring-white/55 shadow-[0_2px_10px_rgba(0,0,0,0.55)]" : "h-2 w-2 opacity-[0.88]",
+                  )}
+                  style={{ left: "0%" }}
+                  aria-hidden
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {/* Report Modal */}
       <ReportModal
         isOpen={showReportModal}

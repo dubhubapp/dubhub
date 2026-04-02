@@ -21,6 +21,7 @@ import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { resolveMediaUrl } from "@/lib/media-url";
+import { playSuccessNotification } from "@/lib/haptic";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -381,6 +382,7 @@ export default function ReleaseEdit() {
         feedKey: "/api/releases/feed",
       });
 
+      playSuccessNotification();
       toast({ title: "Release updated" });
       navigate("/releases");
     } catch (error) {

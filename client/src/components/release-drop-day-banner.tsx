@@ -146,10 +146,9 @@ export function ReleaseDropDayBanner() {
     }
 
     celebrationFiredRef.current = celebrationSessionKey;
-    // Keep the effect subtle/premium but noticeable: ~1s felt too easy to miss.
-    // Duration increase also makes the burst look more intentional without turning into a long animation.
-    runConfetti({ duration: 1800, particleCount: 52 });
+    // Defer until after paint so the banner layout and first frame are not competing with canvas setup.
     playReleaseDayHaptic();
+    runConfetti({ duration: 2800, particleCount: 36, deferAfterPaint: true });
 
     try {
       if (typeof sessionStorage !== "undefined") {

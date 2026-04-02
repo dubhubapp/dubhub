@@ -1,5 +1,8 @@
 import { Capacitor } from "@capacitor/core";
-import { Haptics, ImpactStyle } from "@capacitor/haptics";
+import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
+
+/** Web fallback when `notification()` is unavailable (subtle success cadence). */
+const SUCCESS_NOTIFICATION_WEB_PATTERN = [12, 32, 22];
 
 /**
  * Short haptic pattern: small pulse -> stronger pulse -> stop.
@@ -35,4 +38,41 @@ export function playPullRefreshThresholdHaptic(): void {
 
 export function playReleaseDayHaptic(): void {
   safeVibrate(RELEASE_DAY_PATTERN);
+}
+
+/** Subtle impact for taps (like, sheet chrome). Safe on web / when haptics unavailable. */
+export function playInteractionLight(): void {
+  try {
+    void Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+  } catch {
+    /* unavailable */
+  }
+}
+
+/** Slightly stronger impact for “random” / weighted actions. */
+export function playInteractionMedium(): void {
+  try {
+    void Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+  } catch {
+    /* unavailable */
+  }
+}
+
+/**
+ * System success(notification) on native; gentle vibrate fallback on web.
+ * Use only after confirmed server success (not on button tap).
+ */
+export function playSuccessNotification(): void {
+  try {
+    void Haptics.notification({ type: NotificationType.Success }).catch(() => {
+      safeVibrate(SUCCESS_NOTIFICATION_WEB_PATTERN);
+    });
+  } catch {
+    safeVibrate(SUCCESS_NOTIFICATION_WEB_PATTERN);
+  }
+}
+
+/** Theme / appearance toggle: crisp, light (same as other light impacts). */
+export function playThemeToggleHaptic(): void {
+  playInteractionLight();
 }

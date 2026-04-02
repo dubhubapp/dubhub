@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
+import { playSuccessNotification } from "@/lib/haptic";
 
 const getTodayInputValue = () => {
   const d = new Date();
@@ -135,7 +136,6 @@ export default function SubmitMetadata() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { currentUser } = useUser();
-  const uploadSuccessHapticFiredRef = useRef(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
@@ -151,15 +151,6 @@ export default function SubmitMetadata() {
   const [trimTimes, setTrimTimes] = useState<{startTime: number; endTime: number} | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
 
-  const triggerUploadSuccessHaptic = () => {
-    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") {
-      return;
-    }
-
-    // Subtle "small -> slightly stronger" pulse sequence (< 1s total).
-    navigator.vibrate([14, 36, 28]);
-  };
-  
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
 
@@ -292,9 +283,6 @@ export default function SubmitMetadata() {
     valid && !!fieldConfirmed[key] && !fieldFocused[key];
 
   const uploadMutation = useMutation({
-    onMutate: () => {
-      uploadSuccessHapticFiredRef.current = false;
-    },
     mutationFn: async ({ file, start, end }: { file: File; start: number; end: number }) => {
       const formData = new FormData();
       formData.append('video', file);
@@ -422,10 +410,6 @@ export default function SubmitMetadata() {
     onSuccess: (data) => {
       setUploadedVideoUrl(data.url);
       setUploadProgress(0);
-      if (!uploadSuccessHapticFiredRef.current) {
-        triggerUploadSuccessHaptic();
-        uploadSuccessHapticFiredRef.current = true;
-      }
       toast({
         title: "Video Uploaded!",
         description: "Your video has been processed and uploaded successfully.",
@@ -473,6 +457,8 @@ export default function SubmitMetadata() {
       const newPostId = created?.id;
       if (!newPostId) {
         console.error("Post created but response missing id:", created);
+      } else {
+        playSuccessNotification();
       }
 
       toast({

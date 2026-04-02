@@ -15,7 +15,12 @@ import {
   serializeQueryError,
 } from "@/lib/apiDiagnostics";
 import { useUser } from "@/lib/user-context";
-import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import {
+  TOP_SCROLL_EPSILON,
+  isHomeFeedSnappedToFirstPost,
+  usePullToRefresh,
+} from "@/hooks/use-pull-to-refresh";
+import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
@@ -23,8 +28,9 @@ import { RandomDiceButton } from "@/components/random-dice-button";
 /** Keep in sync with `animation.dice-spin` duration in `tailwind.config.ts` (0.42s). */
 const DICE_SPIN_ANIMATION_MS = 420;
 const RANDOM_DICE_RAIL_EXIT_MS = 175;
+/** Taller under large safe-top so controls stay on a readable scrim (Dynamic Island / notch). */
 const feedTopOverlayGradient =
-  "pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/28 via-black/10 to-transparent";
+  "pointer-events-none absolute inset-x-0 top-0 h-[max(7rem,calc(4.25rem+env(safe-area-inset-top,0px)))] bg-gradient-to-b from-black/28 via-black/10 to-transparent";
 
 /** Home-only: centered genre menu (identification + feed order live in the genre menu). */
 function HomeFeedTopChrome({
@@ -34,6 +40,7 @@ function HomeFeedTopChrome({
   onIdentificationChange,
   sortMode,
   onSortChange,
+  onStatusSafeAreaTap,
 }: {
   selectedGenres: string[];
   onGenresChange: (next: string[]) => void;
@@ -41,11 +48,47 @@ function HomeFeedTopChrome({
   onIdentificationChange: (next: "all" | "identified" | "unidentified") => void;
   sortMode: FeedSortMode;
   onSortChange: (mode: FeedSortMode) => void;
+  /** Tap in the top safe-area / status region scrolls the feed to the top (iOS status-bar tap analogue). */
+  onStatusSafeAreaTap?: () => void;
 }) {
   return (
     <>
-      <div className={feedTopOverlayGradient} />
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-2.5 pt-2 sm:px-4 sm:pt-2.5">
+      <div className={feedTopOverlayGradient} aria-hidden />
+      {onStatusSafeAreaTap ? (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-0 z-[35] h-[max(7rem,calc(4.25rem+env(safe-area-inset-top,0px)))] pr-[env(safe-area-inset-right,0px)]"
+          aria-hidden
+        >
+          {/*
+            Full-width strip: from physical top down to the genre row’s padding edge (same as chrome `pt`),
+            but never shorter than the safe-area inset so the notch / status strip stays fully tappable.
+          */}
+          <button
+            type="button"
+            aria-label="Scroll feed to top"
+            className="pointer-events-auto absolute inset-x-0 top-0 h-[max(env(safe-area-inset-top,0px),max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem)))] w-full cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onStatusSafeAreaTap();
+            }}
+          />
+          {/*
+            Top-right column: anchored to the screen’s right edge (respecting safe-area on the wrapper),
+            beside the centered genre pill (max 10.25rem → half + 5.125rem from center).
+          */}
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+            className="pointer-events-auto absolute bottom-0 right-0 top-0 w-[max(2.75rem,calc(50%-5.125rem))] cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onStatusSafeAreaTap();
+            }}
+          />
+        </div>
+      ) : null}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 pl-[max(0.625rem,env(safe-area-inset-left,0px))] pr-[max(0.625rem,env(safe-area-inset-right,0px))] pt-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem))] sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pt-[max(0.625rem,calc(env(safe-area-inset-top,0px)+0.5rem))]">
         <div className="pointer-events-auto flex w-full min-w-0 justify-center">
           <div className="flex min-w-0 max-w-[min(100%,10.25rem)] justify-center sm:max-w-[min(46vw,12.25rem)]">
             <GenreFilter
@@ -147,6 +190,8 @@ export default function Home() {
   const randomExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
   const [isFeedMuted, setIsFeedMuted] = useState(true);
+  /** Persists while scrolling the home feed (and between Random / sorted feeds). */
+  const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
@@ -377,6 +422,65 @@ export default function Home() {
     onPullThresholdCrossed: onHomePullThresholdCrossed,
   });
 
+  const scrollFeedToFirstPost = useCallback(() => {
+    const el = videoFeedRef.current;
+    if (!el) return;
+    if (sortMode === "random") {
+      el.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    const first = el.querySelector<HTMLElement>("[data-post-id]");
+    if (first) {
+      el.scrollTo({ top: first.offsetTop, behavior: "smooth" });
+    } else {
+      el.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [sortMode]);
+
+  const { registerHomeWhileOnHomeHandler } = useHomeFeedInteraction();
+
+  useEffect(() => {
+    if (isLoading || isError) {
+      registerHomeWhileOnHomeHandler(null);
+      return () => registerHomeWhileOnHomeHandler(null);
+    }
+
+    const handler = () => {
+      const el = videoFeedRef.current;
+      if (sortMode === "random") {
+        if (el && el.scrollTop > TOP_SCROLL_EPSILON) {
+          el.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        return;
+      }
+
+      if (!el) return;
+
+      if (!isHomeFeedSnappedToFirstPost(el)) {
+        const first = el.querySelector<HTMLElement>("[data-post-id]");
+        if (first) {
+          el.scrollTo({ top: first.offsetTop, behavior: "smooth" });
+        } else {
+          el.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        return;
+      }
+
+      if (postsQuery.isFetching) return;
+      void handleHomeFeedPullRefresh();
+    };
+
+    registerHomeWhileOnHomeHandler(handler);
+    return () => registerHomeWhileOnHomeHandler(null);
+  }, [
+    isLoading,
+    isError,
+    sortMode,
+    postsQuery.isFetching,
+    registerHomeWhileOnHomeHandler,
+    handleHomeFeedPullRefresh,
+  ]);
+
   /**
    * Drag = native scroll (content follows the finger). Release applies distance vs anchor + flick
    * velocity from recent touchmoves; completion uses smooth scroll from the current offset so it
@@ -445,7 +549,7 @@ export default function Home() {
     const isInteractiveTarget = (target: EventTarget | null): boolean => {
       if (!(target instanceof Element)) return false;
       return !!target.closest(
-        "button, a, input, textarea, select, label, [role='button'], [data-video-action-rail], [data-radix-popper-content-wrapper]",
+        "button, a, input, textarea, select, label, [role='button'], [data-video-action-rail], [data-feed-2x-hold-zone], [data-radix-popper-content-wrapper]",
       );
     };
 
@@ -896,7 +1000,7 @@ export default function Home() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-background">
+      <div className="flex flex-1 items-center justify-center bg-background pt-[env(safe-area-inset-top,0px)]">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
           <p className="text-muted-foreground">Loading posts...</p>
@@ -908,7 +1012,7 @@ export default function Home() {
   if (isError) {
     const detail = getApiRequestErrorDetail(error);
     return (
-      <div className="flex-1 flex items-center justify-center bg-background px-4">
+      <div className="flex flex-1 items-center justify-center bg-background px-4 pt-[env(safe-area-inset-top,0px)]">
         <div className="text-center text-red-400 max-w-lg w-full">
           <p className="text-lg mb-2">Failed to load feed</p>
           <p className="text-sm break-words">{detail.message}</p>
@@ -953,6 +1057,7 @@ export default function Home() {
           onIdentificationChange={setIdentificationFilter}
           sortMode="random"
           onSortChange={handleFeedSortChange}
+          onStatusSafeAreaTap={scrollFeedToFirstPost}
         />
 
         <div
@@ -978,6 +1083,8 @@ export default function Home() {
               shouldLoadVideo={true}
               videoPreload="auto"
               onToggleMute={() => setIsFeedMuted((prev) => !prev)}
+              feedOverlayCollapsed={isFeedOverlayCollapsed}
+              onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
               feedRandomDice={{
                 onPress: () => {
                   void loadNextRandom();
@@ -1044,6 +1151,7 @@ export default function Home() {
           onIdentificationChange={setIdentificationFilter}
           sortMode={sortMode}
           onSortChange={handleFeedSortChange}
+          onStatusSafeAreaTap={scrollFeedToFirstPost}
         />
         <div className="h-full flex items-center justify-center pt-32">
           <div className="text-center text-muted-foreground">
@@ -1064,6 +1172,7 @@ export default function Home() {
         onIdentificationChange={setIdentificationFilter}
         sortMode={sortMode}
         onSortChange={handleFeedSortChange}
+        onStatusSafeAreaTap={scrollFeedToFirstPost}
       />
 
       <div
@@ -1098,6 +1207,8 @@ export default function Home() {
             shouldLoadVideo={shouldLoadVideo}
             videoPreload={videoPreload}
             onToggleMute={() => setIsFeedMuted((prev) => !prev)}
+            feedOverlayCollapsed={isFeedOverlayCollapsed}
+            onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
           />
           );
         })}

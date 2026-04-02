@@ -16,6 +16,8 @@ interface ReportModalProps {
   postId: string;
   commentId?: string;
   reportedUserId?: string;
+  /** Stack above portaled surfaces with higher z (e.g. comments drawer). */
+  dialogStackClassName?: string;
 }
 
 /** Report reason menu: full-height list (no inner scroll), subtle dividers, tick-only selection */
@@ -47,7 +49,15 @@ const reportReasonSelectItemClass = cn(
 // Safety timeout to re-enable UI if request hangs (10 seconds)
 const SAFETY_TIMEOUT_MS = 10000;
 
-export function ReportModal({ isOpen, onClose, type, postId, commentId, reportedUserId }: ReportModalProps) {
+export function ReportModal({
+  isOpen,
+  onClose,
+  type,
+  postId,
+  commentId,
+  reportedUserId,
+  dialogStackClassName,
+}: ReportModalProps) {
   const [reason, setReason] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [isReasonSelectOpen, setIsReasonSelectOpen] = useState<boolean>(false);
@@ -256,7 +266,8 @@ export function ReportModal({ isOpen, onClose, type, postId, commentId, reported
       onOpenChange={handleOpenChange}
     >
       <DialogContent 
-        className="max-w-md"
+        className={cn("max-w-md", dialogStackClassName)}
+        overlayClassName={dialogStackClassName}
         onOpenAutoFocus={(e) => {
           // Optional: prevent auto-focus if needed, but let Radix handle it by default
         }}

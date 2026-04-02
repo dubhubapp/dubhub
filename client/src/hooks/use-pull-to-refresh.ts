@@ -13,7 +13,15 @@ const DEFAULT_COMPLETE_MS = 300;
 /** Ensures spin + held row are perceptible even on instant network/cache. */
 const DEFAULT_MIN_REFRESH_VISIBLE_MS = 560;
 /** Top-of-feed: tolerate subpixel / elastic settle */
-const TOP_SCROLL_EPSILON = 8;
+export const TOP_SCROLL_EPSILON = 8;
+
+/** True when scrollTop is aligned with the first `data-post-id` card (includes pull spacer offset). */
+export function isHomeFeedSnappedToFirstPost(scrollEl: HTMLElement | null): boolean {
+  if (!scrollEl) return true;
+  const first = scrollEl.querySelector<HTMLElement>("[data-post-id]");
+  if (!first) return true;
+  return Math.abs(scrollEl.scrollTop - first.offsetTop) <= TOP_SCROLL_EPSILON;
+}
 
 /**
  * Pull must not arm while comments UI is up, during drawer close, or while a Vaul drawer is still

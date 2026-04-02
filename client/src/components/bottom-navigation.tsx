@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { Home, Plus, Calendar, User, Shield, Trophy } from "lucide-react";
 import { useUser } from "@/lib/user-context";
@@ -23,7 +24,8 @@ function isModeratorQueueNotificationMessage(message: unknown): boolean {
 }
 
 export function BottomNavigation() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const { invokeHomeWhileOnHome } = useHomeFeedInteraction();
   const { openSubmitClip, isSubmitClipOpen } = useSubmitClip();
   const { userType, currentUser } = useUser();
   const notificationPrefs = useNotificationPreferences();
@@ -102,18 +104,25 @@ export function BottomNavigation() {
       <div
         className={`mx-auto flex max-w-md items-stretch justify-between gap-0.5 ${isModerator ? "max-w-lg" : ""}`}
       >
-        <Link href="/" className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1">
           <button
             type="button"
             className={`${itemBase} w-full ${location === "/" ? "text-primary" : "text-gray-400"}`}
             data-testid="nav-home"
+            onClick={() => {
+              if (location === "/") {
+                invokeHomeWhileOnHome();
+              } else {
+                navigate("/");
+              }
+            }}
           >
             <span className={iconSlot}>
               <Home className="h-6 w-6" strokeWidth={location === "/" ? 2.25 : 2} />
             </span>
             <span className={labelClass}>Home</span>
           </button>
-        </Link>
+        </div>
 
         <Link href="/leaderboard" className="min-w-0 flex-1">
           <button

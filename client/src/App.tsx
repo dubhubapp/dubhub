@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -28,7 +28,22 @@ import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
-import { APP_MAIN_SHELL_CLASS } from "@/lib/app-shell-layout";
+import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
+import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
+import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
+
+function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const shellClass =
+    location === "/"
+      ? APP_MAIN_SHELL_BASE
+      : `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`;
+  return (
+    <div data-app-shell className={shellClass}>
+      {children}
+    </div>
+  );
+}
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -175,6 +190,12 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isLoading) {
+      document.documentElement.removeAttribute("data-dubhub-launch-bg");
+    }
+  }, [isLoading]);
+
   const handleAuthSuccess = (role: string) => {
     localStorage.setItem('dubhub-authenticated', 'true');
     localStorage.setItem('dubhub-user-role', role);
@@ -214,12 +235,7 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-background px-6 py-8">
-            <div className="text-foreground text-center">
-              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p>Loading...</p>
-            </div>
-          </div>
+          <AppLaunchSplash />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
@@ -285,6 +301,7 @@ function App() {
       <TooltipProvider>
         <UserProvider>
           <SubmitClipProvider>
+          <HomeFeedInteractionProvider>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <PasswordRecoveryRedirect />
           <Toaster />
@@ -292,7 +309,7 @@ function App() {
             data-app-root="true"
             className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground"
           >
-            <div data-app-shell className={APP_MAIN_SHELL_CLASS}>
+            <AuthenticatedMainShell>
             <Switch>
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route path="/" component={Home} />
@@ -309,12 +326,13 @@ function App() {
               <Route path="/moderator" component={ModeratorPage} />
               <Route component={NotFound} />
             </Switch>
-            </div>
+            </AuthenticatedMainShell>
             <SubmitClipDrawer />
             <ConditionalBottomNavigation />
             <ReleaseDropDayBanner />
           </div>
           </div>
+          </HomeFeedInteractionProvider>
           </SubmitClipProvider>
         </UserProvider>
       </TooltipProvider>
