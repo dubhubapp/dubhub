@@ -4,6 +4,10 @@ import { storage } from "./storage";
 import { supabase } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import {
+  MAX_CLIP_DURATION_SECONDS,
+  MAX_VIDEO_UPLOAD_BYTES,
+} from "@shared/video-upload";
 import { MODERATION_REASON_MAX_LENGTH } from "@shared/moderation-reasons";
 import { insertCommentSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
@@ -16,6 +20,12 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { getPlatformTrendMetrics } from "./internalAnalytics";
+import {
+  buildCompressOnlyArgs,
+  buildTrimCompressArgs,
+  probeDurationSeconds,
+  runFfmpeg,
+} from "./ffmpegVideo";
 import {
   awardConfirmedIdKarma,
   awardCommentLikeKarma,
@@ -242,7 +252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-      fileSize: 500 * 1024 * 1024, // 500MB limit
+      fileSize: MAX_VIDEO_UPLOAD_BYTES,
     },
     fileFilter: (req, file, cb) => {
       console.log('File upload attempt:', {
@@ -270,206 +280,269 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Video upload endpoint - process with ffmpeg
-  // Multer must run first to parse multipart form data, then we can authenticate
-  app.post("/api/upload-video", upload.single('video'), async (req, res) => {
-    try {
-      // Extract user ID from auth header (multer runs first, then we get user)
-      const authHeader = req.headers.authorization;
-      let userId = 'anonymous';
-      
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-          const { supabase } = await import('./supabaseClient');
-          const accessToken = authHeader.substring(7);
-          const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-          if (!error && user) {
-            userId = user.id;
+  // Video upload: expect client-trimmed clip only when preTrimmed=1; server compresses for the feed.
+  app.post(
+    "/api/upload-video",
+    (req, res, next) => {
+      upload.single("video")(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(413).json({
+              success: false,
+              error: `Trimmed clip exceeds ${MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024)}MB. Choose a shorter segment or a lower-resolution source.`,
+            });
           }
-        } catch (authError) {
-          console.warn('Could not authenticate user for upload, using anonymous:', authError);
+          return res.status(400).json({ success: false, error: err.message });
         }
-      }
-      
-      if (!req.file) {
-        return res.status(400).json({ success: false, error: "No video file provided" });
-      }
-
-      const startTime = parseFloat(req.body.start || '0');
-      const endTime = parseFloat(req.body.end || '30');
-      
-      // Validate parameters
-      if (startTime < 0) {
-        return res.status(400).json({ success: false, error: "Start time cannot be negative" });
-      }
-      
-      if (endTime <= startTime) {
-        return res.status(400).json({ success: false, error: "End time must be greater than start time" });
-      }
-      
-      if (endTime - startTime > 30) {
-        return res.status(400).json({ success: false, error: "Clip duration cannot exceed 30 seconds" });
-      }
-
-      // Process video with ffmpeg
+        if (err) return next(err);
+        next();
+      });
+    },
+    async (req, res) => {
       try {
-        // Generate unique filenames - always output as .mp4 for web compatibility
+        const authHeader = req.headers.authorization;
+        let userId = "anonymous";
+
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+          try {
+            const { supabase } = await import("./supabaseClient");
+            const accessToken = authHeader.substring(7);
+            const {
+              data: { user },
+              error,
+            } = await supabase.auth.getUser(accessToken);
+            if (!error && user) {
+              userId = user.id;
+            }
+          } catch (authError) {
+            console.warn("Could not authenticate user for upload, using anonymous:", authError);
+          }
+        }
+
+        if (!req.file) {
+          return res.status(400).json({ success: false, error: "No video file provided" });
+        }
+
+        if (req.file.size > MAX_VIDEO_UPLOAD_BYTES) {
+          return res.status(413).json({
+            success: false,
+            error: `Trimmed clip exceeds ${MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024)}MB.`,
+          });
+        }
+
+        const preTrimmed =
+          req.body.preTrimmed === "1" ||
+          req.body.preTrimmed === "true" ||
+          req.body.clientTrimmed === "1";
+
         const timestamp = Date.now();
         const randomId = Math.random().toString(36).substring(2, 15);
-        const fileExtension = req.file.originalname.split('.').pop()?.toLowerCase() || 'mp4';
+        const fileExtension = req.file.originalname.split(".").pop()?.toLowerCase() || "mp4";
         const inputFilename = `input_${timestamp}_${randomId}.${fileExtension}`;
-        const outputFilename = `processed_${timestamp}_${randomId}.mp4`; // Always output .mp4
-        
-        const processedDir = path.join(process.cwd(), 'processed');
-        
-        // Ensure processed directory exists
+        const outputFilename = `processed_${timestamp}_${randomId}.mp4`;
+        const compressedFilename = `compressed_${timestamp}_${randomId}.mp4`;
+
+        const processedDir = path.join(process.cwd(), "processed");
         if (!fs.existsSync(processedDir)) {
           fs.mkdirSync(processedDir, { recursive: true });
         }
-        
+
         const inputPath = path.join(processedDir, inputFilename);
-        const outputPath = path.join(processedDir, outputFilename);
-        
-        // Calculate duration for -t parameter
-        const duration = endTime - startTime;
-        
-        // Save uploaded file
+        const compressedPath = path.join(processedDir, compressedFilename);
+
         fs.writeFileSync(inputPath, req.file.buffer);
-        
-        // Re-encode video with proper keyframes for seamless looping
-        // -ss BEFORE -i for faster seeking, then re-encode with forced keyframes
-        const { spawn } = await import('child_process');
-        
-        const ffmpegProcess = spawn('ffmpeg', [
-          '-y',
-          '-ss', startTime.toString(),
-          '-i', inputPath,
-          '-t', duration.toString(),
-          '-c:v', 'libx264',
-          '-preset', 'veryfast',
-          '-profile:v', 'high',
-          '-level', '4.1',
-          '-pix_fmt', 'yuv420p',
-          '-x264-params', 'keyint=48:min-keyint=48:scenecut=0',
-          '-force_key_frames', 'expr:gte(t,n_forced*1)',
-          '-c:a', 'aac',
-          '-b:a', '160k',
-          '-movflags', '+faststart',
-          outputPath
-        ]);
-        
-        let ffmpegError = '';
-        
-        ffmpegProcess.stderr.on('data', (data) => {
-          ffmpegError += data.toString();
-        });
-        
-        await new Promise((resolve, reject) => {
-          ffmpegProcess.on('close', (code) => {
-            if (code === 0) {
-              resolve(true);
-            } else {
-              reject(new Error(`FFmpeg process exited with code ${code}: ${ffmpegError}`));
-            }
-          });
-          
-          ffmpegProcess.on('error', (err) => {
-            reject(new Error(`Failed to start ffmpeg: ${err.message}`));
-          });
-        });
-        
-        // Clean up input file
+
+        let startTime = 0;
+        let endTime = 30;
+        let clipDurationSec = 0;
+
         try {
-          fs.unlinkSync(inputPath);
-        } catch (e) {
-          console.warn('Could not delete input file:', e);
-        }
-        
-        // Upload processed video to Supabase Storage
-        const { supabase } = await import('./supabaseClient');
-        const videoBuffer = fs.readFileSync(outputPath);
-        
-        // Generate unique path in Supabase Storage
-        const storagePath = `${userId}/${outputFilename}`;
-        
-        console.log('Uploading video to Supabase Storage:', {
-          bucket: 'videos',
-          path: storagePath,
-          size: videoBuffer.length,
-          userId
-        });
-        
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(storagePath, videoBuffer, {
-            contentType: 'video/mp4',
-            cacheControl: '3600',
-            upsert: false, // Don't overwrite existing files
-          });
-        
-        if (uploadError) {
-          console.error('Supabase storage upload error:', uploadError);
-          // Clean up local file
-          try {
-            fs.unlinkSync(outputPath);
-          } catch (e) {
-            console.warn('Could not delete output file:', e);
+          if (preTrimmed) {
+            let durationSec: number;
+            try {
+              durationSec = await probeDurationSeconds(inputPath);
+            } catch {
+              try {
+                fs.unlinkSync(inputPath);
+              } catch {
+                /* ignore */
+              }
+              return res.status(400).json({
+                success: false,
+                error: "Could not read video duration. Try another file.",
+              });
+            }
+            if (durationSec > MAX_CLIP_DURATION_SECONDS + 0.05) {
+              try {
+                fs.unlinkSync(inputPath);
+              } catch {
+                /* ignore */
+              }
+              return res.status(400).json({
+                success: false,
+                error: `Clip must be ${MAX_CLIP_DURATION_SECONDS} seconds or less.`,
+              });
+            }
+            clipDurationSec = durationSec;
+            endTime = durationSec;
+          } else {
+            startTime = parseFloat(req.body.start || "0");
+            endTime = parseFloat(req.body.end || "30");
+            if (startTime < 0) {
+              try {
+                fs.unlinkSync(inputPath);
+              } catch {
+                /* ignore */
+              }
+              return res.status(400).json({ success: false, error: "Start time cannot be negative" });
+            }
+            if (endTime <= startTime) {
+              try {
+                fs.unlinkSync(inputPath);
+              } catch {
+                /* ignore */
+              }
+              return res.status(400).json({
+                success: false,
+                error: "End time must be greater than start time",
+              });
+            }
+            if (endTime - startTime > MAX_CLIP_DURATION_SECONDS) {
+              try {
+                fs.unlinkSync(inputPath);
+              } catch {
+                /* ignore */
+              }
+              return res.status(400).json({
+                success: false,
+                error: `Clip duration cannot exceed ${MAX_CLIP_DURATION_SECONDS} seconds`,
+              });
+            }
+            clipDurationSec = endTime - startTime;
           }
+
+          let pathToUpload: string;
+          let serverCompressed = false;
+
+          try {
+            if (preTrimmed) {
+              await runFfmpeg(buildCompressOnlyArgs(inputPath, compressedPath));
+            } else {
+              await runFfmpeg(
+                buildTrimCompressArgs(inputPath, compressedPath, startTime, clipDurationSec),
+              );
+            }
+            try {
+              fs.unlinkSync(inputPath);
+            } catch {
+              /* ignore */
+            }
+            pathToUpload = compressedPath;
+            serverCompressed = true;
+          } catch (compressErr) {
+            console.warn("[upload-video] Server compression failed:", compressErr);
+            if (!preTrimmed) {
+              try {
+                fs.unlinkSync(inputPath);
+              } catch {
+                /* ignore */
+              }
+              throw compressErr;
+            }
+            pathToUpload = inputPath;
+            serverCompressed = false;
+          }
+
+          const videoBuffer = fs.readFileSync(pathToUpload);
+          try {
+            fs.unlinkSync(pathToUpload);
+          } catch {
+            /* ignore */
+          }
+
+          const { supabase } = await import("./supabaseClient");
+          const storagePath = `${userId}/${outputFilename}`;
+
+          console.log("Uploading video to Supabase Storage:", {
+            bucket: "videos",
+            path: storagePath,
+            size: videoBuffer.length,
+            userId,
+            preTrimmed,
+            serverCompressed,
+          });
+
+          const { error: uploadError } = await supabase.storage.from("videos").upload(storagePath, videoBuffer, {
+            contentType: "video/mp4",
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+          if (uploadError) {
+            console.error("Supabase storage upload error:", uploadError);
+            return res.status(500).json({
+              success: false,
+              error: `Failed to upload video to storage: ${uploadError.message}`,
+            });
+          }
+
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("videos").getPublicUrl(storagePath);
+
+          const result = {
+            success: true,
+            url: publicUrl,
+            filename: outputFilename,
+            start_time: preTrimmed ? 0 : startTime,
+            end_time: preTrimmed ? clipDurationSec : endTime,
+            duration: clipDurationSec,
+            preTrimmed,
+            serverCompressed,
+            message: serverCompressed
+              ? "Video compressed and uploaded successfully"
+              : "Video uploaded successfully (stored without extra compression)",
+          };
+
+          console.log("Video processed and uploaded to Supabase:", {
+            originalname: req.file.originalname,
+            uploadBytes: req.file.size,
+            outputFilename,
+            storagePath,
+            publicUrl,
+            preTrimmed,
+            serverCompressed,
+          });
+
+          res.json(result);
+        } catch (processingError) {
+          try {
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+          } catch {
+            /* ignore */
+          }
+          try {
+            if (fs.existsSync(compressedPath)) fs.unlinkSync(compressedPath);
+          } catch {
+            /* ignore */
+          }
+          console.error("Video processing error:", processingError);
           return res.status(500).json({
             success: false,
-            error: `Failed to upload video to storage: ${uploadError.message}`
+            error: "Video processing failed. Please try again.",
+            details:
+              processingError instanceof Error ? processingError.message : "Unknown error",
           });
         }
-        
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(storagePath);
-        
-        // Clean up local file after successful upload
-        try {
-          fs.unlinkSync(outputPath);
-        } catch (e) {
-          console.warn('Could not delete local output file:', e);
-        }
-        
-        // Return Supabase Storage public URL
-        const result = {
-          success: true,
-          url: publicUrl,
-          filename: outputFilename,
-          start_time: startTime,
-          end_time: endTime,
-          duration: endTime - startTime,
-          message: "Video trimmed and uploaded successfully"
-        };
-
-        console.log('Video processed and uploaded to Supabase:', {
-          originalname: req.file.originalname,
-          size: req.file.size,
-          trimmed: `${startTime}s to ${endTime}s`,
-          outputFilename,
-          storagePath,
-          publicUrl
-        });
-
-        res.json(result);
-      } catch (processingError) {
-        console.error('Video processing error:', processingError);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Video processing failed. Please try again.',
-          details: processingError instanceof Error ? processingError.message : 'Unknown error'
+      } catch (error) {
+        console.error("Video upload error:", error);
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : "Upload failed",
         });
       }
-    } catch (error) {
-      console.error('Video upload error:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Upload failed' 
-      });
-    }
-  });
+    },
+  );
 
   // Configure multer for profile picture uploads
   const profileUpload = multer({

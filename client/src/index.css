@@ -35,9 +35,10 @@
   /** Home VideoCard: reserve horizontal space for the action rail (icons + labels). */
   --video-feed-rail-width: clamp(3.375rem, 10.5vw, 4.375rem);
   /**
-   * Fixed feed scrub sits on the tab bar: nav border (1px) + tiny lift so the line/thumb aren’t clipped under z-50 chrome.
+   * Home scrub `bottom` inset: overridden at runtime from measured `[data-app-bottom-nav]` height.
+   * Fallback ≈ tab bar (1px border + block) before JS runs.
    */
-  --video-feed-scrub-bottom: calc(var(--app-bottom-nav-block) + 1px + 2px);
+  --video-feed-scrub-bottom: calc(1px + var(--app-bottom-nav-block));
 
   --background: hsl(227, 96%, 54%);
   --foreground: hsl(0, 0%, 100%);
@@ -204,5 +205,65 @@ html {
 
   .ios-press-soft:active {
     transform: scale(0.9885);
+  }
+
+  /**
+   * Track details: WebKit date + calendar picker is positioned absolute so the input can stay
+   * `display:flex` (items-center) like other fields without the picker inflating width.
+   */
+  .dubhub-date-input {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    text-align: start;
+  }
+
+  .dubhub-date-input::-webkit-datetime-edit {
+    display: inline-flex;
+    flex: 1 1 0%;
+    align-self: center;
+    min-width: 0 !important;
+    max-width: 100%;
+    justify-content: flex-start;
+    align-items: center;
+    text-align: start;
+    padding: 0;
+    margin: 0;
+    line-height: 1.25rem;
+  }
+
+  .dubhub-date-input::-webkit-datetime-edit-fields-wrapper {
+    display: inline-flex;
+    min-width: 0 !important;
+    max-width: 100%;
+    justify-content: flex-start;
+    align-items: center;
+    padding: 0;
+    line-height: 1.25rem;
+  }
+
+  .dubhub-date-input::-webkit-datetime-edit-text,
+  .dubhub-date-input::-webkit-datetime-edit-month-field,
+  .dubhub-date-input::-webkit-datetime-edit-day-field,
+  .dubhub-date-input::-webkit-datetime-edit-year-field {
+    padding: 0 1px;
+  }
+
+  /* Out of flow so it can't inflate width; inset clears the success check overlay (~right-2). */
+  .dubhub-date-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    top: 50%;
+    right: 2rem;
+    left: auto;
+    margin: 0;
+    transform: translateY(-50%);
+    opacity: 0.9;
+  }
+
+  .dubhub-date-input::-webkit-date-and-time-value {
+    margin-right: auto;
+    text-align: start;
   }
 }

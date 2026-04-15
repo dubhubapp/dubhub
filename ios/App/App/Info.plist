@@ -47,6 +47,15 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- Required for camera / video capture and photo library (HTML file inputs in WKWebView). -->
+	<key>NSCameraUsageDescription</key>
+	<string>dub hub uses your camera so you can record clips to identify tracks.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>dub hub uses your microphone when recording video so clip audio is captured for track identification.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>dub hub uses your photo library so you can choose videos to upload.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>dub hub may save or export trimmed clips during the upload process.</string>
 	<!-- Dev: local network (LAN API during on-device testing). Remove/adjust for App Store if not needed. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>dub hub needs local network access for development testing</string>

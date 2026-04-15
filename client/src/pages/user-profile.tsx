@@ -261,6 +261,9 @@ export default function UserProfile() {
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
   const [likesViewerStartIndex, setLikesViewerStartIndex] = useState<number | null>(null);
   const [postsViewerStartIndex, setPostsViewerStartIndex] = useState<number | null>(null);
+  /** Nearest snapped page in full-screen post viewers — drives a single active VideoCard (avoids N× `preload=auto`). */
+  const [postsViewerSnapIndex, setPostsViewerSnapIndex] = useState(0);
+  const [likesViewerSnapIndex, setLikesViewerSnapIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const likesViewerRef = useRef<HTMLDivElement | null>(null);
   const postsViewerRef = useRef<HTMLDivElement | null>(null);
@@ -1293,6 +1296,102 @@ export default function UserProfile() {
     return () => cancelAnimationFrame(frame);
   }, [postsViewerStartIndex]);
 
+  useEffect(() => {
+    if (postsViewerStartIndex === null) return;
+    setPostsViewerSnapIndex(postsViewerStartIndex);
+  }, [postsViewerStartIndex]);
+
+  useEffect(() => {
+    if (likesViewerStartIndex === null) return;
+    setLikesViewerSnapIndex(likesViewerStartIndex);
+  }, [likesViewerStartIndex]);
+
+  useEffect(() => {
+    const el = postsViewerRef.current;
+    if (!el || postsViewerStartIndex === null) return;
+
+    let raf: number | null = null;
+    const updateSnap = () => {
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-posts-viewer-index]"));
+      if (nodes.length === 0) return;
+      const st = el.scrollTop;
+      let bestIdx = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const n of nodes) {
+        const raw = n.dataset.postsViewerIndex;
+        const idx = raw === undefined ? 0 : Number(raw);
+        const d = Math.abs(st - n.offsetTop);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = Number.isFinite(idx) ? idx : 0;
+        }
+      }
+      setPostsViewerSnapIndex((prev) => (prev === bestIdx ? prev : bestIdx));
+    };
+
+    const schedule = () => {
+      if (raf != null) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = null;
+        updateSnap();
+      });
+    };
+
+    schedule();
+    el.addEventListener("scroll", schedule, { passive: true });
+    el.addEventListener("scrollend", schedule);
+    el.addEventListener("touchend", schedule, { passive: true });
+    return () => {
+      if (raf != null) window.cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", schedule);
+      el.removeEventListener("scrollend", schedule);
+      el.removeEventListener("touchend", schedule);
+    };
+  }, [postsViewerStartIndex, filteredPosts.length]);
+
+  useEffect(() => {
+    const el = likesViewerRef.current;
+    if (!el || likesViewerStartIndex === null) return;
+
+    let raf: number | null = null;
+    const updateSnap = () => {
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-liked-viewer-index]"));
+      if (nodes.length === 0) return;
+      const st = el.scrollTop;
+      let bestIdx = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const n of nodes) {
+        const raw = n.dataset.likedViewerIndex;
+        const idx = raw === undefined ? 0 : Number(raw);
+        const d = Math.abs(st - n.offsetTop);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = Number.isFinite(idx) ? idx : 0;
+        }
+      }
+      setLikesViewerSnapIndex((prev) => (prev === bestIdx ? prev : bestIdx));
+    };
+
+    const schedule = () => {
+      if (raf != null) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = null;
+        updateSnap();
+      });
+    };
+
+    schedule();
+    el.addEventListener("scroll", schedule, { passive: true });
+    el.addEventListener("scrollend", schedule);
+    el.addEventListener("touchend", schedule, { passive: true });
+    return () => {
+      if (raf != null) window.cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", schedule);
+      el.removeEventListener("scrollend", schedule);
+      el.removeEventListener("touchend", schedule);
+    };
+  }, [likesViewerStartIndex, likedPosts.length]);
+
   const handleNotificationClick = (notification: NotificationWithUser) => {
     // Mark as read if unread
     if (!notification.read) {
@@ -1907,15 +2006,27 @@ export default function UserProfile() {
                     ref={postsViewerRef}
                     className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide overscroll-y-contain [overflow-anchor:auto]"
                   >
-                    {filteredPosts.map((post, index) => (
-                      <div
-                        key={post.id}
-                        data-posts-viewer-index={index}
-                        className="snap-start h-full w-full shrink-0"
-                      >
-                        <VideoCard post={post} showStatusBadge embeddedFeed />
-                      </div>
-                    ))}
+                    {filteredPosts.map((post, index) => {
+                      const dSnap = Math.abs(index - postsViewerSnapIndex);
+                      return (
+                        <div
+                          key={post.id}
+                          data-posts-viewer-index={index}
+                          className="snap-start h-full w-full shrink-0"
+                        >
+                          <VideoCard
+                            post={post}
+                            showStatusBadge
+                            embeddedFeed
+                            isActive={index === postsViewerSnapIndex}
+                            shouldLoadVideo={dSnap <= 1}
+                            videoPreload={
+                              dSnap === 0 ? "auto" : dSnap <= 1 ? "metadata" : "none"
+                            }
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -1993,15 +2104,27 @@ export default function UserProfile() {
                     ref={likesViewerRef}
                     className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide overscroll-y-contain [overflow-anchor:auto]"
                   >
-                    {likedPosts.map((post, index) => (
-                      <div
-                        key={post.id}
-                        data-liked-viewer-index={index}
-                        className="snap-start h-full w-full shrink-0"
-                      >
-                        <VideoCard post={post} showStatusBadge embeddedFeed />
-                      </div>
-                    ))}
+                    {likedPosts.map((post, index) => {
+                      const dSnap = Math.abs(index - likesViewerSnapIndex);
+                      return (
+                        <div
+                          key={post.id}
+                          data-liked-viewer-index={index}
+                          className="snap-start h-full w-full shrink-0"
+                        >
+                          <VideoCard
+                            post={post}
+                            showStatusBadge
+                            embeddedFeed
+                            isActive={index === likesViewerSnapIndex}
+                            shouldLoadVideo={dSnap <= 1}
+                            videoPreload={
+                              dSnap === 0 ? "auto" : dSnap <= 1 ? "metadata" : "none"
+                            }
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (

@@ -10,6 +10,11 @@ export type VinylPullRefreshIndicatorProps = {
   pullProgress: number;
   phase: PullToRefreshPhase;
   className?: string;
+  /**
+   * Use on white/light primary buttons: spinning vinyl uses `text-primary-foreground` (brand blue)
+   * instead of `text-primary` (white), so it stays visible.
+   */
+  spinningContrast?: "default" | "onPrimaryButton";
 };
 
 /**
@@ -21,6 +26,7 @@ export function VinylPullRefreshIndicator({
   pullProgress,
   phase,
   className,
+  spinningContrast = "default",
 }: VinylPullRefreshIndicatorProps) {
   const pulling = phase === "pulling";
   const atThreshold = phase === "threshold";
@@ -62,7 +68,8 @@ export function VinylPullRefreshIndicator({
         <div
           className={cn(
             spinning && "motion-safe:animate-spin motion-reduce:animate-none",
-            (phase === "refreshing" || phase === "completing" || atThreshold) && "text-primary",
+            (phase === "refreshing" || phase === "completing" || atThreshold) &&
+              (spinningContrast === "onPrimaryButton" ? "text-primary-foreground" : "text-primary"),
             (phase === "pulling" || phase === "idle") && "text-white/55",
           )}
           style={spinning ? { animationDuration: spinDuration } : undefined}

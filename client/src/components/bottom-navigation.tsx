@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useState, useRef, useLayoutEffect } from "react";
 import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { Home, Plus, Calendar, User, Shield, Trophy } from "lucide-react";
@@ -8,6 +9,18 @@ import { apiRequest } from "@/lib/queryClient";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import { formatNotificationBadgeCount } from "@/lib/utils";
+import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const MODERATOR_QUEUE_KEYWORDS = [
   "community verification",
@@ -23,8 +36,12 @@ function isModeratorQueueNotificationMessage(message: unknown): boolean {
   return MODERATOR_QUEUE_KEYWORDS.some((keyword) => lower.includes(keyword));
 }
 
+const VIDEO_FEED_SCRUB_BOTTOM_VAR = "--video-feed-scrub-bottom";
+
 export function BottomNavigation() {
   const [location, navigate] = useLocation();
+  const navContainerRef = useRef<HTMLDivElement | null>(null);
+  const [showCancelPostDialog, setShowCancelPostDialog] = useState(false);
   const { invokeHomeWhileOnHome } = useHomeFeedInteraction();
   const { openSubmitClip, isSubmitClipOpen } = useSubmitClip();
   const { userType, currentUser } = useUser();
@@ -95,9 +112,54 @@ export function BottomNavigation() {
   const iconSlot =
     "flex h-7 shrink-0 items-center justify-center min-[840px]:h-[1.625rem]";
   const labelClass = "max-w-full truncate text-center text-[10px] font-medium leading-none";
+  const handleConfirmCancelFromNav = async () => {
+    dubhubVideoDebugLog("[DubHub][PostFlow][route]", "cancel post from Home nav confirm", {
+      from: location,
+      to: "/",
+    });
+    await cancelPostAndHardResetToHome("bottom-nav-cancel-post");
+  };
+
+  /**
+   * Drive home feed scrub `position: fixed` inset from the *measured* tab bar (border, pads, safe area,
+   * dynamic type). Avoids device-size gaps from a purely static calc vs real layout.
+   */
+  useLayoutEffect(() => {
+    const el = navContainerRef.current;
+    if (!el) return;
+
+    const apply = () => {
+      if (!el.isConnected) return;
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) {
+        document.documentElement.style.setProperty(VIDEO_FEED_SCRUB_BOTTOM_VAR, `${h}px`);
+      }
+    };
+
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    window.addEventListener("resize", apply);
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", apply);
+      vv.addEventListener("scroll", apply);
+    }
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+      if (vv) {
+        vv.removeEventListener("resize", apply);
+        vv.removeEventListener("scroll", apply);
+      }
+      document.documentElement.style.removeProperty(VIDEO_FEED_SCRUB_BOTTOM_VAR);
+    };
+  }, []);
 
   return (
     <div
+      ref={navContainerRef}
       data-app-bottom-nav="true"
       className={`fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-surface pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[var(--app-nav-pad-y)] pb-[calc(var(--app-nav-pad-y)+env(safe-area-inset-bottom,0px))]`}
     >
@@ -110,6 +172,14 @@ export function BottomNavigation() {
             className={`${itemBase} w-full ${location === "/" ? "text-primary" : "text-gray-400"}`}
             data-testid="nav-home"
             onClick={() => {
+              if (location === "/trim-video" || location === "/submit-metadata") {
+                dubhubVideoDebugLog("[DubHub][PostFlow][route]", "tap Home while in post flow", {
+                  from: location,
+                  to: "/",
+                });
+                setShowCancelPostDialog(true);
+                return;
+              }
               if (location === "/") {
                 invokeHomeWhileOnHome();
               } else {
@@ -141,7 +211,12 @@ export function BottomNavigation() {
           type="button"
           className={`${itemBase} min-w-0 flex-1 ${location === "/submit" || isSubmitClipOpen ? "text-primary" : "text-gray-400"}`}
           data-testid="nav-submit"
-          onClick={() => openSubmitClip()}
+          onClick={() => {
+            dubhubVideoDebugLog("[DubHub][PostFlow][route]", "submit tab tapped", {
+              from: location,
+            });
+            openSubmitClip();
+          }}
         >
           <span className={iconSlot}>
             <Plus className="h-6 w-6" strokeWidth={location === "/submit" || isSubmitClipOpen ? 2.25 : 2} />
@@ -200,6 +275,27 @@ export function BottomNavigation() {
           </Link>
         )}
       </div>
+      <AlertDialog open={showCancelPostDialog} onOpenChange={setShowCancelPostDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel posting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your current clip and edits will be discarded.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                void handleConfirmCancelFromNav();
+              }}
+            >
+              Cancel post
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

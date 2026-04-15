@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { VideoCard } from "@/components/video-card";
 import { GenreFilter, type FeedSortMode } from "@/components/genre-filter";
 import { VinylPullRefreshIndicator } from "@/components/vinyl-pull-refresh-indicator";
@@ -24,6 +24,21 @@ import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
+import { dubhubVideoDebugLog, dubhubVideoDebugEnabled } from "@/lib/video-debug";
+import { resolveMediaUrl } from "@/lib/media-url";
+
+const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
+
+/**
+ * Home vertical feed: mount full VideoCard only near the snapped post. Farther rows use a
+ * lightweight placeholder (same snap + `data-post-id`) so scroll intersection still works.
+ */
+const HOME_FEED_VIDEO_MOUNT_RADIUS = 2;
+
+/** Only treat a post as feed-active when scroll position is within this many px of its snap
+ * target, or on `scrollend` / bootstrap. Avoids flipping `isActive` mid-swipe when the next
+ * card is merely closer than the previous one. */
+const HOME_FEED_SNAP_ACTIVE_EPS_PX = 12;
 
 /** Keep in sync with `animation.dice-spin` duration in `tailwind.config.ts` (0.42s). */
 const DICE_SPIN_ANIMATION_MS = 420;
@@ -104,6 +119,141 @@ function HomeFeedTopChrome({
         </div>
       </div>
     </>
+  );
+}
+
+function PlainVideoDiagnostic({
+  postId,
+  videoUrl,
+}: {
+  postId: string;
+  videoUrl: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const shortUrl = videoUrl.length > 140 ? `${videoUrl.slice(0, 140)}...` : videoUrl;
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const logEvent = (name: string) => {
+      dubhubVideoDebugLog("[DubHub][PlainVideo][event]", name, {
+        postId,
+        readyState: v.readyState,
+        networkState: v.networkState,
+        currentSrc: v.currentSrc || null,
+      });
+    };
+    const onLoadedMetadata = () => logEvent("loadedmetadata");
+    const onLoadedData = () => logEvent("loadeddata");
+    const onCanPlay = () => logEvent("canplay");
+    const onPlaying = () => logEvent("playing");
+    const onStalled = () => logEvent("stalled");
+    const onSuspend = () => logEvent("suspend");
+    const onAbort = () => logEvent("abort");
+    const onEmptied = () => logEvent("emptied");
+    const onError = () => {
+      dubhubVideoDebugLog("[DubHub][PlainVideo][event]", "error", {
+        postId,
+        readyState: v.readyState,
+        networkState: v.networkState,
+        errorCode: v.error?.code ?? null,
+        errorMessage: v.error?.message ?? null,
+        currentSrc: v.currentSrc || null,
+      });
+    };
+    v.addEventListener("loadedmetadata", onLoadedMetadata);
+    v.addEventListener("loadeddata", onLoadedData);
+    v.addEventListener("canplay", onCanPlay);
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("stalled", onStalled);
+    v.addEventListener("suspend", onSuspend);
+    v.addEventListener("abort", onAbort);
+    v.addEventListener("emptied", onEmptied);
+    v.addEventListener("error", onError);
+    dubhubVideoDebugLog("[DubHub][PlainVideo][state]", "mounted", {
+      postId,
+      srcPreview: shortUrl,
+      readyState: v.readyState,
+      networkState: v.networkState,
+    });
+    return () => {
+      v.removeEventListener("loadedmetadata", onLoadedMetadata);
+      v.removeEventListener("loadeddata", onLoadedData);
+      v.removeEventListener("canplay", onCanPlay);
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("stalled", onStalled);
+      v.removeEventListener("suspend", onSuspend);
+      v.removeEventListener("abort", onAbort);
+      v.removeEventListener("emptied", onEmptied);
+      v.removeEventListener("error", onError);
+    };
+  }, [postId, shortUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const head = await fetch(videoUrl, { method: "HEAD" });
+        if (cancelled) return;
+        dubhubVideoDebugLog("[DubHub][PlainVideo][fetch]", "HEAD response", {
+          postId,
+          status: head.status,
+          ok: head.ok,
+          contentType: head.headers.get("content-type"),
+          acceptRanges: head.headers.get("accept-ranges"),
+          contentLength: head.headers.get("content-length"),
+        });
+        if (head.ok) return;
+      } catch (err) {
+        if (!cancelled) {
+          dubhubVideoDebugLog("[DubHub][PlainVideo][fetch]", "HEAD rejected", {
+            postId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      try {
+        const range = await fetch(videoUrl, { headers: { Range: "bytes=0-1023" } });
+        if (cancelled) return;
+        dubhubVideoDebugLog("[DubHub][PlainVideo][fetch]", "range GET response", {
+          postId,
+          status: range.status,
+          ok: range.ok,
+          contentType: range.headers.get("content-type"),
+          contentRange: range.headers.get("content-range"),
+          contentLength: range.headers.get("content-length"),
+        });
+      } catch (err) {
+        if (!cancelled) {
+          dubhubVideoDebugLog("[DubHub][PlainVideo][fetch]", "range GET rejected", {
+            postId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [postId, videoUrl]);
+
+  return (
+    <div className="mx-2 mt-2 rounded-md border border-amber-500/50 bg-black/70 p-2 text-[11px] text-amber-100">
+      <div className="mb-1 font-semibold">Plain Video Diagnostic</div>
+      <div>postId: {postId}</div>
+      <div className="break-all">url: {shortUrl}</div>
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        playsInline
+        muted
+        preload="auto"
+        className="mt-2 w-full max-h-52 rounded border border-amber-400/30 bg-black"
+      />
+    </div>
   );
 }
 
@@ -190,15 +340,23 @@ export default function Home() {
   const randomExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
   const [isFeedMuted, setIsFeedMuted] = useState(true);
+  const toggleFeedMute = useCallback(() => {
+    setIsFeedMuted((m) => !m);
+  }, []);
   /** Persists while scrolling the home feed (and between Random / sorted feeds). */
   const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
+  /** Same as `window.location.search` but subscribed via wouter (pathname-only `location` misses query updates). */
+  const search = useSearch();
+  const [homeMediaEpoch, setHomeMediaEpoch] = useState(0);
+  const prevLocationRef = useRef<string>(location);
   const lastScrolledPostId = useRef<string | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocationRef = useRef<string>(location);
+  const lastSearchRef = useRef<string>(search);
   const mergeAttemptedForPostId = useRef<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -244,10 +402,20 @@ export default function Home() {
         clearTimeout(randomExitTimerRef.current);
         randomExitTimerRef.current = null;
       }
+      if (mode === "random") {
+        setIdentificationFilter("unidentified");
+      }
       setSortMode(mode);
     },
     [sortMode, randomViewExiting],
   );
+
+  // Random feed only serves unidentified tracks; keep menu + ring in sync if filters change while Random is on.
+  useEffect(() => {
+    if (sortMode !== "random") return;
+    if (identificationFilter === "unidentified") return;
+    setIdentificationFilter("unidentified");
+  }, [sortMode, identificationFilter]);
 
   useEffect(() => {
     if (sortMode === "random" && !randomViewExiting) {
@@ -293,6 +461,14 @@ export default function Home() {
   });
 
   const { data: posts = [], isLoading, isError, error, refetch: refetchPosts } = postsQuery;
+
+  /**
+   * Full-screen "Loading posts" only when we have nothing to render yet.
+   * After submit/trim navigation, TanStack Query can briefly report isLoading while the cache
+   * already holds data; gating on isLoading alone then traps the UI even though the query succeeded.
+   */
+  const isInitialFeedLoad =
+    sortMode !== "random" && isLoading && !(Array.isArray(posts) ? posts : []).length;
 
   // Client-side fallback: ensures UI toggles (sort + filters) update immediately,
   // even if the backend response/order hasn't caught up yet.
@@ -358,11 +534,96 @@ export default function Home() {
   }, [posts, identificationFilter, selectedGenres, sortMode]);
 
   const homeFeedPullRefreshEnabled =
-    sortMode !== "random" && !isLoading && !isError && uiPosts.length > 0;
+    sortMode !== "random" && !isInitialFeedLoad && !isError && uiPosts.length > 0;
   const activePostIndex = useMemo(
     () => (activePostId ? uiPosts.findIndex((post) => post.id === activePostId) : -1),
     [uiPosts, activePostId],
   );
+
+  /** Until `activePostId` matches the scroll snap target, avoid treating every tile as distance 0 (that forced `preload=auto` + src on the entire feed). */
+  const feedPreloadAnchorIndex = activePostIndex >= 0 ? activePostIndex : 0;
+
+  useLayoutEffect(() => {
+    if (sortMode === "random" || uiPosts.length === 0) return;
+    const el = videoFeedRef.current;
+    const pickNearestPostId = (): string => {
+      if (!el) return uiPosts[0]!.id;
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
+      if (nodes.length === 0) return uiPosts[0]!.id;
+      const st = el.scrollTop;
+      let bestId = uiPosts[0]!.id;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const n of nodes) {
+        const id = n.dataset.postId;
+        if (!id) continue;
+        const d = Math.abs(st - n.offsetTop);
+        if (d < bestDist) {
+          bestDist = d;
+          bestId = id;
+        }
+      }
+      return bestId;
+    };
+    const nearest = pickNearestPostId();
+    const valid = !!activePostId && uiPosts.some((p) => p.id === activePostId);
+    if (!valid && nearest !== activePostId) {
+      setActivePostId(nearest);
+    }
+  }, [sortMode, uiPosts, activePostId]);
+  const plainVideoDiagEnabled =
+    typeof window !== "undefined" && sessionStorage.getItem("dubhub_plain_video_diag") === "1";
+  const plainVideoDiagPost = useMemo(() => {
+    if (!plainVideoDiagEnabled || uiPosts.length === 0) return null;
+    const p = uiPosts[0];
+    const rawUrl =
+      (p.videoUrl && String(p.videoUrl)) ||
+      ((p as any).video_url != null && String((p as any).video_url)) ||
+      "";
+    const resolved = resolveMediaUrl(rawUrl) || "";
+    if (!resolved) return null;
+    return { postId: p.id, videoUrl: resolved };
+  }, [plainVideoDiagEnabled, uiPosts]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(DUBHUB_HOME_MEDIA_EPOCH_KEY);
+      const parsed = raw ? Number(raw) : 0;
+      const epoch = Number.isFinite(parsed) ? parsed : 0;
+      setHomeMediaEpoch(epoch);
+      dubhubVideoDebugLog("[DubHub][VideoCard][reset]", "Home media epoch read on mount", {
+        mediaEpoch: epoch,
+      });
+    } catch {
+      setHomeMediaEpoch(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    const prev = prevLocationRef.current;
+    if (prev !== location) {
+      dubhubVideoDebugLog("[DubHub][PostFlow][route]", "Home route transition observed", {
+        from: prev,
+        to: location,
+      });
+      prevLocationRef.current = location;
+    }
+  }, [location]);
+
+  useEffect(() => {
+    if (!dubhubVideoDebugEnabled()) return;
+    if (!activePostId) return;
+    const feed = videoFeedRef.current;
+    const activeEl = feed?.querySelector<HTMLElement>(`[data-post-id="${activePostId}"]`) ?? null;
+    dubhubVideoDebugLog("[DubHub][Home][active]", "active card snapshot", {
+      activeIndex: activePostIndex,
+      activePostId,
+      hasSrc: activeEl?.dataset.videoHasSrc === "1",
+      isVideoReady: activeEl?.dataset.videoReady === "1",
+      overlayVisible: activeEl?.dataset.videoOverlayVisible === "1",
+      location,
+      postCount: uiPosts.length,
+    });
+  }, [activePostId, activePostIndex, uiPosts.length, location]);
 
   /**
    * Hottest mode re-sorts client-side when like counts change; scrollTop stays fixed so the viewport
@@ -440,7 +701,7 @@ export default function Home() {
   const { registerHomeWhileOnHomeHandler } = useHomeFeedInteraction();
 
   useEffect(() => {
-    if (isLoading || isError) {
+    if (isInitialFeedLoad || isError) {
       registerHomeWhileOnHomeHandler(null);
       return () => registerHomeWhileOnHomeHandler(null);
     }
@@ -473,7 +734,7 @@ export default function Home() {
     registerHomeWhileOnHomeHandler(handler);
     return () => registerHomeWhileOnHomeHandler(null);
   }, [
-    isLoading,
+    isInitialFeedLoad,
     isError,
     sortMode,
     postsQuery.isFetching,
@@ -664,7 +925,8 @@ export default function Home() {
     };
   }, [sortMode, uiPosts.length]);
 
-  // Track the snapped/nearest post as the active one (source of truth for audible output).
+  // Track the snapped post as the active one (source of truth for playback + mute). Updates on
+  // near-complete snap alignment or scroll settle — not merely “nearest” while between two snaps.
   useEffect(() => {
     const el = videoFeedRef.current;
     if (!el) return;
@@ -674,7 +936,7 @@ export default function Home() {
     }
 
     let raf: number | null = null;
-    const updateActivePost = () => {
+    const applyActiveFromPosition = (committed: boolean) => {
       const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
       if (nodes.length === 0) return;
       const st = el.scrollTop;
@@ -687,29 +949,31 @@ export default function Home() {
           bestId = node.dataset.postId ?? null;
         }
       }
-      if (bestId) {
+      if (!bestId) return;
+      if (committed || bestDist <= HOME_FEED_SNAP_ACTIVE_EPS_PX) {
         setActivePostId((prev) => (prev === bestId ? prev : bestId));
       }
     };
 
-    const scheduleUpdate = () => {
+    const scheduleSnapAlignmentCheck = () => {
       if (raf != null) return;
       raf = window.requestAnimationFrame(() => {
         raf = null;
-        updateActivePost();
+        applyActiveFromPosition(false);
       });
     };
 
-    scheduleUpdate();
-    el.addEventListener("scroll", scheduleUpdate, { passive: true });
-    el.addEventListener("scrollend", scheduleUpdate);
-    el.addEventListener("touchend", scheduleUpdate, { passive: true });
+    applyActiveFromPosition(true);
+    el.addEventListener("scroll", scheduleSnapAlignmentCheck, { passive: true });
+    const onScrollEnd = () => applyActiveFromPosition(true);
+    el.addEventListener("scrollend", onScrollEnd);
+    el.addEventListener("touchend", scheduleSnapAlignmentCheck, { passive: true });
 
     return () => {
       if (raf != null) window.cancelAnimationFrame(raf);
-      el.removeEventListener("scroll", scheduleUpdate);
-      el.removeEventListener("scrollend", scheduleUpdate);
-      el.removeEventListener("touchend", scheduleUpdate);
+      el.removeEventListener("scroll", scheduleSnapAlignmentCheck);
+      el.removeEventListener("scrollend", onScrollEnd);
+      el.removeEventListener("touchend", scheduleSnapAlignmentCheck);
     };
   }, [sortMode, uiPosts.length, randomPost?.id]);
 
@@ -892,14 +1156,17 @@ export default function Home() {
   // Handle scroll to specific post from notification / ?post= deep link, or merge post into feed when missing (e.g. not in first page under Hottest)
   useEffect(() => {
     if (sortMode === "random") return;
-    const params = new URLSearchParams(window.location.search);
+    const q = search.startsWith("?") ? search.slice(1) : search;
+    const params = new URLSearchParams(q);
     const postId = params.get('post') || params.get('track'); // Support both for backward compatibility
 
-    // Check if location has changed (not just posts refetch)
+    // Path or query changed (e.g. submit success -> `/?post=<id>`): reset scroll/highlight timers.
     const locationChanged = location !== lastLocationRef.current;
-    if (locationChanged) {
+    const searchChanged = search !== lastSearchRef.current;
+    if (locationChanged || searchChanged) {
       lastLocationRef.current = location;
-      
+      lastSearchRef.current = search;
+
       // Clear any existing timeouts from previous notification
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
@@ -912,7 +1179,7 @@ export default function Home() {
     // Post not in current feed slice (sort/limit/filters): fetch once and merge so scroll works without changing sort order
     if (
       postId &&
-      !isLoading &&
+      !isInitialFeedLoad &&
       !mergeAttemptedForPostId.current.has(postId) &&
       uiPosts.every((p) => p.id !== postId)
     ) {
@@ -975,7 +1242,7 @@ export default function Home() {
         }, 3000);
       }
     }
-  }, [uiPosts, location, navigate, isLoading, queryClient]);
+  }, [uiPosts, location, search, navigate, isInitialFeedLoad, queryClient]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -998,7 +1265,7 @@ export default function Home() {
     });
   }
 
-  if (isLoading) {
+  if (isInitialFeedLoad) {
     return (
       <div className="flex flex-1 items-center justify-center bg-background pt-[env(safe-area-inset-top,0px)]">
         <div className="text-center">
@@ -1077,12 +1344,12 @@ export default function Home() {
               key="home-random-feed-item"
               post={randomPost}
               isHighlighted={false}
-              embeddedFeed={true}
               isMuted={isFeedMuted}
               isActive={activePostId === randomPost.id}
               shouldLoadVideo={true}
               videoPreload="auto"
-              onToggleMute={() => setIsFeedMuted((prev) => !prev)}
+              homeFeedPosterFallback
+              onToggleMute={toggleFeedMute}
               feedOverlayCollapsed={isFeedOverlayCollapsed}
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
               feedRandomDice={{
@@ -1094,6 +1361,7 @@ export default function Home() {
                 exiting: randomViewExiting,
                 showIntroGlow: true,
               }}
+              mediaEpoch={homeMediaEpoch}
             />
           ) : randomExhausted ? (
             <div className="h-full flex items-center justify-center pt-32">
@@ -1181,6 +1449,9 @@ export default function Home() {
         className="h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain scrollbar-hide [overflow-anchor:auto]"
         {...homeFeedPullTouchHandlers}
       >
+        {plainVideoDiagPost ? (
+          <PlainVideoDiagnostic postId={plainVideoDiagPost.postId} videoUrl={plainVideoDiagPost.videoUrl} />
+        ) : null}
         <div
           className="flex w-full shrink-0 flex-col items-center justify-center overflow-hidden bg-background transition-[height] duration-500 ease-out motion-reduce:transition-none"
           style={{ height: homePullSpacerHeightPx }}
@@ -1192,24 +1463,40 @@ export default function Home() {
           />
         </div>
         {uiPosts.map((post, index) => {
-          const distanceToActive = activePostIndex === -1 ? 0 : Math.abs(index - activePostIndex);
+          const distanceToActive = Math.abs(index - feedPreloadAnchorIndex);
           const shouldLoadVideo = distanceToActive <= 1;
           const videoPreload: "none" | "metadata" | "auto" =
             distanceToActive === 0 ? "auto" : shouldLoadVideo ? "metadata" : "none";
 
+          const shouldMountVideoCard = distanceToActive <= HOME_FEED_VIDEO_MOUNT_RADIUS;
+
+          if (!shouldMountVideoCard) {
+            return (
+              <div
+                key={post.id}
+                data-post-id={post.id}
+                className={`min-h-full h-full relative w-full shrink-0 snap-start snap-always [scroll-snap-stop:always] bg-black ${
+                  highlightedPostId === post.id ? "ring-4 ring-inset ring-primary" : ""
+                }`}
+              />
+            );
+          }
+
           return (
-          <VideoCard 
-            key={post.id} 
-            post={post}
-            isHighlighted={highlightedPostId === post.id}
-            isMuted={isFeedMuted}
-            isActive={activePostId === post.id}
-            shouldLoadVideo={shouldLoadVideo}
-            videoPreload={videoPreload}
-            onToggleMute={() => setIsFeedMuted((prev) => !prev)}
-            feedOverlayCollapsed={isFeedOverlayCollapsed}
-            onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
-          />
+            <VideoCard
+              key={post.id}
+              post={post}
+              isHighlighted={highlightedPostId === post.id}
+              isMuted={isFeedMuted}
+              isActive={activePostId === post.id}
+              shouldLoadVideo={shouldLoadVideo}
+              videoPreload={videoPreload}
+              homeFeedPosterFallback
+              onToggleMute={toggleFeedMute}
+              feedOverlayCollapsed={isFeedOverlayCollapsed}
+              onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
+              mediaEpoch={homeMediaEpoch}
+            />
           );
         })}
       </div>

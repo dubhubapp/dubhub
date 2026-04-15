@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { MAX_VIDEO_UPLOAD_BYTES, MAX_VIDEO_UPLOAD_MB } from "@shared/video-upload";
 import type { PostWithUser } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,12 +21,30 @@ import {
 } from "@/components/ui/form";
 import { ArrowLeft, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
 import { playSuccessNotification } from "@/lib/haptic";
+import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
+import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
+import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
+import { Capacitor } from "@capacitor/core";
+import { nativeOutputUriToFileFallback, nativePreviewUri } from "@/lib/native-video-editor";
+import { useSubmitClip } from "@/lib/submit-clip-context";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const getTodayInputValue = () => {
   const d = new Date();
@@ -34,8 +53,6 @@ const getTodayInputValue = () => {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 };
-
-const todayInputValue = getTodayInputValue();
 
 const submitFormSchema = z.object({
   title: z
@@ -47,7 +64,7 @@ const submitFormSchema = z.object({
   description: z.string().max(INPUT_LIMITS.postDescription, `Description must be at most ${INPUT_LIMITS.postDescription} characters`),
   djName: z.string().max(INPUT_LIMITS.postDjName, `Must be at most ${INPUT_LIMITS.postDjName} characters`),
   location: z.string().max(INPUT_LIMITS.postLocation, `Must be at most ${INPUT_LIMITS.postLocation} characters`),
-  playedDate: z.string().optional().refine((v) => !v || v <= todayInputValue, {
+  playedDate: z.string().optional().refine((v) => !v || v <= getTodayInputValue(), {
     message: "Date cannot be in the future",
   }),
 });
@@ -85,7 +102,7 @@ function isDescriptionComplete(description: string | undefined) {
 function isPlayedDateComplete(playedDate: string | undefined) {
   const v = playedDate?.trim() ?? "";
   if (!v) return false;
-  return v <= todayInputValue;
+  return v <= getTodayInputValue();
 }
 
 function isLocationComplete(location: string | undefined) {
@@ -136,7 +153,7 @@ export default function SubmitMetadata() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { currentUser } = useUser();
-  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const { nativePostArtifact, clearNativePostArtifact } = useSubmitClip();
   
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -145,11 +162,26 @@ export default function SubmitMetadata() {
   const creepTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const hasRealProgressRef = useRef(false);
   const creepStartedRef = useRef(false);
+  const activeUploadXhrRef = useRef<XMLHttpRequest | null>(null);
+  const suppressNextUploadErrorToastRef = useRef(false);
 
   // Get trim state
   const [trimState, setTrimState] = useState<{fileName: string; fileType: string; fileSize: number; videoUrl: string} | null>(null);
   const [trimTimes, setTrimTimes] = useState<{startTime: number; endTime: number} | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [nativeOutputUri, setNativeOutputUri] = useState<string | null>(null);
+  const [thumbnailSrc, setThumbnailSrc] = useState<string | null>(null);
+  /** Display aspect for preview card (native / thumbnail metadata); avoids forcing 16:9 on portrait clips. */
+  const [clipPreviewAspect, setClipPreviewAspect] = useState<{ w: number; h: number } | null>(null);
+  const submitClickTsRef = useRef<number>(0);
+  const submitSuccessRef = useRef(false);
+
+  useEffect(() => {
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "mounted thumbnail-only mode", {
+      route: "/submit-metadata",
+    });
+  }, []);
 
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -157,71 +189,194 @@ export default function SubmitMetadata() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    const savedState = localStorage.getItem('dubhub-trim-state');
-    const savedTimes = localStorage.getItem('dubhub-trim-times');
-    
-    if (!savedState || !savedTimes) {
+    const exportRaw = localStorage.getItem("dubhub-trim-export");
+    const nativeExportRaw = localStorage.getItem("dubhub-native-trim-output");
+    const nativeArtifactRaw = localStorage.getItem("dubhub-native-post-artifact");
+    const savedState = localStorage.getItem("dubhub-trim-state");
+    const savedTimes = localStorage.getItem("dubhub-trim-times");
+
+    let state: {
+      videoUrl: string;
+      fileName: string;
+      fileType: string;
+      fileSize: number;
+      nativeOutputUri?: string;
+    };
+    let times: { startTime: number; endTime: number };
+
+    if (nativeExportRaw || exportRaw) {
+      const exp = JSON.parse(nativeExportRaw || exportRaw!) as {
+        videoUrl: string;
+        previewUri?: string;
+        fileName: string;
+        fileType: string;
+        fileSize: number;
+        durationSec: number;
+        nativeOutputUri?: string;
+      };
+      const previewUrl = exp.previewUri || exp.videoUrl;
+      state = {
+        videoUrl: previewUrl,
+        fileName: exp.fileName,
+        fileType: exp.fileType,
+        fileSize: exp.fileSize,
+        nativeOutputUri: exp.nativeOutputUri,
+      };
+      times = { startTime: 0, endTime: exp.durationSec };
+      if (nativePostArtifact?.uploadFile && nativePostArtifact.filename === exp.fileName) {
+        setVideoFile(nativePostArtifact.uploadFile);
+      }
+    } else if (savedState && savedTimes) {
+      state = JSON.parse(savedState);
+      times = JSON.parse(savedTimes);
+    } else {
       toast({
         title: "No video data",
         description: "Please start from the beginning",
         variant: "destructive",
       });
-      setLocation('/');
+      setLocation("/");
       return;
     }
-    
-    const state = JSON.parse(savedState);
+
     setTrimState(state);
-    setTrimTimes(JSON.parse(savedTimes));
-    
+    setTrimTimes(times);
+    setNativeOutputUri(state.nativeOutputUri ?? null);
+    let resolvedThumbnail: string | null = null;
+    let aspectFromStorage: { w: number; h: number } | null = null;
+    try {
+      const thumbRaw = localStorage.getItem("dubhub-trim-thumbnail");
+      if (thumbRaw) {
+        const parsed = JSON.parse(thumbRaw) as {
+          thumbnailUri?: string;
+          width?: number;
+          height?: number;
+        };
+        if (parsed.thumbnailUri) {
+          resolvedThumbnail = parsed.thumbnailUri;
+        }
+        if (
+          typeof parsed.width === "number" &&
+          typeof parsed.height === "number" &&
+          parsed.width > 0 &&
+          parsed.height > 0
+        ) {
+          aspectFromStorage = { w: parsed.width, h: parsed.height };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    if (!aspectFromStorage && nativeArtifactRaw) {
+      try {
+        const art = JSON.parse(nativeArtifactRaw) as { width?: number; height?: number };
+        if (
+          typeof art.width === "number" &&
+          typeof art.height === "number" &&
+          art.width > 0 &&
+          art.height > 0
+        ) {
+          aspectFromStorage = { w: art.width, h: art.height };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    setClipPreviewAspect(aspectFromStorage);
+    setThumbnailSrc(resolvedThumbnail);
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "thumbnail source chosen", {
+      hasThumbnail: !!resolvedThumbnail,
+      thumbnailPreview: resolvedThumbnail?.slice(0, 120) ?? null,
+      nativeOutputUriPreview: state.nativeOutputUri?.slice(0, 120) ?? null,
+      fromTrimExport: !!exportRaw || !!nativeExportRaw,
+    });
+    dubhubVideoDebugLog("[DubHub][PostFlow][resource]", "submit details state hydrated", {
+      route: "/submit-metadata",
+      fromClientTrimExport: !!exportRaw || !!nativeExportRaw,
+      videoUrlPreview: state.videoUrl.slice(0, 80),
+      fileSize: state.fileSize,
+    });
+
     // Reconstruct File from blob URL with proper error handling
     let blobUrlRevoked = false;
-    
-    fetch(state.videoUrl)
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`Failed to fetch Blob URL: ${res.status} ${res.statusText}`);
-        }
-        return res.blob();
-      })
-      .then(blob => {
-        if (blobUrlRevoked) {
-          console.warn('Blob URL was revoked before file reconstruction completed');
+
+    (async () => {
+      let lastErr: unknown = null;
+      if (state.nativeOutputUri && Capacitor.getPlatform() === "ios" && Capacitor.isNativePlatform()) {
+        if (nativePostArtifact?.uploadFile) {
+          setVideoFile(nativePostArtifact.uploadFile);
+          dubhubVideoDebugLog("[DubHub][NativePost]", "submit-using-existing-artifact", {
+            bytes: nativePostArtifact.uploadFile.size,
+            fileName: nativePostArtifact.filename,
+          });
           return;
         }
-        
-        if (blob.size === 0) {
-          throw new Error('Blob is empty - Blob URL may have been revoked');
-        }
-        
-        const file = new File([blob], state.fileName, { type: state.fileType });
-        
-        // Only update state if component is still mounted
-        if (isMountedRef.current) {
-          setVideoFile(file);
-        }
-      })
-      .catch(err => {
-        console.error('Failed to reconstruct file:', err);
-        
-        // Only show error if it's not a Blob URL revocation issue
-        if (!err.message?.includes('revoked') && !err.message?.includes('Failed to fetch')) {
-          toast({
-            title: "Error",
-            description: "Failed to load video file. Please try uploading again.",
-            variant: "destructive",
+        dubhubVideoDebugLog("[DubHub][NativePost]", "any reconstruction path still being used", {
+          reason: "missing in-memory artifact; submit fallback may be required",
+        });
+        if (nativeArtifactRaw) {
+          dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "native artifact metadata recovered from storage", {
+            hasNativeArtifactRaw: true,
           });
-        } else {
-          // Blob URL was revoked - redirect back to start
-          console.warn('Blob URL no longer available, redirecting to start');
-          toast({
-            title: "Session Expired",
-            description: "Please select your video again.",
-            variant: "destructive",
-          });
-          setLocation('/');
         }
+        dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "native output detected; deferring file bytes until submit", {
+          nativeOutputUriPreview: state.nativeOutputUri.slice(0, 140),
+          previewUriPreview: nativePreviewUri(state.nativeOutputUri).slice(0, 140),
+        });
+        // Keep upload bytes out of JS memory during details screen; build payload lazily on submit.
+        return;
+      }
+      const candidateUrls: string[] = [state.videoUrl];
+      if (state.nativeOutputUri) {
+        candidateUrls.push(Capacitor.convertFileSrc(state.nativeOutputUri));
+      }
+      for (const url of candidateUrls) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) {
+            throw new Error(`Failed to fetch source: ${res.status} ${res.statusText}`);
+          }
+          const blob = await res.blob();
+          if (blobUrlRevoked) return;
+          if (blob.size === 0) {
+            throw new Error("Source blob is empty");
+          }
+          const file = new File([blob], state.fileName, { type: state.fileType });
+          dubhubVideoDebugLog("[DubHub][NativeBridge]", "fetch reconstruction success", {
+            bytes: blob.size,
+            type: state.fileType,
+            sourceUrlPreview: url.slice(0, 120),
+          });
+          if (isMountedRef.current) {
+            setVideoFile(file);
+          }
+          return;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      console.error("Failed to reconstruct file:", lastErr);
+      dubhubVideoDebugLog("[DubHub][NativeBridge]", "reconstruction failed", {
+        message: lastErr instanceof Error ? lastErr.message : String(lastErr),
       });
+      const primaryWasBlob = state.videoUrl.startsWith("blob:");
+      if (primaryWasBlob) {
+        console.warn("Blob URL no longer available, redirecting to start");
+        toast({
+          title: "Session Expired",
+          description: "Please select your video again.",
+          variant: "destructive",
+        });
+        setLocation("/");
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to load trimmed file. Please try trimming again.",
+        variant: "destructive",
+      });
+    })();
     
     // Cleanup function to prevent accessing revoked Blob URL
     return () => {
@@ -230,34 +385,41 @@ export default function SubmitMetadata() {
     };
   }, [toast, setLocation]);
 
-  useEffect(() => {
-    const v = previewVideoRef.current;
-    if (!v || !trimTimes || !trimState?.videoUrl) return;
-    const start = trimTimes.startTime;
-    const onMeta = () => {
-      const dur = v.duration;
-      const safeStart =
-        Number.isFinite(dur) && dur > 0
-          ? Math.min(Math.max(0, start), Math.max(0, dur - 0.05))
-          : Math.max(0, start);
-      try {
-        v.currentTime = safeStart;
-      } catch {
-        /* seek may fail before data is ready */
-      }
-    };
-    v.addEventListener("loadedmetadata", onMeta);
-    if (v.readyState >= 1) onMeta();
-    return () => v.removeEventListener("loadedmetadata", onMeta);
-  }, [trimState?.videoUrl, trimTimes?.startTime, trimTimes?.endTime]);
-  
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
+      const xhr = activeUploadXhrRef.current;
+      if (xhr) {
+        suppressNextUploadErrorToastRef.current = true;
+        try {
+          xhr.abort();
+        } catch {
+          /* ignore */
+        }
+        activeUploadXhrRef.current = null;
+      }
+      dubhubVideoDebugLog("[DubHub][SubmitDetails]", "unmount cleanup done", {});
       // Don't revoke Blob URL here - let it be cleaned up by the submit success handler
       // or when user navigates back to trim page
     };
+  }, []);
+
+  const abortActiveUpload = useCallback((reason: string) => {
+    const xhr = activeUploadXhrRef.current;
+    if (!xhr) return;
+    suppressNextUploadErrorToastRef.current = true;
+    dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "aborting in-flight upload", {
+      reason,
+    });
+    try {
+      xhr.abort();
+    } catch {
+      /* ignore */
+    }
+    activeUploadXhrRef.current = null;
+    setIsUploading(false);
+    setUploadProgress(0);
   }, []);
 
   const form = useForm<SubmitFormData>({
@@ -283,13 +445,18 @@ export default function SubmitMetadata() {
     valid && !!fieldConfirmed[key] && !fieldFocused[key];
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, start, end }: { file: File; start: number; end: number }) => {
+    mutationFn: async ({ file, fileName }: { file: Blob; fileName: string }) => {
+      if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+        throw new Error(
+          `Your trimmed clip is over ${MAX_VIDEO_UPLOAD_MB}MB. Try trimming a shorter segment on the previous step.`,
+        );
+      }
       const formData = new FormData();
-      formData.append('video', file);
-      formData.append('start', start.toString());
-      formData.append('end', end.toString());
-      
-      const uploadUrl = '/api/upload-video';
+      formData.append("video", file, fileName);
+      formData.append("preTrimmed", "1");
+
+      /** Must use apiUrl() on Capacitor: relative `/api/...` hits the WebView origin, not the API server. */
+      const uploadUrl = apiUrl("/api/upload-video");
       
       // Get auth token for the upload
       const { data: { session } } = await supabase.auth.getSession();
@@ -303,6 +470,10 @@ export default function SubmitMetadata() {
       creepStartedRef.current = false;
       return new Promise<{ url: string; filename: string }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        activeUploadXhrRef.current = xhr;
+        dubhubVideoDebugLog("[DubHub][PostFlow][resource]", "upload xhr created", {
+          route: "/submit-metadata",
+        });
 
         const clearSimulated = () => {
           if (simulatedProgressRef.current) {
@@ -364,30 +535,78 @@ export default function SubmitMetadata() {
         }, 400);
 
         // Handle completion
-        xhr.addEventListener('load', () => {
+        xhr.addEventListener("load", () => {
+          activeUploadXhrRef.current = null;
+          dubhubVideoDebugLog("[DubHub][PostFlow][dispose]", "upload xhr disposed on load", {
+            route: "/submit-metadata",
+          });
           clearTimeout(simTimeout);
           clearSimulated();
           clearCreep();
+          const raw = xhr.responseText ?? "";
+          const preview = raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
+
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
-              const response = JSON.parse(xhr.responseText);
+              const response = JSON.parse(raw) as {
+                url?: string;
+                filename?: string;
+                success?: boolean;
+                error?: string;
+              };
+              if (!response?.url || typeof response.url !== "string") {
+                console.error("[upload-video] Success status but missing url", {
+                  status: xhr.status,
+                  preview,
+                  keys: response && typeof response === "object" ? Object.keys(response) : [],
+                });
+                reject(
+                  new Error(
+                    `Upload response missing video URL (HTTP ${xhr.status}). ${preview ? `Body: ${preview}` : "Empty body."}`,
+                  ),
+                );
+                return;
+              }
               setUploadProgress(100);
-              resolve(response);
-            } catch (error) {
-              reject(new Error('Invalid response from server'));
+              resolve({ url: response.url, filename: String(response.filename ?? "") });
+            } catch (parseErr) {
+              console.error("[upload-video] JSON parse failed", {
+                status: xhr.status,
+                preview,
+                parseErr,
+              });
+              reject(
+                new Error(
+                  `Invalid JSON from upload (HTTP ${xhr.status}). ${preview ? preview : "Empty response — check API base URL on device (native builds need VITE_API_ORIGIN)."}`,
+                ),
+              );
             }
           } else {
             try {
-              const error = JSON.parse(xhr.responseText);
-              reject(new Error(error.error || `Upload failed with status ${xhr.status}`));
+              const error = JSON.parse(raw) as { error?: string; message?: string };
+              reject(
+                new Error(
+                  error.error || error.message || `Upload failed with status ${xhr.status}`,
+                ),
+              );
             } catch {
-              reject(new Error(`Upload failed with status ${xhr.status}`));
+              reject(
+                new Error(
+                  preview
+                    ? `Upload failed (HTTP ${xhr.status}): ${preview}`
+                    : `Upload failed with status ${xhr.status} (empty body)`,
+                ),
+              );
             }
           }
         });
         
         // Handle errors
         xhr.addEventListener('error', () => {
+          activeUploadXhrRef.current = null;
+          dubhubVideoDebugLog("[DubHub][PostFlow][dispose]", "upload xhr disposed on error", {
+            route: "/submit-metadata",
+          });
           clearTimeout(simTimeout);
           clearSimulated();
           clearCreep();
@@ -395,6 +614,10 @@ export default function SubmitMetadata() {
         });
 
         xhr.addEventListener('abort', () => {
+          activeUploadXhrRef.current = null;
+          dubhubVideoDebugLog("[DubHub][PostFlow][dispose]", "upload xhr disposed on abort", {
+            route: "/submit-metadata",
+          });
           clearTimeout(simTimeout);
           clearSimulated();
           clearCreep();
@@ -416,6 +639,13 @@ export default function SubmitMetadata() {
       });
     },
     onError: (error: Error) => {
+      if (
+        suppressNextUploadErrorToastRef.current &&
+        /cancelled/i.test(error.message || "")
+      ) {
+        suppressNextUploadErrorToastRef.current = false;
+        return;
+      }
       setUploadProgress(0);
       toast({
         title: "Upload Failed",
@@ -430,6 +660,9 @@ export default function SubmitMetadata() {
       if (!data.videoUrl) {
         throw new Error("Video URL is required");
       }
+      dubhubVideoDebugLog("[DubHub][PostSubmit]", "create-start", {
+        hasVideoUrl: !!data.videoUrl,
+      });
 
       // Map form data to backend's expected snake_case format
       const submitData = {
@@ -444,16 +677,30 @@ export default function SubmitMetadata() {
       
       console.log("Submitting post with data:", { ...submitData, video_url: submitData.video_url.substring(0, 50) + "..." });
       const response = await apiRequest("POST", "/api/posts", submitData);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Unknown error" }));
-        console.error("Post creation failed:", errorData);
-        throw new Error(errorData.message || `Failed to create post: ${response.status}`);
+      const text = await response.text();
+      let responseData: { id?: string };
+      try {
+        responseData = text ? (JSON.parse(text) as { id?: string }) : {};
+      } catch (e) {
+        console.error("[POST /api/posts] Response is not JSON", {
+          status: response.status,
+          preview: text.slice(0, 400),
+          e,
+        });
+        throw new Error(
+          text.trim()
+            ? `Create post returned non-JSON (HTTP ${response.status}): ${text.slice(0, 160)}`
+            : `Create post returned empty body (HTTP ${response.status})`,
+        );
       }
-      const responseData = await response.json();
       console.log("Post created successfully:", responseData);
+      dubhubVideoDebugLog("[DubHub][PostSubmit]", "create-success", {
+        postId: responseData?.id ?? null,
+      });
       return responseData;
     },
     onSuccess: async (created: { id?: string }) => {
+      submitSuccessRef.current = true;
       const newPostId = created?.id;
       if (!newPostId) {
         console.error("Post created but response missing id:", created);
@@ -465,32 +712,32 @@ export default function SubmitMetadata() {
         title: "Track Submitted!",
         description: "Your track ID request has been submitted successfully.",
       });
-      
-      // Clean up Blob URL only after successful submission
-      // Use a small delay to ensure any pending operations complete
-      setTimeout(() => {
-        if (trimState?.videoUrl) {
-          try {
-            URL.revokeObjectURL(trimState.videoUrl);
-          } catch (e) {
-            console.warn('Error revoking Blob URL (may already be revoked):', e);
-          }
-        }
-      }, 500);
-      
-      localStorage.removeItem('dubhub-trim-state');
-      localStorage.removeItem('dubhub-trim-times');
+      dubhubVideoDebugLog("[DubHub][PostSubmit]", "success-toast-fired", {
+        postId: newPostId ?? null,
+      });
+
+      clearDubhubTrimSession({ revokeAfterMs: 500 });
+      dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "clear trim session after submit success", {
+        revokeAfterMs: 500,
+      });
       
       form.reset();
       setUploadedVideoUrl(null);
       setVideoFile(null); // Clear video file reference
+      clearNativePostArtifact();
 
       // Put the new post in every cached feed variant so it appears immediately under Hottest/Newest
       // (feed is limited to 10; a 0-like post may not be in the refetched page without this).
       if (newPostId) {
         try {
+          dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-fetch-start", {
+            postId: newPostId,
+          });
           const detailRes = await apiRequest("GET", `/api/posts/${newPostId}`);
           const fullPost = (await detailRes.json()) as PostWithUser;
+          dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-fetch-success", {
+            postId: fullPost.id,
+          });
           queryClient.setQueriesData(
             { queryKey: ["/api/posts"], exact: false },
             (old: PostWithUser[] | undefined) => {
@@ -505,6 +752,10 @@ export default function SubmitMetadata() {
             },
           );
         } catch (e) {
+          dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-fetch-warning", {
+            postId: newPostId,
+            message: e instanceof Error ? e.message : String(e),
+          });
           console.warn("Could not load new post for feed cache; Home may fetch it:", e);
         }
       }
@@ -516,13 +767,35 @@ export default function SubmitMetadata() {
 
       // Deep-link to the post so Home scrolls/highlights by ID (not feed position / sort order).
       if (newPostId) {
+        dubhubVideoDebugLog("[DubHub][PostSubmit]", "navigate-to-created-post", {
+          postId: newPostId,
+        });
+        dubhubVideoDebugLog("[DubHub][PostFlow][route]", "submit success -> Home deep link", {
+          route: "/",
+          postId: newPostId,
+        });
         setLocation(`/?post=${encodeURIComponent(newPostId)}`);
       } else {
+        dubhubVideoDebugLog("[DubHub][PostFlow][route]", "submit success -> Home", {
+          route: "/",
+        });
         setLocation("/");
       }
     },
     onError: (error: Error) => {
+      dubhubVideoDebugLog("[DubHub][PostSubmit]", "create-failure", {
+        message: error.message,
+      });
+      if (submitSuccessRef.current) {
+        dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-fetch-warning", {
+          message: "onError fired after success; suppressing error toast",
+        });
+        return;
+      }
       console.error("Post submission error:", error);
+      dubhubVideoDebugLog("[DubHub][PostSubmit]", "error-toast-fired", {
+        message: error.message,
+      });
       toast({
         title: "Submission Failed",
         description: error.message || "There was an error submitting your track. Please try again.",
@@ -532,7 +805,7 @@ export default function SubmitMetadata() {
   });
 
   const onSubmit = async (data: SubmitFormData) => {
-    if (!trimState || !trimTimes || !videoFile) {
+    if (!trimState || !trimTimes) {
       toast({
         title: "Error",
         description: "Missing video data",
@@ -541,13 +814,97 @@ export default function SubmitMetadata() {
       return;
     }
 
+    submitClickTsRef.current = Date.now();
+    let uploadBlob: Blob | null = videoFile || nativePostArtifact?.uploadFile || null;
+    let uploadFileName = trimState.fileName;
+    if (nativePostArtifact?.uploadFile) {
+      uploadFileName = nativePostArtifact.filename || uploadFileName;
+      dubhubVideoDebugLog("[DubHub][NativePost]", "submit-using-existing-artifact", {
+        fileName: uploadFileName,
+        fileSize: nativePostArtifact.uploadFile.size,
+      });
+    }
+
+    if (!uploadBlob && nativeOutputUri && Capacitor.getPlatform() === "ios" && Capacitor.isNativePlatform()) {
+      try {
+        dubhubVideoDebugLog("[DubHub][NativePost]", "any reconstruction path still being used", {
+          reason: "submit fallback reconstruction",
+        });
+        const previewUri = nativePreviewUri(nativeOutputUri);
+        const candidateUris = [previewUri, Capacitor.convertFileSrc(nativeOutputUri), nativeOutputUri];
+        let fallbackErr: unknown = null;
+        for (const uri of candidateUris) {
+          try {
+            dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "lazy native upload prep start", {
+              nativeOutputUriPreview: nativeOutputUri.slice(0, 120),
+              previewUriPreview: uri.slice(0, 120),
+            });
+            const res = await fetch(uri);
+            if (!res.ok) {
+              throw new Error(`Native preview fetch failed: ${res.status} ${res.statusText}`);
+            }
+            const blob = await res.blob();
+            if (blob.size <= 0) {
+              throw new Error("Native preview fetch returned empty blob");
+            }
+            uploadBlob = blob;
+            uploadFileName = trimState.fileName || "trimmed_clip.mp4";
+            dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "lazy native upload prep success", {
+              fileSize: blob.size,
+              type: blob.type || trimState.fileType || "video/mp4",
+            });
+            break;
+          } catch (err) {
+            fallbackErr = err;
+          }
+        }
+        if (!uploadBlob) {
+          const fileFromFs = await nativeOutputUriToFileFallback({
+            nativeOutputUri,
+            fileName: trimState.fileName || "trimmed_clip.mp4",
+            mimeType: trimState.fileType || "video/mp4",
+          });
+          uploadBlob = fileFromFs;
+          uploadFileName = fileFromFs.name;
+          dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "lazy native upload prep success via filesystem", {
+            fileSize: fileFromFs.size,
+            type: fileFromFs.type,
+            previousError: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+          });
+        }
+      } catch (err) {
+        dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "lazy native upload prep failed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        toast({
+          title: "Unable to process video",
+          description: "We couldn't finish processing this clip. Try a slightly shorter trim and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    if (!uploadBlob) {
+      toast({
+        title: "Error",
+        description: "Missing trimmed file. Please trim your video again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!uploadedVideoUrl) {
       try {
         setIsUploading(true);
+        dubhubVideoDebugLog("[DubHub][NativePost]", "submit-upload-start", {
+          elapsedSinceSubmitClickMs: Date.now() - submitClickTsRef.current,
+          fileName: uploadFileName,
+          bytes: uploadBlob.size,
+        });
         const uploadResult = await uploadMutation.mutateAsync({
-          file: videoFile,
-          start: trimTimes.startTime,
-          end: trimTimes.endTime,
+          file: uploadBlob,
+          fileName: uploadFileName,
         });
         
         // Extract URL from upload result
@@ -562,11 +919,19 @@ export default function SubmitMetadata() {
         
         // Set the uploaded URL for UI state
         setUploadedVideoUrl(videoUrl);
+        dubhubVideoDebugLog("[DubHub][NativePost]", "submit-upload-success", {
+          elapsedSinceSubmitClickMs: Date.now() - submitClickTsRef.current,
+          videoUrlPreview: videoUrl.slice(0, 120),
+        });
         
         // Submit with the video URL directly
         submitMutation.mutate({ formData: data, videoUrl });
       } catch (error) {
         console.error("Upload/Submit error:", error);
+        dubhubVideoDebugLog("[DubHub][NativePost]", "submit-upload-failure", {
+          elapsedSinceSubmitClickMs: Date.now() - submitClickTsRef.current,
+          message: error instanceof Error ? error.message : String(error),
+        });
         toast({
           title: "Error",
           description: error instanceof Error ? error.message : "Failed to upload or submit video",
@@ -582,9 +947,79 @@ export default function SubmitMetadata() {
   };
 
   const handleBack = () => {
-    // Don't revoke Blob URL here - it's still needed for the trim page
-    // The trim page will handle cleanup when user navigates away
-    setLocation('/trim-video');
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "back cleanup start", {});
+    abortActiveUpload("submit-details-back");
+    setNativeOutputUri(null);
+    setVideoFile(null);
+    setTrimState(null);
+    setTrimTimes(null);
+    setThumbnailSrc(null);
+    clearNativePostArtifact();
+    dubhubVideoDebugLog("[DubHub][PostFlow][route]", "backing from submit details", {
+      route: "/trim-video",
+    });
+    try {
+      const expRaw = localStorage.getItem("dubhub-trim-export");
+      if (expRaw) {
+        const exp = JSON.parse(expRaw) as { videoUrl?: string };
+        if (exp.videoUrl) {
+          try {
+            URL.revokeObjectURL(exp.videoUrl);
+            dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "object URL revoked", {
+              reason: "submit details back",
+              blobUrlPreview: exp.videoUrl.slice(0, 80),
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+        localStorage.removeItem("dubhub-trim-export");
+      }
+    } catch {
+      /* ignore */
+    }
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "back cleanup done", {});
+    setLocation("/trim-video");
+  };
+
+  const handleCancelPost = async () => {
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "cancel post start", {});
+    abortActiveUpload("submit-details-cancel");
+    setNativeOutputUri(null);
+    setVideoFile(null);
+    setTrimState(null);
+    setTrimTimes(null);
+    setThumbnailSrc(null);
+    clearNativePostArtifact();
+    try {
+      const expRaw = localStorage.getItem("dubhub-trim-export");
+      if (expRaw) {
+        const exp = JSON.parse(expRaw) as { videoUrl?: string };
+        if (exp.videoUrl) {
+          try {
+            URL.revokeObjectURL(exp.videoUrl);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      const thumbRaw = localStorage.getItem("dubhub-trim-thumbnail");
+      if (thumbRaw) {
+        const thumb = JSON.parse(thumbRaw) as { thumbnailUri?: string };
+        if (thumb.thumbnailUri?.startsWith("blob:")) {
+          try {
+            URL.revokeObjectURL(thumb.thumbnailUri);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "cancel post cleanup done", {});
+    dubhubVideoDebugLog("[DubHub][SubmitDetails]", "navigate home", { route: "/" });
+    await cancelPostAndHardResetToHome("submit-details-cancel-post");
   };
 
   const watched = form.watch();
@@ -600,9 +1035,14 @@ export default function SubmitMetadata() {
   const clipSeconds = Math.round(trimTimes.endTime - trimTimes.startTime);
 
   return (
-    <div className="flex-1 bg-dark overflow-y-auto">
-      <div className="app-page-top-pad p-5 pb-10 sm:p-6 sm:pb-12">
-        <div className="max-w-md mx-auto space-y-4">
+    <div
+      className={cn(
+        "bg-dark max-w-full overflow-x-hidden touch-pan-y overscroll-x-none",
+        APP_PAGE_SCROLL_CLASS,
+      )}
+    >
+      <div className="app-page-top-pad w-full min-w-0 max-w-full p-5 pb-10 sm:p-6 sm:pb-12">
+        <div className="mx-auto w-full min-w-0 max-w-md space-y-4">
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -616,32 +1056,50 @@ export default function SubmitMetadata() {
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-bold text-white tracking-tight">Track details</h1>
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-white/75 hover:text-white hover:bg-white/10"
+              onClick={() => setShowCancelDialog(true)}
+              data-testid="button-cancel-metadata"
+            >
+              Cancel
+            </Button>
           </div>
 
           <div className="rounded-2xl overflow-hidden border border-gray-800/90 bg-black shadow-sm w-full">
-            <div className="relative w-full aspect-video">
-              <video
-                ref={previewVideoRef}
-                src={trimState.videoUrl}
-                className="absolute inset-0 h-full w-full object-cover object-center"
-                muted
-                playsInline
-                preload="metadata"
-                data-testid="video-metadata-preview"
-              />
+            <div
+              className="relative w-full max-h-[min(70vh,520px)] mx-auto"
+              style={
+                clipPreviewAspect
+                  ? { aspectRatio: `${clipPreviewAspect.w} / ${clipPreviewAspect.h}` }
+                  : { aspectRatio: "16 / 9" }
+              }
+            >
+              {thumbnailSrc ? (
+                <img
+                  src={thumbnailSrc}
+                  alt="Selected clip thumbnail"
+                  className="absolute inset-0 h-full w-full object-contain object-center bg-black"
+                  data-testid="image-metadata-preview"
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800">
+                  <p className="px-4 text-center text-xs text-gray-300">
+                    Thumbnail preview unavailable
+                  </p>
+                </div>
+              )}
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 to-transparent pt-10 pb-3 px-3">
                 <p className="text-xs font-medium text-white/95">
                   Selected clip · {clipSeconds}s
-                </p>
-                <p className="text-[11px] text-gray-300/90 mt-0.5 truncate" title={trimState.fileName}>
-                  {trimState.fileName}
                 </p>
               </div>
             </div>
           </div>
           
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="min-w-0 space-y-4">
               <FormField
                 control={form.control}
                 name="title"
@@ -767,14 +1225,16 @@ export default function SubmitMetadata() {
                   return (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-300">Date</FormLabel>
-                      <div className="relative">
-                        <FormControl>
+                      <div className="relative isolate flex min-w-0 w-full max-w-full overflow-hidden rounded-md [contain:inline-size]">
+                        <FormControl className="min-w-0 w-full max-w-full flex-1 basis-0">
                           <Input
                             type="date"
-                            max={todayInputValue}
+                            max={getTodayInputValue()}
                             className={cn(
-                              "bg-surface text-white pr-10 transition-[border-color,box-shadow,background-color] [color-scheme:dark]",
+                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start bg-surface px-3 py-0 pr-12 text-white text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
+                              "focus-visible:ring-offset-0",
                               success ? fieldSuccessOutlineClass : "border-gray-600",
+                              success && "ring-inset",
                             )}
                             data-testid="input-date"
                             name={field.name}
@@ -793,8 +1253,11 @@ export default function SubmitMetadata() {
                               }));
                             }}
                             onChange={(e) => {
-                              field.onChange(e);
-                              if (!isPlayedDateComplete(e.target.value)) {
+                              const max = getTodayInputValue();
+                              let next = e.target.value;
+                              if (next > max) next = max;
+                              field.onChange(next);
+                              if (!isPlayedDateComplete(next)) {
                                 setFieldConfirmed((c) => ({ ...c, playedDate: false }));
                               }
                             }}
@@ -1051,6 +1514,27 @@ export default function SubmitMetadata() {
           </Form>
         </div>
       </div>
+      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel posting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your current clip and edits will be discarded.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                void handleCancelPost();
+              }}
+            >
+              Cancel post
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

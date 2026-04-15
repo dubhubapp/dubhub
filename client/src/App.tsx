@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -31,9 +31,44 @@ import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
 import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
 import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
+import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
+import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/export-trimmed-video";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const prevLocationRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const prev = prevLocationRef.current;
+    prevLocationRef.current = location;
+    if (prev && prev !== location) {
+      dubhubVideoDebugLog("[DubHub][PostFlow][route]", "route changed", {
+        from: prev,
+        to: location,
+      });
+    }
+    if (location !== "/") return;
+    // Isolation mode: disable route-based epoch bump.
+    // Keep explicit cancel-path epoch increments only.
+    if (prev === "/trim-video" || prev === "/submit-metadata" || prev === "/submit") {
+      dubhubVideoDebugLog("[DubHub][PostFlow][resource]", "home-return resource snapshot", {
+        fromRoute: prev,
+        ...getTrimExportResourceState(),
+      });
+      void disposeTrimExportResources("app-home-return-cleanup");
+      dubhubVideoDebugLog("[DubHub][VideoCard][reset]", "route-based epoch increment disabled", {
+        fromRoute: prev,
+        toRoute: location,
+      });
+      dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "clear trim session on return Home", {
+        from: prev,
+        to: location,
+      });
+      clearDubhubTrimSession();
+    }
+  }, [location]);
+
   const shellClass =
     location === "/"
       ? APP_MAIN_SHELL_BASE
