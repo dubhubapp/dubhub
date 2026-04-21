@@ -19,33 +19,22 @@ if (!process.env.DATABASE_URL) {
 // Create pool with error handling and SSL configuration for Supabase
 let pool: Pool;
 try {
-  // Parse DATABASE_URL and configure SSL properly
+  // Respect DATABASE_URL exactly as provided (including any sslmode intent).
   const connectionString = process.env.DATABASE_URL;
-  const url = new URL(connectionString);
-  
-  // Remove sslmode from URL - we'll use the ssl object instead
-  // This gives us better control over SSL certificate validation
-  url.searchParams.delete('sslmode');
-  
-  // Configure SSL for Supabase
-  // Supabase uses valid SSL certificates, but some environments may have
-  // certificate chain issues. In development, we allow self-signed certs.
-  // In production, use strict SSL verification.
-  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Optional emergency override for TLS certificate verification behavior.
+  // When unset, we omit the ssl object entirely so pg follows DATABASE_URL.
   const envOverrideRejectUnauthorized = parseOptionalBooleanEnv(
     process.env.DB_SSL_REJECT_UNAUTHORIZED,
   );
-  const rejectUnauthorized =
-    envOverrideRejectUnauthorized ?? (isProduction ? true : false);
-  const sslConfig = isProduction 
-    ? { rejectUnauthorized }
-    : { 
-        rejectUnauthorized, // Allow self-signed certs in development by default
-      };
-  
-  pool = new Pool({ 
-    connectionString: url.toString(),
-    ssl: sslConfig,
+  const sslConfig =
+    envOverrideRejectUnauthorized === undefined
+      ? undefined
+      : { rejectUnauthorized: envOverrideRejectUnauthorized };
+
+  pool = new Pool({
+    connectionString,
+    ...(sslConfig ? { ssl: sslConfig } : {}),
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000, // Increased timeout for paused databases
