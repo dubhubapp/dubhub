@@ -655,17 +655,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update user profile image endpoint
-  app.patch("/api/user/profile-image", async (req, res) => {
+  // Update user profile image endpoint (authenticated user only)
+  app.patch("/api/user/profile-image", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const { userId, profileImageUrl } = req.body;
-      
-      if (!userId || !profileImageUrl) {
-        return res.status(400).json({ error: "userId and profileImageUrl are required" });
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const authenticatedUserId = req.dbUser.id;
+      const imageUrl =
+        req.body?.profileImageUrl ??
+        req.body?.avatar_url ??
+        req.body?.profileImage;
+
+      if (!imageUrl) {
+        return res.status(400).json({ error: "profileImageUrl is required" });
       }
 
-      const updatedUser = await storage.updateUser(userId, { 
-        profileImage: profileImageUrl 
+      const updatedUser = await storage.updateUser(authenticatedUserId, {
+        avatar_url: String(imageUrl),
       });
 
       if (!updatedUser) {
@@ -762,8 +769,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
       }
 
+      const { email: _email, ...publicUser } = user;
       const userProfile = {
-        ...user,
+        ...publicUser,
         reputation,
         correct_ids: correctIdsAgg,
         karma: reputation,
@@ -3192,10 +3200,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/notifications/:id/read", async (req, res) => {
+  app.patch("/api/notifications/:id/read", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
       const notificationId = req.params.id;
-      await storage.markNotificationAsRead(notificationId);
+      const updated = await storage.markNotificationAsRead(notificationId, req.dbUser.id);
+      if (!updated) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
       res.json({ message: "Notification marked as read" });
     } catch (error) {
       console.error("Error marking notification as read:", error);
@@ -3883,30 +3897,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Dev-only: Seed a test post for debugging
-  app.post("/api/dev/seed-post", async (req, res) => {
-    try {
-      const { userId } = req.body;
-      if (!userId) {
-        return res.status(400).json({ message: "userId is required" });
+  // Dev-only: Seed a test post for debugging.
+  // Never expose this on Railway deployments, even if NODE_ENV is misconfigured.
+  const isRailwayRuntime = Boolean(
+    process.env.RAILWAY_ENVIRONMENT ||
+      process.env.RAILWAY_PROJECT_ID ||
+      process.env.RAILWAY_SERVICE_ID
+  );
+  const enableDevSeedRoute = process.env.NODE_ENV === "development" && !isRailwayRuntime;
+  if (enableDevSeedRoute) {
+    app.post("/api/dev/seed-post", async (req, res) => {
+      try {
+        const { userId } = req.body;
+        if (!userId) {
+          return res.status(400).json({ message: "userId is required" });
+        }
+
+        const post = await storage.createPost({
+          userId,
+          title: "Test Post",
+          video_url: "/videos/test.mp4",
+          genre: "DnB",
+          description: "Test post for debugging",
+          location: "Debug City",
+          dj_name: "Debug DJ",
+        });
+
+        res.json(post);
+      } catch (error) {
+        console.error("[/api/dev/seed-post] error", error);
+        res.status(500).json({ message: "Failed to seed post" });
       }
-
-      const post = await storage.createPost({
-        userId,
-        title: "Test Post",
-        video_url: "/videos/test.mp4",
-        genre: "DnB",
-        description: "Test post for debugging",
-        location: "Debug City",
-        dj_name: "Debug DJ",
-      });
-
-      res.json(post);
-    } catch (error) {
-      console.error("[/api/dev/seed-post] error", error);
-      res.status(500).json({ message: "Failed to seed post" });
-    }
-  });
+    });
+  }
 
   // Log all registered moderator report routes for debugging
   console.log("[Routes] Registered moderator report endpoints:");
