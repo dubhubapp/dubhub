@@ -1,4 +1,4 @@
-import logoImage from "@assets/dub-hub-logo.png";
+import logoImage from "@/assets/dub-hub-logo.png";
 
 interface LogoProps {
   className?: string;
