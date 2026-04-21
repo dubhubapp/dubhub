@@ -153,7 +153,7 @@ html {
   }
 
   .avatar-media {
-    @apply block align-middle;
+    @apply block align-middle object-cover object-center;
   }
 
   .avatar-icon {
@@ -163,6 +163,14 @@ html {
   .avatar-default-media {
     @apply object-cover;
     transform: translateY(5%);
+  }
+
+  /* Keep react-easy-crop media at natural ratio on wide/tall sources.
+     This avoids Tailwind/base max-width constraints squashing preview media. */
+  .avatar-cropper-shell .reactEasyCrop_Image,
+  .avatar-cropper-shell .reactEasyCrop_Video {
+    max-width: none !important;
+    max-height: none !important;
   }
   
   .snap-y {

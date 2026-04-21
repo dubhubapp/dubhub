@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
+import Cropper, { type Area } from "react-easy-crop";
+import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
+import { exportCroppedAvatar } from "@/lib/avatar-crop";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -264,6 +267,13 @@ export default function UserProfile() {
   /** Nearest snapped page in full-screen post viewers — drives a single active VideoCard (avoids N× `preload=auto`). */
   const [postsViewerSnapIndex, setPostsViewerSnapIndex] = useState(0);
   const [likesViewerSnapIndex, setLikesViewerSnapIndex] = useState(0);
+  const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+  const [pendingAvatarFileName, setPendingAvatarFileName] = useState<string | null>(null);
+  const [pendingAvatarSrc, setPendingAvatarSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [isExportingCroppedAvatar, setIsExportingCroppedAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const likesViewerRef = useRef<HTMLDivElement | null>(null);
   const postsViewerRef = useRef<HTMLDivElement | null>(null);
@@ -1516,9 +1526,66 @@ export default function UserProfile() {
         return;
       }
 
-      profileImageMutation.mutate(file);
+      const objectUrl = URL.createObjectURL(file);
+      setPendingAvatarSrc((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return objectUrl;
+      });
+      setPendingAvatarFileName(file.name);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+      setCroppedAreaPixels(null);
+      setIsCropDialogOpen(true);
+    }
+    event.target.value = "";
+  };
+
+  const handleCropCancel = () => {
+    setIsCropDialogOpen(false);
+    setPendingAvatarFileName(null);
+    setCroppedAreaPixels(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setPendingAvatarSrc((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  const handleCropSave = async () => {
+    if (!pendingAvatarSrc || !croppedAreaPixels) {
+      toast({
+        title: "Unable to crop image",
+        description: "Please adjust your photo and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExportingCroppedAvatar(true);
+    try {
+      const baseName = (pendingAvatarFileName ?? "avatar").replace(/\.[^/.]+$/, "") || "avatar";
+      const croppedFile = await exportCroppedAvatar(pendingAvatarSrc, croppedAreaPixels, baseName);
+      profileImageMutation.mutate(croppedFile);
+      handleCropCancel();
+    } catch (error: any) {
+      toast({
+        title: "Unable to crop image",
+        description: error?.message || "Please try another photo.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingCroppedAvatar(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (pendingAvatarSrc?.startsWith("blob:")) {
+        URL.revokeObjectURL(pendingAvatarSrc);
+      }
+    };
+  }, [pendingAvatarSrc]);
 
   // Early return if no current user
   if (!currentUser) {
@@ -2341,6 +2408,57 @@ export default function UserProfile() {
           </Tabs>
           
           {/* Hidden file input for profile picture upload */}
+          <Dialog open={isCropDialogOpen} onOpenChange={(open) => (!open ? handleCropCancel() : setIsCropDialogOpen(true))}>
+            <DialogContent className="w-[92vw] max-w-sm rounded-2xl border-white/15 bg-black/95 p-4 text-white">
+              <DialogHeader className="space-y-1 text-left">
+                <DialogTitle className="text-base font-semibold">Adjust profile photo</DialogTitle>
+                <DialogDescription className="text-xs text-white/70">
+                  Drag to reposition. Pinch with two fingers to zoom.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="avatar-cropper-shell relative mt-2 overflow-hidden rounded-2xl border border-white/10 bg-black/60">
+                <div className="relative aspect-square w-full">
+                  {pendingAvatarSrc ? (
+                    <Cropper
+                      image={pendingAvatarSrc}
+                      crop={crop}
+                      zoom={zoom}
+                      minZoom={1}
+                      maxZoom={4}
+                      restrictPosition
+                      aspect={1}
+                      objectFit="cover"
+                      cropShape="round"
+                      showGrid={false}
+                      zoomWithScroll={false}
+                      onCropChange={setCrop}
+                      onZoomChange={setZoom}
+                      onCropComplete={(_, pixels) => setCroppedAreaPixels(pixels)}
+                    />
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-white/80 hover:text-white hover:bg-white/10"
+                  onClick={handleCropCancel}
+                  disabled={isExportingCroppedAvatar}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-cyan-300 text-black hover:bg-cyan-200"
+                  onClick={handleCropSave}
+                  disabled={isExportingCroppedAvatar}
+                >
+                  {isExportingCroppedAvatar ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <input
             type="file"
             ref={fileInputRef}
