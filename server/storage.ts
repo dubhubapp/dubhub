@@ -50,7 +50,7 @@ export interface IStorage {
     userId: string,
     options?: { limit?: number; before?: string; beforeId?: string; after?: string; afterId?: string }
   ): Promise<{ notifications: NotificationWithUser[]; hasMore: boolean }>;
-  markNotificationAsRead(notificationId: string): Promise<boolean>;
+  markNotificationAsRead(notificationId: string, userId: string): Promise<boolean>;
   markAllNotificationsAsRead(userId: string): Promise<boolean>;
   getUnreadNotificationCount(userId: string): Promise<number>;
 
@@ -165,7 +165,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, email, username, avatar_url, account_type, moderator, verified_artist, created_at")
+        .select("id, username, avatar_url, account_type, moderator, verified_artist, created_at")
         .ilike("username", normalized)
         .maybeSingle();
 
@@ -1504,14 +1504,23 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async markNotificationAsRead(notificationId: string): Promise<boolean> {
+  async markNotificationAsRead(notificationId: string, userId: string): Promise<boolean> {
     try {
       await db.execute(sql`
         UPDATE notifications
         SET read = true
         WHERE id = ${notificationId}
+          AND artist_id = ${userId}
       `);
-      return true;
+      const result = await db.execute(sql`
+        SELECT 1
+        FROM notifications
+        WHERE id = ${notificationId}
+          AND artist_id = ${userId}
+          AND read = true
+        LIMIT 1
+      `);
+      return ((result as any).rows || []).length > 0;
     } catch (error) {
       console.error("[markNotificationAsRead] Error:", error);
       return false;
