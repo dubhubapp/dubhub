@@ -1,14 +1,11 @@
 import { Capacitor } from "@capacitor/core";
 
-/** LAN backend for local iOS/Android shells (no Vite proxy). Override with VITE_API_ORIGIN for real deployments. */
-const DEFAULT_NATIVE_DEV_ORIGIN = "http://192.168.1.184:5001";
-
 function trimTrailingSlashes(s: string): string {
   return s.replace(/\/+$/, "");
 }
 
-function apiOriginFromEnv(): string {
-  const raw = String(import.meta.env.VITE_API_ORIGIN ?? import.meta.env.VITE_DEV_API_ORIGIN ?? "").trim();
+function apiOriginFromEnv(envName: "VITE_API_ORIGIN" | "VITE_DEV_API_ORIGIN"): string {
+  const raw = String(import.meta.env[envName] ?? "").trim();
   return raw ? trimTrailingSlashes(raw) : "";
 }
 
@@ -19,7 +16,21 @@ function computeApiBase(): string {
   if (!Capacitor.isNativePlatform()) {
     return "";
   }
-  return apiOriginFromEnv() || DEFAULT_NATIVE_DEV_ORIGIN;
+
+  // Native production/TestFlight must explicitly target hosted backend.
+  const hostedOrigin = apiOriginFromEnv("VITE_API_ORIGIN");
+  if (hostedOrigin) {
+    return hostedOrigin;
+  }
+
+  // Native development can keep using LAN/local API origin.
+  if (import.meta.env.DEV) {
+    return apiOriginFromEnv("VITE_DEV_API_ORIGIN");
+  }
+
+  throw new Error(
+    "[apiBase] Missing VITE_API_ORIGIN for native production build. Configure hosted API origin explicitly.",
+  );
 }
 
 export const API_BASE = computeApiBase();
