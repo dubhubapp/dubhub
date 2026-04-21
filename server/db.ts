@@ -2,6 +2,14 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
 
+function parseOptionalBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value == null) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
 if (!process.env.DATABASE_URL) {
   throw new Error(
     "DATABASE_URL must be set. Did you forget to provision a database?",
@@ -24,10 +32,15 @@ try {
   // certificate chain issues. In development, we allow self-signed certs.
   // In production, use strict SSL verification.
   const isProduction = process.env.NODE_ENV === 'production';
+  const envOverrideRejectUnauthorized = parseOptionalBooleanEnv(
+    process.env.DB_SSL_REJECT_UNAUTHORIZED,
+  );
+  const rejectUnauthorized =
+    envOverrideRejectUnauthorized ?? (isProduction ? true : false);
   const sslConfig = isProduction 
-    ? { rejectUnauthorized: true }
+    ? { rejectUnauthorized }
     : { 
-        rejectUnauthorized: false, // Allow self-signed certs in development
+        rejectUnauthorized, // Allow self-signed certs in development by default
       };
   
   pool = new Pool({ 

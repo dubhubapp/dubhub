@@ -10,6 +10,14 @@ import { storage } from "./storage";
 const app = express();
 
 const isDev = process.env.NODE_ENV !== "production";
+const isApiOnlyMode =
+  /^(1|true|yes)$/i.test(String(process.env.API_ONLY ?? ""));
+const PROD_CORS_ALLOWED_ORIGINS = new Set(
+  String(process.env.CORS_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean),
+);
 
 /** Explicit dev origins; LAN Vite + Capacitor. Production still uses the previous localhost:517* rule only. */
 const DEV_CORS_ORIGINS = new Set([
@@ -38,10 +46,7 @@ function corsOriginAllowed(origin: string | undefined, cb: (err: Error | null, a
     cb(null, isDevOriginAllowed(origin));
     return;
   }
-  // Production: preserve previous behaviour (Vite-style localhost only)
-  const legacy =
-    origin.includes("localhost:517") || origin.includes("127.0.0.1:517");
-  cb(null, legacy);
+  cb(null, PROD_CORS_ALLOWED_ORIGINS.has(origin));
 }
 
 app.use(
@@ -143,7 +148,11 @@ app.use((req, res, next) => {
   } else {
     // Production mode or standalone mode - serve static files or API only
     if (app.get("env") === "production") {
-    serveStatic(app);
+      if (isApiOnlyMode) {
+        log("API_ONLY enabled: skipping static frontend serving");
+      } else {
+        serveStatic(app);
+      }
     }
     // In standalone dev mode, only serve API - Vite dev server handles frontend
   }
