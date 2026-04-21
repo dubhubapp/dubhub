@@ -3898,13 +3898,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Dev-only: Seed a test post for debugging.
-  // Never expose this on Railway deployments, even if NODE_ENV is misconfigured.
-  const isRailwayRuntime = Boolean(
-    process.env.RAILWAY_ENVIRONMENT ||
-      process.env.RAILWAY_PROJECT_ID ||
-      process.env.RAILWAY_SERVICE_ID
-  );
-  const enableDevSeedRoute = process.env.NODE_ENV === "development" && !isRailwayRuntime;
+  // Explicit opt-in only, to avoid accidental exposure in hosted environments.
+  const enableDevSeedRoute =
+    process.env.NODE_ENV === "development" &&
+    /^(1|true|yes)$/i.test(String(process.env.ENABLE_DEV_SEED_ROUTE ?? ""));
   if (enableDevSeedRoute) {
     app.post("/api/dev/seed-post", async (req, res) => {
       try {
