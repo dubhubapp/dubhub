@@ -3902,9 +3902,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const enableDevSeedRoute =
     process.env.NODE_ENV === "development" &&
     /^(1|true|yes)$/i.test(String(process.env.ENABLE_DEV_SEED_ROUTE ?? ""));
+  console.log(`[Routes] /api/dev/seed-post enabled: ${enableDevSeedRoute}`);
   if (enableDevSeedRoute) {
     app.post("/api/dev/seed-post", async (req, res) => {
       try {
+        const hostHeader = String(req.headers.host ?? "").toLowerCase();
+        const isLocalHost =
+          hostHeader.startsWith("localhost:") ||
+          hostHeader.startsWith("127.0.0.1:") ||
+          hostHeader === "localhost" ||
+          hostHeader === "127.0.0.1" ||
+          hostHeader === "[::1]" ||
+          hostHeader.startsWith("[::1]:");
+        const isLocalDevRequest =
+          process.env.NODE_ENV === "development" &&
+          /^(1|true|yes)$/i.test(String(process.env.ENABLE_DEV_SEED_ROUTE ?? "")) &&
+          isLocalHost;
+        if (!isLocalDevRequest) {
+          return res.status(404).json({ message: "Not found" });
+        }
+
         const { userId } = req.body;
         if (!userId) {
           return res.status(400).json({ message: "userId is required" });
