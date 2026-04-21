@@ -575,21 +575,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const randomId = Math.random().toString(36).substring(2, 15);
       const fileExtension = req.file.originalname.split('.').pop()?.toLowerCase() || 'jpg';
       const processedFilename = `profile_${timestamp}_${randomId}.${fileExtension}`;
-      
-      // Save image file to processed directory for serving
-      const processedDir = path.join(process.cwd(), 'processed');
-      
-      // Ensure processed directory exists
-      if (!fs.existsSync(processedDir)) {
-        fs.mkdirSync(processedDir, { recursive: true });
+      const authHeader = req.headers.authorization;
+      let authenticatedUserId: string | null = null;
+
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const accessToken = authHeader.substring(7);
+          const {
+            data: { user },
+            error,
+          } = await supabase.auth.getUser(accessToken);
+          if (!error && user?.id) {
+            authenticatedUserId = user.id;
+          }
+        } catch (authError) {
+          console.warn("[upload-profile-picture] Could not authenticate user from bearer token:", authError);
+        }
       }
-      
-      const filePath = path.join(processedDir, processedFilename);
-      fs.writeFileSync(filePath, req.file.buffer);
+
+      const storagePath = authenticatedUserId
+        ? `${authenticatedUserId}/${processedFilename}`
+        : `anonymous/${processedFilename}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile_uploads")
+        .upload(storagePath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("[upload-profile-picture] Supabase storage upload error:", uploadError);
+        return res.status(500).json({
+          success: false,
+          error: `Failed to upload image to storage: ${uploadError.message}`,
+        });
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("profile_uploads").getPublicUrl(storagePath);
+
+      if (authenticatedUserId) {
+        const { error: profileUpdateError } = await supabase
+          .from("profiles")
+          .update({ avatar_url: publicUrl })
+          .eq("id", authenticatedUserId);
+        if (profileUpdateError) {
+          console.warn(
+            "[upload-profile-picture] Uploaded image but failed to update profiles.avatar_url:",
+            profileUpdateError
+          );
+        }
+      }
       
       const result = {
         success: true,
-        url: `/images/${processedFilename}`,
+        url: publicUrl,
         filename: processedFilename,
       };
 
@@ -597,7 +640,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         originalname: req.file.originalname,
         size: req.file.size,
         mimetype: req.file.mimetype,
-        processedFilename
+        processedFilename,
+        storagePath,
+        authenticatedUserId,
       });
 
       res.json(result);
