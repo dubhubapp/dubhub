@@ -142,7 +142,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, email, username, avatar_url, account_type, moderator, verified_artist, created_at")
+        .select("id, username, avatar_url, account_type, moderator, verified_artist, created_at")
         .eq("id", id)
         .maybeSingle();
 

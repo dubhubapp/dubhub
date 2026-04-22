@@ -1916,8 +1916,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Moderator: Get pending verifications
-  app.get("/api/moderator/pending-verifications", async (req, res) => {
+  app.get("/api/moderator/pending-verifications", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+
       const result = await db.execute(sql`
         SELECT * FROM posts
         WHERE verification_status = 'community'
