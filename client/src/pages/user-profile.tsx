@@ -27,6 +27,8 @@ import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -205,6 +207,9 @@ function ProfilePostThumbnail({
   videoSrc: string | null;
 }) {
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [thumbnailSrc, videoSrc]);
   const shouldRenderImage = !!thumbnailSrc && !failed;
   const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed;
   const showFallback = failed || (!thumbnailSrc && !videoSrc);
@@ -1601,10 +1606,7 @@ export default function UserProfile() {
   if (statsLoading || reputationLoading) {
     return (
       <div className="flex-1 bg-dark flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-gray-400">Loading profile...</p>
-        </div>
+        <VinylLoader label="Loading profile..." labelClassName="text-gray-400" />
       </div>
     );
   }
@@ -1670,6 +1672,24 @@ export default function UserProfile() {
   const getPostVideoPreview = (post: PostWithUser) => {
     const rawVideo = (post as any).videoUrl ?? (post as any).video_url ?? null;
     return resolveMediaUrl(rawVideo);
+  };
+
+  const getNotificationThumbnail = (notification: NotificationWithUser) => {
+    const post = notification.post as any;
+    const maybePreview =
+      post?.thumbnailUrl ??
+      post?.thumbnail_url ??
+      post?.previewImage ??
+      post?.preview_image ??
+      post?.posterUrl ??
+      post?.poster_url ??
+      null;
+    return resolveMediaUrl(maybePreview);
+  };
+
+  const getNotificationVideoPreview = (notification: NotificationWithUser) => {
+    const post = notification.post as any;
+    return resolveMediaUrl(post?.videoUrl ?? post?.video_url ?? null);
   };
 
   const openLikedPostViewer = (startIndex: number) => {
@@ -2037,7 +2057,7 @@ export default function UserProfile() {
 
               {postsLoading ? (
                 <div className="text-center py-8">
-                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
                   <p className="text-gray-400">Loading your posts...</p>
                 </div>
               ) : filteredPosts.length === 0 ? (
@@ -2142,7 +2162,7 @@ export default function UserProfile() {
             <TabsContent value="liked" className="mt-6" forceMount>
               {likedLoading ? (
                 <div className="text-center py-8">
-                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
                   <p className="text-gray-400">Loading liked videos...</p>
                 </div>
               ) : likedPosts.length === 0 ? (
@@ -2253,7 +2273,7 @@ export default function UserProfile() {
               )}
               {isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0 ? (
                 <div className="text-center py-10">
-                  <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-7 w-7" />
                   <p className="text-gray-400">Loading notifications...</p>
                 </div>
               ) : hasLoadedNotifications && visibleNotifications.length === 0 ? (
@@ -2326,25 +2346,21 @@ export default function UserProfile() {
                           onClick={() => handleGroupedNotificationClick(group)}
                           data-testid={`notification-${notification.id}`}
                         >
-                        {/* Thumbnail: release artwork takes precedence over post video */}
+                        {/* Thumbnail: release artwork takes precedence, then post snapshot preview. */}
                         <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
-                          {notification.release?.artworkUrl ? (
-                            <img
-                              src={notification.release.artworkUrl}
-                              alt=""
-                              className="w-full h-full object-cover"
-                            />
-                          ) : notification.post?.videoUrl ? (
-                            <video
-                              src={notification.post.videoUrl}
-                              className="w-full h-full object-cover"
-                              muted
-                            />
-                          ) : (
+                          {(() => {
+                            const releaseArtworkSrc = resolveMediaUrl(notification.release?.artworkUrl ?? null);
+                            const thumbnailSrc = releaseArtworkSrc ?? getNotificationThumbnail(notification);
+                            const videoSrc = releaseArtworkSrc ? null : getNotificationVideoPreview(notification);
+                            if (thumbnailSrc || videoSrc) {
+                              return <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />;
+                            }
+                            return (
                             <div className="w-full h-full flex items-center justify-center">
                               <Bell className="w-6 h-6 text-gray-600" />
                             </div>
-                          )}
+                            );
+                          })()}
                         </div>
 
                         {/* Notification Content: tag and acceptance include @username in message */}
@@ -2396,7 +2412,7 @@ export default function UserProfile() {
                   </div>
                   {isLoadingOlderNotifications && (
                     <div className="py-3 flex items-center justify-center">
-                      <div className="w-5 h-5 border-2 border-muted-foreground/50 border-t-transparent rounded-full animate-spin" />
+                      <InlineSpinner sizeClassName="h-5 w-5" />
                     </div>
                   )}
                   {!hasMoreOlderNotifications && visibleNotifications.length > 0 && (

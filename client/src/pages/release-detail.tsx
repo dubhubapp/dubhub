@@ -16,6 +16,7 @@ import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -165,7 +166,7 @@ export default function ReleaseDetail() {
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <VinylLoader />
       </div>
     );
   }

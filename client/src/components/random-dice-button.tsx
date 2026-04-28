@@ -45,6 +45,7 @@ export function RandomDiceButton({
   "aria-label": ariaLabel,
   delayPressMs,
   disabled,
+  accentGlow = "default",
   className,
   iconClassName,
   iconWrapClassName,
@@ -54,6 +55,7 @@ export function RandomDiceButton({
   "aria-label": string;
   delayPressMs?: number;
   disabled?: boolean;
+  accentGlow?: "default" | "turquoiseSubtle" | "turquoiseProminent";
   className?: string;
   iconClassName?: string;
   iconWrapClassName?: string;
@@ -93,7 +95,18 @@ export function RandomDiceButton({
   };
 
   const idle = "text-white/78 hover:text-white";
-  const on = "text-white [filter:drop-shadow(0_0_10px_rgba(255,255,255,0.28))] scale-[1.03]";
+  const activeGlowClass =
+    accentGlow === "turquoiseProminent"
+      ? "text-white [filter:drop-shadow(0_0_14px_rgba(74,233,223,0.68))] scale-[1.03]"
+      : accentGlow === "turquoiseSubtle"
+        ? "text-white [filter:drop-shadow(0_0_9px_rgba(74,233,223,0.4))] scale-[1.03]"
+        : "text-white [filter:drop-shadow(0_0_10px_rgba(255,255,255,0.28))] scale-[1.03]";
+  const iconGlowClass =
+    accentGlow === "turquoiseProminent"
+      ? "drop-shadow-[0_0_12px_rgba(74,233,223,0.7)]"
+      : accentGlow === "turquoiseSubtle"
+        ? "drop-shadow-[0_0_8px_rgba(74,233,223,0.45)]"
+        : "";
 
   return (
     <button
@@ -104,7 +117,7 @@ export function RandomDiceButton({
       aria-label={ariaLabel}
       className={cn(
         wrapBase,
-        active ? on : idle,
+        active ? activeGlowClass : idle,
         "touch-manipulation active:scale-[0.97] disabled:pointer-events-none disabled:opacity-70",
         className,
       )}
@@ -118,7 +131,12 @@ export function RandomDiceButton({
         )}
       >
         <DiceDiscoverIcon
-          className={cn("h-[22px] w-[22px] sm:h-6 sm:w-6", active ? "text-white" : "text-white/70", iconClassName)}
+          className={cn(
+            "h-[22px] w-[22px] sm:h-6 sm:w-6",
+            active ? "text-white" : "text-white/70",
+            active ? iconGlowClass : "",
+            iconClassName,
+          )}
         />
       </span>
     </button>

@@ -288,3 +288,22 @@ Notes:
 - `confirmed_id` events should only be created for valid, non-self-credit correct IDs.
 - `comment_like` events should add score when active and be revoked/removed when the like is removed.
 - Active unique constraints prevent duplicate rewards for the same underlying action.
+
+---
+
+## reserved_artist_usernames
+| Column     | Type                        | Nullable | Default                                             | Notes |
+|------------|-----------------------------|----------|-----------------------------------------------------|-------|
+| id         | integer                     | NO       | nextval('reserved_artist_usernames_id_seq'::regclass) | Primary key |
+| username   | character varying           | NO       | –                                                   | Reserved artist username, unique |
+| created_at | timestamp without time zone | YES      | now()                                               | Created |
+
+Constraints:
+- Primary key: `reserved_artist_usernames_pkey` on `id`
+- Unique: `reserved_artist_usernames_username_key` on `username`
+
+Notes:
+- Used during signup to prevent normal user accounts from taking reserved artist usernames.
+- Artist accounts may still request/sign up with reserved usernames because artist approval is handled manually.
+- RLS should be enabled before TestFlight.
+- Direct public/client table access should be removed once username availability checking is moved to a safe RPC.

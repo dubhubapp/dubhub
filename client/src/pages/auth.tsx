@@ -34,7 +34,7 @@ export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: Aut
   };
 
   return (
-    <div className="min-h-screen h-screen overflow-y-auto bg-background flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen h-screen overflow-y-auto bg-[#0f1324] flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         
         {isSignUp ? (

@@ -11,6 +11,7 @@ import type { CommentWithUser } from "@shared/schema";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 interface CommunityVerificationDialogProps {
   postId: string;
@@ -94,7 +95,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
 
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
           </div>
         ) : comments.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">

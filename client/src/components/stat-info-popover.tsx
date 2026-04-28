@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { playInteractionLightThrottled } from "@/lib/haptic";
 
 type StatInfoPopoverProps = {
   /** Short name for screen readers, e.g. the stat or section title */
@@ -29,7 +30,12 @@ export function StatInfoPopover({
 }: StatInfoPopoverProps) {
   const isCompact = size === "compact";
   return (
-    <Popover>
+    <Popover
+      onOpenChange={(isOpen) => {
+        if (!isOpen) return;
+        playInteractionLightThrottled();
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"

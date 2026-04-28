@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { Logo } from "@/components/brand/Logo";
 import { validateSignupPassword } from "@/lib/password-validation";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 /**
  * Shown after the user opens the Supabase password recovery link.
@@ -106,8 +107,7 @@ export default function ResetPasswordPage() {
   if (!sessionReady) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-muted-foreground text-sm">Preparing password reset…</p>
+        <VinylLoader label="Preparing password reset…" />
       </div>
     );
   }

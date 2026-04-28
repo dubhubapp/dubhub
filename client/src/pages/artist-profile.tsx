@@ -12,6 +12,7 @@ import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import type { PostWithUser } from "@shared/schema";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 type FilterMode = "pending" | "confirmed" | "all";
 type ArtistStats = {
@@ -179,10 +180,7 @@ export default function ArtistProfile() {
   if (isLoading) {
     return (
       <div className="flex-1 bg-dark flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-gray-400">Loading artist portal...</p>
-        </div>
+        <VinylLoader label="Loading artist portal..." labelClassName="text-gray-400" />
       </div>
     );
   }

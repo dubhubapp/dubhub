@@ -16,6 +16,7 @@ import { isReleaseDayToday } from "@/lib/release-status";
 import { ReleaseDayCelebration } from "@/components/release-day-celebration";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 export type ReleaseFeedItem = {
   id: string;
@@ -335,10 +336,7 @@ export default function ReleaseTracker() {
   if (isLoading) {
     return (
       <div className="flex-1 bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-muted-foreground">Loading releases...</p>
-        </div>
+        <VinylLoader label="Loading releases..." />
       </div>
     );
   }

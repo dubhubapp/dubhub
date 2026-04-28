@@ -1,3 +1,5 @@
+import { getAuthCallbackUrl } from "@/lib/auth-callback-url";
+
 export type PasswordValidationResult =
   | { valid: true }
   | { valid: false; message: string };
@@ -19,7 +21,7 @@ export function validateSignupPassword(password: string): PasswordValidationResu
   return { valid: true };
 }
 
+/** Supabase recovery email redirect (must match Auth redirect allow list). */
 export function getPasswordResetRedirectUrl(): string {
-  if (typeof window === "undefined") return "/reset-password";
-  return `${window.location.origin}/reset-password`;
+  return getAuthCallbackUrl();
 }

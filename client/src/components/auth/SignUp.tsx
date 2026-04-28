@@ -18,13 +18,67 @@ import {
   isAuthEmailRateLimitError,
   isDuplicateSignupEmailError,
 } from '@/lib/auth-errors';
+import { getAuthCallbackUrl } from '@/lib/auth-callback-url';
 
 interface SignUpProps {
   onToggleMode: () => void;
   onAuthSuccess: (role: string) => void;
 }
 
+function getPasswordStrength(password: string) {
+  const value = password.trim();
+
+  let score = 0;
+
+  const hasMinLength = value.length >= 8;
+  const hasLongLength = value.length >= 12;
+  const hasLower = /[a-z]/.test(value);
+  const hasUpper = /[A-Z]/.test(value);
+  const hasNumber = /[0-9]/.test(value);
+  const hasSymbol = /[^A-Za-z0-9]/.test(value);
+
+  if (hasMinLength) score += 1;
+  if (hasLower) score += 1;
+  if (hasUpper) score += 1;
+  if (hasNumber) score += 1;
+  if (hasSymbol) score += 1;
+  if (hasLongLength) score += 1;
+
+  if (!value) {
+    return {
+      label: 'empty' as const,
+      score,
+      canSubmit: false,
+      diagnostics: { length: value.length, hasLower, hasUpper, hasNumber, hasSymbol },
+    };
+  }
+  if (!hasMinLength || score <= 2) {
+    return {
+      label: 'weak' as const,
+      score,
+      canSubmit: false,
+      diagnostics: { length: value.length, hasLower, hasUpper, hasNumber, hasSymbol },
+    };
+  }
+  if (score <= 4) {
+    return {
+      label: 'okay' as const,
+      score,
+      canSubmit: true,
+      diagnostics: { length: value.length, hasLower, hasUpper, hasNumber, hasSymbol },
+    };
+  }
+  return {
+    label: 'strong' as const,
+    score,
+    canSubmit: true,
+    diagnostics: { length: value.length, hasLower, hasUpper, hasNumber, hasSymbol },
+  };
+}
+
 export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
+  const SIGNUP_EMAIL_COOLDOWN_SECONDS = 45;
+  const SIGNUP_COOLDOWN_MESSAGE = 'Please wait a moment before creating another account.';
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -32,12 +86,71 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
   const [accountType, setAccountType] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [hasSignupSucceeded, setHasSignupSucceeded] = useState(false);
+  const [signupCooldownRemaining, setSignupCooldownRemaining] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   const [usernameError, setUsernameError] = useState('');
   const { toast } = useToast();
   
   // Initialize profanity filter
   const filter = new Filter();
+  const passwordStrengthResult = getPasswordStrength(password);
+  const isPasswordWeak = password.length > 0 && !passwordStrengthResult.canSubmit;
+  const confirmPasswordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
+
+  const openVerificationModal = () => {
+    setHasSignupSucceeded(true);
+    setShowVerificationModal(true);
+  };
+
+  const goToSignIn = () => {
+    setShowVerificationModal(false);
+    onToggleMode();
+  };
+
+  const handleArtistDmClick = () => {
+    window.open("https://www.instagram.com/dubhub.uk/", "_blank", "noopener,noreferrer");
+    goToSignIn();
+  };
+
+  const handleVerificationModalOpenChange = (open: boolean) => {
+    // Keep this modal intentional and non-dismissible once shown.
+    if (open) {
+      setShowVerificationModal(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || password.length === 0) {
+      return;
+    }
+    console.log('[SignUp][password-strength]', {
+      length: passwordStrengthResult.diagnostics.length,
+      hasLower: passwordStrengthResult.diagnostics.hasLower,
+      hasUpper: passwordStrengthResult.diagnostics.hasUpper,
+      hasNumber: passwordStrengthResult.diagnostics.hasNumber,
+      hasSymbol: passwordStrengthResult.diagnostics.hasSymbol,
+      score: passwordStrengthResult.score,
+      label: passwordStrengthResult.label,
+    });
+  }, [password, passwordStrengthResult]);
+
+  useEffect(() => {
+    if (signupCooldownRemaining <= 0) return;
+    const timer = window.setTimeout(() => {
+      setSignupCooldownRemaining((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [signupCooldownRemaining]);
+
+  useEffect(() => {
+    const isPasswordWeakError =
+      errorMessage === 'Password is too weak' ||
+      errorMessage === 'Password is too weak. Please use a stronger password';
+    if (isPasswordWeakError && passwordStrengthResult.canSubmit) {
+      setErrorMessage('');
+    }
+  }, [errorMessage, passwordStrengthResult.canSubmit]);
 
   // Real-time username validation as user types
   // Re-validates when username OR accountType changes to prevent stale results
@@ -64,7 +177,11 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         checkUsernameAvailability(supabase, username, accountType as 'user' | 'artist')
           .then((result) => {
             if (!result.available) {
-              setUsernameError('Username already taken, please choose another.');
+              if (result.reason === 'artist_reserved' && accountType === 'user') {
+                setUsernameError("Don't be silly, you're not that famous");
+              } else {
+                setUsernameError('Username already taken, please choose another.');
+              }
             } else {
               setUsernameError('');
             }
@@ -84,6 +201,13 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (hasSignupSucceeded || showVerificationModal) {
+      return;
+    }
+    if (signupCooldownRemaining > 0) {
+      setErrorMessage(SIGNUP_COOLDOWN_MESSAGE);
+      return;
+    }
     setIsLoading(true);
     setErrorMessage('');
 
@@ -99,19 +223,8 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         return;
       }
 
-      // Enhanced password validation
-      if (password.length < 8) {
-        setErrorMessage('Password must be at least 8 characters long');
-        return;
-      }
-
-      // Check for uppercase, lowercase, and number
-      const hasUppercase = /[A-Z]/.test(password);
-      const hasLowercase = /[a-z]/.test(password);
-      const hasNumber = /[0-9]/.test(password);
-
-      if (!hasUppercase || !hasLowercase || !hasNumber) {
-        setErrorMessage('Password must contain uppercase letters, lowercase letters, and numbers');
+      if (!passwordStrengthResult.canSubmit) {
+        setErrorMessage('Password is too weak');
         return;
       }
 
@@ -148,7 +261,11 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           accountType,
           timestamp: new Date().toISOString(),
         });
-        setErrorMessage('Username already taken, please choose another.');
+        if (availability.reason === 'artist_reserved' && accountType === 'user') {
+          setErrorMessage("Don't be silly, you're not that famous");
+        } else {
+          setErrorMessage('Username already taken, please choose another.');
+        }
         return;
       }
 
@@ -157,6 +274,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         email: email.trim(),
         password: password,
         options: {
+          emailRedirectTo: getAuthCallbackUrl(),
           data: {
             username: trimmedUsername, // Send original username with casing preserved
             account_type: accountType,
@@ -165,7 +283,8 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
       });
 
       // Check if user was created successfully (even if there's a warning/error)
-      if (data?.user) {
+      if (data?.user && !error) {
+        setSignupCooldownRemaining(SIGNUP_EMAIL_COOLDOWN_SECONDS);
         // User was created successfully - treat as success even if error exists
         // (magic-link scenarios may have warnings but user is still created)
         console.log('[SignUp] User created successfully:', data.user.id);
@@ -213,7 +332,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         });
 
         // Show verification modal
-        setShowVerificationModal(true);
+        openVerificationModal();
         return; // Success - exit early
       }
 
@@ -244,19 +363,20 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
             errorMessage.includes('Password should be') ||
             errorMessage.toLowerCase().includes('password')
           ) {
-            setErrorMessage('Password is too weak. Please use a stronger password');
+            setErrorMessage(errorMessage || 'Password was rejected. Please use a different password.');
           } else {
             setErrorMessage(errorMessage || 'Failed to create account. Please try again.');
           }
         }
       } else {
+        setSignupCooldownRemaining(SIGNUP_EMAIL_COOLDOWN_SECONDS);
         // No error but no user - might be magic-link scenario
         // Don't show error, just show email verification message
         toast({
           title: "Account Created",
           description: "Please check your email to verify your account.",
         });
-        setShowVerificationModal(true);
+        openVerificationModal();
       }
     } catch (error: unknown) {
       console.error('[SignUp] Unexpected signup error:', error);
@@ -304,7 +424,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         <form onSubmit={handleSignUp} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="accountType" className="text-foreground">I am a...</Label>
-            <Select value={accountType} onValueChange={setAccountType} required>
+            <Select value={accountType} onValueChange={setAccountType} required disabled={hasSignupSucceeded}>
               <SelectTrigger className="bg-input border-border text-foreground" data-testid="select-account-type">
                 <SelectValue placeholder="Select your account type" />
               </SelectTrigger>
@@ -329,6 +449,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               placeholder="Enter your email"
               className="bg-input border-border text-foreground placeholder-muted-foreground"
               required
+              disabled={hasSignupSucceeded}
               data-testid="input-email"
             />
           </div>
@@ -347,6 +468,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               required
               minLength={3}
               maxLength={20}
+              disabled={hasSignupSucceeded}
               data-testid="input-username"
             />
             {usernameError && (
@@ -370,11 +492,42 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               className="bg-input border-border text-foreground placeholder-muted-foreground"
               required
               minLength={8}
+              disabled={hasSignupSucceeded}
               data-testid="input-password"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Must be at least 8 characters with uppercase, lowercase, and numbers
             </p>
+            {password.trim().length > 0 && (
+              <div className="mt-2 space-y-1" data-testid="password-strength-indicator">
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${
+                      passwordStrengthResult.label === 'weak'
+                        ? 'w-1/3 bg-red-500'
+                        : passwordStrengthResult.label === 'okay'
+                          ? 'w-2/3 bg-yellow-500'
+                          : 'w-full bg-green-500'
+                    }`}
+                  />
+                </div>
+                <p
+                  className={`text-xs ${
+                    passwordStrengthResult.label === 'weak'
+                      ? 'text-red-600'
+                      : passwordStrengthResult.label === 'okay'
+                        ? 'text-yellow-600'
+                        : 'text-green-600'
+                  }`}
+                >
+                  {passwordStrengthResult.label === 'weak'
+                    ? 'Password is too weak'
+                    : passwordStrengthResult.label === 'okay'
+                      ? 'Password could be stronger'
+                      : 'Password looks strong'}
+                </p>
+              </div>
+            )}
           </div>
           
           <div className="space-y-2">
@@ -388,18 +541,41 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               className="bg-input border-border text-foreground placeholder-muted-foreground"
               required
               minLength={8}
+              disabled={hasSignupSucceeded}
               data-testid="input-confirm-password"
             />
+            {confirmPasswordMismatch && (
+              <p className="text-xs text-red-600 mt-1" data-testid="text-confirm-password-error">
+                Passwords do not match. Please try again
+              </p>
+            )}
           </div>
           
           <Button 
             type="submit" 
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-            disabled={isLoading || !!usernameError || username.length === 0}
+            disabled={
+              isLoading ||
+              !!usernameError ||
+              isPasswordWeak ||
+              confirmPasswordMismatch ||
+              username.length === 0 ||
+              hasSignupSucceeded ||
+              signupCooldownRemaining > 0
+            }
             data-testid="button-create-account"
           >
-            {isLoading ? "Creating Account..." : "Create Account"}
+            {isLoading
+              ? "Creating Account..."
+              : signupCooldownRemaining > 0
+                ? `Please wait (${signupCooldownRemaining}s)`
+                : "Create Account"}
           </Button>
+          {signupCooldownRemaining > 0 && !hasSignupSucceeded && (
+            <p className="text-xs text-muted-foreground text-center">
+              Please wait a moment before creating another account.
+            </p>
+          )}
 
           {errorMessage && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
@@ -422,8 +598,14 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
       </CardContent>
 
       {/* Email Verification Modal */}
-      <Dialog open={showVerificationModal} onOpenChange={setShowVerificationModal}>
-        <DialogContent className="bg-background border-border">
+      <Dialog open={showVerificationModal} onOpenChange={handleVerificationModalOpenChange}>
+        <DialogContent
+          hideCloseButton
+          className="w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg"
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
           <DialogHeader>
             <div className="flex justify-center mb-4">
               <Mail className="w-12 h-12 text-accent" />
@@ -447,16 +629,11 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Button
-                    asChild
+                    type="button"
                     className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={handleArtistDmClick}
                   >
-                    <a
-                      href="https://www.instagram.com/dubhub.uk/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      DM us here!
-                    </a>
+                    DM us here!
                   </Button>
                 </div>
               </>
@@ -467,10 +644,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
                   type="button"
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                   data-testid="button-post-signup-sign-in"
-                  onClick={() => {
-                    setShowVerificationModal(false);
-                    onToggleMode();
-                  }}
+                  onClick={goToSignIn}
                 >
                   Sign in
                 </Button>

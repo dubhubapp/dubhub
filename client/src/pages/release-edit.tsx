@@ -22,6 +22,7 @@ import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -397,7 +398,7 @@ export default function ReleaseEdit() {
     if (!isLoading) navigate("/releases");
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <VinylLoader />
       </div>
     );
   }

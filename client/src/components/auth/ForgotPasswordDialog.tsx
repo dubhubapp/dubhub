@@ -24,14 +24,25 @@ export function ForgotPasswordDialog({
   onOpenChange,
   initialEmail = "",
 }: ForgotPasswordDialogProps) {
+  const RESET_EMAIL_COOLDOWN_SECONDS = 45;
+  const RESET_COOLDOWN_MESSAGE = "Please wait a moment before requesting another reset email.";
   const [email, setEmail] = useState(initialEmail);
   const [isLoading, setIsLoading] = useState(false);
+  const [resetCooldownRemaining, setResetCooldownRemaining] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const { toast } = useToast();
 
   useEffect(() => {
     if (open) setEmail(initialEmail);
   }, [open, initialEmail]);
+
+  useEffect(() => {
+    if (resetCooldownRemaining <= 0) return;
+    const timer = window.setTimeout(() => {
+      setResetCooldownRemaining((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [resetCooldownRemaining]);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -42,6 +53,10 @@ export function ForgotPasswordDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (resetCooldownRemaining > 0) {
+      setErrorMessage(RESET_COOLDOWN_MESSAGE);
+      return;
+    }
     const trimmed = email.trim();
     if (!trimmed) {
       setErrorMessage("Please enter your email");
@@ -50,6 +65,7 @@ export function ForgotPasswordDialog({
     setIsLoading(true);
     setErrorMessage("");
     try {
+      setResetCooldownRemaining(RESET_EMAIL_COOLDOWN_SECONDS);
       const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
         redirectTo: getPasswordResetRedirectUrl(),
       });
@@ -69,7 +85,7 @@ export function ForgotPasswordDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md bg-background border-border">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg">
         <DialogHeader>
           <DialogTitle>Reset password</DialogTitle>
           <DialogDescription>
@@ -92,8 +108,12 @@ export function ForgotPasswordDialog({
           {errorMessage && (
             <p className="text-sm text-red-600">{errorMessage}</p>
           )}
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Sending…" : "Send reset link"}
+          <Button type="submit" className="w-full" disabled={isLoading || resetCooldownRemaining > 0}>
+            {isLoading
+              ? "Sending…"
+              : resetCooldownRemaining > 0
+                ? `Please wait (${resetCooldownRemaining}s)`
+                : "Send reset link"}
           </Button>
         </form>
       </DialogContent>

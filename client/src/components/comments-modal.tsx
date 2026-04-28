@@ -1,7 +1,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, CheckCircle, Award, XCircle, Flag, MoreHorizontal } from "lucide-react";
+import { X, Send, Heart, CheckCircle, Award, XCircle, Flag, MoreHorizontal, MessageCircle } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -375,7 +375,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const commentsSheetMaxPx = isOpen ? computeCommentsSheetMaxPx() : null;
   const commentsKeyboardBottomInset = isOpen ? computeCommentsKeyboardBottomInset() : 0;
 
-  const { data: comments = [] } = useQuery<CommentWithUser[]>({
+  const {
+    data: commentsData,
+    isLoading: isLoadingComments,
+    isFetching: isFetchingComments,
+  } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", post.id, "comments"],
     queryFn: async () => {
       if (debugComments) {
@@ -394,6 +398,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     },
     enabled: isOpen,
   });
+  const comments = commentsData ?? [];
+  const shouldShowCommentsLoadingState =
+    isOpen && commentsData === undefined && (isLoadingComments || isFetchingComments);
 
   // Get verified artists for auto-complete
   const { data: verifiedArtists = [] } = useQuery<any[]>({
@@ -772,6 +779,32 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
               return 0;
             });
+
+            if (shouldShowCommentsLoadingState) {
+              return (
+                <div className="flex h-full min-h-[9rem] items-center justify-center px-4 text-center">
+                  <div className="flex max-w-[18rem] flex-col items-center gap-2 text-gray-500/85 dark:text-white/55">
+                    <MessageCircle className="h-4 w-4 animate-pulse opacity-60" aria-hidden />
+                    <p className="text-sm leading-relaxed">
+                      Loading comments...
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+
+            if (filteredComments.length === 0) {
+              return (
+                <div className="flex h-full min-h-[9rem] items-center justify-center px-4 text-center">
+                  <div className="flex max-w-[18rem] flex-col items-center gap-2 text-gray-500/85 dark:text-white/55">
+                    <MessageCircle className="h-4 w-4 opacity-60" aria-hidden />
+                    <p className="text-sm leading-relaxed">
+                      What are you waiting for? Be the first to ID this track
+                    </p>
+                  </div>
+                </div>
+              );
+            }
 
             return filteredComments.map((comment) => {
               const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment

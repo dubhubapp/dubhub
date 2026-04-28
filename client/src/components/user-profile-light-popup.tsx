@@ -11,6 +11,7 @@ import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { playInteractionLightThrottled } from "@/lib/haptic";
 
 /** Aligns with dropdown/popover: ~150ms motion, slightly softer than raw tailwind zoom. */
 const POPUP_OPEN_MS = 200;
@@ -111,6 +112,11 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
   const [selectedUser, setSelectedUser] = useState<ProfilePopupUser | null>(null);
   const [showUserPopup, setShowUserPopup] = useState(false);
   const [popupAnchor, setPopupAnchor] = useState<{ x: number; y: number } | null>(null);
+  const openPopupWithHaptic = useCallback((nextUser: ProfilePopupUser) => {
+    setSelectedUser(nextUser);
+    setShowUserPopup(true);
+    playInteractionLightThrottled();
+  }, []);
 
   const { data: verifiedArtists = [] } = useQuery<any[]>({
     queryKey: ["/api/artists/verified"],
@@ -138,12 +144,11 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
         }
 
         // One commit: full profile (incl. publicLight.topGenreKey) before paint — avoids neutral "other" flash.
-        setSelectedUser(merged);
-        setShowUserPopup(true);
+        openPopupWithHaptic(merged);
       } catch (error) {
         console.error("Failed to fetch user:", error);
         const artist = verifiedArtists.find((a: any) => a.username === username);
-        setSelectedUser(
+        openPopupWithHaptic(
           artist
             ? {
                 username,
@@ -155,10 +160,9 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
               }
             : { username, account_type: "user", surfaceGenreHint: openOptions?.surfaceGenreHint ?? null },
         );
-        setShowUserPopup(true);
       }
     },
-    [verifiedArtists],
+    [openPopupWithHaptic, verifiedArtists],
   );
 
   const closePopup = useCallback(() => setShowUserPopup(false), []);

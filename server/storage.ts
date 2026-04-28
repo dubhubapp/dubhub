@@ -5,6 +5,49 @@ import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
 
+const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
+const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
+
+type NotificationMediaSnapshot = {
+  thumbnailUrl?: string | null;
+  videoUrl?: string | null;
+};
+
+function parseNotificationMessageWithMedia(
+  rawMessage: unknown
+): { message: string; media: NotificationMediaSnapshot | null } {
+  const message = typeof rawMessage === "string" ? rawMessage : "";
+  const markerIndex = message.lastIndexOf(MODERATION_NOTIFICATION_MEDIA_PREFIX);
+  if (markerIndex < 0) return { message, media: null };
+
+  const payloadStart = markerIndex + MODERATION_NOTIFICATION_MEDIA_PREFIX.length;
+  const payloadEnd = message.indexOf(MODERATION_NOTIFICATION_MEDIA_SUFFIX, payloadStart);
+  if (payloadEnd < 0) return { message, media: null };
+
+  const payloadRaw = message.slice(payloadStart, payloadEnd).trim();
+  const visibleMessage = message.slice(0, markerIndex).trimEnd();
+  if (!payloadRaw) return { message: visibleMessage, media: null };
+
+  try {
+    const parsed = JSON.parse(payloadRaw) as NotificationMediaSnapshot;
+    const thumbnailUrl =
+      typeof parsed?.thumbnailUrl === "string" && parsed.thumbnailUrl.trim().length > 0
+        ? parsed.thumbnailUrl.trim()
+        : null;
+    const videoUrl =
+      typeof parsed?.videoUrl === "string" && parsed.videoUrl.trim().length > 0
+        ? parsed.videoUrl.trim()
+        : null;
+    if (!thumbnailUrl && !videoUrl) return { message: visibleMessage, media: null };
+    return {
+      message: visibleMessage,
+      media: { thumbnailUrl, videoUrl },
+    };
+  } catch {
+    return { message, media: null };
+  }
+}
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<any | undefined>;
@@ -15,14 +58,19 @@ export interface IStorage {
   // Posts
   getPosts(
     limit?: number,
-    offset?: number,
+    cursor?: {
+      sortMode: "hottest" | "newest";
+      createdAt: string;
+      id: string;
+      hotScore?: number;
+    } | null,
     currentUserId?: string,
     options?: {
       genres?: string[];
       identification?: "all" | "identified" | "unidentified";
       sortMode?: "hottest" | "newest";
     }
-  ): Promise<any[]>;
+  ): Promise<{ items: any[]; hasMore: boolean; nextCursor: { sortMode: "hottest" | "newest"; createdAt: string; id: string; hotScore?: number } | null }>;
   getPost(id: string): Promise<any | undefined>;
   createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
   deletePost(id: string): Promise<boolean>;
@@ -183,19 +231,31 @@ export class DatabaseStorage implements IStorage {
 
   async getPosts(
     limit = 10,
-    offset = 0,
+    cursor:
+      | {
+          sortMode: "hottest" | "newest";
+          createdAt: string;
+          id: string;
+          hotScore?: number;
+        }
+      | null = null,
     currentUserId?: string,
     options?: {
       genres?: string[];
       identification?: "all" | "identified" | "unidentified";
       sortMode?: "hottest" | "newest";
     }
-  ): Promise<any[]> {
-    console.log("[getPosts] called", { limit, offset, currentUserId });
+  ): Promise<{
+    items: any[];
+    hasMore: boolean;
+    nextCursor: { sortMode: "hottest" | "newest"; createdAt: string; id: string; hotScore?: number } | null;
+  }> {
+    console.log("[getPosts] called", { limit, cursor, currentUserId });
     try {
       const selectedGenres = options?.genres ?? [];
       const identificationFilter = options?.identification ?? "all";
       const sortMode = options?.sortMode ?? "hottest";
+      const pageLimit = Math.max(1, Math.min(limit, 50));
 
       const normalizedGenres = selectedGenres
         .map((g) => (g ?? "").toString().trim().toLowerCase())
@@ -231,6 +291,22 @@ export class DatabaseStorage implements IStorage {
         sortMode === "newest"
           ? sql`ORDER BY p.created_at DESC, p.id DESC`
           : sql`ORDER BY likes_count DESC, p.created_at DESC, p.id DESC`;
+      const hotScoreExpr = sql`COALESCE(pl_counts.likes_count, 0)`;
+      const cursorWhere =
+        sortMode === "newest"
+          ? cursor
+            ? sql`AND (
+                p.created_at < ${cursor.createdAt}::timestamptz
+                OR (p.created_at = ${cursor.createdAt}::timestamptz AND p.id < ${cursor.id})
+              )`
+            : sql``
+          : cursor
+            ? sql`AND (
+                ${hotScoreExpr} < ${cursor.hotScore ?? 0}
+                OR (${hotScoreExpr} = ${cursor.hotScore ?? 0} AND p.created_at < ${cursor.createdAt}::timestamptz)
+                OR (${hotScoreExpr} = ${cursor.hotScore ?? 0} AND p.created_at = ${cursor.createdAt}::timestamptz AND p.id < ${cursor.id})
+              )`
+            : sql``;
 
       const result = await db.execute(sql`
         SELECT
@@ -327,19 +403,30 @@ export class DatabaseStorage implements IStorage {
         WHERE COALESCE(p.verification_status, 'unverified') != 'under_review'
           AND ${genreWhere}
           AND ${identificationWhere}
+          ${cursorWhere}
         ${orderBy}
-        LIMIT ${limit}
-        OFFSET ${offset}
+        LIMIT ${pageLimit + 1}
       `);
 
       const rows = (result as any).rows || [];
+      const hasMore = rows.length > pageLimit;
+      const pageRows = hasMore ? rows.slice(0, pageLimit) : rows;
+      console.log("[getPosts][pagination-debug]", {
+        limitReceived: limit,
+        pageLimit,
+        sortMode,
+        cursorReceived: cursor,
+        rowsFetchedBeforeTrim: rows.length,
+        itemsReturned: pageRows.length,
+        hasMore,
+      });
       if (process.env.NODE_ENV === "development") {
-        const withPreview = rows.filter((r: any) => r.rel_id);
+        const withPreview = pageRows.filter((r: any) => r.rel_id);
         if (withPreview.length > 0) {
           console.log("[getPosts] releasePreview attached for post ids:", withPreview.map((r: any) => r.id));
         }
       }
-      return rows.map((row: any) => ({
+      const mappedItems = pageRows.map((row: any) => ({
         id: row.id,
         userId: row.user_id,
         title: row.title,
@@ -386,6 +473,28 @@ export class DatabaseStorage implements IStorage {
             }
           : null,
       }));
+      const lastRow = pageRows[pageRows.length - 1];
+      const nextCursor =
+        hasMore && lastRow
+          ? sortMode === "newest"
+            ? {
+                sortMode: "newest" as const,
+                createdAt: new Date(lastRow.created_at).toISOString(),
+                id: String(lastRow.id),
+              }
+            : {
+                sortMode: "hottest" as const,
+                hotScore: Number(lastRow.likes_count ?? 0),
+                createdAt: new Date(lastRow.created_at).toISOString(),
+                id: String(lastRow.id),
+              }
+          : null;
+      console.log("[getPosts][pagination-debug][cursor]", {
+        sortMode,
+        hasMore,
+        nextCursorExists: !!nextCursor,
+      });
+      return { items: mappedItems, hasMore, nextCursor };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isConnectionError = errorMessage.includes('ENOTFOUND') || 
@@ -398,7 +507,7 @@ export class DatabaseStorage implements IStorage {
         message: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
         limit,
-        offset,
+        cursor,
         currentUserId,
         isConnectionError
       });
@@ -412,7 +521,7 @@ export class DatabaseStorage implements IStorage {
       }
       
       // Return empty array instead of crashing
-      return [];
+      return { items: [], hasMore: false, nextCursor: null };
     }
   }
 
@@ -1476,27 +1585,42 @@ export class DatabaseStorage implements IStorage {
       const hasMore = rows.length > limit;
       const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
-      const notifications = pageRows.map((row: any) => ({
-        id: row.id,
-        artistId: row.artist_id,
-        postId: row.post_id,
-        releaseId: row.release_id,
-        triggeredBy: row.triggered_by,
-        message: row.message,
-        read: row.read,
-        createdAt: row.created_at,
-        triggeredByUser: {
-          id: row.triggered_by,
-          username: row.triggered_by_username,
-          avatarUrl: row.triggered_by_avatar_url,
-        },
-        post: row.post_id
-          ? { id: row.post_id, title: row.post_title, videoUrl: row.post_video_url } as any
-          : null,
-        release: row.release_id
-          ? { id: row.release_id, artworkUrl: this.releaseArtworkPublicUrl(row.release_artwork_url) }
-          : null,
-      }));
+      const notifications = pageRows.map((row: any) => {
+        const parsedMessage = parseNotificationMessageWithMedia(row.message);
+        const hasJoinedPostPreview =
+          typeof row.post_video_url === "string" && row.post_video_url.trim().length > 0;
+        const fallbackPost =
+          !hasJoinedPostPreview && parsedMessage.media
+            ? {
+                id: row.post_id ?? `removed-${row.id}`,
+                title: null,
+                videoUrl: parsedMessage.media.videoUrl ?? null,
+                thumbnailUrl: parsedMessage.media.thumbnailUrl ?? null,
+              }
+            : null;
+
+        return {
+          id: row.id,
+          artistId: row.artist_id,
+          postId: row.post_id,
+          releaseId: row.release_id,
+          triggeredBy: row.triggered_by,
+          message: parsedMessage.message,
+          read: row.read,
+          createdAt: row.created_at,
+          triggeredByUser: {
+            id: row.triggered_by,
+            username: row.triggered_by_username,
+            avatarUrl: row.triggered_by_avatar_url,
+          },
+          post: hasJoinedPostPreview
+            ? { id: row.post_id, title: row.post_title, videoUrl: row.post_video_url } as any
+            : fallbackPost as any,
+          release: row.release_id
+            ? { id: row.release_id, artworkUrl: this.releaseArtworkPublicUrl(row.release_artwork_url) }
+            : null,
+        };
+      });
       return { notifications, hasMore };
     } catch (error) {
       console.error("[getUserNotifications] Error:", error);

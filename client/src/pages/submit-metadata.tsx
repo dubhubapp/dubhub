@@ -35,6 +35,7 @@ import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
 import { Capacitor } from "@capacitor/core";
 import { nativeOutputUriToFileFallback, nativePreviewUri } from "@/lib/native-video-editor";
 import { useSubmitClip } from "@/lib/submit-clip-context";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1501,7 +1502,7 @@ export default function SubmitMetadata() {
                   >
                     {submitBusy ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        <InlineSpinner className="mr-2 border-white" sizeClassName="h-4 w-4" />
                         {isUploading ? "Uploading..." : "Submitting..."}
                       </>
                     ) : (

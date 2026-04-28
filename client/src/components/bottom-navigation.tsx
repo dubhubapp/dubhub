@@ -41,7 +41,11 @@ const VIDEO_FEED_SCRUB_BOTTOM_VAR = "--video-feed-scrub-bottom";
 export function BottomNavigation() {
   const [location, navigate] = useLocation();
   const navContainerRef = useRef<HTMLDivElement | null>(null);
+  const navTabsRowRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [showCancelPostDialog, setShowCancelPostDialog] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [underlineStyle, setUnderlineStyle] = useState({ x: 0, width: 0, opacity: 0 });
   const { invokeHomeWhileOnHome } = useHomeFeedInteraction();
   const { openSubmitClip, isSubmitClipOpen } = useSubmitClip();
   const { userType, currentUser } = useUser();
@@ -112,6 +116,27 @@ export function BottomNavigation() {
   const iconSlot =
     "flex h-7 shrink-0 items-center justify-center min-[840px]:h-[1.625rem]";
   const labelClass = "max-w-full truncate text-center text-[10px] font-medium leading-none";
+  const activeTabClass =
+    "text-white [filter:drop-shadow(0_0_8px_rgba(74,233,223,0.5))] dark:[filter:drop-shadow(0_0_8px_rgba(255,255,255,0.32))]";
+  const inactiveTabClass = "text-gray-300/70 dark:text-gray-400";
+  const activeTabKey =
+    location === "/"
+      ? "home"
+      : location === "/leaderboard"
+        ? "leaderboard"
+        : location === "/submit" || isSubmitClipOpen
+          ? "submit"
+          : location === "/releases"
+            ? "releases"
+            : location === "/profile"
+              ? "profile"
+              : location === "/moderator" && isModerator
+                ? "moderator"
+                : "";
+
+  const setTabRef = (key: string) => (el: HTMLDivElement | null) => {
+    tabRefs.current[key] = el;
+  };
   const handleConfirmCancelFromNav = async () => {
     dubhubVideoDebugLog("[DubHub][PostFlow][route]", "cancel post from Home nav confirm", {
       from: location,
@@ -157,6 +182,54 @@ export function BottomNavigation() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const updateTheme = () => setIsDarkMode(root.classList.contains("dark"));
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const row = navTabsRowRef.current;
+    const activeTab = activeTabKey ? tabRefs.current[activeTabKey] : null;
+    if (!row || !activeTab) {
+      setUnderlineStyle((previous) => ({ ...previous, opacity: 0 }));
+      return;
+    }
+
+    const updateUnderline = () => {
+      const rowRect = row.getBoundingClientRect();
+      const tabRect = activeTab.getBoundingClientRect();
+      setUnderlineStyle({
+        x: tabRect.left - rowRect.left + 8,
+        width: Math.max(24, tabRect.width - 16),
+        opacity: 1,
+      });
+    };
+
+    updateUnderline();
+    const rowObserver = new ResizeObserver(updateUnderline);
+    rowObserver.observe(row);
+    rowObserver.observe(activeTab);
+    window.addEventListener("resize", updateUnderline);
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", updateUnderline);
+      vv.addEventListener("scroll", updateUnderline);
+    }
+
+    return () => {
+      rowObserver.disconnect();
+      window.removeEventListener("resize", updateUnderline);
+      if (vv) {
+        vv.removeEventListener("resize", updateUnderline);
+        vv.removeEventListener("scroll", updateUnderline);
+      }
+    };
+  }, [activeTabKey]);
+
   return (
     <div
       ref={navContainerRef}
@@ -164,12 +237,13 @@ export function BottomNavigation() {
       className={`fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-surface pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[var(--app-nav-pad-y)] pb-[calc(var(--app-nav-pad-y)+env(safe-area-inset-bottom,0px))]`}
     >
       <div
-        className={`mx-auto flex max-w-md items-stretch justify-between gap-0.5 ${isModerator ? "max-w-lg" : ""}`}
+        ref={navTabsRowRef}
+        className={`relative mx-auto flex max-w-md items-stretch justify-between gap-0.5 ${isModerator ? "max-w-lg" : ""}`}
       >
-        <div className="min-w-0 flex-1">
+        <div ref={setTabRef("home")} className="min-w-0 flex-1">
           <button
             type="button"
-            className={`${itemBase} w-full ${location === "/" ? "text-primary" : "text-gray-400"}`}
+            className={`${itemBase} w-full ${location === "/" ? activeTabClass : inactiveTabClass}`}
             data-testid="nav-home"
             onClick={() => {
               if (location === "/trim-video" || location === "/submit-metadata") {
@@ -194,86 +268,108 @@ export function BottomNavigation() {
           </button>
         </div>
 
-        <Link href="/leaderboard" className="min-w-0 flex-1">
-          <button
-            type="button"
-            className={`${itemBase} w-full ${location === "/leaderboard" ? "text-primary" : "text-gray-400"}`}
-            data-testid="nav-leaderboard"
-          >
-            <span className={iconSlot}>
-              <Trophy className="h-6 w-6" strokeWidth={location === "/leaderboard" ? 2.25 : 2} />
-            </span>
-            <span className={labelClass}>Leaderboard</span>
-          </button>
-        </Link>
-
-        <button
-          type="button"
-          className={`${itemBase} min-w-0 flex-1 ${location === "/submit" || isSubmitClipOpen ? "text-primary" : "text-gray-400"}`}
-          data-testid="nav-submit"
-          onClick={() => {
-            dubhubVideoDebugLog("[DubHub][PostFlow][route]", "submit tab tapped", {
-              from: location,
-            });
-            openSubmitClip();
-          }}
-        >
-          <span className={iconSlot}>
-            <Plus className="h-6 w-6" strokeWidth={location === "/submit" || isSubmitClipOpen ? 2.25 : 2} />
-          </span>
-          <span className={labelClass}>Submit</span>
-        </button>
-
-        <Link href="/releases" className="min-w-0 flex-1">
-          <button
-            type="button"
-            className={`${itemBase} w-full ${location === "/releases" ? "text-primary" : "text-gray-400"}`}
-            data-testid="nav-releases"
-          >
-            <span className={iconSlot}>
-              <Calendar className="h-6 w-6" strokeWidth={location === "/releases" ? 2.25 : 2} />
-            </span>
-            <span className={labelClass}>Releases</span>
-          </button>
-        </Link>
-
-        <Link href={profilePath} className="min-w-0 flex-1">
-          <button
-            type="button"
-            className={`${itemBase} w-full ${location === "/profile" ? "text-primary" : "text-gray-400"}`}
-            data-testid="nav-profile"
-          >
-            <span className={`${iconSlot} relative`}>
-              <User className="h-6 w-6" strokeWidth={location === "/profile" ? 2.25 : 2} />
-              {unreadCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white tabular-nums">
-                  {formatNotificationBadgeCount(unreadCount)}
-                </span>
-              )}
-            </span>
-            <span className={labelClass}>{profileText}</span>
-          </button>
-        </Link>
-
-        {isModerator && (
-          <Link href="/moderator" className="min-w-0 flex-1">
+        <div ref={setTabRef("leaderboard")} className="min-w-0 flex-1">
+          <Link href="/leaderboard" className="min-w-0 flex-1">
             <button
               type="button"
-              className={`${itemBase} w-full ${location === "/moderator" ? "text-primary" : "text-gray-400"}`}
-              data-testid="nav-moderator"
+              className={`${itemBase} w-full ${location === "/leaderboard" ? activeTabClass : inactiveTabClass}`}
+              data-testid="nav-leaderboard"
+            >
+              <span className={iconSlot}>
+                <Trophy className="h-6 w-6" strokeWidth={location === "/leaderboard" ? 2.25 : 2} />
+              </span>
+              <span className={labelClass}>Leaderboard</span>
+            </button>
+          </Link>
+        </div>
+
+        <div ref={setTabRef("submit")} className="min-w-0 flex-1">
+          <button
+            type="button"
+            className={`${itemBase} w-full ${location === "/submit" || isSubmitClipOpen ? activeTabClass : inactiveTabClass}`}
+            data-testid="nav-submit"
+            onClick={() => {
+              dubhubVideoDebugLog("[DubHub][PostFlow][route]", "submit tab tapped", {
+                from: location,
+              });
+              openSubmitClip();
+            }}
+          >
+            <span className={iconSlot}>
+              <Plus className="h-6 w-6" strokeWidth={location === "/submit" || isSubmitClipOpen ? 2.25 : 2} />
+            </span>
+            <span className={labelClass}>Submit</span>
+          </button>
+        </div>
+
+        <div ref={setTabRef("releases")} className="min-w-0 flex-1">
+          <Link href="/releases" className="min-w-0 flex-1">
+            <button
+              type="button"
+              className={`${itemBase} w-full ${location === "/releases" ? activeTabClass : inactiveTabClass}`}
+              data-testid="nav-releases"
+            >
+              <span className={iconSlot}>
+                <Calendar className="h-6 w-6" strokeWidth={location === "/releases" ? 2.25 : 2} />
+              </span>
+              <span className={labelClass}>Releases</span>
+            </button>
+          </Link>
+        </div>
+
+        <div ref={setTabRef("profile")} className="min-w-0 flex-1">
+          <Link href={profilePath} className="min-w-0 flex-1">
+            <button
+              type="button"
+              className={`${itemBase} w-full ${location === "/profile" ? activeTabClass : inactiveTabClass}`}
+              data-testid="nav-profile"
             >
               <span className={`${iconSlot} relative`}>
-                <Shield className="h-6 w-6" strokeWidth={location === "/moderator" ? 2.25 : 2} />
-                {moderatorPendingQueueCount > 0 && (
-                  <span className="absolute -right-1 -top-1">
-                    <ModeratorQueueCountBadge count={moderatorPendingQueueCount} />
+                <User className="h-6 w-6" strokeWidth={location === "/profile" ? 2.25 : 2} />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white tabular-nums">
+                    {formatNotificationBadgeCount(unreadCount)}
                   </span>
                 )}
               </span>
-              <span className={labelClass}>Moderate</span>
+              <span className={labelClass}>{profileText}</span>
             </button>
           </Link>
+        </div>
+
+        {isModerator && (
+          <div ref={setTabRef("moderator")} className="min-w-0 flex-1">
+            <Link href="/moderator" className="min-w-0 flex-1">
+              <button
+                type="button"
+                className={`${itemBase} w-full ${location === "/moderator" ? activeTabClass : inactiveTabClass}`}
+                data-testid="nav-moderator"
+              >
+                <span className={`${iconSlot} relative`}>
+                  <Shield className="h-6 w-6" strokeWidth={location === "/moderator" ? 2.25 : 2} />
+                  {moderatorPendingQueueCount > 0 && (
+                    <span className="absolute -right-1 -top-1">
+                      <ModeratorQueueCountBadge count={moderatorPendingQueueCount} />
+                    </span>
+                  )}
+                </span>
+                <span className={labelClass}>Moderate</span>
+              </button>
+            </Link>
+          </div>
         )}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-[3px] h-0.5 rounded-full bg-[#4ae9df] opacity-0 transition-[transform,width,opacity] duration-200 ease-out dark:bg-white"
+          style={{
+            transform: `translateX(${underlineStyle.x}px)`,
+            width: `${underlineStyle.width}px`,
+            opacity: underlineStyle.opacity,
+            boxShadow: isDarkMode
+              ? "0 0 8px rgba(255, 255, 255, 0.42), 0 0 14px rgba(255, 255, 255, 0.16)"
+              : "0 0 10px rgba(74, 233, 223, 0.45), 0 0 18px rgba(74, 233, 223, 0.22)",
+          }}
+        />
       </div>
       <AlertDialog open={showCancelPostDialog} onOpenChange={setShowCancelPostDialog}>
         <AlertDialogContent>

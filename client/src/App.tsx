@@ -24,10 +24,10 @@ import UserProfile from "@/pages/user-profile";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
 import ResetPasswordPage from "@/pages/reset-password";
+import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
-import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
 import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
 import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
@@ -103,8 +103,7 @@ function App() {
         }
 
         if (session?.user) {
-          // User is authenticated via Supabase
-          setIsAuthenticated(true);
+          // Validate account state before marking the app session authenticated.
           
           // Fetch user profile to get role and check artist verification
           const { data: profileData, error: profileError } = await supabase
@@ -118,6 +117,7 @@ function App() {
             const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
             const isBanned = profileData.banned === true;
             if (isBanned || isSuspended) {
+              setIsAuthenticated(false);
               setEnforcementState({
                 banned: isBanned,
                 suspendedUntil: isSuspended ? profileData.suspended_until : null,
@@ -134,7 +134,6 @@ function App() {
               setUserRole('user');
               localStorage.removeItem('dubhub-authenticated');
               localStorage.removeItem('dubhub-user-role');
-              alert('Your artist account is awaiting verification.');
               setIsLoading(false);
               return;
             }
@@ -143,11 +142,13 @@ function App() {
             if (profileData.moderator) {
               userRole = 'moderator';
             }
+            setIsAuthenticated(true);
             setUserRole(userRole);
             // Also store in localStorage for backward compatibility
             localStorage.setItem('dubhub-authenticated', 'true');
             localStorage.setItem('dubhub-user-role', userRole);
           } else {
+            setIsAuthenticated(true);
             setUserRole('user');
           }
         } else {
@@ -170,8 +171,7 @@ function App() {
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        setIsAuthenticated(true);
-        // Fetch role and check artist verification
+        // Fetch role and check artist verification before allowing app entry.
         supabase
           .from('profiles')
           .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
@@ -183,6 +183,7 @@ function App() {
               const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
               const isBanned = profileData.banned === true;
               if (isBanned || isSuspended) {
+                setIsAuthenticated(false);
                 setEnforcementState({
                   banned: isBanned,
                   suspendedUntil: isSuspended ? profileData.suspended_until : null,
@@ -198,7 +199,6 @@ function App() {
                 setUserRole('user');
                 localStorage.removeItem('dubhub-authenticated');
                 localStorage.removeItem('dubhub-user-role');
-                alert('Your artist account is awaiting verification.');
                 return;
               }
               
@@ -206,6 +206,7 @@ function App() {
               if (profileData.moderator) {
                 userRole = 'moderator';
               }
+              setIsAuthenticated(true);
               setUserRole(userRole);
               localStorage.setItem('dubhub-authenticated', 'true');
               localStorage.setItem('dubhub-user-role', userRole);
@@ -243,8 +244,6 @@ function App() {
     // Sign out from Supabase
     await supabase.auth.signOut();
 
-    const themePreference = localStorage.getItem(THEME_STORAGE_KEY);
-
     // Clear all authentication and user data from localStorage and sessionStorage
     localStorage.removeItem('dubhub-authenticated');
     localStorage.removeItem('dubhub-user-role');
@@ -253,13 +252,8 @@ function App() {
     localStorage.removeItem('userRole');
     localStorage.removeItem('dubhub-signup-role');
 
-    // Clear any other potential storage items
-    localStorage.clear();
+    // Keep device-level preferences (e.g. theme) intact across logout/login.
     sessionStorage.clear();
-
-    if (themePreference === "dark" || themePreference === "light") {
-      localStorage.setItem(THEME_STORAGE_KEY, themePreference);
-    }
     
     // Reset authentication state
     setIsAuthenticated(false);
@@ -283,6 +277,7 @@ function App() {
         <TooltipProvider>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Switch>
+              <Route path="/auth-callback" component={AuthCallbackPage} />
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route>
                 <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
@@ -346,6 +341,7 @@ function App() {
           >
             <AuthenticatedMainShell>
             <Switch>
+              <Route path="/auth-callback" component={AuthCallbackPage} />
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route path="/" component={Home} />
               <Route path="/submit" component={Submit} />

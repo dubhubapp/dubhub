@@ -78,6 +78,12 @@ html {
   max-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
+  background-color: var(--dark);
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 #root {
@@ -85,6 +91,7 @@ html {
   max-height: 100dvh;
   min-height: 0;
   overflow: hidden;
+  background-color: var(--dark);
 }
 
 /* Taller viewports: slightly tighter bottom nav chrome (more video area). SE / short phones keep :root defaults. */
@@ -131,6 +138,7 @@ html {
     height: 100%;
     max-height: 100dvh;
     overscroll-behavior: none;
+    background-color: var(--dark);
   }
 
   .scrollbar-hide {

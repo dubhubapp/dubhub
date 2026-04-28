@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
+import { App as CapacitorApp } from "@capacitor/app";
+import type { PluginListenerHandle } from "@capacitor/core";
 import { VideoCard } from "@/components/video-card";
 import { GenreFilter, type FeedSortMode } from "@/components/genre-filter";
 import { VinylPullRefreshIndicator } from "@/components/vinyl-pull-refresh-indicator";
@@ -26,8 +28,17 @@ import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
 import { dubhubVideoDebugLog, dubhubVideoDebugEnabled } from "@/lib/video-debug";
 import { resolveMediaUrl } from "@/lib/media-url";
+import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
+const DUBHUB_SHOW_WELCOME_BACK_KEY = "dubhub_show_welcome_back";
+const WELCOME_MESSAGES = [
+  { title: "Back in the mix", subtitle: "Let\u2019s find some IDs" },
+  { title: "You\u2019re back", subtitle: "Ready to find some new heat?" },
+  { title: "Locked in", subtitle: "Get IDing" },
+  { title: "Back again", subtitle: "We\u2019ve been busy while you were gone" },
+];
 
 /**
  * Home vertical feed: mount full VideoCard only near the snapped post. Farther rows use a
@@ -329,6 +340,32 @@ async function homeFeedFetchJson<T>(
   return (await res.json()) as T;
 }
 
+type FeedPage = {
+  items: PostWithUser[];
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+function normalizeFeedPageResponse(raw: unknown): FeedPage {
+  if (Array.isArray(raw)) {
+    return {
+      items: raw as PostWithUser[],
+      hasMore: false,
+      nextCursor: null,
+    };
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const items = Array.isArray(obj.items) ? (obj.items as PostWithUser[]) : [];
+    return {
+      items,
+      hasMore: obj.hasMore === true,
+      nextCursor: typeof obj.nextCursor === "string" ? obj.nextCursor : null,
+    };
+  }
+  return { items: [], hasMore: false, nextCursor: null };
+}
+
 export default function Home() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
@@ -346,6 +383,7 @@ export default function Home() {
   /** Persists while scrolling the home feed (and between Random / sorted feeds). */
   const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
   const [activePostId, setActivePostId] = useState<string | null>(null);
+  const [isAppForegroundActive, setIsAppForegroundActive] = useState(true);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
   /** Same as `window.location.search` but subscribed via wouter (pathname-only `location` misses query updates). */
@@ -364,6 +402,25 @@ export default function Home() {
   const { currentUser } = useUser();
 
   const genresKey = [...selectedGenres].sort().join(",");
+
+  useEffect(() => {
+    try {
+      const shouldShowWelcomeBack =
+        sessionStorage.getItem(DUBHUB_SHOW_WELCOME_BACK_KEY) === "1";
+      if (!shouldShowWelcomeBack) return;
+      sessionStorage.removeItem(DUBHUB_SHOW_WELCOME_BACK_KEY);
+      const selectedMessage =
+        WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
+      toast({
+        title: selectedMessage?.title ?? "Back in the mix",
+        description: selectedMessage?.subtitle ?? "Let\u2019s find some IDs",
+        className: "text-center",
+      });
+      playSuccessNotification();
+    } catch {
+      // Storage access may fail in constrained environments; skip toast safely.
+    }
+  }, [toast]);
 
   useEffect(() => {
     return () => {
@@ -431,11 +488,12 @@ export default function Home() {
   const randomSessionTokenRef = useRef(0);
   const randomSeenIdsRef = useRef<Set<string>>(new Set());
   const randomPoolRef = useRef<PostWithUser[]>([]);
-  const randomOffsetRef = useRef(0);
+  const randomCursorRef = useRef<string | null>(null);
 
-  const postsQuery = useQuery({
+  const postsQuery = useInfiniteQuery({
     queryKey: ["/api/posts", { genresKey, identification: identificationFilter, sortMode }, currentUser?.id],
-    queryFn: async () => {
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
       // Get auth headers so server can set hasLiked and currentUserTaggedAsArtist
       const { data: { session } } = await supabase.auth.getSession();
       const authHeaders: Record<string, string> = {};
@@ -450,17 +508,55 @@ export default function Home() {
       params.append("identification", identificationFilter);
       const serverSortMode: "hottest" | "newest" = sortMode === "newest" ? "newest" : "hottest";
       params.append("sort", serverSortMode);
+      params.append("limit", "10");
+      if (pageParam) {
+        params.append("cursor", pageParam);
+      }
 
       const pathAndQuery = `/api/posts?${params}`;
-      return homeFeedFetchJson<PostWithUser[]>("[feed-main]", pathAndQuery, authHeaders);
+      const rawResponse = await homeFeedFetchJson<unknown>("[feed-main]", pathAndQuery, authHeaders);
+      const normalizedPage = normalizeFeedPageResponse(rawResponse);
+      console.log("[DubHub][Home][feed][pagination-debug]", {
+        cursor: pageParam ?? null,
+        sort: serverSortMode,
+        genres: selectedGenres,
+        identification: identificationFilter,
+        response: rawResponse,
+        itemsLength: normalizedPage.items.length,
+        hasMore: normalizedPage.hasMore,
+        nextCursor: normalizedPage.nextCursor,
+      });
+      return normalizedPage;
     },
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : undefined),
     enabled: sortMode !== "random",
-    placeholderData: (previousData) => previousData,
     staleTime: 0,
     refetchOnMount: "always",
   });
 
-  const { data: posts = [], isLoading, isError, error, refetch: refetchPosts } = postsQuery;
+  const {
+    data: pagedPosts,
+    isPending,
+    isLoading,
+    isError,
+    error,
+    refetch: refetchPosts,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = postsQuery;
+  const posts = useMemo(() => {
+    const pages = pagedPosts?.pages ?? [];
+    const merged = pages.flatMap((page) => page.items ?? []);
+    const seen = new Set<string>();
+    const deduped: PostWithUser[] = [];
+    for (const post of merged) {
+      if (seen.has(post.id)) continue;
+      seen.add(post.id);
+      deduped.push(post);
+    }
+    return deduped;
+  }, [pagedPosts]);
 
   /**
    * Full-screen "Loading posts" only when we have nothing to render yet.
@@ -468,7 +564,9 @@ export default function Home() {
    * already holds data; gating on isLoading alone then traps the UI even though the query succeeded.
    */
   const isInitialFeedLoad =
-    sortMode !== "random" && isLoading && !(Array.isArray(posts) ? posts : []).length;
+    sortMode !== "random" &&
+    posts.length === 0 &&
+    (isPending || isLoading || (!pagedPosts && postsQuery.isFetching));
 
   // Client-side fallback: ensures UI toggles (sort + filters) update immediately,
   // even if the backend response/order hasn't caught up yet.
@@ -532,6 +630,13 @@ export default function Home() {
       return normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt);
     });
   }, [posts, identificationFilter, selectedGenres, sortMode]);
+  const shouldShowFeedEndCard =
+    sortMode !== "random" &&
+    !isInitialFeedLoad &&
+    !isError &&
+    uiPosts.length > 0 &&
+    hasNextPage === false &&
+    !isFetchingNextPage;
 
   const homeFeedPullRefreshEnabled =
     sortMode !== "random" && !isInitialFeedLoad && !isError && uiPosts.length > 0;
@@ -539,11 +644,25 @@ export default function Home() {
     () => (activePostId ? uiPosts.findIndex((post) => post.id === activePostId) : -1),
     [uiPosts, activePostId],
   );
+  useEffect(() => {
+    const pages = pagedPosts?.pages ?? [];
+    const lastPage = pages.length > 0 ? pages[pages.length - 1] : null;
+    console.log("[DubHub][Home][pagination-debug][state]", {
+      pagesLength: pages.length,
+      flattenedPostsLength: posts.length,
+      lastPageHasMore: lastPage?.hasMore ?? null,
+      lastPageNextCursorExists: !!lastPage?.nextCursor,
+      hasNextPage,
+      isFetchingNextPage,
+      activeIndex: activePostIndex,
+    });
+  }, [pagedPosts, posts.length, hasNextPage, isFetchingNextPage, activePostIndex]);
 
   /** Until `activePostId` matches the scroll snap target, avoid treating every tile as distance 0 (that forced `preload=auto` + src on the entire feed). */
   const feedPreloadAnchorIndex = activePostIndex >= 0 ? activePostIndex : 0;
 
   useLayoutEffect(() => {
+    if (!isAppForegroundActive) return;
     if (sortMode === "random" || uiPosts.length === 0) return;
     const el = videoFeedRef.current;
     const pickNearestPostId = (): string => {
@@ -569,7 +688,7 @@ export default function Home() {
     if (!valid && nearest !== activePostId) {
       setActivePostId(nearest);
     }
-  }, [sortMode, uiPosts, activePostId]);
+  }, [sortMode, uiPosts, activePostId, isAppForegroundActive]);
   const plainVideoDiagEnabled =
     typeof window !== "undefined" && sessionStorage.getItem("dubhub_plain_video_diag") === "1";
   const plainVideoDiagPost = useMemo(() => {
@@ -583,6 +702,91 @@ export default function Home() {
     if (!resolved) return null;
     return { postId: p.id, videoUrl: resolved };
   }, [plainVideoDiagEnabled, uiPosts]);
+
+  const pauseFeedPlaybackForBackground = useCallback(() => {
+    const feedRoot = videoFeedRef.current;
+    const videos = feedRoot
+      ? Array.from(feedRoot.querySelectorAll<HTMLVideoElement>("video"))
+      : [];
+    for (const video of videos) {
+      try {
+        if (!video.paused) video.pause();
+      } catch {
+        /* ignore */
+      }
+      try {
+        video.playbackRate = 1;
+      } catch {
+        /* ignore */
+      }
+      try {
+        video.muted = true;
+      } catch {
+        /* ignore */
+      }
+    }
+    setActivePostId(null);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let appStateHandle: PluginListenerHandle | null = null;
+
+    const markInactive = () => {
+      if (cancelled) return;
+      setIsAppForegroundActive(false);
+      pauseFeedPlaybackForBackground();
+    };
+    const markActive = () => {
+      if (cancelled) return;
+      setIsAppForegroundActive(true);
+    };
+
+    void CapacitorApp.getState()
+      .then((state) => {
+        if (cancelled) return;
+        if (state.isActive) {
+          markActive();
+        } else {
+          markInactive();
+        }
+      })
+      .catch(() => {
+        // Best effort only: listener + web fallbacks below still handle lifecycle transitions.
+      });
+
+    void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) {
+        markActive();
+      } else {
+        markInactive();
+      }
+    })
+      .then((handle) => {
+        appStateHandle = handle;
+      })
+      .catch(() => {
+        // Not all runtimes expose this plugin (e.g. plain browser); fallbacks still apply.
+      });
+
+    const onVisibilityChange = () => {
+      if (document.hidden) markInactive();
+    };
+    const onPageHide = () => markInactive();
+    const onBlur = () => markInactive();
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onBlur);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onBlur);
+      void appStateHandle?.remove();
+    };
+  }, [pauseFeedPlaybackForBackground]);
 
   useEffect(() => {
     try {
@@ -624,6 +828,42 @@ export default function Home() {
       postCount: uiPosts.length,
     });
   }, [activePostId, activePostIndex, uiPosts.length, location]);
+
+  useEffect(() => {
+    if (sortMode === "random") return;
+    const distanceToEnd = uiPosts.length - 1 - activePostIndex;
+    const thresholdMet = activePostIndex >= 0 && distanceToEnd <= 2;
+    console.log("[DubHub][Home][pagination-debug][trigger-check]", {
+      sortMode,
+      isInitialFeedLoad,
+      isFetchingNextPage,
+      hasNextPage,
+      activeIndex: activePostIndex,
+      uiPostsLength: uiPosts.length,
+      distanceToEnd,
+      thresholdMet,
+    });
+    if (isInitialFeedLoad) return;
+    if (isFetchingNextPage) return;
+    if (!hasNextPage) return;
+    if (activePostIndex < 0) return;
+    if (!thresholdMet) return;
+    console.log("[DubHub][Home][pagination-debug][trigger-check]", {
+      action: "fetchNextPage called",
+      activeIndex: activePostIndex,
+      uiPostsLength: uiPosts.length,
+      distanceToEnd,
+    });
+    void fetchNextPage();
+  }, [
+    sortMode,
+    isInitialFeedLoad,
+    isFetchingNextPage,
+    hasNextPage,
+    activePostIndex,
+    uiPosts.length,
+    fetchNextPage,
+  ]);
 
   /**
    * Hottest mode re-sorts client-side when like counts change; scrollTop stays fixed so the viewport
@@ -931,7 +1171,7 @@ export default function Home() {
     const el = videoFeedRef.current;
     if (!el) return;
     if (sortMode === "random") {
-      setActivePostId(randomPost?.id ?? null);
+      setActivePostId(isAppForegroundActive ? (randomPost?.id ?? null) : null);
       return;
     }
 
@@ -975,7 +1215,7 @@ export default function Home() {
       el.removeEventListener("scrollend", onScrollEnd);
       el.removeEventListener("touchend", scheduleSnapAlignmentCheck);
     };
-  }, [sortMode, uiPosts.length, randomPost?.id]);
+  }, [sortMode, uiPosts.length, randomPost?.id, isAppForegroundActive]);
 
   const shuffleArray = <T,>(arr: T[]): T[] => {
     // Fisher-Yates shuffle
@@ -1000,7 +1240,7 @@ export default function Home() {
     randomSessionTokenRef.current += 1;
     randomSeenIdsRef.current = new Set();
     randomPoolRef.current = [];
-    randomOffsetRef.current = 0;
+    randomCursorRef.current = null;
     setRandomPost(null);
     setRandomExhausted(false);
     setRandomError(null);
@@ -1060,19 +1300,22 @@ export default function Home() {
           // Use server "newest" ordering for a stable scan; we randomize by shuffling client-side.
           params.append("sort", "newest");
           params.append("limit", String(BATCH_SIZE));
-          params.append("offset", String(randomOffsetRef.current));
+          if (randomCursorRef.current) {
+            params.append("cursor", randomCursorRef.current);
+          }
 
           const pathAndQuery = `/api/posts?${params}`;
-          const candidates = await homeFeedFetchJson<PostWithUser[]>(
+          const page = await homeFeedFetchJson<FeedPage>(
             "[feed-random-pool]",
             pathAndQuery,
             authHeaders,
           );
+          const candidates = Array.isArray(page.items) ? page.items : [];
+          randomCursorRef.current = page.nextCursor;
 
-          // Move the scan window forward no matter what; if we filtered everything out due to duplicates,
+          // Move the scan cursor forward no matter what; if we filtered everything out due to duplicates,
           // we still want to make progress.
-          if (!Array.isArray(candidates) || candidates.length === 0) return false;
-          randomOffsetRef.current += candidates.length;
+          if (candidates.length === 0) return false;
 
           // Deduplicate by id and mark them "seen" when enqueued to prevent duplicates
           // from ever showing twice in this random session (including within a single batch).
@@ -1201,10 +1444,24 @@ export default function Home() {
           const fullPost = (await res.json()) as PostWithUser;
           queryClient.setQueriesData(
             { queryKey: ["/api/posts"], exact: false },
-            (old: PostWithUser[] | undefined) => {
-              if (!old) return [fullPost];
-              if (old.some((p) => p.id === fullPost.id)) return old;
-              return [fullPost, ...old];
+            (old: InfiniteData<FeedPage> | undefined) => {
+              if (!old || old.pages.length === 0) {
+                return {
+                  pages: [{ items: [fullPost], hasMore: false, nextCursor: null }],
+                  pageParams: [null],
+                };
+              }
+              const alreadyExists = old.pages.some((page) => page.items.some((p) => p.id === fullPost.id));
+              if (alreadyExists) return old;
+              const firstPage = old.pages[0];
+              const nextFirstPage: FeedPage = {
+                ...firstPage,
+                items: [fullPost, ...firstPage.items],
+              };
+              return {
+                ...old,
+                pages: [nextFirstPage, ...old.pages.slice(1)],
+              };
             },
           );
         } catch {
@@ -1261,17 +1518,16 @@ export default function Home() {
       isLoading: postsQuery.isLoading,
       isError: postsQuery.isError,
       errorSerialized: postsQuery.isError ? serializeQueryError(postsQuery.error) : null,
-      dataPostCount: Array.isArray(postsQuery.data) ? postsQuery.data.length : postsQuery.data,
+      dataPostCount: posts.length,
+      hasNextPage,
+      isFetchingNextPage,
     });
   }
 
   if (isInitialFeedLoad) {
     return (
       <div className="flex flex-1 items-center justify-center bg-background pt-[env(safe-area-inset-top,0px)]">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-muted-foreground">Loading posts...</p>
-        </div>
+        <VinylLoader label="Loading posts..." />
       </div>
     );
   }
@@ -1334,10 +1590,11 @@ export default function Home() {
         >
           {randomLoading && !randomPost ? (
             <div className="h-full flex items-center justify-center pt-32">
-              <div className="text-center text-muted-foreground">
-                <p className="text-lg mb-2">Finding a mystery track...</p>
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-              </div>
+              <VinylLoader
+                label="Finding a mystery track..."
+                className="text-center text-muted-foreground"
+                labelClassName="text-lg text-muted-foreground"
+              />
             </div>
           ) : randomPost ? (
             <VideoCard
@@ -1345,7 +1602,7 @@ export default function Home() {
               post={randomPost}
               isHighlighted={false}
               isMuted={isFeedMuted}
-              isActive={activePostId === randomPost.id}
+              isActive={isAppForegroundActive && activePostId === randomPost.id}
               shouldLoadVideo={true}
               videoPreload="auto"
               homeFeedPosterFallback
@@ -1446,7 +1703,7 @@ export default function Home() {
       <div
         ref={videoFeedRef}
         data-home-video-feed
-        className="h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain scrollbar-hide [overflow-anchor:auto]"
+        className="h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-none bg-black scrollbar-hide [overflow-anchor:auto] [overscroll-behavior-y:none]"
         {...homeFeedPullTouchHandlers}
       >
         {plainVideoDiagPost ? (
@@ -1488,7 +1745,7 @@ export default function Home() {
               post={post}
               isHighlighted={highlightedPostId === post.id}
               isMuted={isFeedMuted}
-              isActive={activePostId === post.id}
+              isActive={isAppForegroundActive && activePostId === post.id}
               shouldLoadVideo={shouldLoadVideo}
               videoPreload={videoPreload}
               homeFeedPosterFallback
@@ -1499,6 +1756,38 @@ export default function Home() {
             />
           );
         })}
+        {shouldShowFeedEndCard ? (
+          <div
+            key="home-feed-end-card"
+            data-post-id="home-feed-end-card"
+            className="min-h-full h-full relative w-full shrink-0 snap-start snap-always [scroll-snap-stop:always] bg-black"
+          >
+            <div className="absolute inset-0 flex items-center justify-center px-6">
+              <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/45 p-5 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
+                <div className="mb-3 flex items-center justify-center">
+                  <span className="inline-flex rounded-full border border-[#4ae9df]/55 bg-[#4ae9df]/10 p-1.5 shadow-[0_0_30px_rgba(74,233,223,0.52),0_0_58px_rgba(74,233,223,0.22)] motion-safe:animate-pulse">
+                    <RandomDiceButton
+                      active
+                      accentGlow="turquoiseProminent"
+                      onPress={() => {
+                        playInteractionLight();
+                        handleFeedSortChange("random");
+                      }}
+                      className="!min-h-8 !min-w-8 border-0 bg-transparent p-0 shadow-none ring-0 opacity-100 transition-transform duration-150 active:scale-95"
+                      iconWrapClassName="!size-5"
+                      iconClassName="!h-full !w-full !text-white"
+                      aria-label="Switch to random discovery"
+                    />
+                  </span>
+                </div>
+                <h3 className="text-base font-semibold tracking-wide text-white">You're all caught up</h3>
+                <p className="mt-2 text-sm leading-relaxed text-white/80">
+                  You've reached the end of the feed. Try the random button to jump into older unidentified clips.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -110,6 +110,67 @@ function composeModerationUserNotification(params: {
   return msg;
 }
 
+type FeedCursor =
+  | { sortMode: "newest"; createdAt: string; id: string }
+  | { sortMode: "hottest"; hotScore: number; createdAt: string; id: string };
+
+function encodeFeedCursor(cursor: FeedCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function parseFeedCursor(rawCursor: unknown): FeedCursor {
+  if (typeof rawCursor !== "string" || rawCursor.trim().length === 0) {
+    throw new Error("Missing cursor");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(rawCursor, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid cursor encoding");
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid cursor payload");
+  }
+  const value = parsed as Record<string, unknown>;
+  const sortMode = value.sortMode;
+  const createdAt = value.createdAt;
+  const id = value.id;
+  if (sortMode !== "newest" && sortMode !== "hottest") {
+    throw new Error("Cursor sortMode must be hottest or newest");
+  }
+  if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
+    throw new Error("Cursor createdAt is invalid");
+  }
+  if (typeof id !== "string" || id.trim().length === 0) {
+    throw new Error("Cursor id is invalid");
+  }
+  if (sortMode === "newest") {
+    return { sortMode, createdAt, id };
+  }
+  const hotScore = value.hotScore;
+  if (typeof hotScore !== "number" || !Number.isFinite(hotScore)) {
+    throw new Error("Cursor hotScore is invalid");
+  }
+  return { sortMode, hotScore, createdAt, id };
+}
+
+const MODERATION_NOTIFICATION_MEDIA_MARKER = "[[dh_preview:";
+
+function appendModerationNotificationMedia(
+  message: string,
+  media: { thumbnailUrl?: string | null; videoUrl?: string | null }
+): string {
+  const thumbnailUrl = typeof media.thumbnailUrl === "string" ? media.thumbnailUrl.trim() : "";
+  const videoUrl = typeof media.videoUrl === "string" ? media.videoUrl.trim() : "";
+  if (!thumbnailUrl && !videoUrl) return message;
+
+  const payload = JSON.stringify({
+    thumbnailUrl: thumbnailUrl || null,
+    videoUrl: videoUrl || null,
+  });
+  return `${message}\n${MODERATION_NOTIFICATION_MEDIA_MARKER}${payload}]]`;
+}
+
 /**
  * Remove the exact content this report targets: reported comment, else reported post.
  * Throws POST_DELETE_FAILED if post removal fails; NO_REPORTED_CONTENT if nothing to remove.
@@ -801,8 +862,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("[/api/posts] currentUserId from JWT:", currentUserId ?? "(none)");
     }
     try {
-      const limit = parseInt(req.query.limit as string) || 10;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const parsedLimit = parseInt(req.query.limit as string, 10);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : 10;
       const genresQuery = req.query.genres ?? req.query.genre;
       const selectedGenres: string[] =
         typeof genresQuery === "string"
@@ -820,14 +881,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.query.sort === "newest" || req.query.sort === "hottest"
           ? (req.query.sort as "newest" | "hottest")
           : "hottest";
+      const rawCursor = req.query.cursor;
+      let cursor: FeedCursor | null = null;
+      if (typeof rawCursor === "string" && rawCursor.trim().length > 0) {
+        try {
+          cursor = parseFeedCursor(rawCursor);
+        } catch (err) {
+          return res.status(400).json({
+            message: "Invalid cursor",
+            error: err instanceof Error ? err.message : "Invalid cursor",
+          });
+        }
+        if (cursor.sortMode !== sortMode) {
+          return res.status(400).json({
+            message: "Invalid cursor",
+            error: "Cursor sortMode does not match request sort",
+          });
+        }
+      }
+      console.log("[/api/posts][pagination-debug] request", {
+        limit,
+        cursorReceived: typeof rawCursor === "string" ? rawCursor : null,
+        sort: sortMode,
+      });
 
-      const posts = await storage.getPosts(limit, offset, currentUserId ?? undefined, {
+      const page = await storage.getPosts(limit, cursor, currentUserId ?? undefined, {
         genres: selectedGenres,
         identification: identificationFilter,
         sortMode,
       });
 
-      const payload = posts.map((p: any) => ({
+      const payloadItems = page.items.map((p: any) => ({
         ...p,
         user_id: p.userId,
         viewer_id: currentUserId,
@@ -835,17 +919,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         current_user_tagged_as_artist: !!p.currentUserTaggedAsArtist,
       }));
 
-      res.json(payload);
+      const nextCursor = page.nextCursor ? encodeFeedCursor(page.nextCursor as FeedCursor) : null;
+      console.log("[/api/posts][pagination-debug] response", {
+        limit,
+        cursorReceived: typeof rawCursor === "string" ? rawCursor : null,
+        sort: sortMode,
+        itemsReturned: payloadItems.length,
+        hasMore: page.hasMore,
+        nextCursorExists: !!nextCursor,
+      });
+      res.json({
+        items: payloadItems,
+        hasMore: page.hasMore,
+        nextCursor,
+      });
     } catch (error) {
-      const limit = parseInt(req.query.limit as string) || 10;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const parsedLimit = parseInt(req.query.limit as string, 10);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : 10;
       const currentUserId = req.dbUser?.id || undefined;
       console.error("[/api/posts] error", error);
       console.error("[/api/posts] Error details:", {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
         limit,
-        offset,
+        cursor: typeof req.query.cursor === "string" ? req.query.cursor : undefined,
         userId: currentUserId,
       });
       res.status(500).json({ 
@@ -2688,7 +2785,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           r.reported_post_id,
           r.reason,
           r.description,
-          p.user_id AS post_owner_id
+          p.user_id AS post_owner_id,
+          p.video_url AS post_video_url
         FROM reports r
         LEFT JOIN posts p ON p.id = r.reported_post_id
         WHERE r.id = ${reportId}
@@ -2749,6 +2847,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         finalReason,
         accountAction: "warn",
       });
+      const notificationMessageWithMedia =
+        removedContentKind === "post"
+          ? appendModerationNotificationMedia(notificationMessage, {
+              videoUrl: report.post_video_url ?? null,
+            })
+          : notificationMessage;
 
       // Post was deleted — avoid FK to posts.id on notifications.post_id
       const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
@@ -2760,7 +2864,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ${targetUserId},
           ${moderatorId},
           ${notificationPostId},
-          ${notificationMessage},
+          ${notificationMessageWithMedia},
           false,
           NOW()
         )
@@ -2821,7 +2925,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           r.reported_post_id,
           r.reason,
           r.description,
-          p.user_id AS post_owner_id
+          p.user_id AS post_owner_id,
+          p.video_url AS post_video_url
         FROM reports r
         LEFT JOIN posts p ON p.id = r.reported_post_id
         WHERE r.id = ${reportId}
@@ -2879,6 +2984,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountAction: "suspend",
         suspendDays: days,
       });
+      const notificationMessageWithMedia =
+        removedContentKind === "post"
+          ? appendModerationNotificationMedia(notificationMessage, {
+              videoUrl: report.post_video_url ?? null,
+            })
+          : notificationMessage;
 
       const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
@@ -2889,7 +3000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ${targetUserId},
           ${moderatorId},
           ${notificationPostId},
-          ${notificationMessage},
+          ${notificationMessageWithMedia},
           false,
           NOW()
         )
@@ -2932,7 +3043,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           r.reported_post_id,
           r.reason,
           r.description,
-          p.user_id AS post_owner_id
+          p.user_id AS post_owner_id,
+          p.video_url AS post_video_url
         FROM reports r
         LEFT JOIN posts p ON p.id = r.reported_post_id
         WHERE r.id = ${reportId}
@@ -3000,6 +3112,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         finalReason,
         accountAction: "ban",
       });
+      const notificationMessageWithMedia =
+        removedContentKind === "post"
+          ? appendModerationNotificationMedia(notificationMessage, {
+              videoUrl: report.post_video_url ?? null,
+            })
+          : notificationMessage;
 
       const notificationPostId = removedContentKind === "post" ? null : report.reported_post_id;
 
@@ -3010,7 +3128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ${targetUserId},
           ${moderatorId},
           ${notificationPostId},
-          ${notificationMessage},
+          ${notificationMessageWithMedia},
           false,
           NOW()
         )
@@ -3051,7 +3169,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         SELECT 
           r.reported_post_id,
           r.reason,
-          p.user_id AS post_owner_id
+          p.user_id AS post_owner_id,
+          p.video_url AS post_video_url
         FROM reports r
         LEFT JOIN posts p ON p.id = r.reported_post_id
         WHERE r.id = ${reportId}
@@ -3082,13 +3201,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           finalReason,
           accountAction: "remove_only",
         });
+        const notificationMessageWithMedia = appendModerationNotificationMedia(notificationMessage, {
+          videoUrl: report.post_video_url ?? null,
+        });
         await db.execute(sql`
           INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
           VALUES (
             ${report.post_owner_id},
             ${moderatorId},
             ${report.reported_post_id},
-            ${notificationMessage},
+            ${notificationMessageWithMedia},
             false,
             NOW()
           )

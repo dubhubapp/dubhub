@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
 import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
@@ -14,6 +14,7 @@ import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
 import { ReportModal } from "./report-modal";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -520,6 +521,9 @@ function VideoCardInner({
       ? "minimal"
       : "current";
   const isMinimalBootMode = bootMode === "minimal";
+  const shouldLogActivationTiming =
+    typeof window !== "undefined" &&
+    (process.env.NODE_ENV === "development" || (Capacitor.isNativePlatform() && dubhubVideoDebugEnabled()));
 
   const clearHold2xWinListeners = useCallback(() => {
     const fn = hold2xWinCleanupRef.current;
@@ -545,19 +549,37 @@ function VideoCardInner({
     }
   }, [clearHold2xWinListeners]);
 
-  /** Pause when the tab/app is hidden or the device locks — limits iOS Now Playing / Control Center session noise. */
+  /** Pause when the app/webview backgrounds or blurs — reduces iOS lock-screen media session leaks. */
   useEffect(() => {
-    const onVisibility = () => {
-      if (!document.hidden) return;
+    const pauseForLifecycleBackground = () => {
       if (!isActiveRef.current) return;
       const video = videoRef.current;
-      if (!video || video.paused) return;
-      video.pause();
+      if (!video) return;
+      if (!video.paused) video.pause();
+      try {
+        video.playbackRate = 1;
+      } catch {
+        /* ignore */
+      }
       setIsPlaying(false);
       endHold2x();
     };
+
+    const onVisibility = () => {
+      if (!document.hidden) return;
+      pauseForLifecycleBackground();
+    };
+    const onPageHide = () => pauseForLifecycleBackground();
+    const onBlur = () => pauseForLifecycleBackground();
+
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [endHold2x]);
 
   const onHold2xPointerDown = useCallback(
@@ -1037,8 +1059,25 @@ function VideoCardInner({
 
     const runId = activationRunRef.current + 1;
     activationRunRef.current = runId;
+    const activationStartedAt = performance.now();
+    const logActivationTiming = (step: string, extra?: Record<string, unknown>) => {
+      if (!shouldLogActivationTiming) return;
+      const elapsedMs = Math.round(performance.now() - activationStartedAt);
+      console.debug("[DubHub][VideoCard][activation-timing]", {
+        postId: post.id,
+        runId,
+        step,
+        elapsedMs,
+        ...(extra || {}),
+      });
+    };
     debugLog("state", "activation run started", {
       runId,
+      readyState: video.readyState,
+      readyStateLabel: getMediaReadyStateLabel(video.readyState),
+      paused: video.paused,
+    });
+    logActivationTiming("activation-start", {
       readyState: video.readyState,
       readyStateLabel: getMediaReadyStateLabel(video.readyState),
       paused: video.paused,
@@ -1070,13 +1109,33 @@ function VideoCardInner({
       }
       return ok;
     };
-    const reveal = () => {
+    const reveal = (reason: string) => {
       if (!stillCurrent()) return;
-      debugLog("state", "reveal called", { runId, stillCurrent: true });
+      debugLog("state", "reveal called", { runId, stillCurrent: true, reason });
       const v = video;
+      const hasCurrentData = v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
       const commit = () => {
-        if (stillCurrent()) setIsVideoReady(true);
+        if (stillCurrent()) {
+          setIsVideoReady(true);
+          logActivationTiming("reveal", {
+            reason,
+            readyState: v.readyState,
+            readyStateLabel: getMediaReadyStateLabel(v.readyState),
+            paused: v.paused,
+          });
+        }
       };
+      if (!hasCurrentData) {
+        const onLoadedDataForReveal = () => {
+          v.removeEventListener("loadeddata", onLoadedDataForReveal);
+          if (!stillCurrent()) return;
+          requestAnimationFrame(() => {
+            requestAnimationFrame(commit);
+          });
+        };
+        v.addEventListener("loadeddata", onLoadedDataForReveal, { once: true });
+        return;
+      }
       try {
         if (!v.paused && typeof v.requestVideoFrameCallback === "function") {
           v.requestVideoFrameCallback(() => {
@@ -1110,20 +1169,22 @@ function VideoCardInner({
       });
       const onPlaying = () => {
         debugLog("event", "playing", { runId });
+        logActivationTiming("playing");
         detachLoadedData?.();
         detachLoadedData = null;
         clearFallbackTimer();
-        reveal();
+        reveal("playing");
       };
       video.addEventListener("playing", onPlaying, { once: true });
 
       const onLoadedData = () => {
         debugLog("event", "loadeddata (playAndReveal listener)", { runId });
+        logActivationTiming("loadeddata");
         video.removeEventListener("loadeddata", onLoadedData);
         detachLoadedData = null;
         if (!stillCurrent()) return;
         clearFallbackTimer();
-        reveal();
+        reveal("loadeddata");
       };
       video.addEventListener("loadeddata", onLoadedData, { once: true });
       detachLoadedData = () => {
@@ -1149,7 +1210,7 @@ function VideoCardInner({
                 clearFallbackTimer();
                 detachLoadedData?.();
                 detachLoadedData = null;
-                reveal();
+                reveal("play-resolved");
               }
             });
           })
@@ -1162,19 +1223,19 @@ function VideoCardInner({
             detachLoadedData?.();
             detachLoadedData = null;
             clearFallbackTimer();
-            reveal();
+            reveal("play-rejected");
           });
       } else {
         debugLog("state", "play skipped because paused state", { runId });
         detachLoadedData?.();
         detachLoadedData = null;
         clearFallbackTimer();
-        reveal();
+        reveal("play-skipped");
       }
       // iOS/WebKit can miss a "playing" callback occasionally; reveal after a short grace period.
       revealFallbackTimer = setTimeout(() => {
         debugLog("state", "reveal fallback timer fired", { runId });
-        reveal();
+        reveal("fallback-timer");
       }, 260);
     };
 
@@ -1191,7 +1252,7 @@ function VideoCardInner({
         currentTime: video.currentTime,
       });
       if (opts?.optimisticRevealWhileSeeking) {
-        reveal();
+        reveal("optimistic-seek");
       }
       if (!video.paused) {
         debugLog("event", "pause() for seek pipeline", { runId });
@@ -1253,16 +1314,22 @@ function VideoCardInner({
 
     const onLoadedMetadata = () => {
       debugLog("event", "loadedmetadata (activation listener)", { runId });
+      logActivationTiming("loadedmetadata");
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       seekToStartThen(playAndReveal);
     };
     video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+    const onCanPlay = () => {
+      logActivationTiming("canplay");
+    };
+    video.addEventListener("canplay", onCanPlay, { once: true });
 
     return () => {
       finishCleanup();
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("canplay", onCanPlay);
     };
-  }, [isActive, post.id, shouldLoadVideo, videoSrc]);
+  }, [isActive, post.id, shouldLoadVideo, shouldLogActivationTiming, videoSrc]);
 
   useEffect(() => {
     if (!shouldLoadVideo) {
@@ -1285,15 +1352,20 @@ function VideoCardInner({
       setShowLoadingFallback(false);
       return;
     }
+    // If no poster exists, show a visual placeholder immediately to avoid a dark/blank snap handoff.
+    if (!(homeFeedPosterFallback && !!displayPosterUrl)) {
+      setShowLoadingFallback(true);
+      return;
+    }
     const t = window.setTimeout(() => setShowLoadingFallback(true), 160);
     return () => window.clearTimeout(t);
-  }, [isActive, isVideoReady, post.id]);
+  }, [displayPosterUrl, homeFeedPosterFallback, isActive, isVideoReady, post.id]);
 
   const overlayVisible =
     isActive &&
     !isVideoReady &&
-    showLoadingFallback &&
-    !(homeFeedPosterFallback && !!displayPosterUrl);
+    !(homeFeedPosterFallback && !!displayPosterUrl) &&
+    showLoadingFallback;
   useEffect(() => {
     if (!overlayVisible) return;
     const v = videoRef.current;
@@ -1341,15 +1413,34 @@ function VideoCardInner({
       
       // Update the cache with server response - this ensures hasLiked persists
       // Update all query keys that start with "/api/posts" to handle filtered queries
-      queryClient.setQueriesData<any[]>(
+      queryClient.setQueriesData(
         { queryKey: ["/api/posts"], exact: false },
-        (old) => {
+        (old: any) => {
           if (!old) return old;
-          return old.map((p) => 
-            p.id === post.id 
-              ? { ...p, hasLiked: data.isLiked, likes: data.counts.likes }
-              : p
-          );
+          if (Array.isArray(old)) {
+            return old.map((p) =>
+              p.id === post.id
+                ? { ...p, hasLiked: data.isLiked, likes: data.counts.likes }
+                : p
+            );
+          }
+          if (old && Array.isArray((old as InfiniteData<any>).pages)) {
+            const paged = old as InfiniteData<{ items?: any[] }>;
+            return {
+              ...paged,
+              pages: paged.pages.map((page) => ({
+                ...page,
+                items: Array.isArray(page.items)
+                  ? page.items.map((p) =>
+                      p.id === post.id
+                        ? { ...p, hasLiked: data.isLiked, likes: data.counts.likes }
+                        : p
+                    )
+                  : page.items,
+              })),
+            };
+          }
+          return old;
         }
       );
       
@@ -1738,7 +1829,7 @@ function VideoCardInner({
         {overlayVisible ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-gradient-to-b from-zinc-900/85 via-zinc-900/75 to-zinc-950/90">
             <div className="flex flex-col items-center gap-2">
-              <div className="h-8 w-8 rounded-full border-2 border-white/60 border-t-transparent animate-spin" aria-hidden />
+              <VinylLoader size="md" />
               <span className="text-[10px] font-medium tracking-wide text-white/70">Loading video</span>
             </div>
           </div>
@@ -1855,7 +1946,7 @@ function VideoCardInner({
                 >
                   <div
                     className={cn(
-                      "flex items-center justify-center rounded-full motion-reduce:animate-none",
+                      "flex items-center justify-center rounded-full shadow-[0_0_16px_rgba(74,233,223,0.28)] motion-reduce:animate-none",
                       feedRandomDice.showIntroGlow && !feedRandomDice.exiting
                         ? "animate-random-dice-rail-glow-once transform-gpu will-change-[filter] motion-reduce:will-change-auto"
                         : null,
@@ -1863,6 +1954,7 @@ function VideoCardInner({
                   >
                     <RandomDiceButton
                       active
+                      accentGlow="turquoiseSubtle"
                       disabled={feedRandomDice.disabled}
                       delayPressMs={feedRandomDice.delayPressMs}
                       onPress={feedRandomDice.onPress}

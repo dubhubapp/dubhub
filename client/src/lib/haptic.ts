@@ -12,6 +12,8 @@ const RELEASE_DAY_PATTERN = [40, 30, 80];
 
 /** Single stronger pulse when pull-to-refresh crosses its threshold. */
 const PULL_REFRESH_THRESHOLD_MS = 52;
+const DEFAULT_LIGHT_THROTTLE_MS = 140;
+let lastLightInteractionAt = 0;
 
 function safeVibrate(pattern: number | number[]): void {
   if (typeof navigator === "undefined") return;
@@ -47,6 +49,17 @@ export function playInteractionLight(): void {
   } catch {
     /* unavailable */
   }
+}
+
+/**
+ * Light impact with a tiny global cooldown to prevent duplicate pulses from
+ * near-simultaneous handlers (e.g. trigger + open state callbacks).
+ */
+export function playInteractionLightThrottled(minIntervalMs = DEFAULT_LIGHT_THROTTLE_MS): void {
+  const now = Date.now();
+  if (now - lastLightInteractionAt < Math.max(0, minIntervalMs)) return;
+  lastLightInteractionAt = now;
+  playInteractionLight();
 }
 
 /** Slightly stronger impact for “random” / weighted actions. */

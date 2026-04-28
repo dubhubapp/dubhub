@@ -9,15 +9,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Shield, AlertTriangle, FileText, CheckCircle, XCircle, User, MessageSquare, Clock3 } from "lucide-react";
+import { AlertTriangle, FileText, CheckCircle, XCircle, User, MessageSquare, Clock3 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
+import { ModeratorShieldIcon } from "@/components/moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { VinylLoader } from "@/components/ui/vinyl-loader";
 
 function formatModeratorReportTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
@@ -254,7 +256,7 @@ export default function ModeratorPage() {
             className="rounded-full border-red-500/40 bg-red-500/15 px-4 py-2 text-red-300 shadow-[0_0_20px_-10px_rgba(239,68,68,0.75)]"
             data-testid="moderator-badge"
           >
-            <Shield className="w-4 h-4 mr-2" />
+            <ModeratorShieldIcon sizeClass="h-4 w-4" className="mr-2 self-center" />
             Moderator Access
           </Badge>
         </div>
@@ -293,11 +295,11 @@ export default function ModeratorPage() {
               <CardContent>
                 {isPendingLoading ? (
                   <div className="flex justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <VinylLoader />
                   </div>
                 ) : pendingVerifications.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
-                    <Shield className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                    <ModeratorShieldIcon sizeClass="h-12 w-12" className="mx-auto mb-4 opacity-50" />
                     <p className="text-sm font-medium text-foreground/90">No pending verifications</p>
                     <p className="mt-1 text-sm text-muted-foreground">All community verifications have been reviewed.</p>
                   </div>
@@ -435,8 +437,7 @@ export default function ModeratorPage() {
               <CardContent>
                 {isReportsLoading ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                    <p>Loading reports...</p>
+                    <VinylLoader label="Loading reports..." />
                   </div>
                 ) : reportedContent.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">

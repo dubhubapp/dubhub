@@ -4,10 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
-import { formatUsernameDisplay } from '@/lib/utils';
 
 interface SignInProps {
   onToggleMode: () => void;
@@ -15,12 +13,15 @@ interface SignInProps {
 }
 
 export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
+  const WELCOME_BACK_FLAG_KEY = "dubhub_show_welcome_back";
+  const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password';
+  const UNVERIFIED_ARTIST_MESSAGE =
+    "Your artist account is awaiting verification. If you haven’t already, DM us at @dubhub.uk from your artist Instagram account so we can verify you.";
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
-  const { toast } = useToast();
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,19 +43,17 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
       if (error) {
         // Handle specific Supabase error cases
         if (error.message.includes('Invalid login credentials')) {
-          // For security, we'll show a generic message for invalid credentials
-          // In practice, this could be either wrong email or wrong password
-          setErrorMessage('No account found with this email');
+          setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         } else if (error.message.includes('Email not confirmed')) {
           setErrorMessage('Please check your email and confirm your account');
         } else if (error.message.includes('Too many requests')) {
           setErrorMessage('Too many sign in attempts. Please try again later');
         } else if (error.message.includes('User not found')) {
-          setErrorMessage('No account found with this email');
+          setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         } else if (error.message.includes('Wrong password')) {
-          setErrorMessage('Incorrect password. Please try again');
+          setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         } else {
-          setErrorMessage('No account found with this email');
+          setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         }
         return;
       }
@@ -85,7 +84,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
         if (profileData.account_type === 'artist' && !profileData.verified_artist) {
           console.warn('[SignIn] Unverified artist blocked from login');
           await supabase.auth.signOut();
-          setErrorMessage('Your artist account is awaiting verification.');
+          setErrorMessage(UNVERIFIED_ARTIST_MESSAGE);
           return;
         }
 
@@ -97,10 +96,11 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
           userRole = 'moderator';
         }
 
-        toast({
-          title: "Signed In",
-          description: `Welcome back, ${formatUsernameDisplay(profileData.username) || profileData.username || 'there'}!`,
-        });
+        try {
+          sessionStorage.setItem(WELCOME_BACK_FLAG_KEY, "1");
+        } catch {
+          // Non-fatal: if storage is unavailable, login should still proceed.
+        }
 
         onAuthSuccess(userRole);
       }

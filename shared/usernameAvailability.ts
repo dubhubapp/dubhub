@@ -89,15 +89,13 @@ export async function checkUsernameAvailability(
   // Check artist-reserved names (only if account_type = 'user')
   if (accountType === 'user') {
     try {
-      const { data: reservedArtists, error: reservedError } = await supabaseClient
-        .from('reserved_artist_usernames')
-        .select('username')
-        .ilike('username', normalized);
+      const { data: isReserved, error: reservedError } = await supabaseClient
+        .rpc('is_artist_username_reserved', { p_username: normalized });
 
-      if (reservedError && reservedError.code !== 'PGRST116') {
-        console.error('[checkUsernameAvailability] Error checking reserved_artist_usernames:', reservedError);
+      if (reservedError) {
+        console.error('[checkUsernameAvailability] Error checking reserved username RPC:', reservedError);
         // Continue check - database will enforce
-      } else if (reservedArtists && reservedArtists.length > 0) {
+      } else if (isReserved === true) {
         console.warn('[checkUsernameAvailability] Artist-reserved username blocked for user:', {
           username: trimmed,
           normalized,
@@ -111,7 +109,7 @@ export async function checkUsernameAvailability(
         };
       }
     } catch (err) {
-      console.error('[checkUsernameAvailability] Error checking reserved_artist_usernames:', err);
+      console.error('[checkUsernameAvailability] Unexpected RPC failure checking reserved username:', err);
       // Continue check - database will enforce
     }
   }
