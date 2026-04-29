@@ -9,7 +9,7 @@ export function getStoredTheme(): ThemeMode {
   } catch {
     /* ignore */
   }
-  return "light";
+  return "dark";
 }
 
 export function applyTheme(mode: ThemeMode): void {

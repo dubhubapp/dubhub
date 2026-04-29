@@ -44,7 +44,6 @@ export function BottomNavigation() {
   const navTabsRowRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [showCancelPostDialog, setShowCancelPostDialog] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [underlineStyle, setUnderlineStyle] = useState({ x: 0, width: 0, opacity: 0 });
   const { invokeHomeWhileOnHome } = useHomeFeedInteraction();
   const { openSubmitClip, isSubmitClipOpen } = useSubmitClip();
@@ -112,13 +111,17 @@ export function BottomNavigation() {
   const moderatorPendingQueueCount = pendingVerificationCount + unresolvedReportsCount;
 
   const itemBase =
-    "flex min-h-[var(--app-nav-row-min-h)] min-w-0 flex-1 flex-col items-center justify-between gap-0.5 px-0.5 pt-1 pb-0.5 touch-manipulation min-[840px]:pt-0.5 min-[840px]:pb-0";
+    "flex min-h-[var(--app-nav-row-min-h)] min-w-0 flex-1 flex-col items-center justify-between gap-0.5 px-0.5 pt-1 pb-0.5 touch-manipulation transition-colors duration-200 ease-out active:scale-[0.97] min-[840px]:pt-0.5 min-[840px]:pb-0";
+  const tabContentBase =
+    "flex min-h-[var(--app-nav-row-min-h)] w-full flex-col items-center justify-between gap-0.5 origin-center transition-transform duration-180 ease-out";
   const iconSlot =
     "flex h-7 shrink-0 items-center justify-center min-[840px]:h-[1.625rem]";
   const labelClass = "max-w-full truncate text-center text-[10px] font-medium leading-none";
   const activeTabClass =
-    "text-white [filter:drop-shadow(0_0_8px_rgba(74,233,223,0.5))] dark:[filter:drop-shadow(0_0_8px_rgba(255,255,255,0.32))]";
-  const inactiveTabClass = "text-gray-300/70 dark:text-gray-400";
+    "text-white [filter:drop-shadow(0_0_7px_rgba(74,233,223,0.4))] dark:[filter:drop-shadow(0_0_8px_rgba(74,233,223,0.34))]";
+  const inactiveTabClass = "text-[#c7d2fe] dark:text-gray-400";
+  const activeTabContentClass = "scale-[1.06]";
+  const inactiveTabContentClass = "scale-100";
   const activeTabKey =
     location === "/"
       ? "home"
@@ -180,15 +183,6 @@ export function BottomNavigation() {
       }
       document.documentElement.style.removeProperty(VIDEO_FEED_SCRUB_BOTTOM_VAR);
     };
-  }, []);
-
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    const updateTheme = () => setIsDarkMode(root.classList.contains("dark"));
-    updateTheme();
-    const observer = new MutationObserver(updateTheme);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
   }, []);
 
   useLayoutEffect(() => {
@@ -261,10 +255,16 @@ export function BottomNavigation() {
               }
             }}
           >
-            <span className={iconSlot}>
-              <Home className="h-6 w-6" strokeWidth={location === "/" ? 2.25 : 2} />
+            <span className={`${tabContentBase} ${location === "/" ? activeTabContentClass : inactiveTabContentClass}`}>
+              <span className={iconSlot}>
+                <Home
+                  className="h-6 w-6 [stroke:currentColor]"
+                  strokeWidth={location === "/" ? 2.25 : 2}
+                  strokeOpacity={1}
+                />
+              </span>
+              <span className={labelClass}>Home</span>
             </span>
-            <span className={labelClass}>Home</span>
           </button>
         </div>
 
@@ -275,10 +275,20 @@ export function BottomNavigation() {
               className={`${itemBase} w-full ${location === "/leaderboard" ? activeTabClass : inactiveTabClass}`}
               data-testid="nav-leaderboard"
             >
-              <span className={iconSlot}>
-                <Trophy className="h-6 w-6" strokeWidth={location === "/leaderboard" ? 2.25 : 2} />
+              <span
+                className={`${tabContentBase} ${
+                  location === "/leaderboard" ? activeTabContentClass : inactiveTabContentClass
+                }`}
+              >
+                <span className={iconSlot}>
+                  <Trophy
+                    className="h-6 w-6 [stroke:currentColor]"
+                    strokeWidth={location === "/leaderboard" ? 2.25 : 2}
+                    strokeOpacity={1}
+                  />
+                </span>
+                <span className={labelClass}>Leaderboard</span>
               </span>
-              <span className={labelClass}>Leaderboard</span>
             </button>
           </Link>
         </div>
@@ -295,10 +305,20 @@ export function BottomNavigation() {
               openSubmitClip();
             }}
           >
-            <span className={iconSlot}>
-              <Plus className="h-6 w-6" strokeWidth={location === "/submit" || isSubmitClipOpen ? 2.25 : 2} />
+            <span
+              className={`${tabContentBase} ${
+                location === "/submit" || isSubmitClipOpen ? activeTabContentClass : inactiveTabContentClass
+              }`}
+            >
+              <span className={iconSlot}>
+                <Plus
+                  className="h-6 w-6 [stroke:currentColor]"
+                  strokeWidth={location === "/submit" || isSubmitClipOpen ? 2.25 : 2}
+                  strokeOpacity={1}
+                />
+              </span>
+              <span className={labelClass}>Submit</span>
             </span>
-            <span className={labelClass}>Submit</span>
           </button>
         </div>
 
@@ -309,10 +329,16 @@ export function BottomNavigation() {
               className={`${itemBase} w-full ${location === "/releases" ? activeTabClass : inactiveTabClass}`}
               data-testid="nav-releases"
             >
-              <span className={iconSlot}>
-                <Calendar className="h-6 w-6" strokeWidth={location === "/releases" ? 2.25 : 2} />
+              <span className={`${tabContentBase} ${location === "/releases" ? activeTabContentClass : inactiveTabContentClass}`}>
+                <span className={iconSlot}>
+                  <Calendar
+                    className="h-6 w-6 [stroke:currentColor]"
+                    strokeWidth={location === "/releases" ? 2.25 : 2}
+                    strokeOpacity={1}
+                  />
+                </span>
+                <span className={labelClass}>Releases</span>
               </span>
-              <span className={labelClass}>Releases</span>
             </button>
           </Link>
         </div>
@@ -324,15 +350,21 @@ export function BottomNavigation() {
               className={`${itemBase} w-full ${location === "/profile" ? activeTabClass : inactiveTabClass}`}
               data-testid="nav-profile"
             >
-              <span className={`${iconSlot} relative`}>
-                <User className="h-6 w-6" strokeWidth={location === "/profile" ? 2.25 : 2} />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white tabular-nums">
-                    {formatNotificationBadgeCount(unreadCount)}
-                  </span>
-                )}
+              <span className={`${tabContentBase} ${location === "/profile" ? activeTabContentClass : inactiveTabContentClass}`}>
+                <span className={`${iconSlot} relative`}>
+                  <User
+                    className="h-6 w-6 [stroke:currentColor]"
+                    strokeWidth={location === "/profile" ? 2.25 : 2}
+                    strokeOpacity={1}
+                  />
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white tabular-nums">
+                      {formatNotificationBadgeCount(unreadCount)}
+                    </span>
+                  )}
+                </span>
+                <span className={labelClass}>{profileText}</span>
               </span>
-              <span className={labelClass}>{profileText}</span>
             </button>
           </Link>
         </div>
@@ -345,29 +377,37 @@ export function BottomNavigation() {
                 className={`${itemBase} w-full ${location === "/moderator" ? activeTabClass : inactiveTabClass}`}
                 data-testid="nav-moderator"
               >
-                <span className={`${iconSlot} relative`}>
-                  <Shield className="h-6 w-6" strokeWidth={location === "/moderator" ? 2.25 : 2} />
-                  {moderatorPendingQueueCount > 0 && (
-                    <span className="absolute -right-1 -top-1">
-                      <ModeratorQueueCountBadge count={moderatorPendingQueueCount} />
-                    </span>
-                  )}
+                <span
+                  className={`${tabContentBase} ${
+                    location === "/moderator" ? activeTabContentClass : inactiveTabContentClass
+                  }`}
+                >
+                  <span className={`${iconSlot} relative`}>
+                    <Shield
+                      className="h-6 w-6 [stroke:currentColor]"
+                      strokeWidth={location === "/moderator" ? 2.25 : 2}
+                      strokeOpacity={1}
+                    />
+                    {moderatorPendingQueueCount > 0 && (
+                      <span className="absolute -right-1 -top-1">
+                        <ModeratorQueueCountBadge count={moderatorPendingQueueCount} />
+                      </span>
+                    )}
+                  </span>
+                  <span className={labelClass}>Moderate</span>
                 </span>
-                <span className={labelClass}>Moderate</span>
               </button>
             </Link>
           </div>
         )}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-[3px] h-0.5 rounded-full bg-[#4ae9df] opacity-0 transition-[transform,width,opacity] duration-200 ease-out dark:bg-white"
+          className="pointer-events-none absolute -bottom-[3px] h-0.5 rounded-full bg-white opacity-0 transition-[transform,width,opacity] duration-200 ease-out"
           style={{
             transform: `translateX(${underlineStyle.x}px)`,
             width: `${underlineStyle.width}px`,
             opacity: underlineStyle.opacity,
-            boxShadow: isDarkMode
-              ? "0 0 8px rgba(255, 255, 255, 0.42), 0 0 14px rgba(255, 255, 255, 0.16)"
-              : "0 0 10px rgba(74, 233, 223, 0.45), 0 0 18px rgba(74, 233, 223, 0.22)",
+            boxShadow: "0 0 8px rgba(255, 255, 255, 0.42), 0 0 12px rgba(74, 233, 223, 0.2)",
           }}
         />
       </div>

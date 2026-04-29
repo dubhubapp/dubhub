@@ -1,8 +1,8 @@
 /**
- * Keeps the document surface dub hub blue until App clears session load.
- * Prevents a flash of Tailwind body background (esp. dark theme) during WebView handoff.
+ * Keeps the web/runtime bridge on the dark app surface during handoff.
+ * Native LaunchScreen remains blue; runtime bridge should not re-flash blue.
  */
 html[data-dubhub-launch-bg] body,
 html[data-dubhub-launch-bg] #root {
-  background-color: #1e38f9 !important;
+  background-color: #0f1324 !important;
 }

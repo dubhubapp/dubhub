@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
+import { WELCOME_BACK_FLAG_KEY } from '@/lib/onboarding';
 
 interface SignInProps {
   onToggleMode: () => void;
@@ -13,7 +14,6 @@ interface SignInProps {
 }
 
 export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
-  const WELCOME_BACK_FLAG_KEY = "dubhub_show_welcome_back";
   const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password';
   const UNVERIFIED_ARTIST_MESSAGE =
     "Your artist account is awaiting verification. If you haven’t already, DM us at @dubhub.uk from your artist Instagram account so we can verify you.";

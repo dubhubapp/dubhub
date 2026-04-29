@@ -580,7 +580,7 @@ export default function UserProfile() {
   const artistImpactItems: StatsCardItem[] = artistStats
     ? [
         {
-          label: "Confirmed Tracks",
+          label: "Confirmed",
           value: artistStats.confirmedTracks.toLocaleString(),
           Icon: BadgeCheck,
           toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
@@ -594,7 +594,7 @@ export default function UserProfile() {
           info: PROFILE_HELP.artistReleases,
         },
         {
-          label: "Upcoming Releases",
+          label: "Upcoming",
           value: artistStats.upcomingReleases.toLocaleString(),
           Icon: CalendarClock,
           toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
@@ -1407,7 +1407,7 @@ export default function UserProfile() {
     };
   }, [likesViewerStartIndex, likedPosts.length]);
 
-  const handleNotificationClick = (notification: NotificationWithUser) => {
+  const handleNotificationClick = async (notification: NotificationWithUser) => {
     // Mark as read if unread
     if (!notification.read) {
       markNotificationAsReadMutation.mutate(notification.id);
@@ -1417,7 +1417,20 @@ export default function UserProfile() {
     if (releaseId) {
       navigate(`/releases/${releaseId}`);
     } else if (notification.postId) {
-      navigate(`/?post=${notification.postId}`);
+      try {
+        const res = await apiRequest("GET", `/api/posts/${notification.postId}`);
+        if (!res.ok) {
+          throw new Error(`POST_LOOKUP_${res.status}`);
+        }
+        navigate(`/?post=${notification.postId}`);
+      } catch {
+        navigate("/");
+        toast({
+          title: "Post unavailable",
+          description: "That notification points to a post that is no longer available.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -1469,7 +1482,7 @@ export default function UserProfile() {
     for (const n of group.notifications) {
       if (!n.read) markNotificationAsReadMutation.mutate(n.id);
     }
-    handleNotificationClick(group.representative);
+    void handleNotificationClick(group.representative);
   };
 
   const handleNotificationsScroll = () => {
@@ -1595,7 +1608,7 @@ export default function UserProfile() {
   // Early return if no current user
   if (!currentUser) {
     return (
-      <div className="flex-1 bg-dark flex items-center justify-center">
+      <div className="flex-1 bg-background flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-400">Please log in to view your profile</p>
         </div>
@@ -1605,7 +1618,7 @@ export default function UserProfile() {
 
   if (statsLoading || reputationLoading) {
     return (
-      <div className="flex-1 bg-dark flex items-center justify-center">
+      <div className="flex-1 bg-background flex items-center justify-center">
         <VinylLoader label="Loading profile..." labelClassName="text-gray-400" />
       </div>
     );
@@ -1732,7 +1745,7 @@ export default function UserProfile() {
   const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
 
   return (
-    <div className="min-h-0 min-w-0 w-full flex-1 bg-dark overflow-x-hidden overflow-y-auto overscroll-y-contain">
+    <div className="min-h-0 min-w-0 w-full flex-1 bg-background overflow-x-hidden overflow-y-auto overscroll-y-contain">
       <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           {/* User Header */}

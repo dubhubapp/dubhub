@@ -1346,6 +1346,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Artist tag notifications
       for (const { artistId } of taggedArtists) {
+        if (artistId === userId) {
+          // Self-tags are valid for artist ID flow, but don't notify yourself.
+          continue;
+        }
         try {
           await storage.createNotification({
             artistId,
@@ -1884,11 +1888,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const username = profile.username || "Artist";
-      const body = title
-        ? (collaborators ? `✅ @${username} confirmed: ${title} — ${collaborators}` : `✅ @${username} confirmed: ${title}`)
-        : collaborators
-          ? `✅ @${username} confirmed — ${collaborators}`
-          : `✅ @${username} confirmed`;
+      const normalizeName = (value: string) => value.trim().replace(/\s+/g, " ");
+      const splitCollaborators = (raw: string | undefined | null) => {
+        if (!raw) return [] as string[];
+        return raw
+          .split(/[,&]/g)
+          .map((part) => normalizeName(part))
+          .filter(Boolean);
+      };
+      const formatArtistCredit = (primary: string, othersRaw: string | undefined | null) => {
+        const primaryName = normalizeName(primary) || "Artist";
+        const others = splitCollaborators(othersRaw).filter(
+          (name, index, arr) =>
+            arr.findIndex((candidate) => candidate.toLowerCase() === name.toLowerCase()) === index &&
+            name.toLowerCase() !== primaryName.toLowerCase(),
+        );
+        if (others.length === 0) return primaryName;
+        if (others.length === 1) return `${primaryName} & ${others[0]}`;
+        return `${primaryName}, ${others.slice(0, -1).join(", ")} & ${others[others.length - 1]}`;
+      };
+
+      const artistCredit = formatArtistCredit(username, collaborators);
+      const cleanTitle = typeof title === "string" ? title.trim() : "";
+      const body = cleanTitle
+        ? `@${username} confirmed: ${artistCredit} - ${cleanTitle}`
+        : `@${username} confirmed: ${artistCredit}`;
 
       const artistComment = await storage.createComment(postId, artistId, body, null);
       const artistCommentId = artistComment?.id;

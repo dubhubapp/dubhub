@@ -19,6 +19,7 @@ import {
   isDuplicateSignupEmailError,
 } from '@/lib/auth-errors';
 import { getAuthCallbackUrl } from '@/lib/auth-callback-url';
+import { markOnboardingPendingForEmail } from '@/lib/onboarding';
 
 interface SignUpProps {
   onToggleMode: () => void;
@@ -330,6 +331,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           title: "Account Created",
           description: "Please check your email to verify your account.",
         });
+        markOnboardingPendingForEmail(email);
 
         // Show verification modal
         openVerificationModal();
@@ -376,6 +378,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           title: "Account Created",
           description: "Please check your email to verify your account.",
         });
+        markOnboardingPendingForEmail(email);
         openVerificationModal();
       }
     } catch (error: unknown) {

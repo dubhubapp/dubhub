@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     { id: string; title: string; release_date: string; artwork_url: string | null }[]
   >([]);
   const [selectedReleaseId, setSelectedReleaseId] = useState<string>("");
+  const initialFocusRef = useRef<HTMLDivElement | null>(null);
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
@@ -261,198 +262,229 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-background/95 backdrop-blur-md">
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          initialFocusRef.current?.focus();
+        }}
+        overlayClassName="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200"
+        className="w-[calc(100%-2rem)] max-w-[30rem] max-h-[80vh] overflow-y-auto rounded-2xl border border-white/20 bg-[#0f1324] p-5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:p-6"
+      >
+        <div ref={initialFocusRef} tabIndex={-1} />
         {step === "verify" ? (
           <>
-            <DialogHeader>
-              <DialogTitle>Artist Verification</DialogTitle>
-              <DialogDescription>
-                You were tagged on this post. Select the comment that correctly identifies the track, then confirm or deny.
+            <DialogHeader className="space-y-1.5 text-center">
+              <DialogTitle className="text-lg font-semibold text-white">Artist Identification</DialogTitle>
+              <DialogDescription className="text-sm text-white/75">
+                You were tagged in this post. Select the correct ID, then confirm or deny.
               </DialogDescription>
             </DialogHeader>
 
-            {isLoading ? (
-          <div className="flex justify-center py-8">
-            <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
-          </div>
-        ) : comments.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>No comments yet. Select a comment to respond to.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
-              <p className="text-sm font-medium text-foreground">
-                Confirm or deny the first or most relevant comment that tagged you.
-              </p>
-            </div>
-            <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
-              {sortedComments.map((comment, index) => {
-                const isSelected = selectedCommentId === comment.id;
-                const isOldest = comment.id === oldestCommentId;
-                const isFirstTag = comment.id === firstTaggedCommentId;
-                const selectionRingClass = isFirstTag
-                  ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
-                  : isOldest
-                    ? "ring-2 ring-[#3B82F6]/95 ring-offset-2 ring-offset-background shadow-[0_0_24px_rgba(59,130,246,0.65)]"
-                    : "";
-                const highlightClass = isFirstTag
-                  ? "border-[#FFD700]/80 bg-amber-500/10 shadow-[0_0_22px_rgba(255,215,0,0.55)]"
-                  : isOldest
-                  ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
-                  : "border-border hover:bg-accent/50";
-                return (
-                <div
-                  key={comment.id}
-                  className={`flex items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
-                    isSelected
-                        ? selectionRingClass
-                        : ""
-                  } ${
-                    isSelected && !isOldest && !isFirstTag
-                      ? "bg-white/8 border-white/95 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)] ring-0"
-                      : ""
-                  }`}
-                >
-                  <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} />
-                  <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
-                    <div className="mb-2 flex items-center gap-2">
-                      <div className="flex items-center gap-2">
+            <div className="mt-4 min-h-[24rem]">
+              {isLoading ? (
+                <div className="flex h-full min-h-[24rem] flex-col">
+                  <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
+                    <p className="text-sm font-medium text-white">
+                      Confirm or deny the first or most relevant comment that tagged you.
+                    </p>
+                  </div>
+                  <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15">
+                    <div className="flex flex-col items-center gap-2 text-white/75">
+                      <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
+                      <p className="text-xs">Loading comments...</p>
+                    </div>
+                  </div>
+                </div>
+              ) : comments.length === 0 ? (
+                <div className="flex h-full min-h-[24rem] flex-col">
+                  <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
+                    <p className="text-sm font-medium text-white">
+                      Confirm or deny the first or most relevant comment that tagged you.
+                    </p>
+                  </div>
+                  <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
+                    <p>No comments yet. Select a comment to respond to.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
+                    <p className="text-sm font-medium text-white">
+                      Confirm or deny the first or most relevant comment that tagged you.
+                    </p>
+                  </div>
+                  <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
+                    {sortedComments.map((comment, index) => {
+                      const isSelected = selectedCommentId === comment.id;
+                      const isOldest = comment.id === oldestCommentId;
+                      const isFirstTag = comment.id === firstTaggedCommentId;
+                      const selectionRingClass = isFirstTag
+                        ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
+                        : isOldest
+                          ? "ring-2 ring-[#3B82F6]/95 ring-offset-2 ring-offset-background shadow-[0_0_24px_rgba(59,130,246,0.65)]"
+                          : "";
+                      const highlightClass = isFirstTag
+                        ? "border-[#FFD700]/80 bg-amber-500/10 shadow-[0_0_22px_rgba(255,215,0,0.55)]"
+                        : isOldest
+                        ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
+                        : "border-border hover:bg-accent/50";
+                      return (
                         <div
-                          className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center border ${
-                            comment.user.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary/20"
+                          key={comment.id}
+                          className={`flex items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
+                            isSelected
+                              ? selectionRingClass
+                              : ""
+                          } ${
+                            isSelected && !isOldest && !isFirstTag
+                              ? "border-white/95 bg-white/8 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)] ring-0"
+                              : ""
                           }`}
                         >
-                          {comment.user.avatar_url ? (
-                            <img
-                              src={comment.user.avatar_url}
-                              alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <User className="w-4 h-4 text-primary" />
-                          )}
+                          <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} />
+                          <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
+                            <div className="mb-2 flex items-center gap-2">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center border ${
+                                    comment.user.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary/20"
+                                  }`}
+                                >
+                                  {comment.user.avatar_url ? (
+                                    <img
+                                      src={comment.user.avatar_url}
+                                      alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <User className="w-4 h-4 text-primary" />
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
+                                  {comment.user.verified_artist && (
+                                    <CheckCircle className="w-4 h-4 text-primary" />
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {isOldest && (
+                                  <span
+                                    className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                      isSelected && !isFirstTag
+                                        ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
+                                        : "border-[#3B82F6] bg-[#3B82F6] text-white"
+                                    }`}
+                                  >
+                                    Oldest Comment
+                                  </span>
+                                )}
+                                {isFirstTag && (
+                                  <span
+                                    className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                      isSelected
+                                        ? "border-[#FFD700]/90 bg-[#FFD700]/35 text-white shadow-[0_0_16px_rgba(255,215,0,0.55)]"
+                                        : "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]"
+                                    }`}
+                                  >
+                                    First Tag
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-sm text-white/92">{comment.body}</p>
+                            {comment.taggedArtist && (
+                              <p className="mt-1 text-xs text-white/65">
+                                Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
+                              </p>
+                            )}
+                            <div className="mt-2 flex items-center gap-1 text-[11px] text-white/65">
+                              <Clock3 className="h-3.5 w-3.5" />
+                              <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
+                            </div>
+                          </Label>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
-                          {comment.user.verified_artist && (
-                            <CheckCircle className="w-4 h-4 text-primary" />
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {isOldest && (
-                          <span
-                            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                              isSelected && !isFirstTag
-                                ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
-                                : "border-[#3B82F6] bg-[#3B82F6] text-white"
-                            }`}
-                          >
-                            Oldest Comment
-                          </span>
-                        )}
-                        {isFirstTag && (
-                          <span
-                            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                              isSelected
-                                ? "border-[#FFD700]/90 bg-[#FFD700]/35 text-white shadow-[0_0_16px_rgba(255,215,0,0.55)]"
-                                : "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]"
-                            }`}
-                          >
-                            First Tag
-                          </span>
-                        )}
-                      </div>
-                      <div className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <Clock3 className="h-3.5 w-3.5" />
-                        <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
-                      </div>
-                    </div>
-                    <p className="text-sm text-foreground">{comment.body}</p>
-                    {comment.taggedArtist && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
-                      </p>
-                    )}
-                  </Label>
+                      );
+                    })}
+                  </RadioGroup>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="artist-title" className="text-white/85">Title (optional)</Label>
+                    <Input
+                      id="artist-title"
+                      placeholder="Track title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="border-white/20 bg-black/20 text-white placeholder:text-white/45"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="artist-collaborators" className="text-white/85">Collaborators (optional)</Label>
+                    <Input
+                      id="artist-collaborators"
+                      placeholder="e.g. Artist A, Artist B"
+                      value={collaborators}
+                      onChange={(e) => setCollaborators(e.target.value)}
+                      className="border-white/20 bg-black/20 text-white placeholder:text-white/45"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 border-t border-white/15 pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={handleClose}
+                      className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                      data-testid="button-cancel-artist-verification"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeny}
+                      disabled={!selectedCommentId || denyMutation.isPending}
+                      data-testid="button-artist-deny"
+                    >
+                      {denyMutation.isPending ? "Denying..." : "Deny"}
+                    </Button>
+                    <Button
+                      onClick={handleConfirm}
+                      disabled={!selectedCommentId || confirmMutation.isPending}
+                      data-testid="button-artist-confirm"
+                    >
+                      {confirmMutation.isPending ? "Confirming..." : "Confirm"}
+                    </Button>
+                  </div>
                 </div>
-              )})}
-            </RadioGroup>
-
-            <div className="space-y-2">
-              <Label htmlFor="artist-title">Title (optional)</Label>
-              <Input
-                id="artist-title"
-                placeholder="Track title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="artist-collaborators">Collaborators (optional)</Label>
-              <Input
-                id="artist-collaborators"
-                placeholder="e.g. Artist A, Artist B"
-                value={collaborators}
-                onChange={(e) => setCollaborators(e.target.value)}
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4 border-t border-border">
-              <Button
-                variant="outline"
-                onClick={handleClose}
-                data-testid="button-cancel-artist-verification"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDeny}
-                disabled={!selectedCommentId || denyMutation.isPending}
-                data-testid="button-artist-deny"
-              >
-                {denyMutation.isPending ? "Denying..." : "Deny"}
-              </Button>
-              <Button
-                onClick={handleConfirm}
-                disabled={!selectedCommentId || confirmMutation.isPending}
-                data-testid="button-artist-confirm"
-              >
-                {confirmMutation.isPending ? "Confirming..." : "Confirm"}
-              </Button>
-            </div>
-          </div>
-        )}
           </>
         ) : (
           <>
-            <DialogHeader>
-              <DialogTitle>Attach this post to an existing release?</DialogTitle>
-              <DialogDescription>
+            <DialogHeader className="space-y-1.5 text-left">
+              <DialogTitle className="text-lg font-semibold text-white">Attach this post to an existing release?</DialogTitle>
+              <DialogDescription className="text-sm text-white/75">
                 You have upcoming releases. Attach this post so listeners see it on your Releases tab.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 mt-4">
+            <div className="mt-4 space-y-4">
               <RadioGroup value={selectedReleaseId} onValueChange={setSelectedReleaseId}>
                 {attachOptions.map((rel) => (
                   <div
                     key={rel.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/40 transition-colors"
+                    className="flex items-center gap-3 rounded-lg border border-white/15 bg-black/15 p-3 transition-colors hover:bg-white/10"
                   >
                     <RadioGroupItem value={rel.id} id={rel.id} />
                     <Label htmlFor={rel.id} className="flex-1 cursor-pointer flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-md bg-muted overflow-hidden flex items-center justify-center">
+                      <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-md bg-black/25">
                         {rel.artwork_url ? (
                           <img src={rel.artwork_url} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <span className="text-xs text-muted-foreground">No artwork</span>
+                          <span className="text-xs text-white/60">No artwork</span>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{rel.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="truncate text-sm font-medium text-white">{rel.title}</p>
+                        <p className="mt-0.5 text-xs text-white/65">
                           {formatDate(rel.release_date as any)}
                         </p>
                       </div>
@@ -460,10 +492,11 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                   </div>
                 ))}
               </RadioGroup>
-              <div className="flex justify-end gap-2 pt-4 border-t border-border">
+              <div className="flex justify-end gap-2 border-t border-white/15 pt-4">
                 <Button
                   variant="outline"
                   onClick={handleClose}
+                  className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
                   data-testid="button-attach-skip"
                 >
                   Skip

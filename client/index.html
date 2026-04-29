@@ -12,7 +12,8 @@
     <script>
       (function () {
         try {
-          if (localStorage.getItem("dubhub-theme") === "dark") {
+          // Dark-first bootstrap: preserve saved light preference only.
+          if (localStorage.getItem("dubhub-theme") !== "light") {
             document.documentElement.classList.add("dark");
           }
         } catch (e) {}

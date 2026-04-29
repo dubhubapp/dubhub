@@ -61,6 +61,7 @@ const HOLD_2X_DELAY_MS = 400;
 const HOLD_2X_MOVE_CANCEL_PX = 22;
 /** If vertical movement dominates and exceeds this (px), treat as feed scroll — cancel 2× (no preventDefault on touch). */
 const HOLD_2X_SCROLL_CANCEL_DY_PX = 14;
+const ARTIST_SELF_TAG_HINT_DISMISSED_EVENT = "dubhub:hint:artist-self-tag-dismissed";
 
 function estimateCoverMaxCropFraction(
   vw: number,
@@ -188,6 +189,9 @@ interface VideoCardProps {
    * frames from flashing a black stage during snap/handoff.
    */
   homeFeedPosterFallback?: boolean;
+  onCommentsOpened?: () => void;
+  onCommentsClosed?: () => void;
+  onPostLiked?: () => void;
 }
 
 function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolean {
@@ -215,7 +219,10 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.onFeedOverlayCollapsedChange === next.onFeedOverlayCollapsedChange &&
     prev.mediaEpoch === next.mediaEpoch &&
     prev.feedRandomDice === next.feedRandomDice &&
-    prev.homeFeedPosterFallback === next.homeFeedPosterFallback
+    prev.homeFeedPosterFallback === next.homeFeedPosterFallback &&
+    prev.onCommentsOpened === next.onCommentsOpened &&
+    prev.onCommentsClosed === next.onCommentsClosed &&
+    prev.onPostLiked === next.onPostLiked
   );
 }
 
@@ -234,6 +241,9 @@ function VideoCardInner({
   onFeedOverlayCollapsedChange,
   mediaEpoch = 0,
   homeFeedPosterFallback = false,
+  onCommentsOpened,
+  onCommentsClosed,
+  onPostLiked,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -250,7 +260,7 @@ function VideoCardInner({
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "verify";
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage: userProfileImage, currentUser: contextUser } = useUser();
+  const { profileImage: userProfileImage, currentUser: contextUser, userType, verifiedArtist } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
   const handleOpenPostAuthorProfile = useCallback(
     (e: React.MouseEvent) => {
@@ -281,6 +291,7 @@ function VideoCardInner({
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [artistSelfTagHintSeen, setArtistSelfTagHintSeen] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const isActiveRef = useRef(isActive);
@@ -291,7 +302,12 @@ function VideoCardInner({
   const activationRunRef = useRef(0);
   const primedAtStartRef = useRef(false);
   const hasManuallyToggledLike = useRef(false);
+  const desiredLikedRef = useRef(post.hasLiked || false);
+  const lastConfirmedLikedRef = useRef(post.hasLiked || false);
+  const lastConfirmedLikesRef = useRef(post.likes);
+  const likeRequestInFlightRef = useRef(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const hasPlayedArtistSelfTagHintAppearRef = useRef(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
   const videoStageRef = useRef<HTMLDivElement>(null);
@@ -314,6 +330,68 @@ function VideoCardInner({
   const [showScrubThumb, setShowScrubThumb] = useState(false);
   const [scrubReadout, setScrubReadout] = useState<{ current: number; total: number } | null>(null);
 
+  const currentUserTaggedAsArtist = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
+  const postArtistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+  const isArtistIdentifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && !!postArtistVerifiedBy;
+  const isVerifiedArtistViewer = !!contextUser?.id && userType === "artist" && verifiedArtist;
+  const artistSelfTagHintSeenKey = contextUser?.id
+    ? `dubhub_hint_artist_self_tag_flow_seen_${contextUser.id}`
+    : null;
+
+  useEffect(() => {
+    if (!artistSelfTagHintSeenKey) {
+      setArtistSelfTagHintSeen(true);
+      return;
+    }
+    setArtistSelfTagHintSeen(localStorage.getItem(artistSelfTagHintSeenKey) === "1");
+  }, [artistSelfTagHintSeenKey]);
+
+  useEffect(() => {
+    if (!artistSelfTagHintSeenKey) return;
+    const onDismissed = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key !== artistSelfTagHintSeenKey) return;
+      setArtistSelfTagHintSeen(true);
+    };
+    window.addEventListener(ARTIST_SELF_TAG_HINT_DISMISSED_EVENT, onDismissed as EventListener);
+    return () => {
+      window.removeEventListener(ARTIST_SELF_TAG_HINT_DISMISSED_EVENT, onDismissed as EventListener);
+    };
+  }, [artistSelfTagHintSeenKey]);
+
+  const artistSelfTagHintVisible =
+    isVerifiedArtistViewer &&
+    !isArtistIdentifiedPost &&
+    !currentUserTaggedAsArtist &&
+    !showComments &&
+    !showVerificationDialog &&
+    !showArtistVerificationDialog &&
+    !showReportModal &&
+    !menuOpen &&
+    !artistSelfTagHintSeen;
+
+  useEffect(() => {
+    if (artistSelfTagHintVisible && !hasPlayedArtistSelfTagHintAppearRef.current) {
+      hasPlayedArtistSelfTagHintAppearRef.current = true;
+      playInteractionLight();
+    }
+    if (!artistSelfTagHintVisible) {
+      hasPlayedArtistSelfTagHintAppearRef.current = false;
+    }
+  }, [artistSelfTagHintVisible]);
+
+  const handleDismissArtistSelfTagHint = useCallback(() => {
+    if (!artistSelfTagHintSeenKey) return;
+    localStorage.setItem(artistSelfTagHintSeenKey, "1");
+    setArtistSelfTagHintSeen(true);
+    window.dispatchEvent(
+      new CustomEvent(ARTIST_SELF_TAG_HINT_DISMISSED_EVENT, {
+        detail: { key: artistSelfTagHintSeenKey },
+      }),
+    );
+    playInteractionLight();
+  }, [artistSelfTagHintSeenKey]);
+
   // Keep ref in sync with state
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -325,6 +403,9 @@ function VideoCardInner({
     if (!hasManuallyToggledLike.current) {
       setHasLiked(post.hasLiked || false);
       setLikes(post.likes);
+      desiredLikedRef.current = post.hasLiked || false;
+      lastConfirmedLikedRef.current = post.hasLiked || false;
+      lastConfirmedLikesRef.current = post.likes;
     }
   }, [post.id, post.hasLiked, post.likes]); // Avoid depending on `post` reference — cache updates replace the object every time
 
@@ -1390,26 +1471,39 @@ function VideoCardInner({
     videoSrc,
   ]);
 
+  function sendLikeToggleIfNeeded() {
+    if (likeRequestInFlightRef.current) return;
+    if (desiredLikedRef.current === lastConfirmedLikedRef.current) {
+      hasManuallyToggledLike.current = false;
+      setLikes(lastConfirmedLikesRef.current);
+      setHasLiked(lastConfirmedLikedRef.current);
+      return;
+    }
+    likeRequestInFlightRef.current = true;
+    likeMutation.mutate();
+  }
+
+  const applyOptimisticLikeIntent = (nextLiked: boolean) => {
+    const previousDesired = desiredLikedRef.current;
+    if (nextLiked === previousDesired) return;
+    desiredLikedRef.current = nextLiked;
+    hasManuallyToggledLike.current = true;
+    setHasLiked(nextLiked);
+    setLikes((previousLikes) => Math.max(0, previousLikes + (nextLiked ? 1 : -1)));
+    sendLikeToggleIfNeeded();
+  };
+
   const likeMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/posts/${post.id}/like`),
-    onMutate: async () => {
-      // Optimistic update before API call
-      hasManuallyToggledLike.current = true;
-      const previousHasLiked = hasLiked;
-      const previousLikes = likes;
-      setHasLiked(!previousHasLiked);
-      setLikes(previousHasLiked ? previousLikes - 1 : previousLikes + 1);
-      
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ["/api/posts"] });
-      
-      return { previousHasLiked, previousLikes };
-    },
-    onSuccess: async (response, variables, context) => {
+    onSuccess: async (response) => {
       const data = await response.json();
-      // Update with server response
-      setHasLiked(data.isLiked);
-      setLikes(data.counts.likes);
+      const wasPreviouslyLiked = lastConfirmedLikedRef.current;
+      lastConfirmedLikedRef.current = data.isLiked;
+      lastConfirmedLikesRef.current = data.counts.likes;
+      if (!wasPreviouslyLiked && data.isLiked) {
+        onPostLiked?.();
+      }
+      likeRequestInFlightRef.current = false;
       
       // Update the cache with server response - this ensures hasLiked persists
       // Update all query keys that start with "/api/posts" to handle filtered queries
@@ -1444,9 +1538,16 @@ function VideoCardInner({
         }
       );
       
-      // Reset the flag immediately after cache update so the component can sync with the updated post prop
-      // This allows the useEffect to sync when the post prop updates from the cache
-      hasManuallyToggledLike.current = false;
+      if (desiredLikedRef.current !== data.isLiked) {
+        const projectedLikes = Math.max(0, data.counts.likes + (desiredLikedRef.current ? 1 : -1));
+        setHasLiked(desiredLikedRef.current);
+        setLikes(projectedLikes);
+        sendLikeToggleIfNeeded();
+      } else {
+        setHasLiked(data.isLiked);
+        setLikes(data.counts.likes);
+        hasManuallyToggledLike.current = false;
+      }
       
       // Invalidate liked-posts query so the liked video appears in Profile tab
       if (contextUser?.id) {
@@ -1454,12 +1555,11 @@ function VideoCardInner({
         queryClient.refetchQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
       }
     },
-    onError: (error, variables, context) => {
-      // Rollback on error
-      if (context) {
-        setHasLiked(context.previousHasLiked);
-        setLikes(context.previousLikes);
-      }
+    onError: () => {
+      likeRequestInFlightRef.current = false;
+      desiredLikedRef.current = lastConfirmedLikedRef.current;
+      setHasLiked(lastConfirmedLikedRef.current);
+      setLikes(lastConfirmedLikesRef.current);
       hasManuallyToggledLike.current = false;
       toast({ title: "Error", description: "Failed to like post", variant: "destructive" });
     },
@@ -1467,7 +1567,9 @@ function VideoCardInner({
       // Flag is already reset in onSuccess, but ensure it's reset on error too
       // This is a safety net in case onSuccess doesn't run
       if (hasManuallyToggledLike.current) {
-        hasManuallyToggledLike.current = false;
+        if (desiredLikedRef.current === lastConfirmedLikedRef.current && !likeRequestInFlightRef.current) {
+          hasManuallyToggledLike.current = false;
+        }
       }
     },
   });
@@ -1929,7 +2031,7 @@ function VideoCardInner({
             <div
               data-video-action-rail
               className={cn(
-                "absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-20 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
+                "absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
                 "transition-opacity duration-300 ease-out motion-reduce:transition-none",
                 isScrubbingUi ? "opacity-[0.2]" : "opacity-100",
               )}
@@ -1975,9 +2077,8 @@ function VideoCardInner({
                 className={railBtn}
                 onClick={() => {
                   playInteractionLight();
-                  likeMutation.mutate();
+                  applyOptimisticLikeIntent(!desiredLikedRef.current);
                 }}
-                disabled={likeMutation.isPending}
               >
                 <div className={railIconWrap}>
                   <Heart className={`h-7 w-7 ${hasLiked ? "fill-red-500 text-red-500" : "text-white"}`} />
@@ -1987,28 +2088,77 @@ function VideoCardInner({
                 </span>
               </button>
 
-              <button
-                type="button"
-                className={railBtn}
-                onClick={() => {
-                  if (debugComments) {
-                    console.log("[CommentsOpen] click", {
-                      feedPostId: post.id,
-                      handlerPostId: post.id,
-                      showCommentsBefore: showComments,
-                    });
-                  }
-                  setCommentsPost(post);
-                  setShowComments(true);
-                }}
-              >
-                <div className={railIconWrap}>
-                  <MessageCircle className="h-7 w-7 text-white" />
-                </div>
-                <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                  {formatCount(post.comments)}
-                </span>
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  className={railBtn}
+                  onClick={() => {
+                    if (debugComments) {
+                      console.log("[CommentsOpen] click", {
+                        feedPostId: post.id,
+                        handlerPostId: post.id,
+                        showCommentsBefore: showComments,
+                      });
+                      console.log("[CommentsOpen] prefetch start", {
+                        postId: post.id,
+                        queryKey: ["/api/posts", post.id, "comments"],
+                      });
+                    }
+                    void queryClient
+                      .prefetchQuery({
+                        queryKey: ["/api/posts", post.id, "comments"],
+                        queryFn: async () => {
+                          const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
+                          return response.json();
+                        },
+                      })
+                      .then(() => {
+                        if (!debugComments) return;
+                        console.log("[CommentsOpen] prefetch success", { postId: post.id });
+                      })
+                      .catch((error: unknown) => {
+                        if (!debugComments) return;
+                        const message = error instanceof Error ? error.message : String(error);
+                        console.log("[CommentsOpen] prefetch error", { postId: post.id, message });
+                      });
+                    setCommentsPost(post);
+                    setShowComments(true);
+                    onCommentsOpened?.();
+                  }}
+                >
+                  <div className={`${railIconWrap} relative`}>
+                    <MessageCircle className="h-7 w-7 text-white" />
+                    {artistSelfTagHintVisible ? (
+                      <span className="pointer-events-none absolute inset-0 rounded-full border border-[#4ae9df]/80 shadow-[0_0_0_2px_rgba(74,233,223,0.3),0_0_22px_rgba(74,233,223,0.55)]" />
+                    ) : null}
+                  </div>
+                  <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                    {formatCount(post.comments)}
+                  </span>
+                </button>
+                {artistSelfTagHintVisible ? (
+                  <div className="pointer-events-none absolute right-full top-1/2 z-30 mr-3 -translate-y-1/2">
+                    <div className="relative w-56 rounded-xl border border-[#4ae9df]/35 bg-black/80 p-3 text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-md">
+                      <div className="mb-1 text-xs font-semibold text-[#4ae9df]">Is this your ID?</div>
+                      <p className="text-[11px] leading-relaxed text-white/90">
+                        It probably isn't, but if you ever stumble across one of your tracks in the wild just tag yourself in the comments, then close the comments and tap Mark ID to confirm it as yours.
+                      </p>
+                      <button
+                        type="button"
+                        className="pointer-events-auto mt-2 inline-flex rounded-md border border-[#4ae9df]/45 bg-[#4ae9df]/15 px-2 py-1 text-[11px] font-medium text-[#b6fffa] hover:bg-[#4ae9df]/25"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDismissArtistSelfTagHint();
+                        }}
+                        data-testid="button-dismiss-artist-self-tag-hint"
+                      >
+                        Got it
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
 
               {canVerify ? (
                 <button
@@ -2664,6 +2814,7 @@ function VideoCardInner({
             }
             setShowComments(false);
             setCommentsPost(null);
+            onCommentsClosed?.();
           }}
         />
       )}

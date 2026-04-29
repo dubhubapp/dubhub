@@ -23,6 +23,7 @@ import { apiUrl } from "@/lib/apiBase";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { SwipeBackPage } from "@/components/swipe-back-page";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -90,6 +91,7 @@ export default function ReleaseEdit() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleBack = () => navigate("/releases");
 
   const { data: release, isLoading } = useQuery({
     queryKey: ["/api/releases", releaseId],
@@ -416,9 +418,12 @@ export default function ReleaseEdit() {
   const existingCollaboratorsCount = (release.collaborators || []).length;
 
   return (
-    <div className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]">
+    <SwipeBackPage
+      onBack={handleBack}
+      className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+    >
       <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate("/releases")}>
+        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to Releases
         </Button>
@@ -847,6 +852,6 @@ export default function ReleaseEdit() {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </SwipeBackPage>
   );
 }

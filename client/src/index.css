@@ -61,7 +61,7 @@
   --ring: hsl(0, 0%, 100%);
   --radius: 0.5rem;
   --surface: hsl(227, 96%, 50%);
-  --dark: hsl(227, 96%, 54%);
+  --dark: #0f1324;
 }
 
 /*
@@ -92,6 +92,21 @@ html.dark {
   min-height: 0;
   overflow: hidden;
   background-color: var(--dark);
+}
+
+/* Short, low-cost color fade for theme swaps. */
+html.theme-transitioning,
+html.theme-transitioning body,
+html.theme-transitioning #root,
+html.theme-transitioning [data-app-root],
+html.theme-transitioning [data-app-shell],
+html.theme-transitioning [data-app-bottom-nav],
+html.theme-transitioning .bg-background,
+html.theme-transitioning .bg-surface {
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
 }
 
 /* Taller viewports: slightly tighter bottom nav chrome (more video area). SE / short phones keep :root defaults. */

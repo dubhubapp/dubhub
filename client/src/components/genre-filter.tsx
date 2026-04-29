@@ -84,6 +84,7 @@ interface GenreFilterProps {
   /** When set with `onSortChange`, collapsed menu includes Feed order (Hottest / Newest / Random). */
   sortMode?: FeedSortMode;
   onSortChange?: (mode: FeedSortMode) => void;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const genres = GENRE_ENTRIES.map((g) => ({
@@ -100,6 +101,7 @@ export function GenreFilter({
   omitIdentificationRing = false,
   sortMode,
   onSortChange,
+  onOpenChange,
 }: GenreFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -163,6 +165,10 @@ export function GenreFilter({
   useLayoutEffect(() => {
     updateMenuPos();
   }, [updateMenuPos, isOpen, collapsedLabel, selectedGenres.length, identificationFilter, sortMode]);
+
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
 
   useEffect(() => {
     if (!isOpen) return;

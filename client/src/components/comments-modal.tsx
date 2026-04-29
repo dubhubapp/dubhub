@@ -1,7 +1,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, CheckCircle, Award, XCircle, Flag, MoreHorizontal, MessageCircle } from "lucide-react";
+import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, MessageCircle } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +17,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GoldVerifiedArtistPill, goldAvatarGlowShadowClass } from "./verified-artist";
+import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
@@ -95,7 +96,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist } = useUser();
+  const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist, userType } = useUser();
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
   const composerFieldId = useId();
@@ -356,6 +357,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [commentFilter, setCommentFilter] = useState<'all' | 'newest' | 'top'>('all');
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [, bumpForVisualViewport] = useReducer((x: number) => x + 1, 0);
+  const postArtistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+  const isArtistIdentifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && !!postArtistVerifiedBy;
+  const shouldShowArtistSelfTagPlaceholder =
+    !!contextUser?.id &&
+    userType === "artist" &&
+    verifiedArtist &&
+    !isArtistIdentifiedPost;
 
   useEffect(() => {
     if (!isOpen || typeof window === "undefined") return;
@@ -750,15 +758,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
             // Derive the artist confirmation comment heuristically:
             // - Same artist who verified the post
-            // - Body starts with the system confirmation prefix we use when creating the comment
+            // - Body uses the confirmation copy we generate ("@... confirmed:"), with or without legacy leading emoji
             const artistConfirmationCommentId = isArtistVerifiedPost && artistVerifiedBy
               ? filteredComments.find((c) => {
                   const userId = (c as any).userId ?? (c as any).user?.id;
                   const body = (c as any).body ?? "";
+                  const normalizedBody =
+                    typeof body === "string" ? body.trim().replace(/^✅\s*/, "") : "";
                   return (
                     userId === artistVerifiedBy &&
                     typeof body === "string" &&
-                    body.trim().startsWith("✅ @")
+                    normalizedBody.toLowerCase().includes("confirmed:")
                   );
                 })?.id ?? null
               : null;
@@ -782,12 +792,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
             if (shouldShowCommentsLoadingState) {
               return (
-                <div className="flex h-full min-h-[9rem] items-center justify-center px-4 text-center">
-                  <div className="flex max-w-[18rem] flex-col items-center gap-2 text-gray-500/85 dark:text-white/55">
-                    <MessageCircle className="h-4 w-4 animate-pulse opacity-60" aria-hidden />
-                    <p className="text-sm leading-relaxed">
-                      Loading comments...
-                    </p>
+                <div className="min-h-[9rem] px-1 py-1.5 sm:px-0">
+                  <div className="space-y-3.5" aria-hidden>
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={`comment-skeleton-${index}`} className="flex space-x-2.5">
+                        <div className="h-6 w-6 animate-pulse rounded-full bg-gray-200/80 sm:h-7 sm:w-7 dark:bg-white/12" />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="h-2.5 w-28 animate-pulse rounded bg-gray-200/80 dark:bg-white/12" />
+                          <div className="h-2.5 w-11/12 animate-pulse rounded bg-gray-200/70 dark:bg-white/10" />
+                          <div className="h-2.5 w-8/12 animate-pulse rounded bg-gray-200/60 dark:bg-white/10" />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
@@ -863,12 +879,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       shieldSizeClass="h-4 w-4"
                     />
                   </div>
-                  {/* Artist Verified Badge - on the artist/system confirmation comment, GOLD */}
-                  {isArtistConfirmationComment && isArtistVerifiedPost && (
-                    <GoldVerifiedArtistPill
+                  {/* Artist identified badge: match post-level identified treatment */}
+                  {isArtistConfirmationComment && isArtistVerifiedPost && !isVerifiedComment && (
+                    <span
+                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
                       data-testid={`badge-artist-verified-${comment.id}`}
-                      size="xs"
-                    />
+                    >
+                      <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
+                      Identified
+                    </span>
                   )}
                   {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge, only pre-artist verification) */}
                   {isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
@@ -879,26 +899,37 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       <span className="text-xs text-amber-800 font-medium dark:text-amber-200">Tagged artist</span>
                     </div>
                   )}
-                  {/* Community Identified Badge - Blue for pending moderator review (only when no artist verification) */}
+                  {/* Community identified badge: keep community source icon, match post-level identified styling */}
                   {post.verificationStatus === "community" && post.verifiedCommentId === comment.id && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
-                    <div className="flex items-center space-x-1 rounded-full bg-blue-500 px-1.5 py-0.5" data-testid={`badge-community-identified-${comment.id}`}>
-                      <CheckCircle className="w-3 h-3 text-white" />
-                      <span className="text-xs text-white font-bold">Community Identified</span>
-                    </div>
+                    <span
+                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                      data-testid={`badge-community-identified-${comment.id}`}
+                    >
+                      <Users className="h-3 w-3 shrink-0" />
+                      Identified
+                    </span>
                   )}
-                  {/* Identified Track ID Badge - Green for moderator confirmed (fallback when no artist verification) */}
+                  {/* Moderator identified badge: match post-level identified treatment */}
                   {isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
-                    <div className="flex items-center space-x-1 rounded-full bg-green-500 px-1.5 py-0.5" data-testid={`badge-identified-${comment.id}`}>
-                      <CheckCircle className="w-3 h-3 text-white" />
-                      <span className="text-xs text-white font-bold">Identified Track ID</span>
-                    </div>
+                    <span
+                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                      data-testid={`badge-identified-${comment.id}`}
+                    >
+                      <Check className="h-3 w-3 shrink-0 text-white" />
+                      Identified
+                    </span>
                   )}
-                  {/* Artist ID Badge - on the artist-selected community comment when artist verification is present */}
+                  {/* Artist-selected verified comment: same identified treatment as post-level artist state */}
                   {isVerifiedComment && isArtistVerifiedPost && (
-                    <div className="flex items-center space-x-1 rounded-full bg-green-50 px-1.5 py-0.5 dark:bg-green-500/16 dark:ring-1 dark:ring-green-400/25">
-                      <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
-                      <span className="text-xs text-green-600 font-medium dark:text-green-400">Artist ID</span>
-                    </div>
+                    <span
+                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                    >
+                      <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
+                      Identified
+                    </span>
                   )}
                   {/* Denied Tag Badge */}
                   {comment.tagStatus === "denied" && (
@@ -1247,7 +1278,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     placeholder={
                       replyingTo
                         ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
-                        : "Who do you think this is?"
+                        : shouldShowArtistSelfTagPlaceholder
+                          ? "Tag yourself if this is your ID..."
+                          : "Who do you think this is?"
                     }
                     className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/20 dark:bg-white/10 dark:text-white dark:placeholder:text-white/45 dark:ring-offset-[color:var(--dark)]"
                     disabled={addCommentMutation.isPending}

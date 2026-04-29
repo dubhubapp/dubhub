@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type CSSProperties } from "react";
 import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -30,9 +30,23 @@ import { dubhubVideoDebugLog, dubhubVideoDebugEnabled } from "@/lib/video-debug"
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import {
+  HINT_COMMENTS_CLOSED_EVENT,
+  HINT_COMMENTS_OPENED_EVENT,
+  HINT_GENRE_CLOSED_EVENT,
+  HINT_GENRE_OPENED_EVENT,
+  HINT_LIKED_POST_EVENT,
+  HINT_RANDOM_USED_EVENT,
+  HOME_FEED_READY_EVENT,
+  ONBOARDING_ACTIVE_SESSION_KEY,
+  WELCOME_BACK_FLAG_KEY,
+  getHintCommentsSeenKey,
+  getHintGenreFilterSeenKey,
+  getHintLikeReleaseSeenKey,
+  getHintRandomSeenKey,
+} from "@/lib/onboarding";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
-const DUBHUB_SHOW_WELCOME_BACK_KEY = "dubhub_show_welcome_back";
 const WELCOME_MESSAGES = [
   { title: "Back in the mix", subtitle: "Let\u2019s find some IDs" },
   { title: "You\u2019re back", subtitle: "Ready to find some new heat?" },
@@ -67,6 +81,7 @@ function HomeFeedTopChrome({
   sortMode,
   onSortChange,
   onStatusSafeAreaTap,
+  onGenreFilterOpenChange,
 }: {
   selectedGenres: string[];
   onGenresChange: (next: string[]) => void;
@@ -76,6 +91,7 @@ function HomeFeedTopChrome({
   onSortChange: (mode: FeedSortMode) => void;
   /** Tap in the top safe-area / status region scrolls the feed to the top (iOS status-bar tap analogue). */
   onStatusSafeAreaTap?: () => void;
+  onGenreFilterOpenChange?: (open: boolean) => void;
 }) {
   return (
     <>
@@ -124,6 +140,9 @@ function HomeFeedTopChrome({
               onIdentificationChange={onIdentificationChange}
               sortMode={sortMode}
               onSortChange={onSortChange}
+              onOpenChange={(open) => {
+                onGenreFilterOpenChange?.(open);
+              }}
               isCollapsed
             />
           </div>
@@ -400,15 +419,22 @@ export default function Home() {
   const { toast } = useToast();
 
   const { currentUser } = useUser();
+  const homeReadySignalSentRef = useRef(false);
+  const [activeHint, setActiveHint] = useState<{
+    type: "genre" | "comments" | "like" | "random";
+    key: string;
+    message: string;
+    style?: CSSProperties;
+  } | null>(null);
 
   const genresKey = [...selectedGenres].sort().join(",");
 
   useEffect(() => {
     try {
       const shouldShowWelcomeBack =
-        sessionStorage.getItem(DUBHUB_SHOW_WELCOME_BACK_KEY) === "1";
+        sessionStorage.getItem(WELCOME_BACK_FLAG_KEY) === "1";
       if (!shouldShowWelcomeBack) return;
-      sessionStorage.removeItem(DUBHUB_SHOW_WELCOME_BACK_KEY);
+      sessionStorage.removeItem(WELCOME_BACK_FLAG_KEY);
       const selectedMessage =
         WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
       toast({
@@ -421,6 +447,141 @@ export default function Home() {
       // Storage access may fail in constrained environments; skip toast safely.
     }
   }, [toast]);
+
+  useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId) return;
+
+    const tryShowHint = (payload: {
+      type: "genre" | "comments" | "like" | "random";
+      key: string;
+      message: string;
+      style?: CSSProperties;
+    }) => {
+      if (activeHint) return;
+      if (localStorage.getItem(payload.key) === "1") return;
+      if (sessionStorage.getItem(ONBOARDING_ACTIVE_SESSION_KEY) === "1") return;
+      playInteractionLight();
+      setActiveHint(payload);
+    };
+
+    const onGenreOpened = () => {
+      // Let dropdown mount before positioning hint below it.
+      window.setTimeout(() => {
+        const menuEl = document.querySelector<HTMLElement>('[aria-label="Genre and status filters"]');
+        const style: CSSProperties | undefined = menuEl
+          ? {
+              position: "fixed",
+              top: Math.min(window.innerHeight - 120, menuEl.getBoundingClientRect().bottom + 8),
+              left: window.innerWidth / 2,
+              transform: "translateX(-50%)",
+            }
+          : {
+              position: "fixed",
+              top: 140,
+              left: window.innerWidth / 2,
+              transform: "translateX(-50%)",
+            };
+        tryShowHint({
+          type: "genre",
+          key: getHintGenreFilterSeenKey(userId),
+          message: "Use filters to narrow the feed by genre, ID status and order.",
+          style,
+        });
+      }, 120);
+    };
+
+    const onGenreClosed = () => {
+      setActiveHint((prev) => (prev?.type === "genre" ? null : prev));
+    };
+
+    const onCommentsOpened = () =>
+      tryShowHint({
+        type: "comments",
+        key: getHintCommentsSeenKey(userId),
+        message: "Think you know the track? Drop the ID in the comments.",
+        style: {
+          position: "fixed",
+          left: "50%",
+          bottom: "max(7.5rem, calc(env(safe-area-inset-bottom,0px) + 6.5rem))",
+          transform: "translateX(-50%)",
+        },
+      });
+
+    const onCommentsClosed = () => {
+      setActiveHint((prev) => (prev?.type === "comments" ? null : prev));
+    };
+
+    const onLikedPost = () =>
+      tryShowHint({
+        type: "like",
+        key: getHintLikeReleaseSeenKey(userId),
+        message:
+          "Liked posts can appear in your Releases tab once they’re identified and the artist sets up a release.",
+        style: {
+          position: "fixed",
+          right: "max(0.75rem, env(safe-area-inset-right,0px))",
+          bottom: "max(9.5rem, calc(env(safe-area-inset-bottom,0px) + 8rem))",
+        },
+      });
+
+    const onRandomUsed = () =>
+      tryShowHint({
+        type: "random",
+        key: getHintRandomSeenKey(userId),
+        message: "Tap the dice to jump into random unidentified clips.",
+        style: {
+          position: "fixed",
+          right: "max(0.75rem, env(safe-area-inset-right,0px))",
+          bottom: "max(13.5rem, calc(env(safe-area-inset-bottom,0px) + 12rem))",
+        },
+      });
+
+    window.addEventListener(HINT_GENRE_OPENED_EVENT, onGenreOpened);
+    window.addEventListener(HINT_GENRE_CLOSED_EVENT, onGenreClosed);
+    window.addEventListener(HINT_COMMENTS_OPENED_EVENT, onCommentsOpened);
+    window.addEventListener(HINT_COMMENTS_CLOSED_EVENT, onCommentsClosed);
+    window.addEventListener(HINT_LIKED_POST_EVENT, onLikedPost);
+    window.addEventListener(HINT_RANDOM_USED_EVENT, onRandomUsed);
+
+    return () => {
+      window.removeEventListener(HINT_GENRE_OPENED_EVENT, onGenreOpened);
+      window.removeEventListener(HINT_GENRE_CLOSED_EVENT, onGenreClosed);
+      window.removeEventListener(HINT_COMMENTS_OPENED_EVENT, onCommentsOpened);
+      window.removeEventListener(HINT_COMMENTS_CLOSED_EVENT, onCommentsClosed);
+      window.removeEventListener(HINT_LIKED_POST_EVENT, onLikedPost);
+      window.removeEventListener(HINT_RANDOM_USED_EVENT, onRandomUsed);
+    };
+  }, [activeHint, currentUser?.id]);
+
+  const handleHintGotIt = useCallback(() => {
+    if (!activeHint) return;
+    localStorage.setItem(activeHint.key, "1");
+    playInteractionLight();
+    setActiveHint(null);
+  }, [activeHint]);
+
+  const hintOverlay = activeHint ? (
+    <div
+      className="pointer-events-none fixed z-[61]"
+      style={activeHint.style}
+      data-testid={`hint-${activeHint.type}`}
+    >
+      <div className="pointer-events-auto w-[min(88vw,22rem)] rounded-xl border border-[#4ae9df]/35 bg-[#0f1324]/95 p-3 text-white shadow-[0_18px_42px_rgba(0,0,0,0.5)] backdrop-blur-md">
+        <p className="mb-1 text-xs font-semibold text-[#4ae9df]">Quick tip</p>
+        <p className="text-xs leading-relaxed text-white/90">{activeHint.message}</p>
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={handleHintGotIt}
+            className="rounded-md border border-[#4ae9df]/45 bg-[#4ae9df]/15 px-2.5 py-1 text-[11px] font-medium text-[#b6fffa] transition-colors hover:bg-[#4ae9df]/25"
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   useEffect(() => {
     return () => {
@@ -567,6 +728,13 @@ export default function Home() {
     sortMode !== "random" &&
     posts.length === 0 &&
     (isPending || isLoading || (!pagedPosts && postsQuery.isFetching));
+
+  useEffect(() => {
+    if (isInitialFeedLoad || isError) return;
+    if (homeReadySignalSentRef.current) return;
+    homeReadySignalSentRef.current = true;
+    window.dispatchEvent(new CustomEvent(HOME_FEED_READY_EVENT));
+  }, [isInitialFeedLoad, isError]);
 
   // Client-side fallback: ensures UI toggles (sort + filters) update immediately,
   // even if the backend response/order hasn't caught up yet.
@@ -1581,6 +1749,9 @@ export default function Home() {
           sortMode="random"
           onSortChange={handleFeedSortChange}
           onStatusSafeAreaTap={scrollFeedToFirstPost}
+          onGenreFilterOpenChange={(open) => {
+            window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
+          }}
         />
 
         <div
@@ -1611,6 +1782,7 @@ export default function Home() {
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
               feedRandomDice={{
                 onPress: () => {
+                  window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
                   void loadNextRandom();
                 },
                 disabled: randomLoading,
@@ -1619,6 +1791,15 @@ export default function Home() {
                 showIntroGlow: true,
               }}
               mediaEpoch={homeMediaEpoch}
+              onCommentsOpened={() => {
+                window.dispatchEvent(new CustomEvent(HINT_COMMENTS_OPENED_EVENT));
+              }}
+              onCommentsClosed={() => {
+                window.dispatchEvent(new CustomEvent(HINT_COMMENTS_CLOSED_EVENT));
+              }}
+              onPostLiked={() => {
+                window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
+              }}
             />
           ) : randomExhausted ? (
             <div className="h-full flex items-center justify-center pt-32">
@@ -1631,6 +1812,7 @@ export default function Home() {
                   delayPressMs={DICE_SPIN_ANIMATION_MS}
                   onPress={() => {
                     resetRandomSession();
+                    window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
                     void loadNextRandom({ afterRestart: true });
                   }}
                   aria-label="Start a new random discovery session"
@@ -1662,6 +1844,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        {hintOverlay}
       </div>
     );
   }
@@ -1677,6 +1860,9 @@ export default function Home() {
           sortMode={sortMode}
           onSortChange={handleFeedSortChange}
           onStatusSafeAreaTap={scrollFeedToFirstPost}
+          onGenreFilterOpenChange={(open) => {
+            window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
+          }}
         />
         <div className="h-full flex items-center justify-center pt-32">
           <div className="text-center text-muted-foreground">
@@ -1684,6 +1870,7 @@ export default function Home() {
             <p className="text-sm">Try selecting different filters</p>
           </div>
         </div>
+        {hintOverlay}
       </div>
     );
   }
@@ -1698,6 +1885,9 @@ export default function Home() {
         sortMode={sortMode}
         onSortChange={handleFeedSortChange}
         onStatusSafeAreaTap={scrollFeedToFirstPost}
+        onGenreFilterOpenChange={(open) => {
+          window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
+        }}
       />
 
       <div
@@ -1753,6 +1943,15 @@ export default function Home() {
               feedOverlayCollapsed={isFeedOverlayCollapsed}
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
               mediaEpoch={homeMediaEpoch}
+              onCommentsOpened={() => {
+                window.dispatchEvent(new CustomEvent(HINT_COMMENTS_OPENED_EVENT));
+              }}
+              onCommentsClosed={() => {
+                window.dispatchEvent(new CustomEvent(HINT_COMMENTS_CLOSED_EVENT));
+              }}
+              onPostLiked={() => {
+                window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
+              }}
             />
           );
         })}
@@ -1771,6 +1970,7 @@ export default function Home() {
                       accentGlow="turquoiseProminent"
                       onPress={() => {
                         playInteractionLight();
+                        window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
                         handleFeedSortChange("random");
                       }}
                       className="!min-h-8 !min-w-8 border-0 bg-transparent p-0 shadow-none ring-0 opacity-100 transition-transform duration-150 active:scale-95"
@@ -1789,6 +1989,7 @@ export default function Home() {
           </div>
         ) : null}
       </div>
+      {hintOverlay}
     </div>
   );
 }

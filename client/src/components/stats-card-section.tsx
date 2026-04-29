@@ -32,8 +32,8 @@ export function StatsCardSection({ title, titleInfo, items, helperText, classNam
       </div>
       <div className="grid grid-cols-2 gap-3">
         {items.map(({ label, value, Icon, toneClassName, info }) => (
-          <div key={label} className={`rounded-lg border-2 p-3 ${toneClassName}`}>
-            <div className="flex items-center justify-center gap-1 text-sm font-semibold mb-1.5">
+          <div key={label} className={`rounded-lg border-2 p-3 flex flex-col items-center justify-center ${toneClassName}`}>
+            <div className="min-h-[1.25rem] flex items-center justify-center gap-1 text-sm font-semibold mb-1.5 text-center">
               <Icon className="w-4 h-4 shrink-0" />
               <span>{label}</span>
               {info ? (

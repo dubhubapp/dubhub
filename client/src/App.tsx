@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -34,6 +34,15 @@ import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/export-trimmed-video";
+import { FirstLoginOnboardingModal } from "@/components/first-login-onboarding-modal";
+import {
+  clearPendingOnboardingForEmail,
+  HOME_FEED_READY_EVENT,
+  ONBOARDING_ACTIVE_SESSION_KEY,
+  getOnboardingSeenKey,
+  hasPendingOnboardingForEmail,
+  WELCOME_BACK_FLAG_KEY,
+} from "@/lib/onboarding";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -84,12 +93,53 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string>('user');
   const [isLoading, setIsLoading] = useState(true);
+  const [firstLoginOnboarding, setFirstLoginOnboarding] = useState<{
+    open: boolean;
+    audience: "user" | "artist";
+    userId: string | null;
+    email: string | null;
+  }>({
+    open: false,
+    audience: "user",
+    userId: null,
+    email: null,
+  });
+  const [isHomeFeedReady, setIsHomeFeedReady] = useState(false);
   const [enforcementState, setEnforcementState] = useState<{ banned: boolean; suspendedUntil: string | null }>({
     banned: false,
     suspendedUntil: null,
   });
 
   useEffect(() => {
+    const maybeQueueFirstLoginOnboarding = ({
+      userId,
+      email,
+      accountType,
+      verifiedArtist,
+      emailConfirmed,
+    }: {
+      userId: string;
+      email: string | null | undefined;
+      accountType: string | null | undefined;
+      verifiedArtist: boolean | null | undefined;
+      emailConfirmed: boolean;
+    }) => {
+      const seenKey = getOnboardingSeenKey(userId);
+      if (localStorage.getItem(seenKey) === "1") return;
+      if (!emailConfirmed) return;
+      if (accountType === "artist" && !verifiedArtist) return;
+      if (!hasPendingOnboardingForEmail(email)) return;
+
+      // Prioritize first-login onboarding over returning-user welcome toast.
+      sessionStorage.removeItem(WELCOME_BACK_FLAG_KEY);
+      setFirstLoginOnboarding({
+        open: isHomeFeedReady,
+        audience: accountType === "artist" ? "artist" : "user",
+        userId,
+        email: email ?? null,
+      });
+    };
+
     // Check Supabase authentication session
     const checkAuth = async () => {
       try {
@@ -118,6 +168,7 @@ function App() {
             const isBanned = profileData.banned === true;
             if (isBanned || isSuspended) {
               setIsAuthenticated(false);
+              setIsHomeFeedReady(false);
               setEnforcementState({
                 banned: isBanned,
                 suspendedUntil: isSuspended ? profileData.suspended_until : null,
@@ -131,6 +182,7 @@ function App() {
               console.warn('[App] Unverified artist blocked from login');
               await supabase.auth.signOut();
               setIsAuthenticated(false);
+              setIsHomeFeedReady(false);
               setUserRole('user');
               localStorage.removeItem('dubhub-authenticated');
               localStorage.removeItem('dubhub-user-role');
@@ -144,6 +196,13 @@ function App() {
             }
             setIsAuthenticated(true);
             setUserRole(userRole);
+            maybeQueueFirstLoginOnboarding({
+              userId: profileData.id,
+              email: profileData.email ?? session.user.email,
+              accountType: profileData.account_type,
+              verifiedArtist: profileData.verified_artist,
+              emailConfirmed: !!session.user.email_confirmed_at,
+            });
             // Also store in localStorage for backward compatibility
             localStorage.setItem('dubhub-authenticated', 'true');
             localStorage.setItem('dubhub-user-role', userRole);
@@ -153,6 +212,7 @@ function App() {
           }
         } else {
           setIsAuthenticated(false);
+        setIsHomeFeedReady(false);
         setEnforcementState({ banned: false, suspendedUntil: null });
           // Clear localStorage if no session
           localStorage.removeItem('dubhub-authenticated');
@@ -184,6 +244,7 @@ function App() {
               const isBanned = profileData.banned === true;
               if (isBanned || isSuspended) {
                 setIsAuthenticated(false);
+                setIsHomeFeedReady(false);
                 setEnforcementState({
                   banned: isBanned,
                   suspendedUntil: isSuspended ? profileData.suspended_until : null,
@@ -196,6 +257,7 @@ function App() {
                 console.warn('[App] Unverified artist blocked from login');
                 supabase.auth.signOut();
                 setIsAuthenticated(false);
+                setIsHomeFeedReady(false);
                 setUserRole('user');
                 localStorage.removeItem('dubhub-authenticated');
                 localStorage.removeItem('dubhub-user-role');
@@ -208,6 +270,13 @@ function App() {
               }
               setIsAuthenticated(true);
               setUserRole(userRole);
+              maybeQueueFirstLoginOnboarding({
+                userId: profileData.id,
+                email: profileData.email ?? session.user.email,
+                accountType: profileData.account_type,
+                verifiedArtist: profileData.verified_artist,
+                emailConfirmed: !!session.user.email_confirmed_at,
+              });
               localStorage.setItem('dubhub-authenticated', 'true');
               localStorage.setItem('dubhub-user-role', userRole);
             }
@@ -215,6 +284,7 @@ function App() {
       } else if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
         setUserRole('user');
+        setIsHomeFeedReady(false);
         setEnforcementState({ banned: false, suspendedUntil: null });
         localStorage.removeItem('dubhub-authenticated');
         localStorage.removeItem('dubhub-user-role');
@@ -227,10 +297,30 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isLoading) {
-      document.documentElement.removeAttribute("data-dubhub-launch-bg");
+    const onHomeFeedReady = () => setIsHomeFeedReady(true);
+    window.addEventListener(HOME_FEED_READY_EVENT, onHomeFeedReady);
+    return () => window.removeEventListener(HOME_FEED_READY_EVENT, onHomeFeedReady);
+  }, []);
+
+  useEffect(() => {
+    if (!isHomeFeedReady) return;
+    setFirstLoginOnboarding((prev) => {
+      if (!prev.userId || prev.open) return prev;
+      return { ...prev, open: true };
+    });
+  }, [isHomeFeedReady]);
+
+  useEffect(() => {
+    if (firstLoginOnboarding.open) {
+      sessionStorage.setItem(ONBOARDING_ACTIVE_SESSION_KEY, "1");
+      return;
     }
-  }, [isLoading]);
+    sessionStorage.removeItem(ONBOARDING_ACTIVE_SESSION_KEY);
+  }, [firstLoginOnboarding.open]);
+
+  useLayoutEffect(() => {
+    document.documentElement.removeAttribute("data-dubhub-launch-bg");
+  }, []);
 
   const handleAuthSuccess = (role: string) => {
     localStorage.setItem('dubhub-authenticated', 'true');
@@ -258,6 +348,16 @@ function App() {
     // Reset authentication state
     setIsAuthenticated(false);
     setUserRole('user');
+    setFirstLoginOnboarding({ open: false, audience: "user", userId: null, email: null });
+  };
+
+  const handleDismissFirstLoginOnboarding = () => {
+    const userId = firstLoginOnboarding.userId;
+    if (userId) {
+      localStorage.setItem(getOnboardingSeenKey(userId), "1");
+    }
+    clearPendingOnboardingForEmail(firstLoginOnboarding.email);
+    setFirstLoginOnboarding((prev) => ({ ...prev, open: false }));
   };
 
   if (isLoading) {
@@ -334,6 +434,11 @@ function App() {
           <HomeFeedInteractionProvider>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <PasswordRecoveryRedirect />
+          <FirstLoginOnboardingModal
+            open={firstLoginOnboarding.open}
+            audience={firstLoginOnboarding.audience}
+            onDismiss={handleDismissFirstLoginOnboarding}
+          />
           <Toaster />
           <div
             data-app-root="true"

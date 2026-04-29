@@ -14,6 +14,7 @@ import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
+import { SwipeBackPage } from "@/components/swipe-back-page";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -78,6 +79,7 @@ export default function ReleaseCreate() {
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
   const [collabSearch, setCollabSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleBack = () => navigate("/releases");
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
@@ -308,9 +310,12 @@ export default function ReleaseCreate() {
   }
 
   return (
-    <div className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]">
+    <SwipeBackPage
+      onBack={handleBack}
+      className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+    >
       <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={() => navigate("/releases")}>
+        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
@@ -629,6 +634,6 @@ export default function ReleaseCreate() {
           </div>
         </form>
       </div>
-    </div>
+    </SwipeBackPage>
   );
 }

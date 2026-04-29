@@ -17,6 +17,7 @@ import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { SwipeBackPage } from "@/components/swipe-back-page";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -162,6 +163,7 @@ export default function ReleaseDetail() {
     const qs = q.toString();
     return qs ? `/releases?${qs}` : "/releases";
   })();
+  const handleBack = () => navigate(releasesBackUrl);
 
   if (isLoading) {
     return (
@@ -279,9 +281,12 @@ export default function ReleaseDetail() {
     : [];
 
   return (
-    <div className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]">
+    <SwipeBackPage
+      onBack={handleBack}
+      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+    >
       <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
-        <Button variant="ghost" size="sm" className="ios-press mb-4 -ml-1" onClick={() => navigate(releasesBackUrl)}>
+        <Button variant="ghost" size="sm" className="ios-press mb-4 -ml-1" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
@@ -429,6 +434,6 @@ export default function ReleaseDetail() {
           </div>
         )}
       </div>
-    </div>
+    </SwipeBackPage>
   );
 }

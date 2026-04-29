@@ -8,6 +8,10 @@ import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 import { playThemeToggleHaptic } from "@/lib/haptic";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import { useUser } from "@/lib/user-context";
+import { SwipeBackPage } from "@/components/swipe-back-page";
+
+const THEME_TRANSITION_CLASS = "theme-transitioning";
+const THEME_TRANSITION_MS = 180;
 
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
@@ -21,9 +25,19 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const { userType } = useUser();
   const isModerator = userType === "moderator";
 
+  const runThemeTransition = () => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.classList.add(THEME_TRANSITION_CLASS);
+    window.setTimeout(() => {
+      root.classList.remove(THEME_TRANSITION_CLASS);
+    }, THEME_TRANSITION_MS);
+  };
+
   const handleThemeToggle = (enabled: boolean) => {
-    const next: ThemeMode = enabled ? "dark" : "light";
+    const next: ThemeMode = enabled ? "light" : "dark";
     playThemeToggleHaptic();
+    runThemeTransition();
     applyTheme(next);
     setThemeMode(next);
   };
@@ -35,7 +49,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
     }
     navigate("/profile");
   };
-
   const handleLogout = async () => {
     if (onSignOut) {
       await onSignOut();
@@ -45,7 +58,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   };
 
   return (
-    <div className="flex-1 min-h-0 bg-dark overflow-y-auto">
+    <SwipeBackPage onBack={handleBack} className="flex-1 min-h-0 bg-background overflow-y-auto">
       <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           <div className="flex items-center mb-6">
@@ -72,25 +85,25 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
           </div>
 
           <div className="space-y-3">
-            <div className="w-full bg-surface rounded-xl p-4 flex items-center justify-between gap-4">
+            <div className="w-full rounded-xl border border-white/10 bg-black/30 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md flex items-center justify-between gap-4">
               <div className="flex items-center space-x-3 min-w-0">
                 <Moon className="w-5 h-5 text-muted-foreground shrink-0" aria-hidden />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">Dark mode</p>
+                  <p className="text-sm font-medium text-foreground">Light mode</p>
                   <p className="text-xs text-muted-foreground">
-                    Use a darker background across the app.
+                    Switch to a brighter dub hub experience.
                   </p>
                 </div>
               </div>
               <Switch
-                checked={themeMode === "dark"}
+                checked={themeMode === "light"}
                 onCheckedChange={handleThemeToggle}
-                aria-label="Dark mode"
-                data-testid="switch-dark-mode"
+                aria-label="Light mode"
+                data-testid="switch-light-mode"
               />
             </div>
 
-            <div className="rounded-xl border border-white/5 bg-surface p-4 space-y-4">
+            <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md">
               <div className="flex items-start gap-3">
                 <Bell className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
                 <div className="min-w-0 space-y-1">
@@ -107,7 +120,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 </div>
               </div>
 
-              <div className="space-y-3 pt-1 border-t border-white/5">
+              <div className="space-y-3 pt-1 border-t border-white/10">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">Release notifications</p>
@@ -150,7 +163,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
             <Button
               variant="ghost"
               type="button"
-              className="w-full bg-surface hover:bg-surface/80 text-left p-4 rounded-xl flex items-center justify-between h-auto"
+              className="w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
               onClick={() => setChangePasswordOpen(true)}
               data-testid="button-change-password"
             >
@@ -163,7 +176,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
 
             <Button
               variant="ghost"
-              className="w-full bg-red-900/20 hover:bg-red-900/30 text-left p-4 rounded-xl flex items-center justify-between h-auto text-red-400 hover:text-red-300"
+              className="w-full border border-red-400/20 bg-red-900/20 hover:bg-red-900/30 text-left p-4 rounded-xl flex items-center justify-between h-auto text-red-300 hover:text-red-200 backdrop-blur-md"
               onClick={handleLogout}
               data-testid="button-logout"
             >
@@ -177,6 +190,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
       </div>
 
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
-    </div>
+    </SwipeBackPage>
   );
 }
