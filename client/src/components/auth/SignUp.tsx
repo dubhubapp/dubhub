@@ -433,7 +433,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               </SelectTrigger>
               <SelectContent className="bg-background border-border">
                 <SelectItem value="user" className="text-foreground hover:bg-muted">
-                  User
+                  Community member
                 </SelectItem>
                 <SelectItem value="artist" className="text-foreground hover:bg-muted">
                   Artist

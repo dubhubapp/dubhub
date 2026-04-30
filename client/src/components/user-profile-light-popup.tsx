@@ -715,7 +715,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
               />
               <StatLine
                 Icon={Check}
-                label="IDs"
+                label="Correct IDs"
                 value={idsValue}
                 labelStyle={{ color: tileLabelColor }}
                 valueStyle={{ color: primaryTextColor }}

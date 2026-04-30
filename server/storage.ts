@@ -267,7 +267,7 @@ export class DatabaseStorage implements IStorage {
           : sql`TRUE`;
 
       const identifiedWhere = sql`(
-        p.verification_status IN ('identified', 'community')
+        p.verification_status IN ('identified', 'community', 'community_approved')
         OR COALESCE(p.is_verified_artist, false) = true
         OR COALESCE(p.is_verified_community, false) = true
         OR COALESCE(p.verified_by_moderator, false) = true
@@ -1764,7 +1764,7 @@ export class DatabaseStorage implements IStorage {
             COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
           FROM user_karma_events e
           WHERE e.revoked_at IS NULL
-            AND e.event_type = 'confirmed_id'
+            AND e.event_type IN ('confirmed_id', 'community_approved')
             AND (
               (${applyMonth} = false AND ${applyYear} = false)
               OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
@@ -1872,7 +1872,7 @@ export class DatabaseStorage implements IStorage {
             COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
           FROM user_karma_events e
           WHERE e.revoked_at IS NULL
-            AND e.event_type = 'confirmed_id'
+            AND e.event_type IN ('confirmed_id', 'community_approved')
             AND (
               (${applyMonth} = false AND ${applyYear} = false)
               OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))

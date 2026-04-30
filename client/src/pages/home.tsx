@@ -758,6 +758,7 @@ export default function Home() {
         return (
           post.verificationStatus === "identified" ||
           post.verificationStatus === "community" ||
+          post.verificationStatus === "community_approved" ||
           post.isVerifiedArtist ||
           post.isVerifiedCommunity ||
           post.verifiedByModerator

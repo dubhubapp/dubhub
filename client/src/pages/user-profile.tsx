@@ -66,9 +66,11 @@ const PROFILE_HELP = {
   tracksIdentifiedGenres:
     "Shows genres for tracks you correctly identified. Excludes your own tracks and IDs on your own posts.",
   totalIDs: "Total clips or tracks you’ve uploaded to the community.",
-  confirmedOverview: "Your uploads that have been identified or verified.",
-  tracksIdentifiedStat: "Tracks you correctly identified on other users' posts.",
-  accuracy: "Percentage of your identification attempts on other users' posts that were confirmed as correct.",
+  confirmedOverview:
+    "Correct IDs you earned on others’ clips (moderator-kept community + full confirmations). Higher rep comes from stronger confirmations.",
+  tracksIdentifiedStat: "Tracks you correctly identified on other community members' posts.",
+  accuracy:
+    "Approximate percentage of your ID attempts on others’ clips that counted as correct (includes community-kept IDs).",
   likesOnPosts: "Total likes received across posts you uploaded.",
   commentsOnPosts: "Total comments received across posts you uploaded.",
   likesGiven: "Posts you’ve liked.",
@@ -497,7 +499,8 @@ export default function UserProfile() {
     } else if (postFilter === "identified") {
       return userPosts.filter(post => 
         post.verificationStatus === "identified" || 
-        post.verificationStatus === "community"
+        post.verificationStatus === "community" ||
+        post.verificationStatus === "community_approved",
       );
     } else {
       // unidentified
@@ -647,7 +650,7 @@ export default function UserProfile() {
       info: PROFILE_HELP.totalIDs,
     },
     {
-      label: "Confirmed",
+      label: "Correct IDs",
       value: Number(userReputation?.confirmedIds || 0).toLocaleString(),
       Icon: CheckCircle,
       toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
@@ -1656,6 +1659,13 @@ export default function UserProfile() {
 
   const getPostStatusMeta = (post: PostWithUser) => {
     const status = post.verificationStatus ?? (post as any).verification_status;
+    if (status === "community_approved") {
+      return {
+        label: "Community Identified",
+        className: "bg-green-500/85 text-white",
+        Icon: CheckCircle,
+      };
+    }
     const isIdentified = status === "identified" || status === "community";
     return isIdentified
       ? {
@@ -1754,7 +1764,7 @@ export default function UserProfile() {
               {userData.profileImage ? (
                 <img 
                   src={userData.profileImage}
-                  alt="User Profile" 
+                  alt="Profile"
                   className={`avatar-media w-20 h-20 rounded-full mx-auto border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
                     verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
                   }`}
@@ -1873,7 +1883,7 @@ export default function UserProfile() {
                         }`}
                         data-testid="stats-mode-user"
                       >
-                        User
+                        Community
                       </button>
                     </div>
                   </div>
@@ -2049,7 +2059,8 @@ export default function UserProfile() {
                   >
                     Identified ({userPosts.filter(t =>
                       t.verificationStatus === "identified" ||
-                      t.verificationStatus === "community"
+                      t.verificationStatus === "community" ||
+                      t.verificationStatus === "community_approved"
                     ).length})
                   </Button>
                   <Button

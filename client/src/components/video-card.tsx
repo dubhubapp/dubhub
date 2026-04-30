@@ -192,6 +192,7 @@ interface VideoCardProps {
   onCommentsOpened?: () => void;
   onCommentsClosed?: () => void;
   onPostLiked?: () => void;
+  moderatorPreview?: boolean;
 }
 
 function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolean {
@@ -222,7 +223,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.homeFeedPosterFallback === next.homeFeedPosterFallback &&
     prev.onCommentsOpened === next.onCommentsOpened &&
     prev.onCommentsClosed === next.onCommentsClosed &&
-    prev.onPostLiked === next.onPostLiked
+    prev.onPostLiked === next.onPostLiked &&
+    prev.moderatorPreview === next.moderatorPreview
   );
 }
 
@@ -244,6 +246,7 @@ function VideoCardInner({
   onCommentsOpened,
   onCommentsClosed,
   onPostLiked,
+  moderatorPreview = false,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -279,7 +282,10 @@ function VideoCardInner({
     (post as any).user_id ?? post.userId ?? post.user?.id ?? null;
   const isPostUploader = !!contextUser?.id && postOwnerId === contextUser.id;
 
-  const isPostIdentified = post.verificationStatus === "identified" || post.verificationStatus === "community";
+  const isPostIdentified =
+    post.verificationStatus === "identified" ||
+    post.verificationStatus === "community" ||
+    post.verificationStatus === "community_approved";
   const isReleaseOwner =
     !!contextUser?.id &&
     !!releasePreview?.ownerArtistId &&
@@ -1644,6 +1650,16 @@ function VideoCardInner({
 
     const verificationStatus = post.verificationStatus ?? (post as any).verification_status;
 
+    // Moderator “keep as community”: distinct from pending community review + full moderator confirm
+    if (verificationStatus === "community_approved") {
+      return renderStatus(
+        <Users className={iconBaseClass} />,
+        "Community Identified",
+        "badge-community-approved-identified",
+        STATUS_GLOW_PILL_BG.identified,
+      );
+    }
+
     // Community source first so it never falls through to another identified source
     if (verificationStatus === "community") {
       return renderStatus(
@@ -2204,6 +2220,11 @@ function VideoCardInner({
                     aria-label="More options"
                     className={`${railBtn} !gap-0 outline-none ring-0 ring-offset-0 [-webkit-tap-highlight-color:transparent] focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-transparent data-[state=open]:outline-none data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:shadow-none`}
                     data-testid="button-more-options"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMenuOpen((prev) => !prev);
+                    }}
                   >
                     <div className={railIconWrap}>
                       <MoreVertical className="h-6 w-6 text-white" />
@@ -2264,6 +2285,7 @@ function VideoCardInner({
             ? "pt-8 pb-3.5 sm:pt-9 sm:pb-4"
             : "py-5 pt-12 sm:py-6 sm:pt-14",
           embeddedFeed && "pb-3",
+          moderatorPreview && "pb-[calc(env(safe-area-inset-bottom,0px)+5.25rem)]",
         )}
       >
         {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets */}
@@ -2649,7 +2671,9 @@ function VideoCardInner({
               "pointer-events-none z-[40] flex w-full justify-center px-0",
               /* Profile snap viewers: tie to card/scrollport. Home: `fixed` + `--video-feed-scrub-bottom` (portal avoids WebKit double-offset). */
               embeddedFeed
-                ? "absolute inset-x-0 bottom-0 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]"
+                ? moderatorPreview
+                  ? "absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+28px)] px-3 pb-0"
+                  : "absolute inset-x-0 bottom-0 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]"
                 : "fixed inset-x-0 bottom-[var(--video-feed-scrub-bottom)] pb-0",
             )}
           >

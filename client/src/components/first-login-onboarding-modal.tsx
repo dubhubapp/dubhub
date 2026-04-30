@@ -126,7 +126,7 @@ export function FirstLoginOnboardingModal({
               </>
             ) : (
               <p className="mt-1 text-xs leading-relaxed text-white/75">
-                Top users each month win tickets, unreleased dubs, merch & more.
+                Top community members each month win tickets, unreleased dubs, merch & more.
               </p>
             )}
           </div>

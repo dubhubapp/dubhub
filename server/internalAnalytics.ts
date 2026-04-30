@@ -138,7 +138,7 @@ export async function getIdSuccessRate(): Promise<IdSuccessRate> {
           COALESCE(p.is_verified_artist, false) = true
           OR COALESCE(p.is_verified_community, false) = true
           OR COALESCE(p.verified_by_moderator, false) = true
-          OR COALESCE(p.verification_status, '') IN ('identified', 'community')
+          OR COALESCE(p.verification_status, '') IN ('identified', 'community', 'community_approved')
       )::int AS verified_posts
     FROM posts p
   `);
@@ -188,7 +188,7 @@ export async function getAverageTimeToIdDays(): Promise<number | null> {
         COALESCE(p.is_verified_artist, false) = true
         OR COALESCE(p.is_verified_community, false) = true
         OR COALESCE(p.verified_by_moderator, false) = true
-        OR COALESCE(p.verification_status, '') IN ('identified', 'community')
+        OR COALESCE(p.verification_status, '') IN ('identified', 'community', 'community_approved')
     )
     SELECT
       ROUND(AVG(EXTRACT(EPOCH FROM (verified_at - post_created_at)) / 86400.0)::numeric, 2) AS avg_days

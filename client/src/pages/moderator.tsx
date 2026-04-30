@@ -9,7 +9,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, FileText, CheckCircle, XCircle, User, MessageSquare, Clock3 } from "lucide-react";
+import {
+  AlertTriangle,
+  FileText,
+  CheckCircle,
+  XCircle,
+  User,
+  MessageSquare,
+  Clock3,
+  Handshake,
+} from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
@@ -20,6 +29,7 @@ import { ModeratorShieldIcon } from "@/components/moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 
 function formatModeratorReportTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
@@ -37,6 +47,8 @@ export default function ModeratorPage() {
   const [selectedPost, setSelectedPost] = useState<PostWithUser | null>(null);
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [postForComments, setPostForComments] = useState<PostWithUser | null>(null);
+  const [isPreviewMuted, setIsPreviewMuted] = useState(true);
+  const [isPostPreviewLoading, setIsPostPreviewLoading] = useState(false);
   const [moderationDialogOpen, setModerationDialogOpen] = useState(false);
   const [selectedReportForModeration, setSelectedReportForModeration] = useState<{
     reportId: string;
@@ -198,6 +210,31 @@ export default function ModeratorPage() {
     },
   });
 
+  const communityApproveMutation = useMutation({
+    mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string }) => {
+      const body =
+        typeof commentId === "string" && commentId.trim().length > 0 ? { commentId } : {};
+      return apiRequest("POST", `/api/moderator/community-approve/${postId}`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      setSelectedPost(null);
+      setSelectedCommentId("");
+      toast({
+        title: "Kept as Community Identified",
+        description: "Partial recognition applied (+5 score, +1 Correct ID)",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to keep post as Community Identified",
+        variant: "destructive",
+      });
+    },
+  });
+
   const dismissReportMutation = useMutation({
     mutationFn: async (reportId: string) => {
       return apiRequest("POST", `/api/moderator/reports/${reportId}/dismiss`);
@@ -245,6 +282,51 @@ export default function ModeratorPage() {
   const unresolvedReportsCount = reportedContent.filter(
     (r: { status?: string }) => r.status === "open" || r.status === "under_review"
   ).length;
+  const normalizePostForPreview = (post: any): PostWithUser | null => {
+    if (!post || !post.id) return null;
+    const normalizedVideoUrl = post.videoUrl || post.video_url || null;
+    const normalizedUser =
+      post.user ??
+      (post.username
+        ? {
+            id: post.userId || post.user_id || "unknown",
+            username: post.username,
+            profileImageUrl: post.profileImageUrl || post.profile_image_url || null,
+            verified_artist: Boolean(post.verified_artist),
+          }
+        : null);
+    if (!normalizedUser) return null;
+    return {
+      ...post,
+      videoUrl: normalizedVideoUrl,
+      user: normalizedUser,
+      likes: typeof post.likes === "number" ? post.likes : 0,
+      hasLiked: Boolean(post.hasLiked),
+      verificationStatus: post.verificationStatus || post.verification_status || "unidentified",
+    } as PostWithUser;
+  };
+  const openPostPreviewModal = (rawPost: any) => {
+    setIsPostPreviewLoading(true);
+    setIsPreviewMuted(true);
+    const normalizedPost = normalizePostForPreview(rawPost);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Moderator] Open preview modal", {
+        postId: rawPost?.id ?? null,
+        hasVideoUrl: Boolean(rawPost?.videoUrl || rawPost?.video_url),
+        modalOpened: Boolean(normalizedPost),
+      });
+    }
+    setPostForComments(normalizedPost);
+    setIsPostPreviewLoading(false);
+  };
+  useEffect(() => {
+    if (!postForComments) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [postForComments]);
 
   return (
     <div className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}>
@@ -306,6 +388,9 @@ export default function ModeratorPage() {
                 ) : (
                   <div className="space-y-4">
                     {pendingVerifications.map((post: any) => (
+                      (() => {
+                        const genreChip = getGenreChipStyle(post.genre);
+                        return (
                       <Card
                         key={post.id}
                         className="border-white/10 bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
@@ -316,13 +401,13 @@ export default function ModeratorPage() {
                             {/* Video thumbnail - clickable */}
                             <div 
                               className="group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-muted sm:h-24 sm:w-24"
-                              onClick={() => setPostForComments(post)}
+                              onClick={() => openPostPreviewModal(post)}
                               data-testid={`thumbnail-${post.id}`}
                             >
-                              {post.videoUrl ? (
+                              {post.videoUrl || post.video_url ? (
                                 <>
                                   <video
-                                    src={post.videoUrl}
+                                    src={post.videoUrl || post.video_url}
                                     className="w-full h-full object-cover"
                                     muted
                                   />
@@ -336,8 +421,11 @@ export default function ModeratorPage() {
                                 </div>
                               )}
                               <div className="absolute right-1 top-1">
-                                <Badge variant="secondary" className="text-xs">
-                                  {post.genre}
+                                <Badge
+                                  className="text-xs"
+                                  style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
+                                >
+                                  {genreChip.label}
                                 </Badge>
                               </div>
                             </div>
@@ -347,7 +435,7 @@ export default function ModeratorPage() {
                               <div>
                                 <p 
                                   className="font-semibold cursor-pointer hover:text-primary transition-colors"
-                                  onClick={() => setPostForComments(post)}
+                                  onClick={() => openPostPreviewModal(post)}
                                   data-testid={`description-${post.id}`}
                                 >
                                   {post.description}
@@ -387,35 +475,59 @@ export default function ModeratorPage() {
                                 </div>
                               )}
 
-                              {/* Action buttons */}
-                              <div className="flex flex-wrap gap-2 pt-2">
-                                <Button
-                                  size="sm"
-                                  className="bg-accent text-accent-foreground hover:bg-accent/90"
-                                  onClick={() => {
-                                    setSelectedPost(post);
-                                    setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
-                                  }}
-                                  data-testid={`button-review-confirm-${post.id}`}
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-1" />
-                                  Review & Confirm
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => reopenVerificationMutation.mutate(post.id)}
-                                  disabled={reopenVerificationMutation.isPending}
-                                  data-testid={`button-reopen-${post.id}`}
-                                >
-                                  <XCircle className="w-4 h-4 mr-1" />
-                                  Reopen for Review
-                                </Button>
+                              <div className="space-y-2 pt-2">
+                                <p className="text-[11px] leading-snug text-muted-foreground">
+                                  Use Keep as Community when the ID looks credible but can&apos;t be fully confirmed.
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="bg-accent text-accent-foreground hover:bg-accent/90"
+                                    onClick={() => {
+                                      setSelectedPost(post);
+                                      setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
+                                    }}
+                                    data-testid={`button-review-confirm-${post.id}`}
+                                  >
+                                    <CheckCircle className="w-4 h-4 mr-1" />
+                                    Review & Confirm
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      communityApproveMutation.mutate({
+                                        postId: post.id,
+                                        commentId: post.verifiedCommentId || post.verified_comment_id,
+                                      });
+                                    }}
+                                    disabled={
+                                      !(post.verifiedCommentId || post.verified_comment_id) ||
+                                      communityApproveMutation.isPending
+                                    }
+                                    data-testid={`button-keep-community-${post.id}`}
+                                  >
+                                    <Handshake className="w-4 h-4 mr-1" />
+                                    Keep as Community
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => reopenVerificationMutation.mutate(post.id)}
+                                    disabled={reopenVerificationMutation.isPending}
+                                    data-testid={`button-reopen-${post.id}`}
+                                  >
+                                    <XCircle className="w-4 h-4 mr-1" />
+                                    Reopen for Review
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           </div>
                         </CardContent>
                       </Card>
+                        );
+                      })()
                     ))}
                   </div>
                 )}
@@ -470,7 +582,7 @@ export default function ModeratorPage() {
                                     console.log("[Moderator] Fetched post for thumbnail click:", fullPost);
                                     // Ensure all required fields are present
                                     if (fullPost && fullPost.id && fullPost.videoUrl && fullPost.user) {
-                                      setPostForComments(fullPost);
+                                      openPostPreviewModal(fullPost);
                                     } else {
                                       console.error("[Moderator] Post data incomplete:", fullPost);
                                       toast({
@@ -488,8 +600,8 @@ export default function ModeratorPage() {
                                       variant: "destructive",
                                     });
                                     // Fallback to report.post if fetch fails
-                                    if (report.post && report.post.videoUrl) {
-                                      setPostForComments(report.post);
+                                    if (report.post && (report.post.videoUrl || report.post.video_url)) {
+                                      openPostPreviewModal(report.post);
                                     }
                                   }
                                 }
@@ -519,7 +631,7 @@ export default function ModeratorPage() {
                               <div>
                                 <div className="flex items-center gap-2 mb-1">
                                   <Badge variant={report.is_user_report ? "secondary" : "destructive"}>
-                                    {report.is_user_report ? "User Report" : "Post Report"}
+                                    {report.is_user_report ? "Community Report" : "Post Report"}
                                   </Badge>
                                 </div>
                                 <p 
@@ -530,13 +642,13 @@ export default function ModeratorPage() {
                                       try {
                                         const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
                                         const fullPost = await response.json();
-                                        setPostForComments(fullPost);
+                                        openPostPreviewModal(fullPost);
                                         // Don't set selectedPost - that's only for verification dialog
                                       } catch (error) {
                                         console.error("Failed to fetch post:", error);
                                         // Fallback to report.post if fetch fails
                                         if (report.post) {
-                                          setPostForComments(report.post);
+                                          openPostPreviewModal(report.post);
                                         }
                                       }
                                     }
@@ -547,9 +659,9 @@ export default function ModeratorPage() {
                                 </p>
                                 {report.is_user_report && report.reportedUser && (
                                   <div className="mt-2 rounded-xl border border-yellow-500/25 bg-yellow-500/10 p-2">
-                                    <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ User Comment Report</p>
+                                    <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ Community Comment Report</p>
                                     <p className="text-sm text-muted-foreground">
-                                      Reported user:{" "}
+                                      Reported member:{" "}
                                       <span className="font-semibold">{formatUsernameDisplay(report.reportedUser.username)}</span>
                                     </p>
                                     {report.reported_comment_body && (
@@ -789,6 +901,26 @@ export default function ModeratorPage() {
                   Cancel
                 </Button>
                 <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (selectedCommentId && selectedPost) {
+                      communityApproveMutation.mutate({
+                        postId: selectedPost.id,
+                        commentId: selectedCommentId,
+                      });
+                    }
+                  }}
+                  disabled={
+                    !selectedCommentId ||
+                    communityApproveMutation.isPending ||
+                    confirmVerificationMutation.isPending
+                  }
+                  data-testid="button-keep-community-selection"
+                >
+                  <Handshake className="w-4 h-4 mr-2" />
+                  {communityApproveMutation.isPending ? "Saving..." : "Keep as Community"}
+                </Button>
+                <Button
                   onClick={() => {
                     if (selectedCommentId && selectedPost) {
                       confirmVerificationMutation.mutate({
@@ -809,25 +941,53 @@ export default function ModeratorPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Full Post View Modal */}
-      <Dialog open={!!postForComments} onOpenChange={(open) => {
-        if (!open) {
-          setPostForComments(null);
-        }
-      }}>
-        <DialogContent className="max-w-md max-h-[90vh] p-0 m-0 border-0 rounded-lg bg-black overflow-y-auto">
-          <DialogTitle className="sr-only">Post View</DialogTitle>
-          {postForComments && postForComments.videoUrl && postForComments.user ? (
-            <div className="w-full relative">
-              <VideoCard post={postForComments} />
-            </div>
-          ) : (
-            <div className="p-4 text-white">
-              <p>Loading post...</p>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Full-screen pending post preview overlay */}
+      {postForComments && (
+        <div
+          className="fixed inset-0 z-[100] h-[100dvh] w-screen bg-black"
+          data-testid="moderator-fullscreen-preview"
+        >
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setPostForComments(null);
+              setIsPreviewMuted(true);
+              setIsPostPreviewLoading(false);
+            }}
+            className="absolute right-3 top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] z-[110] border-white/20 bg-black/60 text-white hover:bg-black/80"
+            data-testid="button-close-moderator-preview"
+          >
+            <XCircle className="mr-1 h-4 w-4" />
+            Close
+          </Button>
+          <div className="relative h-full min-h-0 w-full">
+            {isPostPreviewLoading ? (
+              <div className="flex h-full w-full items-center justify-center bg-black/80">
+                <VinylLoader label="Loading video..." />
+              </div>
+            ) : postForComments.videoUrl && postForComments.user ? (
+              <div className="relative h-full min-h-0 w-full">
+                <VideoCard
+                  post={postForComments}
+                  embeddedFeed
+                  moderatorPreview
+                  isActive
+                  isMuted={isPreviewMuted}
+                  onToggleMute={() => setIsPreviewMuted((prev) => !prev)}
+                />
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-black px-6 text-center text-white">
+                <FileText className="h-7 w-7 text-muted-foreground" />
+                <p className="text-sm font-medium">Video unavailable</p>
+                <p className="text-xs text-muted-foreground">This post is missing a playable video source.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

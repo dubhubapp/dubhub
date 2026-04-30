@@ -45,7 +45,11 @@ export default function ArtistProfile() {
       if (filterMode === "pending") {
         return posts.filter(p => p.verificationStatus === "unverified");
       } else if (filterMode === "confirmed") {
-        return posts.filter(p => p.verificationStatus === "identified" || p.verificationStatus === "community");
+        return posts.filter(p =>
+          p.verificationStatus === "identified" ||
+          p.verificationStatus === "community" ||
+          p.verificationStatus === "community_approved",
+        );
       }
       return posts;
     },
@@ -295,7 +299,9 @@ export default function ArtistProfile() {
                   className={`bg-surface rounded-xl p-4 border ${
                     track.verificationStatus === "unverified" 
                       ? "border-yellow-500/20" 
-                      : track.verificationStatus === "identified" || track.verificationStatus === "community"
+                      : track.verificationStatus === "identified" ||
+                          track.verificationStatus === "community" ||
+                          track.verificationStatus === "community_approved"
                       ? "border-green-500/20"
                       : "border-red-500/20"
                   }`}
@@ -303,7 +309,7 @@ export default function ArtistProfile() {
                   <div className="flex items-start space-x-3">
                     <img 
                       src={track.user.avatar_url || undefined}
-                      alt="User Profile" 
+                      alt="Profile" 
                       className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(track.user.avatar_url) ? "avatar-default-media" : ""}`}
                     />
                     <div className="flex-1 min-w-0">
@@ -348,7 +354,9 @@ export default function ArtistProfile() {
                         </div>
                       )}
 
-                      {(track.verificationStatus === "identified" || track.verificationStatus === "community") && (
+                      {(track.verificationStatus === "identified" ||
+                        track.verificationStatus === "community" ||
+                        track.verificationStatus === "community_approved") && (
                         <div className="text-xs text-green-400">
                           ✓ Post has been identified
                         </div>

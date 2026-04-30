@@ -2,15 +2,17 @@
  * Community trust — canonical writes for `user_karma` + `user_karma_events`.
  *
  * **Aggregate table `user_karma` (read as public “reputation” in APIs):**
- * - `score` — Broad trust / helpfulness. Increases on: valid confirmed IDs on *someone else’s* post
- *   (+10 per idempotent event) and on *other users liking your comments* (+1 per active like event).
- *   Does **not** include moderator action bonuses, post likes on tracks, or self-credit.
- * - `correct_ids` — Count of **successful confirmed IDs** on **other users’ posts** only (increments
- *   only on idempotent `confirmed_id` events, never from comment likes).
+ * - `score` — Broad trust / helpfulness. Increases on: valid IDs on *someone else’s* post
+ *   (+10 full moderator/artist confirmation, +5 moderator “keep as community”; idempotent events)
+ *   and on *other users liking your comments* (+1 per active like event).
+ *   Does **not** include moderator action bonuses unrelated to karma, post likes on tracks, or self-credit.
+ * - `correct_ids` — Count of **correct/helpful IDs** on **other users’ posts** (increments on
+ *   idempotent `confirmed_id` and `community_approved` events, never from comment likes).
  *
  * **Event log `user_karma_events`:**
  * - Required for idempotency and abuse resistance. Inserts happen *before* aggregate bumps.
- * - `confirmed_id` — One active row per (recipient, post, comment); unique index enforces no double-pay.
+ * - `confirmed_id` — Full confirmation; unique active row per (recipient, post, comment).
+ * - `community_approved` — Moderator “keep as community”; +5/+1; unique partial index prevents double-pay.
  * - `comment_like` — `score_delta` only (`correct_ids_delta` = 0); revoked on unlike.
  *
  * **All writes** to `user_karma` for trust reasons must go through this module. Do not add inline
@@ -19,6 +21,9 @@
 import { pool } from "./db";
 
 export type ConfirmedIdRewardSource = "moderator_confirmed" | "artist_confirmed";
+
+/** Moderator “Keep as Community” award only; separate from full `confirmed_id`. */
+export type ModeratorCommunityApprovedSource = "moderator_community_approved";
 
 /** Snapshot of `user_karma` for a profile (no row => zeros). */
 export type UserKarmaAggregate = {
@@ -63,6 +68,9 @@ export type AwardConfirmedIdKarmaResult = {
 
 const SCORE_DELTA = 10;
 const CORRECT_IDS_DELTA = 1;
+
+const COMMUNITY_APPROVED_SCORE_DELTA = 5;
+const COMMUNITY_APPROVED_CORRECT_IDS_DELTA = 1;
 
 function isUniqueViolation(err: unknown): boolean {
   const e = err as any;
@@ -214,6 +222,156 @@ export async function awardConfirmedIdKarma(params: {
     return { awarded: true };
   } catch (err) {
     // If anything fails mid-transaction, rollback to avoid partial writes.
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback errors
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export type AwardModeratorCommunityApprovedResult = {
+  awarded: boolean;
+  reason?:
+    | "invalid_comment_post_linkage"
+    | "post_not_community_approved"
+    | "self_credit_commenter_is_post_owner"
+    | "already_awarded";
+};
+
+/**
+ * Moderator chose “Keep as Community”: partial trust (+5 score, +1 correct_ids), idempotent.
+ *
+ * Requires final post state: `verification_status = 'community_approved'` and matching `verified_comment_id`.
+ * No self-credit (comment author must not be post owner).
+ */
+export async function awardModeratorCommunityApprovedKarma(params: {
+  source: ModeratorCommunityApprovedSource;
+  actorUserId: string;
+  postId: string;
+  commentId: string;
+}): Promise<AwardModeratorCommunityApprovedResult> {
+  const { actorUserId, postId, commentId } = params;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const validation = await client.query<{
+      post_user_id: string;
+      verification_status: string;
+      verified_comment_id: string | null;
+      comment_user_id: string;
+    }>(
+      `
+      SELECT
+        p.user_id AS post_user_id,
+        p.verification_status AS verification_status,
+        p.verified_comment_id AS verified_comment_id,
+        c.user_id AS comment_user_id
+      FROM posts p
+      INNER JOIN comments c
+        ON c.id = $1
+       AND c.post_id = p.id
+      WHERE p.id = $2
+      LIMIT 1
+      `,
+      [commentId, postId],
+    );
+
+    const row = validation.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      return { awarded: false, reason: "invalid_comment_post_linkage" };
+    }
+
+    const isCommunityApprovedFinal =
+      row.verification_status === "community_approved" && String(row.verified_comment_id) === String(commentId);
+    if (!isCommunityApprovedFinal) {
+      await client.query("ROLLBACK");
+      return { awarded: false, reason: "post_not_community_approved" };
+    }
+
+    if (row.comment_user_id === row.post_user_id) {
+      await client.query("ROLLBACK");
+      return { awarded: false, reason: "self_credit_commenter_is_post_owner" };
+    }
+
+    const existingEvent = await client.query<{ id: string }>(
+      `
+      SELECT id
+      FROM user_karma_events
+      WHERE user_id = $1
+        AND event_type = 'community_approved'
+        AND post_id = $2
+        AND comment_id = $3
+        AND revoked_at IS NULL
+      LIMIT 1
+      `,
+      [row.comment_user_id, postId, commentId],
+    );
+
+    if (existingEvent.rows.length > 0) {
+      await client.query("ROLLBACK");
+      return { awarded: false, reason: "already_awarded" };
+    }
+
+    try {
+      await client.query(
+        `
+        INSERT INTO user_karma_events (
+          user_id,
+          source_user_id,
+          post_id,
+          comment_id,
+          event_type,
+          score_delta,
+          correct_ids_delta,
+          revoked_at,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, 'community_approved', $5, $6, NULL, NOW())
+        `,
+        [
+          row.comment_user_id,
+          actorUserId,
+          postId,
+          commentId,
+          COMMUNITY_APPROVED_SCORE_DELTA,
+          COMMUNITY_APPROVED_CORRECT_IDS_DELTA,
+        ],
+      );
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        await client.query("ROLLBACK");
+        return { awarded: false, reason: "already_awarded" };
+      }
+      throw err;
+    }
+
+    await client.query(
+      `
+      INSERT INTO user_karma (user_id, score, correct_ids, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (user_id) DO UPDATE
+      SET
+        score = user_karma.score + EXCLUDED.score,
+        correct_ids = user_karma.correct_ids + EXCLUDED.correct_ids,
+        updated_at = NOW()
+      `,
+      [
+        row.comment_user_id,
+        COMMUNITY_APPROVED_SCORE_DELTA,
+        COMMUNITY_APPROVED_CORRECT_IDS_DELTA,
+      ],
+    );
+
+    await client.query("COMMIT");
+    return { awarded: true };
+  } catch (err) {
     try {
       await client.query("ROLLBACK");
     } catch {

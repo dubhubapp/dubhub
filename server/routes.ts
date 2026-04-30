@@ -29,6 +29,7 @@ import {
 import {
   awardConfirmedIdKarma,
   awardCommentLikeKarma,
+  awardModeratorCommunityApprovedKarma,
   getUserKarmaAggregate,
   revokeCommentLikeKarma,
 } from "./karmaService";
@@ -2119,6 +2120,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
+      if (!req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
       const moderatorId = req.dbUser.id;
       const { commentId } = req.body; // Moderator can select a different comment
       
@@ -2187,12 +2191,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Moderator: Keep identification as Community (reviewed but not fully confirmed)
+  app.post("/api/moderator/community-approve/:postId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const postId = req.params.postId;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      if (!req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+      const { commentId } = req.body ?? {};
+
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      if (post.verificationStatus !== "community") {
+        return res.status(400).json({
+          message: "Post is not pending community moderator review",
+        });
+      }
+
+      const selectedCommentId =
+        commentId || post.verifiedCommentId || (post as any).verified_comment_id;
+      if (!selectedCommentId) {
+        return res.status(400).json({ message: "No comment selected for verification" });
+      }
+
+      const commentResult = await db.execute(sql`
+        SELECT id, post_id, user_id
+        FROM comments
+        WHERE id = ${selectedCommentId}
+          AND post_id = ${postId}
+        LIMIT 1
+      `);
+      const commentRows = (commentResult as any).rows || [];
+      if (commentRows.length === 0) {
+        return res.status(403).json({ message: "Selected comment does not belong to this post" });
+      }
+      const comment = commentRows[0];
+
+      await db.execute(sql`
+        UPDATE posts
+        SET verification_status = 'community_approved',
+            is_verified_community = true,
+            verified_by_moderator = false,
+            verified_comment_id = ${selectedCommentId},
+            verified_by = ${comment.user_id}
+        WHERE id = ${postId}
+      `);
+
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
+        VALUES (${postId}, ${moderatorId}, 'community_approved', NOW())
+      `);
+
+      try {
+        await awardModeratorCommunityApprovedKarma({
+          source: "moderator_community_approved",
+          actorUserId: moderatorId,
+          postId,
+          commentId: selectedCommentId,
+        });
+      } catch (karmaErr) {
+        console.error("[karma] Failed to award community-approved karma:", karmaErr);
+      }
+
+      res.json({ message: "Post kept as Community Identified" });
+    } catch (error) {
+      console.error("[/api/moderator/community-approve/:postId] Error:", error);
+      console.error("[/api/moderator/community-approve/:postId] postId:", req.params.postId);
+      res.status(500).json({ message: "Failed to keep post as community" });
+    }
+  });
+
   // Moderator: Reopen verification
   app.post("/api/moderator/reopen-verification/:postId", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const postId = req.params.postId;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
+      }
+      if (!req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
       }
       const moderatorId = req.dbUser.id;
       

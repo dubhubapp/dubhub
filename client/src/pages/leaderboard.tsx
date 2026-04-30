@@ -255,7 +255,7 @@ export default function Leaderboard() {
         <div className="relative">
           <img 
             src={profileImageUrl} 
-            alt={formatUsernameDisplay(entry.username) || entry.username || "User"}
+            alt={formatUsernameDisplay(entry.username) || entry.username || "Community member"}
             className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(profileImageUrl) ? "avatar-default-media" : ""}`}
             onError={(e) => {
               // Fallback to initials if image fails to load
@@ -322,12 +322,12 @@ export default function Leaderboard() {
           </div>
         </div>
 
-        {/* Confirmed IDs */}
+        {/* Correct IDs */}
         <div className="text-right min-w-[68px]">
           <div className="font-mono text-lg font-bold leading-none" data-testid={`confirmed-ids-${entry.user_id}`}>
             {entry.correct_ids}
           </div>
-          <div className="text-[10px] mt-1 text-muted-foreground uppercase tracking-wide">Confirmed IDs</div>
+          <div className="text-[10px] mt-1 text-muted-foreground uppercase tracking-wide">Correct IDs</div>
         </div>
       </div>
     );
@@ -348,7 +348,7 @@ export default function Leaderboard() {
               {getCurrentMonth()} Reward - {reward}
             </h3>
             <p className="text-xs text-muted-foreground">
-              Top ranked {tab === "users" ? "user" : "artist"} this month
+              Top ranked {tab === "users" ? "community member" : "artist"} this month
             </p>
           </div>
         </div>
@@ -427,7 +427,7 @@ export default function Leaderboard() {
                 data-testid="tab-users"
                 className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
-                Users
+                Community
               </TabsTrigger>
               <TabsTrigger
                 value="artists"
@@ -479,7 +479,7 @@ export default function Leaderboard() {
                     <RewardsBanner tab="users" suppressEffects={isFlipAnimating} />
                     <LeaderboardList
                       entries={userTopEntries}
-                      emptyLabel="No users found for this period"
+                      emptyLabel="No community members found for this period"
                       isLoading={isLoadingUsers}
                       outsideTop={userOutsideTop}
                       suppressEffects={isFlipAnimating}

@@ -39,7 +39,7 @@ export const posts = pgTable("posts", {
   djName: text("dj_name"),
   playedDate: date("played_date"),
   location: text("location"),
-  verificationStatus: text("verification_status").default("unverified"), // "unverified" | "community" | "identified"
+  verificationStatus: text("verification_status").default("unverified"), // "unverified" | "community" | "community_approved" | "identified" | …
   isVerifiedCommunity: boolean("is_verified_community").default(false),
   isVerifiedArtist: boolean("is_verified_artist").default(false),
   verifiedByModerator: boolean("verified_by_moderator").default(false),
@@ -147,7 +147,7 @@ export const reports = pgTable("reports", {
 // Moderator actions - fixed to reference posts.id
 export const moderatorActions = pgTable("moderator_actions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  action: text("action"), // "confirmed_id" | "reopen_verification"
+  action: text("action"), // e.g. "confirmed" | "rejected" | "community_approved" | moderation actions
   postId: varchar("post_id").references(() => posts.id),
   moderatorId: varchar("moderator_id").references(() => profiles.id),
   reason: text("reason"),

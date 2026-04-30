@@ -146,17 +146,17 @@ export function ModerationActionsDialog({
         });
       } else if (act === "warn") {
         toast({
-          title: "User Warned",
+          title: "Community Member Warned",
           description: `${formatUsernameDisplay(reportedUsername)} has been warned, content removed, and notified.`,
         });
       } else if (act === "suspend" && days != null) {
         toast({
-          title: "User Suspended",
+          title: "Community Member Suspended",
           description: `${formatUsernameDisplay(reportedUsername)} has been suspended for ${days} days, content removed, and notified.`,
         });
       } else {
         toast({
-          title: "User Banned",
+          title: "Community Member Banned",
           description: `${formatUsernameDisplay(reportedUsername)} has been permanently banned, content removed, and notified.`,
           variant: "destructive",
         });
@@ -479,7 +479,7 @@ export function ModerationActionsDialog({
               or ban the account.
             </p>
             <Button variant="outline" className="w-full" onClick={handleWarn} disabled={pending || !reasonCategory}>
-              {pending && pendingAct === "warn" ? "Warning..." : "Warn User"}
+              {pending && pendingAct === "warn" ? "Warning..." : "Warn Community Member"}
             </Button>
           </div>
 
@@ -565,7 +565,7 @@ export function ModerationActionsDialog({
               onClick={handleBan}
               disabled={pending || !reasonCategory}
             >
-              {pending && pendingAct === "ban" ? "Banning..." : "Permanently Ban User"}
+              {pending && pendingAct === "ban" ? "Banning..." : "Permanently Ban Community Member"}
             </Button>
           </div>
 

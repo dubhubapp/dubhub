@@ -900,14 +900,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     </div>
                   )}
                   {/* Community identified badge: keep community source icon, match post-level identified styling */}
-                  {post.verificationStatus === "community" && post.verifiedCommentId === comment.id && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                  {(post.verificationStatus === "community" || post.verificationStatus === "community_approved") &&
+                    post.verifiedCommentId === comment.id &&
+                    !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <span
                       className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
                       style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
                       data-testid={`badge-community-identified-${comment.id}`}
                     >
                       <Users className="h-3 w-3 shrink-0" />
-                      Identified
+                      {post.verificationStatus === "community_approved"
+                        ? "Community Identified"
+                        : "Identified"}
                     </span>
                   )}
                   {/* Moderator identified badge: match post-level identified treatment */}

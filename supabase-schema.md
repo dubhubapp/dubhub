@@ -89,7 +89,7 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 | id | uuid | NO | gen_random_uuid() | Primary key |
 | post_id | uuid | YES | – | FK → posts.id |
 | moderator_id | uuid | YES | – | FK → profiles.id |
-| action | text | YES | – | confirmed / rejected |
+| action | text | YES | – | confirmed / rejected / community_approved |
 | reason | text | YES | – | Optional reason |
 | created_at | timestamptz | YES | now() | Created |
 
@@ -142,7 +142,7 @@ NOT `user_id` or `from_user_id`.
 | verified_by_moderator | boolean     | YES      | false             | Moderator verified                      |
 | verified_by           | uuid        | YES      | –                 | Verifier (currently used by moderators) |
 | verified_comment_id   | uuid        | YES      | –                 | Comment used for verification           |
-| verification_status   | text        | YES      | 'unverified'      | unverified / pending / verified         |
+| verification_status   | text        | YES      | 'unverified'      | Documented states: see `COMMENT ON COLUMN posts.verification_status` (unverified, community = pending mod review, community_approved = mod kept community, identified, under_review). |
 | denied_by_artist      | boolean     | YES      | false             | Denial flag                             |
 | denied_at             | timestamptz | YES      | –                 | Denial timestamp                        |
 | artist_verified_by    | uuid        | YES      | –                 | Artist who verified (FK → profiles.id)  |
@@ -256,15 +256,15 @@ Notes:
 |------------|-------------|----------|---------|-------|
 | user_id    | uuid        | NO       | –       | Primary key, FK → auth.users.id (matches profiles.id) |
 | score      | integer     | YES      | 0       | Reputation / trust score |
-| correct_ids| integer     | YES      | 0       | Confirmed IDs on other users’ posts only |
+| correct_ids| integer     | YES      | 0       | **Correct IDs** on others’ posts (full moderator/artist confirmations + moderator “keep as community”; see karma events). |
 | updated_at | timestamptz | NO       | now()   | Last updated |
 
 Notes:
 - `score` is the broader trust metric.
-- `correct_ids` is the hard trust metric for successful IDs.
+- `correct_ids` is the hard trust metric for correct/helpful IDs (includes full confirms and moderator community-approval karma).
 - Self-credit must not increase `score` or `correct_ids`.
 - `score` may increase from confirmed IDs and comment likes.
-- `correct_ids` should only increase for valid confirmed IDs on another account’s post.
+- `correct_ids` should only increase via valid karma events on another account’s post (`confirmed_id` and `community_approved`).
 - **Application code:** all trust writes to `user_karma` / `user_karma_events` go through `server/karmaService.ts` (see file header for rules). Reads may use `getUserKarmaAggregate` or joined selects in routes/storage.
 
 ---
@@ -277,7 +277,7 @@ Notes:
 | source_user_id   | uuid        | YES      | –                 | Actor who caused the event (e.g. liker, confirmer), FK → auth.users.id |
 | post_id          | uuid        | YES      | –                 | Related post, FK → posts.id |
 | comment_id       | uuid        | YES      | –                 | Related comment, FK → comments.id |
-| event_type       | text        | NO       | –                 | `confirmed_id` / `comment_like` |
+| event_type       | text        | NO       | –                 | `confirmed_id` / `community_approved` / `comment_like` |
 | score_delta      | integer     | NO       | 0                 | Score change applied by this event |
 | correct_ids_delta| integer     | NO       | 0                 | Correct ID change applied by this event |
 | revoked_at       | timestamptz | YES      | –                 | Set when an event is reversed/deactivated |
@@ -285,7 +285,7 @@ Notes:
 
 Notes:
 - This table exists to make karma updates idempotent, auditable, and reversible where needed.
-- `confirmed_id` events should only be created for valid, non-self-credit correct IDs.
+- `confirmed_id` and `community_approved` events award `correct_ids` only for valid outcomes; no self-credit.
 - `comment_like` events should add score when active and be revoked/removed when the like is removed.
 - Active unique constraints prevent duplicate rewards for the same underlying action.
 
