@@ -2217,23 +2217,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const pinnedRaw = post.verifiedCommentId ?? (post as any).verified_comment_id;
       const pinned = pinnedRaw != null ? String(pinnedRaw).trim() : null;
-      const verificationStatus = post.verificationStatus ?? (post as any).verification_status ?? "";
+      const verificationRaw = post.verificationStatus ?? (post as any).verification_status ?? "";
+      const verificationNorm =
+        verificationRaw != null ? String(verificationRaw).trim().toLowerCase() : "";
       const selectedTrim = String(selectedCommentId).trim();
 
-      const eligiblePending = verificationStatus === "community";
+      const eligiblePending = verificationNorm === "community";
       const eligibleRepair =
-        verificationStatus === "community_approved" && pinned != null && pinned === selectedTrim;
+        verificationNorm === "community_approved" && pinned != null && pinned === selectedTrim;
 
       if (!eligiblePending && !eligibleRepair) {
         return res.status(400).json({
           message: "Post is not pending community moderator review",
+          reason: "post_not_pending_or_repairable",
+          verification_status: verificationNorm || null,
         });
       }
 
       console.info("[moderator/community-approve] enter", {
         postId,
         moderatorId,
-        verificationStatus,
+        verificationStatus: verificationNorm,
         eligiblePending,
         eligibleRepair,
         selectedCommentId: selectedTrim,
@@ -2295,9 +2299,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "Post kept as Community Identified" });
     } catch (error) {
+      const errAny = error as { message?: unknown; code?: unknown; constraint?: unknown; detail?: unknown };
       console.error("[/api/moderator/community-approve/:postId] Error:", error);
-      console.error("[/api/moderator/community-approve/:postId] postId:", req.params.postId);
-      res.status(500).json({ message: "Failed to keep post as community" });
+      console.error("[/api/moderator/community-approve/:postId] postId:", req.params.postId, {
+        code: errAny?.code,
+        constraint: errAny?.constraint,
+        detail: errAny?.detail,
+      });
+      res.status(500).json({ message: "Failed to keep post as community", reason: "db_transaction_error" });
     }
   });
 

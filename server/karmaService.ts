@@ -246,7 +246,7 @@ export type AwardModeratorCommunityApprovedResult = {
  * Moderator chose “Keep as Community”: transitions `posts` from `community` → `community_approved` when needed,
  * then inserts idempotent `user_karma_events` (`community_approved`, +5/+1) + bumps `user_karma`.
  *
- * **Runs in one Postgres transaction** with `FOR UPDATE` on `posts`:
+ * **Runs in one Postgres transaction**: `FOR UPDATE` locks the `posts` row, then verifies the comment on that post (same ID style as `awardConfirmedIdKarma`, no `$n::uuid` on varchar PKs).
  * Previously the route UPDATED posts via Drizzle and then awarded karma via a separate `pool` read; that SELECT
  * could still see `verification_status='community'` (pooler/read timing), so validation failed with
  * `post_not_community_approved`, returned `{ awarded: false }` **without throwing** — karma never inserted while
@@ -271,34 +271,51 @@ export async function awardModeratorCommunityApprovedKarma(params: {
   try {
     await client.query("BEGIN");
 
-    const validation = await client.query<{
+    // Match `awardConfirmedIdKarma`: IDs are varchar PKs — avoid `$n::uuid` (can hard-fail on valid varchar IDs).
+    // Lock the post row first, then validate the comment (no JOIN + FOR UPDATE + LIMIT ordering quirks).
+    const postLock = await client.query<{
       post_user_id: string;
       verification_status: string | null;
       verified_comment_id: string | null;
-      comment_user_id: string;
     }>(
       `
       SELECT
-        p.user_id AS post_user_id,
-        p.verification_status AS verification_status,
-        p.verified_comment_id AS verified_comment_id,
-        c.user_id AS comment_user_id
-      FROM posts p
-      INNER JOIN comments c
-        ON c.id = $1::uuid
-       AND c.post_id = p.id
-       AND p.id = $2::uuid
-      FOR UPDATE OF p
-      LIMIT 1
+        user_id AS post_user_id,
+        verification_status,
+        verified_comment_id
+      FROM posts
+      WHERE id = $1
+      FOR UPDATE
       `,
-      [cid, pid],
+      [pid],
     );
 
-    const row = validation.rows[0];
-    if (!row) {
+    const postRow = postLock.rows[0];
+    if (!postRow) {
       await client.query("ROLLBACK");
       return { awarded: false, reason: "invalid_comment_post_linkage" };
     }
+
+    const commentRes = await client.query<{ comment_user_id: string }>(
+      `
+      SELECT user_id AS comment_user_id
+      FROM comments
+      WHERE id = $2
+        AND post_id = $1
+      LIMIT 1
+      `,
+      [pid, cid],
+    );
+    const commentRow = commentRes.rows[0];
+    if (!commentRow) {
+      await client.query("ROLLBACK");
+      return { awarded: false, reason: "invalid_comment_post_linkage" };
+    }
+
+    const row = {
+      ...postRow,
+      comment_user_id: commentRow.comment_user_id,
+    };
 
     if (String(row.comment_user_id) === String(row.post_user_id)) {
       await client.query("ROLLBACK");
@@ -324,10 +341,10 @@ export async function awardModeratorCommunityApprovedKarma(params: {
       `
       SELECT id
       FROM user_karma_events
-      WHERE user_id = $1::uuid
+      WHERE user_id = $1
         AND event_type = 'community_approved'
-        AND post_id = $2::uuid
-        AND comment_id = $3::uuid
+        AND post_id = $2
+        AND comment_id = $3
         AND revoked_at IS NULL
       LIMIT 1
       `,
@@ -346,9 +363,9 @@ export async function awardModeratorCommunityApprovedKarma(params: {
         SET verification_status = 'community_approved',
             is_verified_community = true,
             verified_by_moderator = false,
-            verified_comment_id = $1::uuid,
-            verified_by = $2::uuid
-        WHERE id = $3::uuid
+            verified_comment_id = $1,
+            verified_by = $2
+        WHERE id = $3
         `,
         [cid, row.comment_user_id, pid],
       );
@@ -368,7 +385,7 @@ export async function awardModeratorCommunityApprovedKarma(params: {
           revoked_at,
           created_at
         )
-        VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 'community_approved', $5, $6, NULL, NOW())
+        VALUES ($1, $2, $3, $4, 'community_approved', $5, $6, NULL, NOW())
         `,
         [
           row.comment_user_id,
@@ -390,7 +407,7 @@ export async function awardModeratorCommunityApprovedKarma(params: {
     await client.query(
       `
       INSERT INTO user_karma (user_id, score, correct_ids, updated_at)
-      VALUES ($1::uuid, $2, $3, NOW())
+      VALUES ($1, $2, $3, NOW())
       ON CONFLICT (user_id) DO UPDATE
       SET
         score = user_karma.score + EXCLUDED.score,

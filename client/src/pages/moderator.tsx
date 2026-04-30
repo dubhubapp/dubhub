@@ -21,6 +21,7 @@ import {
   Handshake,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { serializeQueryError } from "@/lib/apiDiagnostics";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
@@ -215,6 +216,14 @@ export default function ModeratorPage() {
     mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string }) => {
       const body =
         typeof commentId === "string" && commentId.trim().length > 0 ? { commentId } : {};
+      if (import.meta.env.DEV) {
+        const path = `/api/moderator/community-approve/${postId}`;
+        console.log("[moderator/community-approve] request", {
+          endpoint: path,
+          postId,
+          bodyCommentId: "commentId" in body ? (body as { commentId: string }).commentId : "(server uses pinned verified_comment)",
+        });
+      }
       return apiRequest("POST", `/api/moderator/community-approve/${postId}`, body);
     },
     onSuccess: () => {
@@ -227,7 +236,13 @@ export default function ModeratorPage() {
         description: "This post has been reviewed and kept as Community Identified.",
       });
     },
-    onError: () => {
+    onError: (error) => {
+      if (import.meta.env.DEV) {
+        console.error(
+          "[moderator/community-approve] failed — backend body / diagnostics:",
+          serializeQueryError(error),
+        );
+      }
       toast({
         title: "Error",
         description: "Failed to keep post as Community Identified",
