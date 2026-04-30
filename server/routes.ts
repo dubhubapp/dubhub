@@ -2209,22 +2209,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Post not found" });
       }
 
-      if (post.verificationStatus !== "community") {
-        return res.status(400).json({
-          message: "Post is not pending community moderator review",
-        });
-      }
-
       const selectedCommentId =
         commentId || post.verifiedCommentId || (post as any).verified_comment_id;
       if (!selectedCommentId) {
         return res.status(400).json({ message: "No comment selected for verification" });
       }
 
+      const pinnedRaw = post.verifiedCommentId ?? (post as any).verified_comment_id;
+      const pinned = pinnedRaw != null ? String(pinnedRaw).trim() : null;
+      const verificationStatus = post.verificationStatus ?? (post as any).verification_status ?? "";
+      const selectedTrim = String(selectedCommentId).trim();
+
+      const eligiblePending = verificationStatus === "community";
+      const eligibleRepair =
+        verificationStatus === "community_approved" && pinned != null && pinned === selectedTrim;
+
+      if (!eligiblePending && !eligibleRepair) {
+        return res.status(400).json({
+          message: "Post is not pending community moderator review",
+        });
+      }
+
+      console.info("[moderator/community-approve] enter", {
+        postId,
+        moderatorId,
+        verificationStatus,
+        eligiblePending,
+        eligibleRepair,
+        selectedCommentId: selectedTrim,
+      });
+
       const commentResult = await db.execute(sql`
         SELECT id, post_id, user_id
         FROM comments
-        WHERE id = ${selectedCommentId}
+        WHERE id = ${selectedTrim}
           AND post_id = ${postId}
         LIMIT 1
       `);
@@ -2234,31 +2252,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const comment = commentRows[0];
 
-      await db.execute(sql`
-        UPDATE posts
-        SET verification_status = 'community_approved',
-            is_verified_community = true,
-            verified_by_moderator = false,
-            verified_comment_id = ${selectedCommentId},
-            verified_by = ${comment.user_id}
-        WHERE id = ${postId}
-      `);
+      console.info("[moderator/community-approve] validated comment", {
+        commentId: comment.id,
+        commentUserId: comment.user_id,
+      });
+
+      const karmaResult = await awardModeratorCommunityApprovedKarma({
+        source: "moderator_community_approved",
+        actorUserId: moderatorId,
+        postId,
+        commentId: selectedTrim,
+      });
+
+      console.info("[moderator/community-approve] karma result", karmaResult);
+
+      if (!karmaResult.awarded) {
+        if (karmaResult.reason === "already_awarded") {
+          return res.json({ message: "Post kept as Community Identified", idempotent: true });
+        }
+        if (karmaResult.reason === "self_credit_commenter_is_post_owner") {
+          return res.status(400).json({
+            message: "Cannot award karma for IDs on own post",
+            reason: karmaResult.reason,
+          });
+        }
+        if (karmaResult.reason === "invalid_comment_post_linkage") {
+          return res.status(400).json({
+            message: "Selected comment does not belong to this post",
+            reason: karmaResult.reason,
+          });
+        }
+        return res.status(409).json({
+          message: "Could not approve community verification for this post in its current state",
+          reason: karmaResult.reason,
+        });
+      }
 
       await db.execute(sql`
         INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
         VALUES (${postId}, ${moderatorId}, 'community_approved', NOW())
       `);
-
-      try {
-        await awardModeratorCommunityApprovedKarma({
-          source: "moderator_community_approved",
-          actorUserId: moderatorId,
-          postId,
-          commentId: selectedCommentId,
-        });
-      } catch (karmaErr) {
-        console.error("[karma] Failed to award community-approved karma:", karmaErr);
-      }
 
       res.json({ message: "Post kept as Community Identified" });
     } catch (error) {

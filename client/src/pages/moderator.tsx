@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import {
   AlertTriangle,
   FileText,
+  Check,
   CheckCircle,
   XCircle,
   User,
@@ -176,8 +177,8 @@ export default function ModeratorPage() {
       setSelectedPost(null);
       setSelectedCommentId("");
       toast({
-        title: "Post Identified",
-        description: "Post has been confirmed as identified",
+        title: "ID confirmed",
+        description: "This post is now marked as Identified.",
       });
     },
     onError: () => {
@@ -197,8 +198,8 @@ export default function ModeratorPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({
-        title: "Post Reopened",
-        description: "Post has been reopened for review",
+        title: "ID rejected",
+        description: "This post has been reopened as Unidentified.",
       });
     },
     onError: () => {
@@ -223,7 +224,7 @@ export default function ModeratorPage() {
       setSelectedCommentId("");
       toast({
         title: "Kept as Community Identified",
-        description: "Partial recognition applied (+5 score, +1 Correct ID)",
+        description: "This post has been reviewed and kept as Community Identified.",
       });
     },
     onError: () => {
@@ -477,20 +478,21 @@ export default function ModeratorPage() {
 
                               <div className="space-y-2 pt-2">
                                 <p className="text-[11px] leading-snug text-muted-foreground">
-                                  Use Keep as Community when the ID looks credible but can&apos;t be fully confirmed.
+                                  Use Keep as Community Identified when the ID looks credible but can&apos;t be fully
+                                  confirmed.
                                 </p>
                                 <div className="flex flex-wrap gap-2">
                                   <Button
                                     size="sm"
-                                    className="bg-accent text-accent-foreground hover:bg-accent/90"
+                                    className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                                     onClick={() => {
                                       setSelectedPost(post);
                                       setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
                                     }}
                                     data-testid={`button-review-confirm-${post.id}`}
                                   >
-                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                    Review & Confirm
+                                    <Check className="w-4 h-4 mr-1" />
+                                    Confirm ID
                                   </Button>
                                   <Button
                                     size="sm"
@@ -508,11 +510,12 @@ export default function ModeratorPage() {
                                     data-testid={`button-keep-community-${post.id}`}
                                   >
                                     <Handshake className="w-4 h-4 mr-1" />
-                                    Keep as Community
+                                    Keep as Community Identified
                                   </Button>
                                   <Button
                                     size="sm"
-                                    variant="outline"
+                                    variant="destructive"
+                                    className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-600 dark:hover:bg-red-700"
                                     onClick={() => reopenVerificationMutation.mutate(post.id)}
                                     disabled={reopenVerificationMutation.isPending}
                                     data-testid={`button-reopen-${post.id}`}
@@ -918,9 +921,12 @@ export default function ModeratorPage() {
                   data-testid="button-keep-community-selection"
                 >
                   <Handshake className="w-4 h-4 mr-2" />
-                  {communityApproveMutation.isPending ? "Saving..." : "Keep as Community"}
+                  {communityApproveMutation.isPending
+                    ? "Saving..."
+                    : "Keep as Community Identified"}
                 </Button>
                 <Button
+                  className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                   onClick={() => {
                     if (selectedCommentId && selectedPost) {
                       confirmVerificationMutation.mutate({
@@ -932,8 +938,8 @@ export default function ModeratorPage() {
                   disabled={!selectedCommentId || confirmVerificationMutation.isPending}
                   data-testid="button-confirm-selection"
                 >
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  {confirmVerificationMutation.isPending ? "Confirming..." : "Confirm"}
+                  <Check className="w-4 h-4 mr-2" />
+                  {confirmVerificationMutation.isPending ? "Confirming..." : "Confirm ID"}
                 </Button>
               </div>
             </div>

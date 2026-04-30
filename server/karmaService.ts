@@ -243,10 +243,17 @@ export type AwardModeratorCommunityApprovedResult = {
 };
 
 /**
- * Moderator chose “Keep as Community”: partial trust (+5 score, +1 correct_ids), idempotent.
+ * Moderator chose “Keep as Community”: transitions `posts` from `community` → `community_approved` when needed,
+ * then inserts idempotent `user_karma_events` (`community_approved`, +5/+1) + bumps `user_karma`.
  *
- * Requires final post state: `verification_status = 'community_approved'` and matching `verified_comment_id`.
- * No self-credit (comment author must not be post owner).
+ * **Runs in one Postgres transaction** with `FOR UPDATE` on `posts`:
+ * Previously the route UPDATED posts via Drizzle and then awarded karma via a separate `pool` read; that SELECT
+ * could still see `verification_status='community'` (pooler/read timing), so validation failed with
+ * `post_not_community_approved`, returned `{ awarded: false }` **without throwing** — karma never inserted while
+ * the HTTP handler still succeeded and the Drizzle UPDATE had applied.
+ *
+ * Supports `verification_status === 'community_approved'` with matching `verified_comment_id` to **repair**
+ * rows that were migrated without karma. No self-credit (comment author must not be post owner).
  */
 export async function awardModeratorCommunityApprovedKarma(params: {
   source: ModeratorCommunityApprovedSource;
@@ -254,7 +261,11 @@ export async function awardModeratorCommunityApprovedKarma(params: {
   postId: string;
   commentId: string;
 }): Promise<AwardModeratorCommunityApprovedResult> {
+  void params.source;
   const { actorUserId, postId, commentId } = params;
+
+  const pid = String(postId ?? "").trim();
+  const cid = String(commentId ?? "").trim();
 
   const client = await pool.connect();
   try {
@@ -262,7 +273,7 @@ export async function awardModeratorCommunityApprovedKarma(params: {
 
     const validation = await client.query<{
       post_user_id: string;
-      verification_status: string;
+      verification_status: string | null;
       verified_comment_id: string | null;
       comment_user_id: string;
     }>(
@@ -274,12 +285,13 @@ export async function awardModeratorCommunityApprovedKarma(params: {
         c.user_id AS comment_user_id
       FROM posts p
       INNER JOIN comments c
-        ON c.id = $1
+        ON c.id = $1::uuid
        AND c.post_id = p.id
-      WHERE p.id = $2
+       AND p.id = $2::uuid
+      FOR UPDATE OF p
       LIMIT 1
       `,
-      [commentId, postId],
+      [cid, pid],
     );
 
     const row = validation.rows[0];
@@ -288,35 +300,58 @@ export async function awardModeratorCommunityApprovedKarma(params: {
       return { awarded: false, reason: "invalid_comment_post_linkage" };
     }
 
-    const isCommunityApprovedFinal =
-      row.verification_status === "community_approved" && String(row.verified_comment_id) === String(commentId);
-    if (!isCommunityApprovedFinal) {
-      await client.query("ROLLBACK");
-      return { awarded: false, reason: "post_not_community_approved" };
-    }
-
-    if (row.comment_user_id === row.post_user_id) {
+    if (String(row.comment_user_id) === String(row.post_user_id)) {
       await client.query("ROLLBACK");
       return { awarded: false, reason: "self_credit_commenter_is_post_owner" };
+    }
+
+    const statusRaw = row.verification_status != null ? String(row.verification_status).trim().toLowerCase() : "";
+
+    const verifiedMatchesPinnedId =
+      row.verified_comment_id != null && String(row.verified_comment_id) === String(cid);
+
+    const canAwardFromApprovedState =
+      statusRaw === "community_approved" && verifiedMatchesPinnedId;
+
+    const canAwardFromPendingState = statusRaw === "community";
+
+    if (!canAwardFromPendingState && !canAwardFromApprovedState) {
+      await client.query("ROLLBACK");
+      return { awarded: false, reason: "post_not_community_approved" };
     }
 
     const existingEvent = await client.query<{ id: string }>(
       `
       SELECT id
       FROM user_karma_events
-      WHERE user_id = $1
+      WHERE user_id = $1::uuid
         AND event_type = 'community_approved'
-        AND post_id = $2
-        AND comment_id = $3
+        AND post_id = $2::uuid
+        AND comment_id = $3::uuid
         AND revoked_at IS NULL
       LIMIT 1
       `,
-      [row.comment_user_id, postId, commentId],
+      [row.comment_user_id, pid, cid],
     );
 
     if (existingEvent.rows.length > 0) {
       await client.query("ROLLBACK");
       return { awarded: false, reason: "already_awarded" };
+    }
+
+    if (canAwardFromPendingState) {
+      await client.query(
+        `
+        UPDATE posts
+        SET verification_status = 'community_approved',
+            is_verified_community = true,
+            verified_by_moderator = false,
+            verified_comment_id = $1::uuid,
+            verified_by = $2::uuid
+        WHERE id = $3::uuid
+        `,
+        [cid, row.comment_user_id, pid],
+      );
     }
 
     try {
@@ -333,13 +368,13 @@ export async function awardModeratorCommunityApprovedKarma(params: {
           revoked_at,
           created_at
         )
-        VALUES ($1, $2, $3, $4, 'community_approved', $5, $6, NULL, NOW())
+        VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 'community_approved', $5, $6, NULL, NOW())
         `,
         [
           row.comment_user_id,
           actorUserId,
-          postId,
-          commentId,
+          pid,
+          cid,
           COMMUNITY_APPROVED_SCORE_DELTA,
           COMMUNITY_APPROVED_CORRECT_IDS_DELTA,
         ],
@@ -355,7 +390,7 @@ export async function awardModeratorCommunityApprovedKarma(params: {
     await client.query(
       `
       INSERT INTO user_karma (user_id, score, correct_ids, updated_at)
-      VALUES ($1, $2, $3, NOW())
+      VALUES ($1::uuid, $2, $3, NOW())
       ON CONFLICT (user_id) DO UPDATE
       SET
         score = user_karma.score + EXCLUDED.score,
