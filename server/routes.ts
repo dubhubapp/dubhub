@@ -20,6 +20,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { getPlatformTrendMetrics } from "./internalAnalytics";
+import { sendPushToUser } from "./push/pushSend";
 import {
   buildCompressOnlyArgs,
   buildTrimCompressArgs,
@@ -1400,13 +1401,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Post owner notifications for any new comment or reply
       if (postOwnerId && postOwnerId !== userId && !notified.has(postOwnerId)) {
         try {
-          await storage.createNotification({
+          const notif = await storage.createNotification({
             artistId: postOwnerId,
             triggeredBy: userId,
             postId: postId,
             message: `@${commenterUsername} commented on your post.`,
           });
           notified.add(postOwnerId);
+          // Fire-and-forget push; do not block comment creation.
+          void sendPushToUser(postOwnerId, {
+            type: "comment_on_post",
+            notificationId: notif.id,
+            postId: postId,
+            actorUserId: userId,
+            actorUsername: commenterUsername,
+          });
         } catch (ownerErr) {
           console.error("[Comment] Failed to create post owner notification:", ownerErr);
         }
@@ -1950,6 +1959,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       } catch (karmaErr) {
         console.error("[karma] Failed to award confirmed-id karma (artist confirm):", karmaErr);
+      }
+
+      // Notify the post uploader that their track was identified by an artist.
+      try {
+        const postOwnerId = post.user_id as string | undefined;
+        if (postOwnerId && postOwnerId !== artistId) {
+          const notif = await storage.createNotification({
+            artistId: postOwnerId,
+            triggeredBy: artistId,
+            postId,
+            message: "An artist identified your track.",
+          });
+          void sendPushToUser(postOwnerId, {
+            type: "artist_identified_post",
+            postId,
+            artistId,
+            verifiedCommentId: commentId,
+          });
+        }
+      } catch (notifyErr) {
+        console.error("[artist-confirm] Failed to create artist_identified_post notification:", notifyErr);
       }
 
       res.json({
@@ -3446,6 +3476,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to get unread count",
         error: errorMessage
       });
+    }
+  });
+
+  // Push token registration (iOS APNs)
+  app.post("/api/push-tokens/register", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const { token, platform, environment } = req.body ?? {};
+      if (typeof token !== "string" || token.trim() === "") {
+        return res.status(400).json({ message: "token is required" });
+      }
+      const plat = platform === "ios" || platform === undefined ? "ios" : platform;
+      if (plat !== "ios") {
+        return res.status(400).json({ message: "Unsupported platform" });
+      }
+      const env = environment === "production" ? "production" : "sandbox";
+      const row = await storage.upsertUserPushToken(req.dbUser.id, {
+        token: token.trim(),
+        platform: "ios",
+        environment: env,
+      });
+      res.json({ ok: true, id: row.id, environment: row.environment });
+    } catch (error) {
+      console.error("[/api/push-tokens/register] Error:", error);
+      res.status(500).json({ message: "Failed to register push token" });
+    }
+  });
+
+  app.post("/api/push-tokens/deactivate", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const { token } = req.body ?? {};
+      if (typeof token !== "string" || token.trim() === "") {
+        return res.status(400).json({ message: "token is required" });
+      }
+      await storage.deactivateUserPushToken(req.dbUser.id, token.trim(), "user_logout");
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[/api/push-tokens/deactivate] Error:", error);
+      res.status(500).json({ message: "Failed to deactivate push token" });
     }
   });
 

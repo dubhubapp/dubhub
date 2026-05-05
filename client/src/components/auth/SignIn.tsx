@@ -7,6 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
 import { WELCOME_BACK_FLAG_KEY } from '@/lib/onboarding';
+import { Eye, EyeOff } from "lucide-react";
+
+const RECOVERY_INTENT_KEY = "dubhub:auth-recovery-intent";
 
 interface SignInProps {
   onToggleMode: () => void;
@@ -19,6 +22,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
     "Your artist account is awaiting verification. If you haven’t already, DM us at @dubhub.uk from your artist Instagram account so we can verify you.";
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
@@ -27,6 +31,11 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
     e.preventDefault();
     setIsLoading(true);
     setErrorMessage('');
+    try {
+      sessionStorage.removeItem(RECOVERY_INTENT_KEY);
+    } catch {
+      // Best effort only.
+    }
 
     try {
       if (!email || !password) {
@@ -59,6 +68,11 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
       }
 
       if (data.user) {
+        try {
+          sessionStorage.removeItem(RECOVERY_INTENT_KEY);
+        } catch {
+          // Best effort only.
+        }
         // Always fetch fresh user data from the current authenticated session
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         
@@ -150,15 +164,27 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
                 Forgot password?
               </button>
             </div>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              className="bg-input border-border text-foreground placeholder-muted-foreground"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="bg-input border-border text-foreground placeholder-muted-foreground pr-10"
+                required
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           
           <Button 

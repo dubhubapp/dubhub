@@ -69,6 +69,10 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     onSuccess: async () => {
       playSuccessNotification();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "liked-posts"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });
@@ -170,6 +174,10 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "liked-posts"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });

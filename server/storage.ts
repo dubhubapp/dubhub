@@ -1,4 +1,4 @@
-import { type Notification, type InsertNotification, type NotificationWithUser } from "@shared/schema";
+import { type Notification, type InsertNotification, type NotificationWithUser, type UserPushToken, userPushTokens } from "@shared/schema";
 import { db, pool } from "./db";
 import { eq, desc, asc, and, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -143,6 +143,12 @@ export interface IStorage {
   rejectCollaborator(releaseId: string, collabId: string, artistId: string): Promise<boolean>;
   removeCollaborator(releaseId: string, collabId: string, ownerId: string): Promise<boolean>;
   deleteRelease(releaseId: string, ownerId: string): Promise<boolean>;
+
+  // Push tokens
+  upsertUserPushToken(userId: string, opts: { token: string; platform: "ios"; environment: "sandbox" | "production" }): Promise<UserPushToken>;
+  deactivateUserPushToken(userId: string, token: string, reason: string): Promise<void>;
+  getActivePushTokensForUser(userId: string): Promise<UserPushToken[]>;
+  deactivatePushTokenByValue(token: string, reason: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -652,7 +658,8 @@ export class DatabaseStorage implements IStorage {
     } else {
       // Like: insert with ON CONFLICT DO NOTHING to handle race conditions
       // This makes the like action idempotent - multiple calls won't cause errors
-      // Notifications are handled by the database trigger handle_notifications()
+      // Like notifications: DB trigger handle_notifications() on post_likes.
+      // Post-owner comment notifications: created in POST /api/posts/:id/comments (routes.ts), not via a comments trigger.
       await db.execute(sql`
         INSERT INTO post_likes (post_id, user_id)
         VALUES (${postId}, ${userId})
@@ -1469,6 +1476,100 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[createNotification] Error:", error);
       throw error;
+    }
+  }
+
+  async upsertUserPushToken(
+    userId: string,
+    opts: { token: string; platform: "ios"; environment: "sandbox" | "production" },
+  ): Promise<UserPushToken> {
+    const { token, platform, environment } = opts;
+    try {
+      const existing = await db
+        .select()
+        .from(userPushTokens)
+        .where(eq(userPushTokens.token, token))
+        .limit(1);
+
+      if (existing.length > 0) {
+        const [row] = existing;
+        const updated = await db
+          .update(userPushTokens)
+          .set({
+            userId,
+            platform,
+            environment,
+            isActive: true,
+            lastSeenAt: sql`NOW()`,
+            updatedAt: sql`NOW()`,
+            deactivatedAt: null,
+            deactivatedReason: null,
+            lastError: null,
+            lastErrorAt: null,
+          })
+          .where(eq(userPushTokens.id, row.id))
+          .returning();
+        return updated[0] as UserPushToken;
+      }
+
+      const inserted = await db
+        .insert(userPushTokens)
+        .values({
+          userId,
+          platform,
+          token,
+          environment,
+        })
+        .returning();
+      return inserted[0] as UserPushToken;
+    } catch (error) {
+      console.error("[upsertUserPushToken] Error:", error);
+      throw error;
+    }
+  }
+
+  async deactivateUserPushToken(userId: string, token: string, reason: string): Promise<void> {
+    try {
+      await db
+        .update(userPushTokens)
+        .set({
+          isActive: false,
+          deactivatedAt: sql`NOW()`,
+          deactivatedReason: reason,
+          updatedAt: sql`NOW()`,
+        })
+        .where(and(eq(userPushTokens.userId, userId), eq(userPushTokens.token, token)));
+    } catch (error) {
+      console.error("[deactivateUserPushToken] Error:", error);
+    }
+  }
+
+  async getActivePushTokensForUser(userId: string): Promise<UserPushToken[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(userPushTokens)
+        .where(and(eq(userPushTokens.userId, userId), eq(userPushTokens.isActive, true)));
+      return rows as UserPushToken[];
+    } catch (error) {
+      console.error("[getActivePushTokensForUser] Error:", error);
+      return [];
+    }
+  }
+
+  async deactivatePushTokenByValue(token: string, reason: string): Promise<void> {
+    try {
+      await db
+        .update(userPushTokens)
+        .set({
+          isActive: false,
+          deactivatedAt: sql`NOW()`,
+          deactivatedReason: reason,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(userPushTokens.token, token));
+    } catch (error) {
+      console.error("[deactivatePushTokenByValue] Error:", error);
     }
   }
 
@@ -2723,27 +2824,27 @@ export class DatabaseStorage implements IStorage {
       const ownerProfile = await this.getUser(r.artist_id);
       const ownerUsername = ownerProfile?.username ?? "Artist";
       const releaseTitle = r.title ?? "Release";
-      const releaseDate = r.release_date ? new Date(r.release_date) : null;
-      const isComingSoon = !!r.is_coming_soon;
-      const status = this.getReleaseStatus(isComingSoon, releaseDate);
-      const releaseDateStr = releaseDate ? releaseDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
-      const message =
-        status === "upcoming"
-          ? isComingSoon && !releaseDate
-            ? `@${ownerUsername} announced ${releaseTitle} (coming soon)`
-            : `@${ownerUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
-          : `@${ownerUsername} released ${releaseTitle}`;
+      const message = `@${ownerUsername} release added: ${releaseTitle}`;
       const firstPostId = postIds[0] ?? null;
       for (const row of recipientRows) {
         const recipientId = row.user_id;
         if (!recipientId) continue;
-        await this.createNotification({
+        const notif = await this.createNotification({
           artistId: recipientId,
           triggeredBy: r.artist_id,
           postId: firstPostId,
           releaseId,
           message,
         } as any);
+        // Fire-and-forget push for release_attached_to_liked_or_uploaded_post.
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(recipientId, {
+            type: "release_attached_to_liked_or_uploaded_post",
+            releaseId,
+            postId: firstPostId,
+            artistId: r.artist_id,
+          })
+        );
       }
       await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
     } catch (error) {

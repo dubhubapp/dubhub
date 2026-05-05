@@ -121,6 +121,11 @@ export default function ArtistProfile() {
         description: "The post has been marked as not yours.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/artist", "artist1", "posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "liked-posts"] });
+      }
     },
     onError: () => {
       toast({

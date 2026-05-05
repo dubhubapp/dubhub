@@ -260,6 +260,49 @@ function ProfilePostThumbnail({
   );
 }
 
+/** Burst window for duplicate notifications (same actor, e.g. legacy DB trigger + API row within seconds). */
+const POST_COMMENT_NOTIFICATION_BURST_MS = 2 * 60 * 1000;
+
+function getNotificationBurstActorKey(n: NotificationWithUser): string {
+  const raw =
+    (n as { triggeredBy?: string }).triggeredBy ??
+    (n as { triggered_by?: string }).triggered_by ??
+    "";
+  const t = typeof raw === "string" ? raw.trim() : "";
+  return t !== "" ? t : `id:${n.id}`;
+}
+
+function notificationCreatedMs(n: NotificationWithUser): number {
+  const v = (n as { createdAt?: Date | string }).createdAt;
+  if (v instanceof Date) return v.getTime();
+  const t = typeof v === "string" || typeof v === "number" ? new Date(v).getTime() : NaN;
+  return Number.isFinite(t) ? t : NaN;
+}
+
+/** `notificationsNewestFirst` must be newest-first. Keeps at most one row per actor per burst window (prefers newest). */
+function dedupeBurstNotificationsKeepNewestFirst(
+  notificationsNewestFirst: NotificationWithUser[],
+  windowMs: number,
+): NotificationWithUser[] {
+  const kept: NotificationWithUser[] = [];
+  for (const cand of notificationsNewestFirst) {
+    const t = notificationCreatedMs(cand);
+    const trig = getNotificationBurstActorKey(cand);
+    if (!Number.isFinite(t)) {
+      kept.push(cand);
+      continue;
+    }
+    const clash = kept.some((k) => {
+      if (getNotificationBurstActorKey(k) !== trig) return false;
+      const kt = notificationCreatedMs(k);
+      return Number.isFinite(kt) && Math.abs(kt - t) <= windowMs;
+    });
+    if (clash) continue;
+    kept.push(cand);
+  }
+  return kept;
+}
+
 export default function UserProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -867,6 +910,8 @@ export default function UserProfile() {
     onSuccess: (_, { status }) => {
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "liked-posts"] });
         queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       }
       toast({ title: status === "confirmed" ? "Track confirmed as yours" : "Tag declined" });
@@ -897,7 +942,15 @@ export default function UserProfile() {
     return !!releaseId && !isCollaboratorResponse(n);
   };
 
-  type NotificationGroupKind = "post_like" | "post_comment" | "release_event" | "system_event" | "moderator_event" | "single";
+  type NotificationGroupKind =
+    | "post_like"
+    | "post_owner_comment"
+    | "post_comment_reply"
+    | "artist_tag_comment"
+    | "release_event"
+    | "system_event"
+    | "moderator_event"
+    | "single";
   type GroupedNotification = {
     id: string;
     representative: NotificationWithUser;
@@ -923,13 +976,9 @@ export default function UserProfile() {
     }
     if (isReleaseNotification(n)) return "release_event";
     if (lowerMessage.includes("liked your post")) return "post_like";
-    if (
-      lowerMessage.includes("commented on your post") ||
-      lowerMessage.includes("replied to your comment") ||
-      lowerMessage.includes("tagged you in a comment")
-    ) {
-      return "post_comment";
-    }
+    if (lowerMessage.includes("tagged you in a comment")) return "artist_tag_comment";
+    if (lowerMessage.includes("replied to your comment")) return "post_comment_reply";
+    if (lowerMessage.includes("commented on your post")) return "post_owner_comment";
     if (!n.postId && !((n as any).releaseId ?? (n as any).release_id ?? n.release?.id)) return "system_event";
     return "single";
   };
@@ -942,7 +991,9 @@ export default function UserProfile() {
     const bucket = Number.isFinite(created) ? Math.floor(created / GROUP_WINDOW_MS) : 0;
     const canGroup =
       kind === "post_like" ||
-      kind === "post_comment" ||
+      kind === "post_owner_comment" ||
+      kind === "post_comment_reply" ||
+      kind === "artist_tag_comment" ||
       kind === "release_event" ||
       kind === "system_event";
     return canGroup ? `${kind}:${contextId}:${bucket}` : `single:${n.id}`;
@@ -969,17 +1020,28 @@ export default function UserProfile() {
       const sorted = [...items].sort(
         (a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime(),
       );
-      const representative = sorted[0];
+      const kindBucket = getNotificationKind(sorted[0]);
+
+      let displayItems = sorted;
+      if (
+        kindBucket === "post_owner_comment" ||
+        kindBucket === "post_comment_reply" ||
+        kindBucket === "artist_tag_comment"
+      ) {
+        displayItems = dedupeBurstNotificationsKeepNewestFirst(sorted, POST_COMMENT_NOTIFICATION_BURST_MS);
+      }
+
+      const representative = displayItems[0] ?? sorted[0];
       const kind = getNotificationKind(representative);
       const unreadCount = sorted.filter((x) => !x.read).length;
       return {
         id: sorted.map((x) => x.id).join(":"),
         representative,
         notifications: sorted,
-        count: sorted.length,
+        count: displayItems.length,
         unreadCount,
         kind,
-        isGrouped: sorted.length > 1,
+        isGrouped: displayItems.length > 1,
       };
     });
 
@@ -1460,8 +1522,14 @@ export default function UserProfile() {
       }
       return `${group.count} people liked your post`;
     }
-    if (group.kind === "post_comment") {
+    if (group.kind === "post_owner_comment") {
       return `${group.count} new comments on your post`;
+    }
+    if (group.kind === "post_comment_reply") {
+      return `${group.count} new replies to your comments`;
+    }
+    if (group.kind === "artist_tag_comment") {
+      return `${group.count} new artist tags on your post`;
     }
     if (group.kind === "release_event") {
       const messages = group.notifications.map((n) => (n.message || "").toLowerCase());
@@ -1661,7 +1729,7 @@ export default function UserProfile() {
     const status = post.verificationStatus ?? (post as any).verification_status;
     if (status === "community_approved") {
       return {
-        label: "Community Identified",
+        label: "Identified",
         className: "bg-green-500/85 text-white",
         Icon: CheckCircle,
       };

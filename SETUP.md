@@ -41,7 +41,19 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
 # Or use service key for admin operations:
 # SUPABASE_SERVICE_KEY=your-service-key-here
+
+# APNs token registration environment (iOS push)
+# Local Xcode/dev installs:
+VITE_APNS_ENV=sandbox
+# TestFlight/App Store builds:
+# VITE_APNS_ENV=production
 ```
+
+⚠️ **Important (iOS push):**  
+`VITE_APNS_ENV` controls how APNs device tokens are registered (`sandbox` vs `production`).  
+It **must** match the build distribution channel:
+- Local Xcode/dev install → `sandbox`
+- TestFlight/App Store → `production`
 
 ### Optional Variables
 

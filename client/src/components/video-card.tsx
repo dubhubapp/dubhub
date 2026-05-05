@@ -1649,12 +1649,16 @@ function VideoCardInner({
     );
 
     const verificationStatus = post.verificationStatus ?? (post as any).verification_status;
+    const isVerifiedCommunity =
+      !!((post as any).isVerifiedCommunity ?? (post as any).is_verified_community);
+    const isModeratorVerified =
+      !!((post as any).verifiedByModerator ?? (post as any).verified_by_moderator);
 
     // Moderator “keep as community”: distinct from pending community review + full moderator confirm
-    if (verificationStatus === "community_approved") {
+    if (verificationStatus === "community_approved" || isVerifiedCommunity) {
       return renderStatus(
         <Users className={iconBaseClass} />,
-        "Community Identified",
+        "Identified",
         "badge-community-approved-identified",
         STATUS_GLOW_PILL_BG.identified,
       );
@@ -1683,7 +1687,7 @@ function VideoCardInner({
     }
     
     // Show identified badge if moderator confirmed (fallback when no artist verification)
-    if (verificationStatus === "identified") {
+    if (verificationStatus === "identified" || isModeratorVerified) {
       return renderStatus(
         <Check className={`${iconBaseClass} text-white`} />,
         "Identified",
@@ -1992,7 +1996,10 @@ function VideoCardInner({
         const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
         const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
         const status = post.verificationStatus ?? (post as any).verification_status;
-        const isUnverified = !status || status === "unverified";
+        const isVerifiedCommunity =
+          !!((post as any).isVerifiedCommunity ?? (post as any).is_verified_community);
+        const isModeratorVerified =
+          !!((post as any).verifiedByModerator ?? (post as any).verified_by_moderator);
         const isOwner = currentUserId != null && postOwnerId != null && currentUserId === postOwnerId;
         const commentCount = Number((post as any).comments ?? post.comments ?? (post as any).comments_count ?? 0);
         const hasComments = commentCount >= 1;
@@ -2000,10 +2007,20 @@ function VideoCardInner({
         const deniedByArtist = !!((post as any).deniedByArtist ?? (post as any).denied_by_artist);
         const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
         const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+        const isAnyIdentifiedState =
+          isVerifiedCommunity ||
+          status === "community_approved" ||
+          status === "verified" ||
+          status === "identified" ||
+          status === "community" ||
+          isModeratorVerified ||
+          isArtistVerified ||
+          !!artistVerifiedBy;
         const alreadyArtistConfirmed = isArtistVerified && artistVerifiedBy === currentUserId;
         const alreadyArtistVerifiedBySomeone = isArtistVerified && !!artistVerifiedBy;
-        const canVerifyOwner = isUnverified && isOwner && hasComments;
-        const canVerifyArtist = isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
+        const canVerifyOwner = !isAnyIdentifiedState && isOwner && hasComments;
+        const canVerifyArtist =
+          !isAnyIdentifiedState && isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
         const canVerify = !alreadyArtistVerifiedBySomeone && (canVerifyOwner || canVerifyArtist);
 
         if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
@@ -2062,29 +2079,21 @@ function VideoCardInner({
                       : "animate-random-dice-rail-enter",
                   )}
                 >
-                  <div
+                  <RandomDiceButton
+                    active
+                    accentGlow="none"
+                    railEdgeTrace
+                    disabled={feedRandomDice.disabled}
+                    delayPressMs={feedRandomDice.delayPressMs}
+                    onPress={feedRandomDice.onPress}
+                    aria-label="Next random track"
                     className={cn(
-                      "flex items-center justify-center rounded-full shadow-[0_0_16px_rgba(74,233,223,0.28)] motion-reduce:animate-none",
-                      feedRandomDice.showIntroGlow && !feedRandomDice.exiting
-                        ? "animate-random-dice-rail-glow-once transform-gpu will-change-[filter] motion-reduce:will-change-auto"
-                        : null,
+                      railIconWrap,
+                      "!min-h-[44px] !min-w-[44px] border-0 bg-transparent p-0 shadow-none ring-0 sm:!min-h-12 sm:!min-w-12",
                     )}
-                  >
-                    <RandomDiceButton
-                      active
-                      accentGlow="turquoiseSubtle"
-                      disabled={feedRandomDice.disabled}
-                      delayPressMs={feedRandomDice.delayPressMs}
-                      onPress={feedRandomDice.onPress}
-                      aria-label="Next random track"
-                      className={cn(
-                        railIconWrap,
-                        "!min-h-[44px] !min-w-[44px] border-0 bg-transparent p-0 shadow-none ring-0 sm:!min-h-12 sm:!min-w-12",
-                      )}
-                      iconWrapClassName="!size-7 sm:!size-7"
-                      iconClassName="!h-full !w-full !text-white"
-                    />
-                  </div>
+                    iconWrapClassName="!size-7 sm:!size-7"
+                    iconClassName="!h-full !w-full !text-white"
+                  />
                 </div>
               ) : null}
 

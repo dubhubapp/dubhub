@@ -66,8 +66,9 @@ export function ForgotPasswordDialog({
     setErrorMessage("");
     try {
       setResetCooldownRemaining(RESET_EMAIL_COOLDOWN_SECONDS);
+      const redirectTo = getPasswordResetRedirectUrl();
       const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
-        redirectTo: getPasswordResetRedirectUrl(),
+        redirectTo,
       });
       if (error) {
         setErrorMessage(error.message || "Could not send reset email");
@@ -75,7 +76,8 @@ export function ForgotPasswordDialog({
       }
       toast({
         title: "Check your email",
-        description: "If an account exists for that address, we sent a link to reset your password.",
+        description:
+          "If your account is registered to this email address then you'll receive a link to reset your password shortly",
       });
       handleOpenChange(false);
     } finally {

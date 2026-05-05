@@ -167,14 +167,24 @@ export default function ModeratorPage() {
   };
 
   const confirmVerificationMutation = useMutation({
-    mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string }) => {
+    mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string; ownerUserId?: string }) => {
       return apiRequest("POST", `/api/moderator/confirm-verification/${postId}`, {
         commentId,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (variables.ownerUserId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", variables.ownerUserId, "posts"] });
+      } else {
+        queryClient.invalidateQueries({
+          predicate: (q) =>
+            Array.isArray(q.queryKey) &&
+            q.queryKey[0] === "/api/user" &&
+            q.queryKey[2] === "posts",
+        });
+      }
       setSelectedPost(null);
       setSelectedCommentId("");
       toast({
@@ -192,12 +202,22 @@ export default function ModeratorPage() {
   });
 
   const reopenVerificationMutation = useMutation({
-    mutationFn: async (postId: string) => {
+    mutationFn: async ({ postId }: { postId: string; ownerUserId?: string }) => {
       return apiRequest("POST", `/api/moderator/reopen-verification/${postId}`);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (variables.ownerUserId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", variables.ownerUserId, "posts"] });
+      } else {
+        queryClient.invalidateQueries({
+          predicate: (q) =>
+            Array.isArray(q.queryKey) &&
+            q.queryKey[0] === "/api/user" &&
+            q.queryKey[2] === "posts",
+        });
+      }
       toast({
         title: "ID rejected",
         description: "This post has been reopened as Unidentified.",
@@ -213,7 +233,7 @@ export default function ModeratorPage() {
   });
 
   const communityApproveMutation = useMutation({
-    mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string }) => {
+    mutationFn: async ({ postId, commentId }: { postId: string; commentId?: string; ownerUserId?: string }) => {
       const body =
         typeof commentId === "string" && commentId.trim().length > 0 ? { commentId } : {};
       if (import.meta.env.DEV) {
@@ -226,9 +246,19 @@ export default function ModeratorPage() {
       }
       return apiRequest("POST", `/api/moderator/community-approve/${postId}`, body);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (variables.ownerUserId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", variables.ownerUserId, "posts"] });
+      } else {
+        queryClient.invalidateQueries({
+          predicate: (q) =>
+            Array.isArray(q.queryKey) &&
+            q.queryKey[0] === "/api/user" &&
+            q.queryKey[2] === "posts",
+        });
+      }
       setSelectedPost(null);
       setSelectedCommentId("");
       toast({
@@ -516,6 +546,7 @@ export default function ModeratorPage() {
                                       communityApproveMutation.mutate({
                                         postId: post.id,
                                         commentId: post.verifiedCommentId || post.verified_comment_id,
+                                        ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
                                       });
                                     }}
                                     disabled={
@@ -531,7 +562,12 @@ export default function ModeratorPage() {
                                     size="sm"
                                     variant="destructive"
                                     className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-600 dark:hover:bg-red-700"
-                                    onClick={() => reopenVerificationMutation.mutate(post.id)}
+                                    onClick={() =>
+                                      reopenVerificationMutation.mutate({
+                                        postId: post.id,
+                                        ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
+                                      })
+                                    }
                                     disabled={reopenVerificationMutation.isPending}
                                     data-testid={`button-reopen-${post.id}`}
                                   >
@@ -925,6 +961,7 @@ export default function ModeratorPage() {
                       communityApproveMutation.mutate({
                         postId: selectedPost.id,
                         commentId: selectedCommentId,
+                        ownerUserId: selectedPost.user?.id ?? (selectedPost as any).user_id ?? selectedPost.userId,
                       });
                     }
                   }}
@@ -947,6 +984,7 @@ export default function ModeratorPage() {
                       confirmVerificationMutation.mutate({
                         postId: selectedPost.id,
                         commentId: selectedCommentId,
+                        ownerUserId: selectedPost.user?.id ?? (selectedPost as any).user_id ?? selectedPost.userId,
                       });
                     }
                   }}

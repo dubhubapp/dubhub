@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from '@/hooks/use-toast';
 import { Logo } from '@/components/brand/Logo';
 import { Mail } from 'lucide-react';
+import { Eye, EyeOff } from "lucide-react";
 import { Filter } from 'bad-words';
 import { apiRequest } from '@/lib/queryClient';
 import { validateUsername, normalizeUsernameForStorage } from '@shared/usernameValidation';
@@ -84,6 +85,8 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [accountType, setAccountType] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
@@ -271,11 +274,12 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
       }
 
       // Create Supabase auth user with ORIGINAL username (preserve casing)
+      const emailRedirectTo = getAuthCallbackUrl();
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password: password,
         options: {
-          emailRedirectTo: getAuthCallbackUrl(),
+          emailRedirectTo,
           data: {
             username: trimmedUsername, // Send original username with casing preserved
             account_type: accountType,
@@ -486,18 +490,31 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           
           <div className="space-y-2">
             <Label htmlFor="password" className="text-foreground">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Create a password"
-              className="bg-input border-border text-foreground placeholder-muted-foreground"
-              required
-              minLength={8}
-              disabled={hasSignupSucceeded}
-              data-testid="input-password"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Create a password"
+                className="bg-input border-border text-foreground placeholder-muted-foreground pr-10"
+                required
+                minLength={8}
+                disabled={hasSignupSucceeded}
+                data-testid="input-password"
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => setShowPassword((prev) => !prev)}
+                disabled={hasSignupSucceeded}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               Must be at least 8 characters with uppercase, lowercase, and numbers
             </p>
@@ -535,18 +552,31 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           
           <div className="space-y-2">
             <Label htmlFor="confirmPassword" className="text-foreground">Confirm Password</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm your password"
-              className="bg-input border-border text-foreground placeholder-muted-foreground"
-              required
-              minLength={8}
-              disabled={hasSignupSucceeded}
-              data-testid="input-confirm-password"
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm your password"
+                className="bg-input border-border text-foreground placeholder-muted-foreground pr-10"
+                required
+                minLength={8}
+                disabled={hasSignupSucceeded}
+                data-testid="input-confirm-password"
+              />
+              <button
+                type="button"
+                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                disabled={hasSignupSucceeded}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             {confirmPasswordMismatch && (
               <p className="text-xs text-red-600 mt-1" data-testid="text-confirm-password-error">
                 Passwords do not match. Please try again

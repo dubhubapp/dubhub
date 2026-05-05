@@ -415,6 +415,13 @@ export default function Home() {
   const lastLocationRef = useRef<string>(location);
   const lastSearchRef = useRef<string>(search);
   const mergeAttemptedForPostId = useRef<Set<string>>(new Set());
+  /** Last `?post=` id we began exiting Random for (avoid spamming `handleFeedSortChange`). */
+  const deepLinkRandomExitForPostRef = useRef<string | null>(null);
+  /** One-shot guard for merge failure / filter-blocked / watchdog so we don’t toast or navigate twice. */
+  const deepLinkTerminalHandledRef = useRef<string | null>(null);
+  const deepLinkWatchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Post id the active watchdog was scheduled for (skip redundant timer resets). */
+  const deepLinkWatchdogForPostRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -440,7 +447,7 @@ export default function Home() {
       toast({
         title: selectedMessage?.title ?? "Back in the mix",
         description: selectedMessage?.subtitle ?? "Let\u2019s find some IDs",
-        className: "text-center",
+        className: "[&>div]:w-full [&>div]:text-center",
       });
       playSuccessNotification();
     } catch {
@@ -609,6 +616,10 @@ export default function Home() {
         if (randomExitTimerRef.current) clearTimeout(randomExitTimerRef.current);
         randomExitTimerRef.current = setTimeout(() => {
           randomExitTimerRef.current = null;
+          if (mode === "hottest" || mode === "newest") {
+            setIdentificationFilter("all");
+            setSelectedGenres([]);
+          }
           setSortMode(mode);
           setRandomViewExiting(false);
         }, RANDOM_DICE_RAIL_EXIT_MS);
@@ -650,11 +661,18 @@ export default function Home() {
   const randomSeenIdsRef = useRef<Set<string>>(new Set());
   const randomPoolRef = useRef<PostWithUser[]>([]);
   const randomCursorRef = useRef<string | null>(null);
+  /** Mirrors `randomPost` for guards inside `loadNextRandom` (avoid blocking the final click due to stale `randomExhausted`). */
+  const randomPostRef = useRef<PostWithUser | null>(null);
 
-  const postsQuery = useInfiniteQuery({
+  useEffect(() => {
+    randomPostRef.current = randomPost;
+  }, [randomPost]);
+
+  const postsQuery = useInfiniteQuery<FeedPage, Error, InfiniteData<FeedPage>, readonly [string, { genresKey: string; identification: "all" | "identified" | "unidentified"; sortMode: FeedSortMode }, string | undefined], string | null>({
     queryKey: ["/api/posts", { genresKey, identification: identificationFilter, sortMode }, currentUser?.id],
+    placeholderData: (previousData) => previousData,
     initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam }): Promise<FeedPage> => {
       // Get auth headers so server can set hasLiked and currentUserTaggedAsArtist
       const { data: { session } } = await supabase.auth.getSession();
       const authHeaders: Record<string, string> = {};
@@ -1410,6 +1428,7 @@ export default function Home() {
     randomSeenIdsRef.current = new Set();
     randomPoolRef.current = [];
     randomCursorRef.current = null;
+    randomPostRef.current = null;
     setRandomPost(null);
     setRandomExhausted(false);
     setRandomError(null);
@@ -1421,7 +1440,8 @@ export default function Home() {
     // After restart, React state for exhausted/loading may not have flushed yet; don't block on stale values.
     if (!opts?.afterRestart) {
       if (randomLoading) return;
-      if (randomExhausted) return;
+      // Block idle repeats once already on the exhausted UI; still allow fetching while a clip is visible.
+      if (randomExhausted && !randomPostRef.current) return;
     }
 
     try {
@@ -1456,6 +1476,8 @@ export default function Home() {
           if (iterations > 50) return false; // Safety valve for pathological datasets.
 
           const { data: { session } } = await supabase.auth.getSession();
+          if (randomSessionTokenRef.current !== sessionToken) return false;
+
           const authHeaders: Record<string, string> = {};
           if (session?.access_token) {
             authHeaders["Authorization"] = `Bearer ${session.access_token}`;
@@ -1474,17 +1496,22 @@ export default function Home() {
           }
 
           const pathAndQuery = `/api/posts?${params}`;
-          const page = await homeFeedFetchJson<FeedPage>(
+          const rawPage = await homeFeedFetchJson<unknown>(
             "[feed-random-pool]",
             pathAndQuery,
             authHeaders,
           );
-          const candidates = Array.isArray(page.items) ? page.items : [];
+          if (randomSessionTokenRef.current !== sessionToken) return false;
+
+          const page = normalizeFeedPageResponse(rawPage);
+          const candidates = page.items;
           randomCursorRef.current = page.nextCursor;
 
-          // Move the scan cursor forward no matter what; if we filtered everything out due to duplicates,
-          // we still want to make progress.
-          if (candidates.length === 0) return false;
+          // Empty page is only terminal when pagination is done; otherwise advance cursor (above) and keep scanning.
+          if (candidates.length === 0) {
+            if (!page.hasMore) return false;
+            continue;
+          }
 
           // Deduplicate by id and mark them "seen" when enqueued to prevent duplicates
           // from ever showing twice in this random session (including within a single batch).
@@ -1509,6 +1536,7 @@ export default function Home() {
 
       if (randomPoolRef.current.length === 0) {
         const ok = await ensurePoolHasUnseen();
+        if (randomSessionTokenRef.current !== sessionToken) return;
         if (!ok || randomPoolRef.current.length === 0) {
           setRandomExhausted(true);
           setRandomPost(null);
@@ -1532,6 +1560,7 @@ export default function Home() {
       }
 
       // Pool contained candidates, but they all became identified/unavailable.
+      if (randomSessionTokenRef.current !== sessionToken) return;
       setRandomExhausted(true);
       setRandomPost(null);
       return;
@@ -1549,9 +1578,21 @@ export default function Home() {
   useEffect(() => {
     if (sortMode !== "random") return;
     resetRandomSession();
-    void loadNextRandom();
+    // `afterRestart` bypasses stale `randomExhausted`/`randomLoading` from the render before reset
+    // (e.g. re-enter Random after exhaustion → same effect tick would otherwise no-op forever).
+    void loadNextRandom({ afterRestart: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortMode, genresKey]);
+
+  /** Genre menu dice: switching to Random delegates to {@link handleFeedSortChange}; tapping again starts a new session instead of silently no-op'ing while already Random. */
+  const handleGenreMenuSortChange = (mode: FeedSortMode) => {
+    if (mode === "random" && sortMode === "random") {
+      resetRandomSession();
+      void loadNextRandom({ afterRestart: true });
+      return;
+    }
+    handleFeedSortChange(mode);
+  };
 
   // Scroll-to-top must run only when the user changes sort or filters — not when feed data
   // updates (e.g. like/unlike), or every like would retrigger this and reset scroll.
@@ -1567,10 +1608,17 @@ export default function Home() {
 
   // Handle scroll to specific post from notification / ?post= deep link, or merge post into feed when missing (e.g. not in first page under Hottest)
   useEffect(() => {
-    if (sortMode === "random") return;
     const q = search.startsWith("?") ? search.slice(1) : search;
     const params = new URLSearchParams(q);
     const postId = params.get('post') || params.get('track'); // Support both for backward compatibility
+
+    const clearDeepLinkWatchdog = () => {
+      if (deepLinkWatchdogTimerRef.current) {
+        clearTimeout(deepLinkWatchdogTimerRef.current);
+        deepLinkWatchdogTimerRef.current = null;
+      }
+      deepLinkWatchdogForPostRef.current = null;
+    };
 
     // Path or query changed (e.g. submit success -> `/?post=<id>`): reset scroll/highlight timers.
     const locationChanged = location !== lastLocationRef.current;
@@ -1586,7 +1634,69 @@ export default function Home() {
 
     if (!postId) {
       mergeAttemptedForPostId.current.clear();
+      deepLinkRandomExitForPostRef.current = null;
+      deepLinkTerminalHandledRef.current = null;
+      clearDeepLinkWatchdog();
+      return;
     }
+
+    // Notification deep-links cannot be handled while Random is active — leave Random first, then rerun with ?post= still present.
+    if (sortMode === "random") {
+      if (deepLinkRandomExitForPostRef.current !== postId) {
+        deepLinkRandomExitForPostRef.current = postId;
+        handleFeedSortChange("hottest");
+      }
+      return;
+    }
+
+    /**
+     * If the resolved post sits in TanStack Query `posts` but client chrome filters exclude it from `uiPosts`
+     * (merged posts bypass server filtering), toast and clear params — avoids a stuck/no-op deep link.
+     */
+    const inPostsSlice = posts.find((p) => p.id === postId);
+    if (
+      inPostsSlice &&
+      !uiPosts.some((p) => p.id === postId) &&
+      !isInitialFeedLoad &&
+      deepLinkTerminalHandledRef.current !== postId
+    ) {
+      deepLinkTerminalHandledRef.current = postId;
+      clearDeepLinkWatchdog();
+      toast({
+        title: "Post hidden by current filters",
+        description: "Adjust genre or ID filters in the menu, then try opening the notification again.",
+        variant: "destructive",
+      });
+      navigate("/", { replace: true });
+      return;
+    }
+
+    // Bounded fallback if ?post= never resolves (no merge, filtered, scroll never runs, etc.).
+    const scheduleFallbackWatchdog = () => {
+      if (isInitialFeedLoad) return;
+      if (deepLinkWatchdogForPostRef.current === postId && deepLinkWatchdogTimerRef.current) return;
+      clearDeepLinkWatchdog();
+      deepLinkWatchdogForPostRef.current = postId;
+      const watchedId = postId;
+      deepLinkWatchdogTimerRef.current = setTimeout(() => {
+        deepLinkWatchdogTimerRef.current = null;
+        const raw =
+          typeof window !== "undefined" && window.location?.search ? window.location.search : search;
+        const q2 = raw.startsWith("?") ? raw.slice(1) : raw;
+        const p2 = new URLSearchParams(q2);
+        const still = p2.get("post") ?? p2.get("track");
+        if (still === watchedId && deepLinkTerminalHandledRef.current !== watchedId) {
+          deepLinkTerminalHandledRef.current = watchedId;
+          toast({
+            title: "Couldn't open this post",
+            description: "Try again from Home or Notifications.",
+            variant: "destructive",
+          });
+          navigate("/", { replace: true });
+        }
+      }, 12000);
+    };
+    scheduleFallbackWatchdog();
 
     // Post not in current feed slice (sort/limit/filters): fetch once and merge so scroll works without changing sort order
     if (
@@ -1608,6 +1718,16 @@ export default function Home() {
             credentials: 'include',
           });
           if (!res.ok) {
+            if (deepLinkTerminalHandledRef.current !== postId) {
+              deepLinkTerminalHandledRef.current = postId;
+              clearDeepLinkWatchdog();
+              toast({
+                title: "Post unavailable",
+                description: "That link may point to a removed or private clip.",
+                variant: "destructive",
+              });
+              navigate("/", { replace: true });
+            }
             return;
           }
           const fullPost = (await res.json()) as PostWithUser;
@@ -1634,7 +1754,16 @@ export default function Home() {
             },
           );
         } catch {
-          // One attempt; avoids a refetch loop if the post is missing or the network fails
+          if (deepLinkTerminalHandledRef.current !== postId) {
+            deepLinkTerminalHandledRef.current = postId;
+            clearDeepLinkWatchdog();
+            toast({
+              title: "Post unavailable",
+              description: "Couldn\u2019t load that clip. Try again later.",
+              variant: "destructive",
+            });
+            navigate("/", { replace: true });
+          }
         }
       })();
       return;
@@ -1646,6 +1775,8 @@ export default function Home() {
       const postIndex = uiPosts.findIndex(p => p.id === postId);
       
       if (postIndex !== -1) {
+        clearDeepLinkWatchdog();
+
         // Mark that we've scrolled to this post
         lastScrolledPostId.current = postId;
         
@@ -1668,13 +1799,25 @@ export default function Home() {
         }, 3000);
       }
     }
-  }, [uiPosts, location, search, navigate, isInitialFeedLoad, queryClient]);
+  }, [
+    uiPosts,
+    location,
+    search,
+    navigate,
+    isInitialFeedLoad,
+    queryClient,
+    toast,
+    sortMode,
+    handleFeedSortChange,
+    posts,
+  ]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+      if (deepLinkWatchdogTimerRef.current) clearTimeout(deepLinkWatchdogTimerRef.current);
     };
   }, []);
 
@@ -1748,7 +1891,7 @@ export default function Home() {
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           sortMode="random"
-          onSortChange={handleFeedSortChange}
+          onSortChange={handleGenreMenuSortChange}
           onStatusSafeAreaTap={scrollFeedToFirstPost}
           onGenreFilterOpenChange={(open) => {
             window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
@@ -1838,10 +1981,11 @@ export default function Home() {
             </div>
           ) : (
             <div className="h-full flex items-center justify-center pt-32">
-              <div className="text-center text-muted-foreground">
-                <p className="text-lg mb-2">Choose Random in the Genre menu.</p>
-                <p className="text-sm">We’ll show one unidentified track at a time.</p>
-              </div>
+              <VinylLoader
+                label="Finding an unidentified track…"
+                className="text-center text-muted-foreground"
+                labelClassName="text-lg text-muted-foreground"
+              />
             </div>
           )}
         </div>
@@ -1859,7 +2003,7 @@ export default function Home() {
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           sortMode={sortMode}
-          onSortChange={handleFeedSortChange}
+          onSortChange={handleGenreMenuSortChange}
           onStatusSafeAreaTap={scrollFeedToFirstPost}
           onGenreFilterOpenChange={(open) => {
             window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
@@ -1867,8 +2011,22 @@ export default function Home() {
         />
         <div className="h-full flex items-center justify-center pt-32">
           <div className="text-center text-muted-foreground">
-            <p className="text-lg mb-2">No posts yet. Be the first to upload!</p>
-            <p className="text-sm">Try selecting different filters</p>
+            {identificationFilter !== "all" || selectedGenres.length > 0 ? (
+              <>
+                <p className="text-lg mb-2">No matching posts</p>
+                <p className="text-sm">Try changing your filters</p>
+              </>
+            ) : posts.length === 0 ? (
+              <>
+                <p className="text-lg mb-2">No posts yet. Be the first to upload!</p>
+                <p className="text-sm">Try selecting different filters</p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg mb-2">No matching posts</p>
+                <p className="text-sm">Try changing your filters</p>
+              </>
+            )}
           </div>
         </div>
         {hintOverlay}
@@ -1884,7 +2042,7 @@ export default function Home() {
         identificationFilter={identificationFilter}
         onIdentificationChange={setIdentificationFilter}
         sortMode={sortMode}
-        onSortChange={handleFeedSortChange}
+        onSortChange={handleGenreMenuSortChange}
         onStatusSafeAreaTap={scrollFeedToFirstPost}
         onGenreFilterOpenChange={(open) => {
           window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
@@ -1965,7 +2123,7 @@ export default function Home() {
             <div className="absolute inset-0 flex items-center justify-center px-6">
               <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/45 p-5 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
                 <div className="mb-3 flex items-center justify-center">
-                  <span className="inline-flex rounded-full border border-[#4ae9df]/55 bg-[#4ae9df]/10 p-1.5 shadow-[0_0_30px_rgba(74,233,223,0.52),0_0_58px_rgba(74,233,223,0.22)] motion-safe:animate-pulse">
+                  <span className="inline-flex rounded-full border border-[#4ae9df]/40 bg-[#4ae9df]/[0.07] p-1.5 motion-reduce:animate-none motion-reduce:shadow-[0_0_0_1px_rgba(74,233,223,0.28)] motion-safe:animate-home-end-dice-ring-pulse">
                     <RandomDiceButton
                       active
                       accentGlow="turquoiseProminent"
@@ -1974,7 +2132,7 @@ export default function Home() {
                         window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
                         handleFeedSortChange("random");
                       }}
-                      className="!min-h-8 !min-w-8 border-0 bg-transparent p-0 shadow-none ring-0 opacity-100 transition-transform duration-150 active:scale-95"
+                      className="!min-h-8 !min-w-8 border-0 bg-transparent p-0 shadow-none opacity-100 transition-transform duration-150 active:scale-95"
                       iconWrapClassName="!size-5"
                       iconClassName="!h-full !w-full !text-white"
                       aria-label="Switch to random discovery"

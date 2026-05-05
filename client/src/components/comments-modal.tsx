@@ -909,9 +909,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       data-testid={`badge-community-identified-${comment.id}`}
                     >
                       <Users className="h-3 w-3 shrink-0" />
-                      {post.verificationStatus === "community_approved"
-                        ? "Community Identified"
-                        : "Identified"}
+                      Identified
                     </span>
                   )}
                   {/* Moderator identified badge: match post-level identified treatment */}

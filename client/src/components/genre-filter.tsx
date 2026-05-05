@@ -70,6 +70,8 @@ function FeedSortMenuIconButton({
 
 const MENU_MAX_WIDTH = 320;
 const VIEWPORT_GUTTER = 8;
+/** Keep aligned with `animation.dice-spin` in `tailwind.config.ts` (~0.42s) and `DICE_SPIN_ANIMATION_MS` in home.tsx */
+const MENU_RANDOM_DICE_SPIN_MS = 420;
 
 export type FeedSortMode = "hottest" | "newest" | "random";
 
@@ -275,6 +277,8 @@ export function GenreFilter({
               </FeedSortMenuIconButton>
               <RandomDiceButton
                 active={sortMode === "random"}
+                accentGlow="none"
+                delayPressMs={sortMode === "random" ? MENU_RANDOM_DICE_SPIN_MS : undefined}
                 onPress={() => onSortChange("random")}
                 aria-label={
                   sortMode === "random"

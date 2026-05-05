@@ -1,4 +1,17 @@
-import { Check, Clock, Users } from "lucide-react";
+import {
+  BadgeCheck,
+  Bell,
+  Calendar,
+  Check,
+  Clock,
+  Film,
+  MessageCircle,
+  SlidersHorizontal,
+  TrendingUp,
+  Trophy,
+  Upload,
+  Users,
+} from "lucide-react";
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -24,6 +37,55 @@ interface FirstLoginOnboardingModalProps {
 const statusPillBase =
   "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
 const statusIconBase = "h-3 w-3 shrink-0";
+const tipIconClass = "mt-0.5 h-4 w-4 shrink-0 text-[#4ae9df]";
+
+const userCommunityTips = [
+  { text: "Upload clips you want ID’d", Icon: Upload },
+  { text: "Suggest track IDs in comments", Icon: MessageCircle },
+  { text: "Filter by genre, status and order at the top", Icon: SlidersHorizontal },
+  { text: "Like posts to get notified when tracks release", Icon: Bell },
+] as const;
+
+const artistMainTips = [
+  { text: "Your tracks get discovered through real clips", Icon: Film },
+  { text: "Verify your own tracks to confirm IDs", Icon: BadgeCheck },
+  { text: "Set up releases to notify interested users", Icon: Calendar },
+  { text: "Track performance in your profile", Icon: TrendingUp },
+] as const;
+
+function TipsList({
+  tips,
+}: {
+  tips: readonly { text: string; Icon: React.ComponentType<{ className?: string }> }[];
+}) {
+  return (
+    <ul className="mt-3.5 space-y-2.5 text-sm text-white/90">
+      {tips.map(({ text, Icon }) => (
+        <li key={text} className="flex items-start gap-2">
+          <Icon className={tipIconClass} aria-hidden />
+          <span>{text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CompactTipsList({
+  tips,
+}: {
+  tips: readonly { text: string; Icon: React.ComponentType<{ className?: string }> }[];
+}) {
+  return (
+    <ul className="mt-2 space-y-1.5 text-xs text-white/80">
+      {tips.map(({ text, Icon }) => (
+        <li key={text} className="flex items-start gap-2">
+          <Icon className={tipIconClass} aria-hidden />
+          <span>{text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function StatusPill({
   icon,
@@ -59,24 +121,10 @@ export function FirstLoginOnboardingModal({
   }, [open]);
 
   const isArtist = audience === "artist";
-  const userCommunityBullets = [
-    "Upload clips you want ID’d",
-    "Comment on posts if you think you know the track",
-    "Filter by genre, status and order at the top",
-    "Like posts to get notified when tracks release",
-  ];
-  const bullets = isArtist
-    ? [
-        "Your tracks get discovered through real clips",
-        "Verify your own tracks to confirm IDs",
-        "Set up releases to notify interested users",
-        "Track performance in your profile",
-      ]
-    : userCommunityBullets;
 
   const secondaryTitle = isArtist
     ? "You’re also part of the community"
-    : "Compete on the leaderboard";
+    : "Compete on the Leaderboard";
   const secondaryText = "Identify tracks, climb the leaderboard, and win artist rewards like studio time, remix opportunities and production gear.";
   const ctaLabel = isArtist ? "Explore" : "Start exploring";
 
@@ -84,8 +132,8 @@ export function FirstLoginOnboardingModal({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onDismiss()}>
       <DialogContent
         forceMount
-        overlayClassName="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200"
-        className="w-[calc(100%-2rem)] max-w-md rounded-2xl border-white/20 bg-[#0f1324]/92 p-0 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+        overlayClassName="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200"
+        className="w-[calc(100%-2rem)] max-w-md rounded-2xl border-[#4ae9df]/35 bg-[#0f1324]/95 p-0 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.97, y: 8 }}
@@ -101,27 +149,20 @@ export function FirstLoginOnboardingModal({
             </DialogDescription>
           </DialogHeader>
 
-          <ul className="mt-3.5 space-y-2.5 text-sm text-white/90">
-            {bullets.map((bullet) => (
-              <li key={bullet} className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#4ae9df]" />
-                <span>{bullet}</span>
-              </li>
-            ))}
-          </ul>
+          <TipsList tips={isArtist ? artistMainTips : userCommunityTips} />
 
-          <div className="mt-4 rounded-lg border border-white/15 bg-black/20 p-3">
-            <p className="text-sm font-medium text-white">{secondaryTitle}</p>
+          <div className="mt-4 rounded-lg border border-white/15 bg-[#0f1324] p-3">
+            {isArtist ? (
+              <p className="text-sm font-medium text-white">{secondaryTitle}</p>
+            ) : (
+              <p className="flex items-center gap-2 text-sm font-medium text-white">
+                <Trophy className={`${tipIconClass} mt-0`} aria-hidden />
+                <span>{secondaryTitle}</span>
+              </p>
+            )}
             {isArtist ? (
               <>
-                <ul className="mt-2 space-y-1.5 text-xs text-white/80">
-                  {userCommunityBullets.map((bullet) => (
-                    <li key={bullet} className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#4ae9df]" />
-                      <span>{bullet}</span>
-                    </li>
-                  ))}
-                </ul>
+                <CompactTipsList tips={userCommunityTips} />
                 <p className="mt-2 text-xs leading-relaxed text-white/75">{secondaryText}</p>
               </>
             ) : (
@@ -136,7 +177,7 @@ export function FirstLoginOnboardingModal({
             <div className="flex flex-wrap gap-2">
               <StatusPill icon={<Clock className={statusIconBase} />} label="Unidentified" tone="unidentified" />
               <StatusPill icon={<Users className={statusIconBase} />} label="Community Identified" />
-              <StatusPill icon={<Check className={`${statusIconBase} text-white`} />} label="Identified" />
+              <StatusPill icon={<Check className={`${statusIconBase} text-white`} />} label="Moderator Confirmed" />
               <StatusPill
                 icon={<GoldVerifiedTick className={`${statusIconBase} text-[#FFD700]`} />}
                 label="Artist Identified"

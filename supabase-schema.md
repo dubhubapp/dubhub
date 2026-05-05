@@ -114,6 +114,30 @@ NOT `user_id` or `from_user_id`.
 
 ---
 
+## user_push_tokens
+| Column            | Type        | Nullable | Default           | Notes                                      |
+| ----------------- | ----------- | -------- | ----------------- | ------------------------------------------ |
+| id                | uuid        | NO       | gen_random_uuid() | Primary key                                |
+| user_id           | uuid        | NO       | –                 | FK → profiles.id                           |
+| platform          | text        | NO       | –                 | 'ios'                                      |
+| token             | text        | NO       | –                 | APNs device token                          |
+| environment       | text        | NO       | –                 | 'sandbox' or 'production'                  |
+| is_active         | boolean     | NO       | true              | Active flag                                |
+| last_seen_at      | timestamptz | NO       | now()             | Last time token was seen / refreshed       |
+| created_at        | timestamptz | NO       | now()             | Created                                    |
+| updated_at        | timestamptz | NO       | now()             | Updated                                    |
+| deactivated_at    | timestamptz | YES      | –                 | When token was deactivated (if any)        |
+| deactivated_reason| text        | YES      | –                 | Why token was deactivated                  |
+| last_error_at     | timestamptz | YES      | –                 | When APNs last errored on this token       |
+| last_error        | text        | YES      | –                 | Last APNs error message (for debugging)    |
+
+⚠️ **Important:**
+- Tokens are registered and deactivated **only** via backend API.
+- `token` is globally unique; re-registration moves it between users if needed.
+- `environment` controls which APNs endpoint is used (sandbox vs production).
+
+---
+
 ## post_likes
 | Column     | Type        | Nullable | Default            | Notes            |
 | ---------- | ----------- | -------- | ------------------ | ---------------- |

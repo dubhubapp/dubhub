@@ -21,6 +21,8 @@ type CallbackOutcome =
   | "invalid"
   | "expired_or_failed";
 
+const RECOVERY_INTENT_KEY = "dubhub:auth-recovery-intent";
+
 export default function AuthCallbackPage() {
   const [, setLocation] = useLocation();
   const [outcome, setOutcome] = useState<CallbackOutcome>("loading");
@@ -38,6 +40,9 @@ export default function AuthCallbackPage() {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     const resolve = async () => {
+      const pendingRecoveryIntent =
+        typeof window !== "undefined" &&
+        sessionStorage.getItem(RECOVERY_INTENT_KEY) === "1";
       const searchParams = new URLSearchParams(window.location.search);
       const searchError = searchParams.get("error_description") || searchParams.get("error");
       if (searchError) {
@@ -74,6 +79,31 @@ export default function AuthCallbackPage() {
 
       const type = hashParams.get("type") || searchParams.get("type");
       const hadAuthPayload = hashParams.has("access_token") || !!code;
+      const hasRefreshToken = hashParams.has("refresh_token");
+      const hasRecoveryType = type === "recovery";
+      const hashAccessToken = hashParams.get("access_token");
+      const hashRefreshToken = hashParams.get("refresh_token");
+
+      // Supabase recovery links on native deep links often arrive as hash tokens
+      // (access_token + refresh_token + type=recovery), without a code exchange step.
+      if (!code && hasRecoveryType && hashAccessToken && hashRefreshToken) {
+        try {
+          sessionStorage.setItem(RECOVERY_INTENT_KEY, "1");
+        } catch {
+          // Best effort only.
+        }
+        const { error: setSessionError } = await supabase.auth.setSession({
+          access_token: hashAccessToken,
+          refresh_token: hashRefreshToken,
+        });
+        if (setSessionError) {
+          if (!cancelled) {
+            setOutcome("expired_or_failed");
+            setDetail(setSessionError.message || "This reset link is invalid or has expired.");
+          }
+          return;
+        }
+      }
 
       for (let i = 0; i < 8; i++) {
         if (cancelled) return;
@@ -91,8 +121,15 @@ export default function AuthCallbackPage() {
           // PASSWORD_RECOVERY may fire slightly after session is readable
           await sleep(120);
 
-          if (type === "recovery" || recoveryFlag) {
-            setOutcome("recovery_continue");
+          const isRecoveryFlow = hasRecoveryType || recoveryFlag || pendingRecoveryIntent;
+
+          if (isRecoveryFlow) {
+            try {
+              sessionStorage.setItem(RECOVERY_INTENT_KEY, "1");
+            } catch {
+              // Best effort only.
+            }
+            setLocation("/reset-password", { replace: true });
             return;
           }
           if (type === "signup" || type === "email_change") {

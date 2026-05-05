@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
+import { App as CapacitorApp } from "@capacitor/app";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -43,6 +44,7 @@ import {
   hasPendingOnboardingForEmail,
   WELCOME_BACK_FLAG_KEY,
 } from "@/lib/onboarding";
+import { registerPushListeners, deactivateCurrentPushToken } from "@/lib/push-notifications";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -90,6 +92,7 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const [location, setLocation] = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string>('user');
   const [isLoading, setIsLoading] = useState(true);
@@ -109,6 +112,98 @@ function App() {
     banned: false,
     suspendedUntil: null,
   });
+
+  useEffect(() => {
+    const toAuthCallbackRoute = (incomingUrl: string): string | null => {
+      try {
+        const parsed = new URL(incomingUrl);
+        if (parsed.protocol !== "uk.dubhub.app:") return null;
+
+        const hostPath = parsed.hostname.toLowerCase();
+        const pathname = parsed.pathname.toLowerCase();
+        const isAuthCallback = hostPath === "auth-callback" || pathname === "/auth-callback";
+        if (!isAuthCallback) return null;
+
+        return `/auth-callback${parsed.search}${parsed.hash}`;
+      } catch {
+        return null;
+      }
+    };
+
+    const toWebFallbackAuthCallbackRoute = (): string | null => {
+      if (typeof window === "undefined") return null;
+      const currentPath = window.location.pathname.toLowerCase();
+      if (currentPath === "/auth-callback") return null;
+      if (currentPath !== "/" && currentPath !== "/index.html") return null;
+
+      const search = window.location.search;
+      const hash = window.location.hash;
+      const searchParams = new URLSearchParams(search);
+      const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+
+      const hasAuthPayload =
+        searchParams.has("code") ||
+        searchParams.has("type") ||
+        searchParams.has("error") ||
+        searchParams.has("error_description") ||
+        hashParams.has("access_token") ||
+        hashParams.has("refresh_token") ||
+        hashParams.has("type") ||
+        hashParams.has("error") ||
+        hashParams.has("error_description");
+
+      if (!hasAuthPayload) return null;
+      return `/auth-callback${search}${hash}`;
+    };
+
+    let cancelled = false;
+    let urlOpenHandle: { remove: () => Promise<void> } | null = null;
+
+    const webFallbackRoute = toWebFallbackAuthCallbackRoute();
+    if (webFallbackRoute) {
+      setLocation(webFallbackRoute);
+    }
+
+    void CapacitorApp.getLaunchUrl()
+      .then((launchResult) => {
+        const launchUrl = launchResult?.url;
+        if (cancelled || !launchUrl) return;
+        const targetRoute = toAuthCallbackRoute(launchUrl);
+        if (targetRoute) setLocation(targetRoute);
+      })
+      .catch(() => {
+        // Best effort: warm open listener below still handles deep links.
+      });
+
+    void CapacitorApp.addListener("appUrlOpen", ({ url }) => {
+      if (!url) return;
+      const targetRoute = toAuthCallbackRoute(url);
+      if (targetRoute) {
+        setLocation(targetRoute);
+      }
+    })
+      .then((handle) => {
+        urlOpenHandle = handle;
+      })
+      .catch(() => {
+        // Plugin may be unavailable in plain web runtime.
+      });
+
+    return () => {
+      cancelled = true;
+      void urlOpenHandle?.remove();
+    };
+  }, [setLocation]);
+
+  useEffect(() => {
+    if (location !== "/reset-password") return;
+    const hasRecoveryIntent =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("dubhub:auth-recovery-intent") === "1";
+    if (!hasRecoveryIntent) {
+      setLocation("/", { replace: true });
+    }
+  }, [location, setLocation]);
 
   useEffect(() => {
     const maybeQueueFirstLoginOnboarding = ({
@@ -297,6 +392,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // Best-effort: set up native push listeners on app shell mount.
+    void registerPushListeners();
+  }, []);
+
+  useEffect(() => {
     const onHomeFeedReady = () => setIsHomeFeedReady(true);
     window.addEventListener(HOME_FEED_READY_EVENT, onHomeFeedReady);
     return () => window.removeEventListener(HOME_FEED_READY_EVENT, onHomeFeedReady);
@@ -331,6 +431,9 @@ function App() {
   };
 
   const handleSignOut = async () => {
+    // Best-effort: deactivate current push token for this user.
+    void deactivateCurrentPushToken();
+
     // Sign out from Supabase
     await supabase.auth.signOut();
 

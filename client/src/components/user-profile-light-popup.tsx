@@ -11,16 +11,25 @@ import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay } from "@/lib/utils";
-import { playInteractionLightThrottled } from "@/lib/haptic";
+import { playInteractionLight } from "@/lib/haptic";
 
-/** Aligns with dropdown/popover: ~150ms motion, slightly softer than raw tailwind zoom. */
-const POPUP_OPEN_MS = 200;
+/** Slightly snappier than before so the shell reads as instant after tap. */
+const POPUP_OPEN_MS = 110;
 const POPUP_CLOSE_MS = 160;
 const POPUP_OPEN_EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
 const POPUP_CLOSE_EASE = "cubic-bezier(0.4, 0, 1, 1)";
-const POPUP_ENTER_Y_PX = 6;
-const POPUP_ENTER_SCALE = 0.96;
+const POPUP_ENTER_Y_PX = 4;
+const POPUP_ENTER_SCALE = 0.985;
 const POPUP_EXIT_SCALE = 0.97;
+
+/**
+ * Trim only while fav genre resolves — popup fill stays neutral (no “genre loaded” teal flash).
+ */
+const LOADING_SHELL_TRIM_RGBA = "45,200,190";
+
+/** Same footprint as video-card `post-genre-tag`; glow/colour via `getGenreGlowPillStyle` only — do not change feed. */
+const POPUP_GENRE_PILL_CLASS =
+  "inline-flex min-h-[1.625rem] max-w-full shrink-0 items-center justify-center rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
 
 type LightPopupOptions = {
   /** When false, skips the verified-artists query (e.g. comments drawer closed). */
@@ -106,17 +115,16 @@ type ProfilePopupUser = {
   karma?: number;
   /** Set by `openByUsername` from tap context; not from API. */
   surfaceGenreHint?: string | null;
+  /** True until `GET /api/user/profile/:username` returns for this open (instant shell + merge after). */
+  profileLoadPending?: boolean;
 };
 
 export function useUserProfileLightPopup(options?: LightPopupOptions) {
   const [selectedUser, setSelectedUser] = useState<ProfilePopupUser | null>(null);
   const [showUserPopup, setShowUserPopup] = useState(false);
   const [popupAnchor, setPopupAnchor] = useState<{ x: number; y: number } | null>(null);
-  const openPopupWithHaptic = useCallback((nextUser: ProfilePopupUser) => {
-    setSelectedUser(nextUser);
-    setShowUserPopup(true);
-    playInteractionLightThrottled();
-  }, []);
+  /** Increments on each `openByUsername` call so stale fetches never overwrite the active popup. */
+  const profileOpenSeqRef = useRef(0);
 
   const { data: verifiedArtists = [] } = useQuery<any[]>({
     queryKey: ["/api/artists/verified"],
@@ -126,43 +134,61 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
   const openByUsername = useCallback(
     async (username: string, openOptions?: OpenByUsernameOptions) => {
       if (!username?.trim()) return;
+      const seq = ++profileOpenSeqRef.current;
+      playInteractionLight();
+
+      const trimmed = username.trim();
       setPopupAnchor(openOptions?.anchor ?? null);
+      setSelectedUser({
+        username: trimmed,
+        profileLoadPending: true,
+        surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
+      });
+      setShowUserPopup(true);
 
       try {
-        const response = await apiRequest("GET", `/api/user/profile/${username}`);
+        const response = await apiRequest("GET", `/api/user/profile/${trimmed}`);
         const userData = (await response.json()) as ProfilePopupUser;
+        if (seq !== profileOpenSeqRef.current) return;
 
-        const artist = verifiedArtists.find((a: any) => a.username === username);
+        const artist = verifiedArtists.find((a: any) => a.username === trimmed);
         const merged: ProfilePopupUser = {
           ...userData,
-          username: userData.username ?? username,
+          username: userData.username ?? trimmed,
           surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
+          profileLoadPending: false,
         };
         if (artist) {
           merged.avatar_url = merged.avatar_url ?? artist.avatar_url ?? null;
           merged.profileImage = merged.profileImage ?? artist.profileImage ?? artist.avatar_url ?? null;
         }
 
-        // One commit: full profile (incl. publicLight.topGenreKey) before paint — avoids neutral "other" flash.
-        openPopupWithHaptic(merged);
+        setSelectedUser(merged);
       } catch (error) {
         console.error("Failed to fetch user:", error);
-        const artist = verifiedArtists.find((a: any) => a.username === username);
-        openPopupWithHaptic(
+        if (seq !== profileOpenSeqRef.current) return;
+        const artist = verifiedArtists.find((a: any) => a.username === trimmed);
+        setSelectedUser(
           artist
             ? {
-                username,
+                username: trimmed,
                 account_type: "artist",
                 verified_artist: true,
                 avatar_url: artist.avatar_url ?? null,
                 profileImage: artist.profileImage ?? artist.avatar_url ?? null,
                 surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
+                profileLoadPending: false,
               }
-            : { username, account_type: "user", surfaceGenreHint: openOptions?.surfaceGenreHint ?? null },
+            : {
+                username: trimmed,
+                account_type: "user",
+                surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
+                profileLoadPending: false,
+              },
         );
       }
     },
-    [openPopupWithHaptic, verifiedArtists],
+    [verifiedArtists],
   );
 
   const closePopup = useCallback(() => setShowUserPopup(false), []);
@@ -194,6 +220,7 @@ function StatLine({
   labelStyle,
   valueStyle,
   valueTabular = true,
+  pulse = false,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -202,6 +229,8 @@ function StatLine({
   valueStyle: CSSProperties;
   /** Off for word labels (e.g. rep tier). */
   valueTabular?: boolean;
+  /** Avoid misleading placeholders while values are still fetching. */
+  pulse?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center overflow-hidden text-center">
@@ -209,12 +238,18 @@ function StatLine({
         <Icon className="h-3.5 w-3.5 shrink-0 opacity-90" />
         <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide">{label}</span>
       </div>
-      <div
-        className={`mt-0.5 w-full break-words text-center text-xs font-semibold leading-tight ${valueTabular ? "tabular-nums" : ""}`}
-        style={valueStyle}
-      >
-        {value}
-      </div>
+      {pulse ? (
+        <div className="mt-1.5 flex w-full justify-center px-0.5">
+          <div className="h-3.5 max-w-[3.25rem] flex-1 animate-pulse rounded-md bg-black/[0.11] dark:bg-white/[0.14]" />
+        </div>
+      ) : (
+        <div
+          className={`mt-0.5 w-full break-words text-center text-xs font-semibold leading-tight ${valueTabular ? "tabular-nums" : ""}`}
+          style={valueStyle}
+        >
+          {value}
+        </div>
+      )}
     </div>
   );
 }
@@ -243,7 +278,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const userId = user?.id;
   // Community-side trust + genre signal, derived from hardened backend fields.
   // (Used as a robust fallback if `publicLight` is missing/incomplete for any account type.)
-  const { data: karmaData } = useQuery<any>({
+  const { data: karmaData, isFetching: isFetchingKarma } = useQuery<any>({
     queryKey: ["/api/user", userId, "karma"],
     enabled: holdPopupSubscriptions && !!user && !!userId,
     retry: false,
@@ -253,7 +288,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     },
   });
 
-  const { data: statsData } = useQuery<any>({
+  const { data: statsData, isFetching: isFetchingStats } = useQuery<any>({
     queryKey: ["/api/user", userId, "stats"],
     enabled: holdPopupSubscriptions && !!user && !!userId,
     retry: false,
@@ -263,14 +298,21 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     },
   });
 
-  const { data: identifiedGenresData } = useQuery<any>({
+  const missingProfileGenreKey = !(
+    user?.publicLight?.topGenreKey ?? (user?.publicLight as any)?.accentGenreKey
+  );
+
+  const identifiedGenresEnabled =
+    holdPopupSubscriptions &&
+    !!user &&
+    !!userId &&
+    !user.profileLoadPending &&
+    missingProfileGenreKey;
+
+  const { data: identifiedGenresData, isFetching: isFetchingIdentifiedGenres } = useQuery<any>({
     queryKey: ["/api/user", userId, "identified-posts-genres"],
     // Only when profile payload did not include a top genre (e.g. stale cache / partial user).
-    enabled:
-      holdPopupSubscriptions &&
-      !!user &&
-      !!userId &&
-      !(user.publicLight?.topGenreKey ?? (user.publicLight as any)?.accentGenreKey),
+    enabled: identifiedGenresEnabled,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/identified-posts-genres`);
@@ -298,13 +340,18 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const topGenreKeyResolved =
     legacyTopGenreKey ?? surfaceGenreHintNormalized ?? derivedTopGenreKey ?? null;
   const hasTopGenreDisplay = topGenreKeyResolved !== null;
-  const topGenreKeyForChrome = topGenreKeyResolved ?? "other";
+  /** Until fav genre is known, avoid defaulting card chrome to grey genre “other”. */
+  const genreChromePending =
+    !hasTopGenreDisplay &&
+    (!!user?.profileLoadPending || (identifiedGenresEnabled && isFetchingIdentifiedGenres));
 
-  const accentChip = getGenreChipStyle(topGenreKeyForChrome);
+  const resolvedAccentChip = getGenreChipStyle(topGenreKeyResolved ?? "other");
   const pillLabelChip = hasTopGenreDisplay ? getGenreChipStyle(topGenreKeyResolved) : null;
 
-  const baseRgb = useMemo(() => hexToRgb(accentChip.bgColor), [accentChip.bgColor]);
-  const tintRgb = useMemo(() => boostChromaForPopup(baseRgb), [baseRgb]);
+  const tintRgb = useMemo(
+    () => boostChromaForPopup(hexToRgb(resolvedAccentChip.bgColor)),
+    [resolvedAccentChip.bgColor],
+  );
   const { r, g, b } = tintRgb;
 
   const inferredAccountType = user?.account_type ?? (user?.verified_artist ? "artist" : "user");
@@ -317,10 +364,10 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const resolvedReputationRaw =
     anyLight?.reputation ?? derivedReputation ?? user?.reputation ?? user?.karma;
 
-  const pillStyle = useMemo(
-    () => getGenreGlowPillStyle(accentChip.bgColor, accentChip.textClass),
-    [accentChip.bgColor, accentChip.textClass],
-  );
+  const pillStyle = useMemo(() => {
+    if (!pillLabelChip) return null;
+    return getGenreGlowPillStyle(pillLabelChip.bgColor, pillLabelChip.textClass);
+  }, [pillLabelChip]);
 
   const cardRgb = useMemo(
     () =>
@@ -331,7 +378,8 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
       ),
     [tintRgb],
   );
-  const isLightSurface = relativeLuminance(cardRgb) > 0.52;
+  /** Genre-unresolved shell: always dark/neutral chrome (readable with white ring trim). */
+  const isLightSurface = genreChromePending ? false : relativeLuminance(cardRgb) > 0.52;
 
   const primaryTextColor = isLightSurface ? "#0F172A" : "#F8FAFC";
   const secondaryTextColor = isLightSurface ? "#334155" : "#E2E8F0";
@@ -346,21 +394,36 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const topWash = rgbToHex(topWashRgb.r, topWashRgb.g, topWashRgb.b);
   const cardHex = rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b);
 
-  const cardSurfaceStyle: CSSProperties = {
-    borderColor: isLightSurface ? "rgba(15,23,42,0.2)" : "rgba(248,250,252,0.22)",
-    background: `linear-gradient(180deg, ${topWash} 0%, ${cardHex} 100%)`,
-    boxShadow: [
-      `0 0 0 1px rgba(${r},${g},${b},0.4)`,
-      `0 12px 36px -24px rgba(${r},${g},${b},0.55)`,
-      `0 0 36px -10px rgba(${r},${g},${b},0.38)`,
-    ].join(", "),
-  };
+  const cardSurfaceStyle: CSSProperties = genreChromePending
+    ? {
+        borderColor: "rgba(148,163,184,0.28)",
+        background:
+          "linear-gradient(180deg, rgba(30,41,59,0.88) 0%, rgba(15,23,42,0.94) 50%, rgba(2,6,23,0.96) 100%)",
+        boxShadow: [
+          `0 0 0 1px rgba(${LOADING_SHELL_TRIM_RGBA},0.42)`,
+          "inset 0 1px 0 rgba(255,255,255,0.06)",
+          "0 16px 40px -18px rgba(0,0,0,0.65)",
+        ].join(", "),
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      }
+    : {
+        borderColor: isLightSurface ? "rgba(15,23,42,0.2)" : "rgba(248,250,252,0.22)",
+        background: `linear-gradient(180deg, ${topWash} 0%, ${cardHex} 100%)`,
+        boxShadow: [
+          `0 0 0 1px rgba(${r},${g},${b},0.4)`,
+          `0 12px 36px -24px rgba(${r},${g},${b},0.55)`,
+          `0 0 36px -10px rgba(${r},${g},${b},0.38)`,
+        ].join(", "),
+      };
 
   const safeNumToString = (value: unknown) => {
     if (value === null || value === undefined) return null;
     const n = typeof value === "number" ? value : Number(value);
     return Number.isFinite(n) ? String(n) : null;
   };
+
+  const profileLoadPending = user?.profileLoadPending === true;
 
   const postsValue =
     safeNumToString(anyLight?.posts ?? anyLight?.uploads ?? derivedPosts) ?? "—";
@@ -374,6 +437,16 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     resolvedReputationRaw != null && Number.isFinite(reputationNum)
       ? deriveTrustLevel(reputationNum).displayName
       : "—";
+
+  const showPostsStatPulse =
+    !profileLoadPending && postsValue === "—" && !!userId && isFetchingStats;
+  const showIdsStatPulse =
+    !profileLoadPending && idsValue === "—" && !!userId && isFetchingKarma;
+  const showRepStatPulse =
+    !profileLoadPending &&
+    reputationDisplayValue === "—" &&
+    !!userId &&
+    isFetchingKarma;
 
   useLayoutEffect(() => {
     if (open && user) {
@@ -503,16 +576,9 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   useLayoutEffect(() => {
     if (!open || !user) return;
     setEntered(false);
-    let raf1 = 0;
-    let raf2 = 0;
-    raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setEntered(true));
-    });
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
-  }, [open, user?.id]);
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
 
   const portalActive = !!user && (open || exiting || justClosedLatch);
   if (!portalActive) return null;
@@ -610,7 +676,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
         onTransitionEnd={handleMotionTransitionEnd}
       >
         <div
-          className="relative overflow-hidden rounded-xl border px-3 py-2.5"
+          className="relative overflow-hidden rounded-xl border px-3 py-2.5 transition-[background,box-shadow,border-color] duration-300 ease-out"
           style={cardSurfaceStyle}
         >
         <button
@@ -636,13 +702,20 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
         </button>
 
         <div className="flex min-w-0 items-start gap-2 pr-7">
-          <img
-            src={avatarSrc ?? undefined}
-            alt={user.username ? formatUsernameDisplay(user.username) : "Profile"}
-            className={`avatar-media h-9 w-9 shrink-0 rounded-full border-2 ${
-              avatarIsDefault ? "avatar-default-media" : ""
-            } ${avatarBorderClass}`}
-          />
+          {profileLoadPending && !avatarSrc ? (
+            <div
+              className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-black/[0.12] dark:bg-white/[0.14]"
+              aria-hidden
+            />
+          ) : (
+            <img
+              src={avatarSrc ?? undefined}
+              alt={user.username ? formatUsernameDisplay(user.username) : "Profile"}
+              className={`avatar-media h-9 w-9 shrink-0 rounded-full border-2 ${
+                avatarIsDefault ? "avatar-default-media" : ""
+              } ${avatarBorderClass}`}
+            />
+          )}
 
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-start justify-between gap-2">
@@ -653,23 +726,29 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                     className="min-w-0 max-w-[10rem] break-words text-sm font-semibold leading-tight sm:max-w-[11rem]"
                     style={{ color: primaryTextColor }}
                   >
-                    {formatUsernameDisplay(user.username)}
+                    {user.username ? formatUsernameDisplay(user.username) : "…"}
                   </h3>
-                  <UserRoleInlineIcons
-                    verifiedArtist={isVerifiedArtist}
-                    moderator={user.moderator === true}
-                    tickClassName="h-3.5 w-3.5 shrink-0"
-                    shieldSizeClass="h-4 w-4"
-                  />
+                  {!profileLoadPending && (
+                    <UserRoleInlineIcons
+                      verifiedArtist={isVerifiedArtist}
+                      moderator={user.moderator === true}
+                      tickClassName="h-3.5 w-3.5 shrink-0"
+                      shieldSizeClass="h-4 w-4"
+                    />
+                  )}
                 </div>
-                <div
-                  className="mt-0.5 text-[9px] font-medium leading-none"
-                  style={{ color: secondaryTextColor }}
-                  title="Joined date"
-                >
-                  {joinedDateLine}
-                </div>
-                {isArtist && (
+                {profileLoadPending ? (
+                  <div className="mt-1 h-2 w-24 max-w-[85%] animate-pulse rounded bg-black/[0.1] dark:bg-white/[0.12]" aria-hidden />
+                ) : (
+                  <div
+                    className="mt-0.5 text-[9px] font-medium leading-none"
+                    style={{ color: secondaryTextColor }}
+                    title="Joined date"
+                  >
+                    {joinedDateLine}
+                  </div>
+                )}
+                {!profileLoadPending && isArtist && (
                   <div className="text-[10px] font-medium leading-none" style={{ color: secondaryTextColor }}>
                     {isVerifiedArtist ? "Verified Artist" : "Artist"}
                   </div>
@@ -681,13 +760,20 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                   Fav Genre
                 </div>
                 <div className="mt-0.5 flex flex-wrap justify-center">
-                  {hasTopGenreDisplay ? (
+                  {hasTopGenreDisplay && pillStyle ? (
                     <span
-                      className="inline-flex max-w-full items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-tight shadow-sm"
+                      className={POPUP_GENRE_PILL_CLASS}
                       style={pillStyle as any}
-                      title={pillLabelChip?.label ?? accentChip.label}
+                      title={pillLabelChip?.label ?? ""}
                     >
-                      <span className="truncate">{pillLabelChip?.label ?? accentChip.label}</span>
+                      <span className="truncate">{pillLabelChip?.label}</span>
+                    </span>
+                  ) : genreChromePending ? (
+                    <span
+                      className={`${POPUP_GENRE_PILL_CLASS} ring-white/10`}
+                      aria-hidden
+                    >
+                      <span className="h-2.5 w-14 max-w-full animate-pulse rounded-sm bg-white/[0.14]" />
                     </span>
                   ) : (
                     <span className="text-[11px] font-semibold" style={{ color: primaryTextColor }}>
@@ -698,41 +784,57 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
               </div>
             </div>
 
-            <div
-              className="mt-2 flex min-w-0 items-stretch gap-2 border-t pt-2"
-              style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}
-            >
-              <StatLine
-                Icon={Upload}
-                label="Posts"
-                value={postsValue}
-                labelStyle={{ color: tileLabelColor }}
-                valueStyle={{ color: primaryTextColor }}
-              />
+            {profileLoadPending ? (
+              <div className="mt-2 border-t pt-2" style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}>
+                <div className="flex min-w-0 items-stretch gap-2" aria-hidden>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`profile-stat-skel-${i}`} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                      <div className="h-2.5 w-12 animate-pulse rounded bg-black/[0.1] dark:bg-white/[0.12]" />
+                      <div className="h-3.5 w-9 animate-pulse rounded-md bg-black/[0.11] dark:bg-white/[0.14]" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
               <div
-                className="mt-0.5 h-9 w-px shrink-0 self-center"
-                style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
-              />
-              <StatLine
-                Icon={Check}
-                label="Correct IDs"
-                value={idsValue}
-                labelStyle={{ color: tileLabelColor }}
-                valueStyle={{ color: primaryTextColor }}
-              />
-              <div
-                className="mt-0.5 h-9 w-px shrink-0 self-center"
-                style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
-              />
-              <StatLine
-                Icon={TrendingUp}
-                label="Rep"
-                value={reputationDisplayValue}
-                labelStyle={{ color: tileLabelColor }}
-                valueStyle={{ color: primaryTextColor }}
-                valueTabular={false}
-              />
-            </div>
+                className="mt-2 flex min-w-0 items-stretch gap-2 border-t pt-2"
+                style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}
+              >
+                <StatLine
+                  Icon={Upload}
+                  label="Posts"
+                  value={postsValue}
+                  labelStyle={{ color: tileLabelColor }}
+                  valueStyle={{ color: primaryTextColor }}
+                  pulse={showPostsStatPulse}
+                />
+                <div
+                  className="mt-0.5 h-9 w-px shrink-0 self-center"
+                  style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
+                />
+                <StatLine
+                  Icon={Check}
+                  label="IDs"
+                  value={idsValue}
+                  labelStyle={{ color: tileLabelColor }}
+                  valueStyle={{ color: primaryTextColor }}
+                  pulse={showIdsStatPulse}
+                />
+                <div
+                  className="mt-0.5 h-9 w-px shrink-0 self-center"
+                  style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
+                />
+                <StatLine
+                  Icon={TrendingUp}
+                  label="Rep"
+                  value={reputationDisplayValue}
+                  labelStyle={{ color: tileLabelColor }}
+                  valueStyle={{ color: primaryTextColor }}
+                  valueTabular={false}
+                  pulse={showRepStatPulse}
+                />
+              </div>
+            )}
           </div>
         </div>
         </div>

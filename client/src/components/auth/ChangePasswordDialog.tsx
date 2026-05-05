@@ -12,19 +12,47 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { validateSignupPassword } from "@/lib/password-validation";
+import { Eye, EyeOff } from "lucide-react";
 
 interface ChangePasswordDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+function getPasswordStrength(password: string) {
+  const value = password.trim();
+  let score = 0;
+
+  const hasMinLength = value.length >= 8;
+  const hasLongLength = value.length >= 12;
+  const hasLower = /[a-z]/.test(value);
+  const hasUpper = /[A-Z]/.test(value);
+  const hasNumber = /[0-9]/.test(value);
+  const hasSymbol = /[^A-Za-z0-9]/.test(value);
+
+  if (hasMinLength) score += 1;
+  if (hasLower) score += 1;
+  if (hasUpper) score += 1;
+  if (hasNumber) score += 1;
+  if (hasSymbol) score += 1;
+  if (hasLongLength) score += 1;
+
+  if (!value || !hasMinLength || score <= 2) return "weak" as const;
+  if (score <= 4) return "okay" as const;
+  return "strong" as const;
+}
+
 export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialogProps) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const { toast } = useToast();
+  const passwordStrength = getPasswordStrength(newPassword);
 
   const resetForm = () => {
     setCurrentPassword("");
@@ -105,7 +133,10 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg max-h-[90vh] overflow-y-auto"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Change password</DialogTitle>
           <DialogDescription>
@@ -115,37 +146,106 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="current-password">Current password</Label>
-            <Input
-              id="current-password"
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              autoComplete="current-password"
-              className="bg-input border-border"
-            />
+            <div className="relative">
+              <Input
+                id="current-password"
+                type={showCurrentPassword ? "text" : "password"}
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
+                className="bg-input border-border pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => setShowCurrentPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="new-password">New password</Label>
-            <Input
-              id="new-password"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              autoComplete="new-password"
-              className="bg-input border-border"
-              placeholder="At least 8 characters, upper, lower, number"
-            />
+            <div className="relative">
+              <Input
+                id="new-password"
+                type={showNewPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+                className="bg-input border-border pr-10"
+                placeholder="At least 8 characters, upper, lower, number"
+              />
+              <button
+                type="button"
+                aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => setShowNewPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Must be at least 8 characters with uppercase, lowercase and numbers
+            </p>
+            {newPassword.trim().length > 0 && (
+              <div className="mt-2 space-y-1" data-testid="change-password-strength-indicator">
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${
+                      passwordStrength === "weak"
+                        ? "w-1/3 bg-red-500"
+                        : passwordStrength === "okay"
+                          ? "w-2/3 bg-yellow-500"
+                          : "w-full bg-green-500"
+                    }`}
+                  />
+                </div>
+                <p
+                  className={`text-xs ${
+                    passwordStrength === "weak"
+                      ? "text-red-600"
+                      : passwordStrength === "okay"
+                        ? "text-yellow-600"
+                        : "text-green-600"
+                  }`}
+                >
+                  {passwordStrength === "weak"
+                    ? "Password is too weak"
+                    : passwordStrength === "okay"
+                      ? "Password could be stronger"
+                      : "Password looks strong"}
+                </p>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirm-new-password">Confirm new password</Label>
-            <Input
-              id="confirm-new-password"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              className="bg-input border-border"
-            />
+            <div className="relative">
+              <Input
+                id="confirm-new-password"
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                className="bg-input border-border pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
           <Button type="submit" className="w-full" disabled={isLoading}>

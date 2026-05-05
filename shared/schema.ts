@@ -120,6 +120,23 @@ export const releasePosts = pgTable("release_posts", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [primaryKey({ columns: [t.releaseId, t.postId] })]);
 
+// APNs device tokens (iOS-only, managed by backend API)
+export const userPushTokens = pgTable("user_push_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => profiles.id),
+  platform: text("platform").notNull(), // 'ios'
+  token: text("token").notNull(),
+  environment: text("environment").notNull(), // 'sandbox' | 'production'
+  isActive: boolean("is_active").notNull().default(true),
+  lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deactivatedAt: timestamp("deactivated_at"),
+  deactivatedReason: text("deactivated_reason"),
+  lastErrorAt: timestamp("last_error_at"),
+  lastError: text("last_error"),
+});
+
 // Notifications - actual database schema uses artist_id, triggered_by (NO type column)
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -303,6 +320,7 @@ export type PostLike = typeof postLikes.$inferSelect;
 export type Release = typeof releases.$inferSelect;
 export type ReleaseLink = typeof releaseLinks.$inferSelect;
 export type ReleasePost = typeof releasePosts.$inferSelect;
+export type UserPushToken = typeof userPushTokens.$inferSelect;
 export type Interaction = typeof interactions.$inferSelect;
 export type Achievement = typeof achievements.$inferSelect;
 

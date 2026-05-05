@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, Moon, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,12 @@ import { playThemeToggleHaptic } from "@/lib/haptic";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { Capacitor } from "@capacitor/core";
+import {
+  getPushReceivePermission,
+  requestPushPermissionAndRegister,
+  unregisterPushAndDeactivate,
+} from "@/lib/push-notifications";
 
 const THEME_TRANSITION_CLASS = "theme-transitioning";
 const THEME_TRANSITION_MS = 180;
@@ -24,6 +30,33 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const notificationPrefs = useNotificationPreferences();
   const { userType } = useUser();
   const isModerator = userType === "moderator";
+  const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!Capacitor.isNativePlatform()) return;
+      const receive = await getPushReceivePermission();
+      if (!cancelled) {
+        setPushDeviceAlertsEnabled(receive === "granted");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePushDeviceToggle = async (enabled: boolean) => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (enabled) {
+      await requestPushPermissionAndRegister();
+      const receive = await getPushReceivePermission();
+      setPushDeviceAlertsEnabled(receive === "granted");
+      return;
+    }
+    await unregisterPushAndDeactivate();
+    setPushDeviceAlertsEnabled(false);
+  };
 
   const runThemeTransition = () => {
     if (typeof document === "undefined") return;
@@ -155,6 +188,25 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                     onCheckedChange={(v) => setNotificationPreferences({ likeNotifications: v })}
                     aria-label="Like notifications"
                     data-testid="switch-notifications-like"
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-4 select-none">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">Device push alerts</p>
+                    <p className="text-xs text-muted-foreground">
+                      Allow iOS notification permission so dub hub can alert this device when you&apos;re not in the app.
+                      In-app notification types above still apply.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={pushDeviceAlertsEnabled}
+                    onCheckedChange={(v) => {
+                      void handlePushDeviceToggle(v);
+                    }}
+                    disabled={!Capacitor.isNativePlatform()}
+                    aria-label="Device push alerts"
+                    data-testid="switch-push-device-alerts"
                   />
                 </div>
               </div>

@@ -12,6 +12,7 @@ import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { useUser } from "@/lib/user-context";
 
 interface CommunityVerificationDialogProps {
   postId: string;
@@ -22,6 +23,7 @@ interface CommunityVerificationDialogProps {
 export function CommunityVerificationDialog({ postId, isOpen, onClose }: CommunityVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { currentUser } = useUser();
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
@@ -66,6 +68,10 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
     onSuccess: () => {
       playSuccessNotification();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "liked-posts"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
       toast({
         title: "Track ID Submitted",
