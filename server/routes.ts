@@ -1408,6 +1408,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             message: `@${commenterUsername} commented on your post.`,
           });
           notified.add(postOwnerId);
+          console.log("[push][comment_on_post] post owner in-app notification created", {
+            recipientUserId: postOwnerId,
+            notificationId: notif.id,
+            postId,
+            invokingSendPushToUser: true,
+          });
           // Fire-and-forget push; do not block comment creation.
           void sendPushToUser(postOwnerId, {
             type: "comment_on_post",
@@ -1419,6 +1425,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (ownerErr) {
           console.error("[Comment] Failed to create post owner notification:", ownerErr);
         }
+      } else {
+        let skipReason: "missing_post_owner" | "commenter_is_owner" | "post_owner_already_notified_elsewhere" | "unknown";
+        if (!postOwnerId) skipReason = "missing_post_owner";
+        else if (postOwnerId === userId) skipReason = "commenter_is_owner";
+        else if (notified.has(postOwnerId)) skipReason = "post_owner_already_notified_elsewhere";
+        else skipReason = "unknown";
+        console.log("[push][comment_on_post] post owner branch skipped (no push send)", {
+          hasPostOwnerId: Boolean(postOwnerId),
+          recipientUserId: postOwnerId ?? null,
+          commenterUserId: userId,
+          skipReason,
+        });
       }
 
       res.status(201).json(comment);

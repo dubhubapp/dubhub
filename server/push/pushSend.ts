@@ -63,11 +63,27 @@ export async function sendPushToUser(
 ): Promise<void> {
   try {
     const tokens = await storage.getActivePushTokensForUser(recipientUserId);
-    if (!tokens || tokens.length === 0) return;
+    const environmentsFound = tokens?.length
+      ? [...new Set(tokens.map((t) => (t.environment === "production" ? "production" : "sandbox")))]
+      : [];
+    console.log("[push] sendPushToUser", {
+      recipientUserId,
+      eventType: payload.type,
+      activeTokenCount: tokens?.length ?? 0,
+      environmentsFound,
+    });
+
+    if (!tokens || tokens.length === 0) {
+      console.log("[push] sendPushToUser skipping: no active tokens", { recipientUserId, eventType: payload.type });
+      return;
+    }
 
     const bundleId = process.env.APNS_BUNDLE_ID;
     if (!bundleId) {
-      console.error("[push] APNS_BUNDLE_ID missing; skipping push send");
+      console.error("[push] APNS_BUNDLE_ID missing; skipping push send", {
+        recipientUserId,
+        eventType: payload.type,
+      });
       return;
     }
 
@@ -85,25 +101,56 @@ export async function sendPushToUser(
         data,
       });
 
-      if (!result.ok) {
-        if (result.reason === "invalid_token") {
-          try {
-            await storage.deactivatePushTokenByValue(token.token, "apns_invalid_token");
-          } catch (err) {
-            console.error("[push] Failed to deactivate invalid token", err);
-          }
-        } else {
-          console.error("[push] transient APNS error", {
-            userId: recipientUserId,
-            tokenId: token.id,
-            status: (result as any).status,
-            error: (result as any).error,
-          });
+      if (result.ok) {
+        console.log("[push] sendPushToUser APNs result", {
+          recipientUserId,
+          eventType: payload.type,
+          environment: env,
+          ok: true,
+        });
+      } else if (result.reason === "invalid_token") {
+        console.log("[push] sendPushToUser APNs result", {
+          recipientUserId,
+          eventType: payload.type,
+          environment: env,
+          ok: false,
+          reason: "invalid_token",
+          status: result.status,
+          apnsReason: summarizeApnsErrorBody(result.error),
+        });
+        try {
+          await storage.deactivatePushTokenByValue(token.token, "apns_invalid_token");
+        } catch (err) {
+          console.error("[push] Failed to deactivate invalid token", err);
         }
+      } else {
+        console.log("[push] sendPushToUser APNs result", {
+          recipientUserId,
+          eventType: payload.type,
+          environment: env,
+          ok: false,
+          reason: "transient_error",
+          status: result.status,
+          apnsReason: summarizeApnsErrorBody(result.error),
+        });
       }
     }
   } catch (err) {
     console.error("[push] sendPushToUser error", err);
   }
+}
+
+/** Apple error response body may be JSON with a `reason` field; never log token values. */
+function summarizeApnsErrorBody(raw: string | undefined): string | undefined {
+  if (!raw || !raw.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { reason?: string };
+    if (typeof parsed.reason === "string" && parsed.reason.length > 0) {
+      return parsed.reason;
+    }
+  } catch {
+    // non-JSON body
+  }
+  return raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
 }
 
