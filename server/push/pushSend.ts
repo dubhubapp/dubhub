@@ -4,7 +4,10 @@ import { storage } from "../storage";
 type PushEventName =
   | "comment_on_post"
   | "artist_identified_post"
-  | "release_attached_to_liked_or_uploaded_post";
+  | "release_attached_to_liked_or_uploaded_post"
+  | "release_day_out_today"
+  | "moderator_community_verification_pending"
+  | "moderator_report_opened";
 
 interface BaseEventPayload {
   type: PushEventName;
@@ -32,10 +35,36 @@ interface ReleaseAttachedPayload extends BaseEventPayload {
   artistId: string;
 }
 
+interface ReleaseDayOutPayload extends BaseEventPayload {
+  type: "release_day_out_today";
+  releaseId: string;
+  postId: string | null;
+  artistId: string;
+  /** Human-readable title for alert body (not the APNs title). */
+  releaseTitle: string;
+}
+
+interface ModeratorCommunityVerificationPayload extends BaseEventPayload {
+  type: "moderator_community_verification_pending";
+  postId: string;
+  triggeredByUserId: string;
+}
+
+interface ModeratorReportOpenedPayload extends BaseEventPayload {
+  type: "moderator_report_opened";
+  postId: string;
+  triggeredByUserId: string;
+  reportKind: "post" | "comment";
+  reportId?: string;
+}
+
 type EventPayload =
   | CommentOnPostPayload
   | ArtistIdentifiedPayload
-  | ReleaseAttachedPayload;
+  | ReleaseAttachedPayload
+  | ReleaseDayOutPayload
+  | ModeratorCommunityVerificationPayload
+  | ModeratorReportOpenedPayload;
 
 function buildTitleAndBody(payload: EventPayload): { title: string; body: string } {
   switch (payload.type) {
@@ -53,6 +82,23 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       return {
         title: "Release added",
         body: "A track you interacted with has been added to your Releases.",
+      };
+    case "release_day_out_today": {
+      const name = payload.releaseTitle.trim() || "Release";
+      return {
+        title: "Out today",
+        body: `${name} is out today.`,
+      };
+    }
+    case "moderator_community_verification_pending":
+      return {
+        title: "Verification queue",
+        body: "Community ID needs review.",
+      };
+    case "moderator_report_opened":
+      return {
+        title: "New report",
+        body: "A new report needs review.",
       };
   }
 }

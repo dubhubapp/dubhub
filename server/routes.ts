@@ -113,6 +113,58 @@ function composeModerationUserNotification(params: {
   return msg;
 }
 
+/** Push fan-out only; in-app moderator rows unchanged. Exclude actor when they’re also a moderator. */
+function fanOutModeratorPushCommunityVerification(postId: string, triggeredByUserId: string) {
+  void (async () => {
+    try {
+      const modResult = await db.execute(sql`
+        SELECT id FROM profiles WHERE moderator = true AND id != ${triggeredByUserId}
+      `);
+      for (const row of (modResult as any).rows ?? []) {
+        const moderatorId = row.id as string;
+        if (!moderatorId) continue;
+        void sendPushToUser(moderatorId, {
+          type: "moderator_community_verification_pending",
+          postId,
+          triggeredByUserId,
+        });
+      }
+    } catch (e) {
+      console.error("[push] fanOutModeratorPushCommunityVerification", e);
+    }
+  })();
+}
+
+function fanOutModeratorPushReport(params: {
+  postId: string;
+  triggeredByUserId: string;
+  reportId?: string;
+  reportKind: "post" | "comment";
+}) {
+  const { postId, triggeredByUserId, reportId, reportKind } = params;
+  void (async () => {
+    try {
+      const modResult = await db.execute(sql`
+        SELECT id FROM profiles WHERE moderator = true AND id != ${triggeredByUserId}
+      `);
+      for (const row of (modResult as any).rows ?? []) {
+        const moderatorId = row.id as string;
+        if (!moderatorId) continue;
+        const payload = {
+          type: "moderator_report_opened" as const,
+          postId,
+          triggeredByUserId,
+          reportKind,
+          ...(reportId ? { reportId } : {}),
+        };
+        void sendPushToUser(moderatorId, payload);
+      }
+    } catch (e) {
+      console.error("[push] fanOutModeratorPushReport", e);
+    }
+  })();
+}
+
 type FeedCursor =
   | { sortMode: "newest"; createdAt: string; id: string }
   | { sortMode: "hottest"; hotScore: number; createdAt: string; id: string };
@@ -1216,10 +1268,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create the report
-      await db.execute(sql`
+      const postReportInsertResult = await db.execute(sql`
         INSERT INTO reports (reporter_id, reported_post_id, reported_user_id, reason, description, status, created_at)
         VALUES (${userId}, ${postId}, NULL, ${reason.trim()}, ${description || null}, 'open', NOW())
+        RETURNING id
       `);
+      const newPostReportId = (postReportInsertResult as any).rows?.[0]?.id as string | undefined;
 
       // Notify all moderators about the new post report
       await db.execute(sql`
@@ -1234,6 +1288,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM profiles p
         WHERE p.moderator = true
       `);
+
+      fanOutModeratorPushReport({
+        postId,
+        triggeredByUserId: userId,
+        reportKind: "post",
+        ...(newPostReportId ? { reportId: newPostReportId } : {}),
+      });
 
       // Auto soft-hide: Check if post has 3+ open reports
       const openReportsCount = await db.execute(sql`
@@ -1320,10 +1381,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? `COMMENT_ID:${commentId}|${description}`
         : `COMMENT_ID:${commentId}`;
       
-      await db.execute(sql`
+      const commentReportInsertResult = await db.execute(sql`
         INSERT INTO reports (reporter_id, reported_post_id, reported_user_id, reason, description, status, created_at)
         VALUES (${userId}, ${comment.post_id}, ${comment.user_id}, ${reason.trim()}, ${reportDescription}, 'open', NOW())
+        RETURNING id
       `);
+      const newCommentReportId = (commentReportInsertResult as any).rows?.[0]?.id as string | undefined;
 
       // Notify all moderators about the new user report (comment report)
       await db.execute(sql`
@@ -1338,6 +1401,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM profiles p
         WHERE p.moderator = true
       `);
+
+      fanOutModeratorPushReport({
+        postId: comment.post_id as string,
+        triggeredByUserId: userId,
+        reportKind: "comment",
+        ...(newCommentReportId ? { reportId: newCommentReportId } : {}),
+      });
 
       res.status(201).json({ message: "Report submitted successfully" });
     } catch (error) {
@@ -1901,7 +1971,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM profiles p
         WHERE p.moderator = true
       `);
-      
+
+      fanOutModeratorPushCommunityVerification(postId, userId);
+
       res.json({ message: "Post verified by community" });
     } catch (error) {
       console.error("Community verification error:", error);

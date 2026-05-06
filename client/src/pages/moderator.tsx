@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useUser } from "@/lib/user-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ export default function ModeratorPage() {
   const [activeTab, setActiveTab] = useState("pending");
   const { userType } = useUser();
   const [, setLocation] = useLocation();
+  const tabSearch = useSearch();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedPost, setSelectedPost] = useState<PostWithUser | null>(null);
@@ -66,6 +67,16 @@ export default function ModeratorPage() {
       setLocation("/");
     }
   }, [userType, setLocation]);
+
+  // Optional deep link / push tap: /moderator?tab=pending | reports
+  useEffect(() => {
+    const q = tabSearch.startsWith("?") ? tabSearch.slice(1) : tabSearch;
+    const params = new URLSearchParams(q);
+    const tab = params.get("tab");
+    if (tab === "pending" || tab === "reports") {
+      setActiveTab(tab);
+    }
+  }, [tabSearch]);
 
   // Get current user for authenticated requests
   const { currentUser } = useUser();
