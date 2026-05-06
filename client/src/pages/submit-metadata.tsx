@@ -818,6 +818,8 @@ export default function SubmitMetadata() {
     submitClickTsRef.current = Date.now();
     let uploadBlob: Blob | null = videoFile || nativePostArtifact?.uploadFile || null;
     let uploadFileName = trimState.fileName;
+    let uploadBlobSource: "artifact-memory" | "fetch-convertFileSrc" | "filesystem-fallback" | "unknown" =
+      uploadBlob ? "artifact-memory" : "unknown";
     if (nativePostArtifact?.uploadFile) {
       uploadFileName = nativePostArtifact.filename || uploadFileName;
       dubhubVideoDebugLog("[DubHub][NativePost]", "submit-using-existing-artifact", {
@@ -832,7 +834,7 @@ export default function SubmitMetadata() {
           reason: "submit fallback reconstruction",
         });
         const previewUri = nativePreviewUri(nativeOutputUri);
-        const candidateUris = [previewUri, Capacitor.convertFileSrc(nativeOutputUri), nativeOutputUri];
+        const candidateUris = [previewUri];
         let fallbackErr: unknown = null;
         for (const uri of candidateUris) {
           try {
@@ -849,6 +851,7 @@ export default function SubmitMetadata() {
               throw new Error("Native preview fetch returned empty blob");
             }
             uploadBlob = blob;
+            uploadBlobSource = "fetch-convertFileSrc";
             uploadFileName = trimState.fileName || "trimmed_clip.mp4";
             dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "lazy native upload prep success", {
               fileSize: blob.size,
@@ -866,6 +869,7 @@ export default function SubmitMetadata() {
             mimeType: trimState.fileType || "video/mp4",
           });
           uploadBlob = fileFromFs;
+          uploadBlobSource = "filesystem-fallback";
           uploadFileName = fileFromFs.name;
           dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "lazy native upload prep success via filesystem", {
             fileSize: fileFromFs.size,
@@ -898,6 +902,14 @@ export default function SubmitMetadata() {
     if (!uploadedVideoUrl) {
       try {
         setIsUploading(true);
+        dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "submit-upload-file-shape", {
+          source: uploadBlobSource,
+          nativeOutputUriPreview: nativeOutputUri?.slice(0, 140) ?? null,
+          fileName: uploadFileName,
+          fileSize: uploadBlob.size,
+          fileType:
+            uploadBlob instanceof File ? uploadBlob.type || trimState.fileType || "video/mp4" : trimState.fileType || "video/mp4",
+        });
         dubhubVideoDebugLog("[DubHub][NativePost]", "submit-upload-start", {
           elapsedSinceSubmitClickMs: Date.now() - submitClickTsRef.current,
           fileName: uploadFileName,

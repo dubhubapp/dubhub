@@ -267,6 +267,27 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return out;
 }
 
+function decodeFileUriPath(nativeOutputUri: string): string {
+  try {
+    const u = new URL(nativeOutputUri);
+    if (u.protocol !== "file:") return nativeOutputUri;
+    return decodeURIComponent(u.pathname || "");
+  } catch {
+    return nativeOutputUri;
+  }
+}
+
+function basename(inputPath: string): string {
+  const cleaned = inputPath.replace(/\/+$/, "");
+  const i = cleaned.lastIndexOf("/");
+  return i >= 0 ? cleaned.slice(i + 1) : cleaned;
+}
+
+function isLikelyIosTempPath(decodedPath: string): boolean {
+  const p = decodedPath.toLowerCase();
+  return p.includes("/tmp/") || p.includes("/temporary/");
+}
+
 /**
  * Fallback reconstruction path for iOS native output URIs when fetch(convertFileSrc(...))
  * fails in WebView. Heavy by design; use only as a last resort.
@@ -277,11 +298,43 @@ export async function nativeOutputUriToFileFallback(input: {
   mimeType?: string;
 }): Promise<File> {
   const { nativeOutputUri, fileName, mimeType } = input;
+  const decodedPath = decodeFileUriPath(nativeOutputUri);
+  const tmpBasename = basename(decodedPath);
   dubhubVideoDebugLog("[DubHub][NativePost]", "any reconstruction path still being used", {
     reason: "filesystem-readFile-fallback",
     nativeOutputUriPreview: preview(nativeOutputUri, 120),
+    decodedPathPreview: preview(decodedPath, 120),
   });
-  const out = await Filesystem.readFile({ path: nativeOutputUri });
+  let out:
+    | {
+        data: string | Blob;
+      }
+    | undefined;
+  let readMode = "unknown";
+  if (isLikelyIosTempPath(decodedPath) && tmpBasename) {
+    try {
+      out = await Filesystem.readFile({
+        path: tmpBasename,
+        directory: Directory.Temporary,
+      });
+      readMode = "filesystem-temporary";
+    } catch (tmpErr) {
+      dubhubVideoDebugLog("[DubHub][NativePost]", "filesystem temp read failed; retrying raw path", {
+        fileName: tmpBasename,
+        error: tmpErr instanceof Error ? tmpErr.message : String(tmpErr),
+      });
+    }
+  }
+  if (!out) {
+    out = await Filesystem.readFile({ path: decodedPath });
+    readMode = "filesystem-raw-path";
+  }
   const bytes = base64ToUint8Array(out.data as string);
+  dubhubVideoDebugLog("[DubHub][NativePost]", "filesystem-readFile-fallback-built-file", {
+    readMode,
+    bytes: bytes.length,
+    fileName,
+    mimeType: mimeType || "video/mp4",
+  });
   return new File([bytes], fileName, { type: mimeType || "video/mp4" });
 }

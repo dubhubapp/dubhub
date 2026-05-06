@@ -1229,6 +1229,8 @@ export default function TrimVideo() {
               elapsedMs: Date.now() - uploadPrepStartMs,
               bytes: preparedUploadFile.size,
               type: preparedUploadFile.type,
+              source: "fetch-convertFileSrc",
+              nativeOutputUriPreview: trimResult.outputUri.slice(0, 120),
             });
           } finally {
             window.clearTimeout(uploadTid);

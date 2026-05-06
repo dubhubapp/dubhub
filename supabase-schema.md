@@ -331,3 +331,58 @@ Notes:
 - Artist accounts may still request/sign up with reserved usernames because artist approval is handled manually.
 - RLS should be enabled before TestFlight.
 - Direct public/client table access should be removed once username availability checking is moved to a safe RPC.
+
+---
+
+---
+
+## user_push_tokens
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | uuid | NO | gen_random_uuid() | Primary key |
+| user_id | uuid | NO | – | FK → profiles.id (ON DELETE CASCADE) |
+| platform | text | NO | – | Device platform (currently `ios`) |
+| token | text | NO | – | APNs device token |
+| environment | text | NO | – | `sandbox` or `production` |
+| is_active | boolean | NO | true | Whether token should receive pushes |
+| last_seen_at | timestamptz | NO | now() | Updated on registration |
+| created_at | timestamptz | NO | now() | Created timestamp |
+| updated_at | timestamptz | NO | now() | Updated timestamp |
+| deactivated_at | timestamptz | YES | – | When token was deactivated |
+| deactivated_reason | text | YES | – | Reason for deactivation |
+| last_error_at | timestamptz | YES | – | Last APNs error timestamp |
+| last_error | text | YES | – | Last APNs error message |
+
+### Notes
+- Stores APNs device tokens for push notifications.
+- Tokens are written via backend (`/api/push-tokens/register`).
+- One user can have multiple tokens (multiple devices).
+- `is_active = false` disables push delivery without deleting the token.
+- `environment` must match APNs token origin:
+  - Local/Xcode/dev → `sandbox`
+  - TestFlight/App Store → `production`
+
+### Used by
+Push notification system (v1):
+- `comment_on_post`
+- `artist_identified_post`
+- `release_attached_to_liked_or_uploaded_post`
+
+### Indexes
+
+- `ux_user_push_tokens_token` unique on `token`
+- `idx_user_push_tokens_user_active` on `user_id` where `is_active = true`
+- `idx_user_push_tokens_env_active` on `environment` where `is_active = true`
+
+### Constraints
+
+- `user_push_tokens_user_id_fkey`: `user_id` references `profiles.id`
+
+### Row Level Security (RLS)
+
+- Enabled: NO
+- Access pattern:
+  - Table is intended to be written/read through backend API only
+  - Client should not query this table directly
+- Hardening note:
+  - Enable RLS and add backend-safe policies after v1/v1.5 push notification testing is complete

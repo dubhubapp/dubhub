@@ -24,6 +24,7 @@ import { sendPushToUser } from "./push/pushSend";
 import {
   buildCompressOnlyArgs,
   buildTrimCompressArgs,
+  ensureFfprobeAvailable,
   probeDurationSeconds,
   runFfmpeg,
 } from "./ffmpegVideo";
@@ -321,7 +322,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('File upload attempt:', {
         originalname: file.originalname,
         mimetype: file.mimetype,
-        size: file.size
+        size: file.size ?? null,
+        note: "multer fileFilter runs before memory buffer is attached; buffer length logged in handler",
       });
       
       const allowedTypes = [
@@ -386,6 +388,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ success: false, error: "No video file provided" });
         }
 
+        console.log("[upload-video] parsed multer file", {
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          reqFileSize: req.file.size ?? null,
+          bufferLength: req.file.buffer?.length ?? null,
+        });
+
         if (req.file.size > MAX_VIDEO_UPLOAD_BYTES) {
           return res.status(413).json({
             success: false,
@@ -414,6 +423,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const compressedPath = path.join(processedDir, compressedFilename);
 
         fs.writeFileSync(inputPath, req.file.buffer);
+        let writtenInputSize: number | null = null;
+        try {
+          writtenInputSize = fs.statSync(inputPath).size;
+        } catch (statErr) {
+          console.error("[upload-video] failed to stat input file after write", {
+            inputPath,
+            error: statErr instanceof Error ? statErr.message : String(statErr),
+          });
+        }
+        console.log("[upload-video] input persisted", {
+          inputPath,
+          reqFileSize: req.file.size ?? null,
+          bufferLength: req.file.buffer?.length ?? null,
+          writtenInputSize,
+        });
 
         let startTime = 0;
         let endTime = 30;
@@ -423,8 +447,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (preTrimmed) {
             let durationSec: number;
             try {
+              try {
+                await ensureFfprobeAvailable();
+                console.log("[upload-video] ffprobe availability check passed", { inputPath });
+              } catch (ffprobeErr) {
+                console.error("[upload-video] ffprobe availability check failed", {
+                  inputPath,
+                  reqFileSize: req.file.size ?? null,
+                  bufferLength: req.file.buffer?.length ?? null,
+                  writtenInputSize,
+                  error:
+                    ffprobeErr instanceof Error
+                      ? { name: ffprobeErr.name, message: ffprobeErr.message, stack: ffprobeErr.stack }
+                      : String(ffprobeErr),
+                });
+                throw ffprobeErr;
+              }
               durationSec = await probeDurationSeconds(inputPath);
-            } catch {
+            } catch (probeErr) {
+              console.error("[upload-video] preTrimmed duration probe failed", {
+                inputPath,
+                originalName: req.file.originalname,
+                mimetype: req.file.mimetype,
+                reqFileSize: req.file.size ?? null,
+                bufferLength: req.file.buffer?.length ?? null,
+                writtenInputSize,
+                error:
+                  probeErr instanceof Error
+                    ? { name: probeErr.name, message: probeErr.message, stack: probeErr.stack }
+                    : String(probeErr),
+              });
               try {
                 fs.unlinkSync(inputPath);
               } catch {
