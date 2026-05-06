@@ -2033,8 +2033,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify the post uploader that their track was identified by an artist.
       try {
-        const postOwnerId = post.user_id as string | undefined;
-        if (postOwnerId && postOwnerId !== artistId) {
+        const postOwnerId =
+          (post as any).userId ?? (post as any)?.user?.id ?? undefined;
+        if (!postOwnerId) {
+          console.warn("[artist-confirm] missing post owner id; skip notification", { postId });
+        } else if (postOwnerId !== artistId) {
           const notif = await storage.createNotification({
             artistId: postOwnerId,
             triggeredBy: artistId,
