@@ -1,0 +1,8 @@
+{
+  "build": {
+    "aptPackages": ["ffmpeg"]
+  },
+  "deploy": {
+    "aptPackages": ["ffmpeg"]
+  }
+}
