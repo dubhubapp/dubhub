@@ -1,6 +1,7 @@
 import "dotenv/config";
 import cron from "node-cron";
 import cors from "cors";
+import { execFile } from "child_process";
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
@@ -93,7 +94,44 @@ app.use((req, res, next) => {
   next();
 });
 
+async function logFfprobeRuntimeDiagnostics() {
+  const pathValue = process.env.PATH || "";
+  console.log("[startup][ffprobe] PATH", pathValue);
+
+  await new Promise<void>((resolve) => {
+    execFile("which", ["ffprobe"], (err, stdout, stderr) => {
+      if (err) {
+        console.error("[startup][ffprobe] which ffprobe failed", {
+          message: err.message,
+          code: (err as NodeJS.ErrnoException).code ?? null,
+          stderr: stderr?.trim() || null,
+        });
+      } else {
+        console.log("[startup][ffprobe] which ffprobe", stdout.trim() || "(empty)");
+      }
+      resolve();
+    });
+  });
+
+  await new Promise<void>((resolve) => {
+    execFile("ffprobe", ["-version"], (err, stdout, stderr) => {
+      if (err) {
+        console.error("[startup][ffprobe] ffprobe -version failed", {
+          message: err.message,
+          code: (err as NodeJS.ErrnoException).code ?? null,
+          stderr: stderr?.trim() || null,
+        });
+      } else {
+        const firstLine = stdout.trim().split("\n")[0] || "(empty)";
+        console.log("[startup][ffprobe] ffprobe -version", firstLine);
+      }
+      resolve();
+    });
+  });
+}
+
 (async () => {
+  await logFfprobeRuntimeDiagnostics();
   const server = await registerRoutes(app);
 
   // Release-day morning notifications: 9am Europe/London check is inside the job
