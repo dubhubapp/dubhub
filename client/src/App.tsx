@@ -118,6 +118,8 @@ function App() {
   });
 
   useEffect(() => {
+    const DUBHUB_UNIVERSAL_HOSTS = new Set(["dubhub.uk", "www.dubhub.uk"]);
+
     const toAuthCallbackRoute = (incomingUrl: string): string | null => {
       try {
         const parsed = new URL(incomingUrl);
@@ -132,6 +134,40 @@ function App() {
       } catch {
         return null;
       }
+    };
+
+    /** HTTPS Universal Links: home post only; never /auth-callback (browser-only). */
+    const toUniversalLinkPostRoute = (incomingUrl: string): string | null => {
+      try {
+        const parsed = new URL(incomingUrl);
+        if (parsed.protocol !== "https:") return null;
+        const host = parsed.hostname.toLowerCase();
+        if (!DUBHUB_UNIVERSAL_HOSTS.has(host)) return null;
+
+        const rawPath = parsed.pathname || "/";
+        const normPath = rawPath.length > 1 && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
+        if (normPath.toLowerCase() === "/auth-callback" || normPath.toLowerCase().startsWith("/auth-callback/")) {
+          return null;
+        }
+        if (normPath !== "/") return null;
+
+        const postId = parsed.searchParams.get("post");
+        if (postId == null || postId.trim() === "") return null;
+
+        return `/?post=${encodeURIComponent(postId.trim())}`;
+      } catch {
+        return null;
+      }
+    };
+
+    const logAppUrlResolution = (source: "launch-url" | "app-url-open", incoming: string, route: string | null) => {
+      console.log(`[dubhub] ${source}`, { incoming, route: route ?? null });
+    };
+
+    const resolveIncomingUniversalAppUrl = (incomingUrl: string): string | null => {
+      const authRoute = toAuthCallbackRoute(incomingUrl);
+      if (authRoute) return authRoute;
+      return toUniversalLinkPostRoute(incomingUrl);
     };
 
     const toWebFallbackAuthCallbackRoute = (): string | null => {
@@ -172,7 +208,8 @@ function App() {
       .then((launchResult) => {
         const launchUrl = launchResult?.url;
         if (cancelled || !launchUrl) return;
-        const targetRoute = toAuthCallbackRoute(launchUrl);
+        const targetRoute = resolveIncomingUniversalAppUrl(launchUrl);
+        logAppUrlResolution("launch-url", launchUrl, targetRoute);
         if (targetRoute) setLocation(targetRoute);
       })
       .catch(() => {
@@ -181,7 +218,8 @@ function App() {
 
     void CapacitorApp.addListener("appUrlOpen", ({ url }) => {
       if (!url) return;
-      const targetRoute = toAuthCallbackRoute(url);
+      const targetRoute = resolveIncomingUniversalAppUrl(url);
+      logAppUrlResolution("app-url-open", url, targetRoute);
       if (targetRoute) {
         setLocation(targetRoute);
       }
