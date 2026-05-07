@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 19-03-2026
+Last updated: 07-05-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -111,6 +111,20 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 - `artist_id` → recipient  
 - `triggered_by` → actor  
 NOT `user_id` or `from_user_id`.
+
+---
+
+## feedback_submissions
+| Column     | Type        | Nullable | Default           | Notes |
+|------------|-------------|----------|-------------------|-------|
+| id         | uuid        | NO       | gen_random_uuid() | Primary key |
+| user_id    | uuid        | NO       | –                 | FK → profiles.id (ON DELETE CASCADE) |
+| body       | text        | NO       | –                 | Feedback text (1-1000 chars, trimmed non-empty) |
+| created_at | timestamptz | NO       | now()             | Created |
+
+⚠️ **Important:**
+- Intended for app feedback submitted from Settings.
+- RLS enabled; authenticated users can insert only rows where `user_id = auth.uid()`.
 
 ---
 

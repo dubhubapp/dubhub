@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, Moon, Settings as SettingsIcon } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, MessageSquare, Moon, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 import { playThemeToggleHaptic } from "@/lib/haptic";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { apiRequest } from "@/lib/queryClient";
 import { Capacitor } from "@capacitor/core";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
+import { INPUT_LIMITS } from "@shared/input-limits";
 import {
   getPushReceivePermission,
   requestPushPermissionAndRegister,
@@ -32,6 +35,9 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const { userType } = useUser();
   const isModerator = userType === "moderator";
   const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState<boolean | null>(null);
+  const [feedbackBody, setFeedbackBody] = useState("");
+  const [feedbackStatus, setFeedbackStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   useIosKeyboardResizeNone(true);
 
   useEffect(() => {
@@ -91,6 +97,34 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
       return;
     }
     navigate("/profile");
+  };
+
+  const handleSubmitFeedback = async () => {
+    const trimmed = feedbackBody.trim();
+    if (!trimmed) {
+      setFeedbackStatus({ type: "error", message: "Please enter feedback before sending." });
+      return;
+    }
+    if (trimmed.length > INPUT_LIMITS.feedbackBody) {
+      setFeedbackStatus({
+        type: "error",
+        message: `Feedback must be ${INPUT_LIMITS.feedbackBody} characters or less.`,
+      });
+      return;
+    }
+
+    setFeedbackStatus(null);
+    setIsSubmittingFeedback(true);
+    try {
+      await apiRequest("POST", "/api/feedback", { feedback: trimmed });
+      setFeedbackBody("");
+      setFeedbackStatus({ type: "success", message: "Thanks. Your feedback has been sent." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send feedback";
+      setFeedbackStatus({ type: "error", message });
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
   };
 
   return (
@@ -237,6 +271,52 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </Button>
+
+            <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md">
+              <div className="flex items-start gap-3">
+                <MessageSquare className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">Send feedback</p>
+                  <p className="text-xs text-muted-foreground">
+                    Tell us what to improve for launch.
+                  </p>
+                </div>
+              </div>
+              <Textarea
+                value={feedbackBody}
+                onChange={(event) => {
+                  setFeedbackBody(event.target.value);
+                  if (feedbackStatus) setFeedbackStatus(null);
+                }}
+                maxLength={INPUT_LIMITS.feedbackBody}
+                placeholder="Share your feedback..."
+                className="min-h-[96px]"
+                data-testid="textarea-feedback"
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {feedbackBody.trim().length}/{INPUT_LIMITS.feedbackBody}
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => void handleSubmitFeedback()}
+                  disabled={isSubmittingFeedback}
+                  data-testid="button-submit-feedback"
+                >
+                  {isSubmittingFeedback ? "Sending..." : "Submit"}
+                </Button>
+              </div>
+              {feedbackStatus ? (
+                <p
+                  className={`text-xs ${
+                    feedbackStatus.type === "success" ? "text-emerald-300" : "text-red-300"
+                  }`}
+                  data-testid="feedback-status"
+                >
+                  {feedbackStatus.message}
+                </p>
+              ) : null}
+            </div>
 
             <Button
               variant="ghost"

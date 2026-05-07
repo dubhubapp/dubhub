@@ -12,6 +12,8 @@ export const INPUT_LIMITS = {
   commentBody: 500,
   /** Release name */
   releaseTitle: 100,
+  /** Settings feedback text */
+  feedbackBody: 1000,
 } as const;
 
 export type InputLimitKey = keyof typeof INPUT_LIMITS;

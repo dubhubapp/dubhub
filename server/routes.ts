@@ -3727,6 +3727,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/feedback", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const rawFeedback = typeof req.body?.feedback === "string" ? req.body.feedback : "";
+      const feedback = rawFeedback.trim();
+
+      if (!feedback) {
+        return res.status(400).json({ message: "Feedback cannot be empty" });
+      }
+      if (feedback.length > INPUT_LIMITS.feedbackBody) {
+        return res
+          .status(400)
+          .json({ message: `Feedback must be at most ${INPUT_LIMITS.feedbackBody} characters` });
+      }
+
+      await db.execute(sql`
+        INSERT INTO feedback_submissions (user_id, body, created_at)
+        VALUES (${req.dbUser.id}, ${feedback}, NOW())
+      `);
+
+      res.status(201).json({ message: "Feedback sent" });
+    } catch (error) {
+      console.error("[/api/feedback] Error:", error);
+      res.status(500).json({ message: "Failed to submit feedback" });
+    }
+  });
+
   // MailerLite integration endpoint
   app.post("/api/addToMailerLite", async (req, res) => {
     try {
