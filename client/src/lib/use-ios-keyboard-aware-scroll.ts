@@ -28,6 +28,21 @@ export function useIosKeyboardAwareScroll({
   );
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardOpen = isNativeIos && keyboardHeight > 0;
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setPrefersReducedMotion(media.matches);
+    update();
+    const listener = (event: MediaQueryListEvent) => setPrefersReducedMotion(event.matches);
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", listener);
+      return () => media.removeEventListener("change", listener);
+    }
+    media.addListener(listener);
+    return () => media.removeListener(listener);
+  }, []);
 
   useEffect(() => {
     if (!enabled || !isNativeIos) {
@@ -98,5 +113,5 @@ export function useIosKeyboardAwareScroll({
     };
   }, [enabled, isNativeIos, scrollContainerRef, scrollDelayMs]);
 
-  return { isNativeIos, keyboardHeight, keyboardOpen };
+  return { isNativeIos, keyboardHeight, keyboardOpen, prefersReducedMotion };
 }

@@ -55,7 +55,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   const [errorMessage, setErrorMessage] = useState("");
   const { toast } = useToast();
   const passwordStrength = getPasswordStrength(newPassword);
-  const { isNativeIos, keyboardHeight, keyboardOpen } = useIosKeyboardAwareScroll({
+  const { isNativeIos, keyboardHeight, keyboardOpen, prefersReducedMotion } = useIosKeyboardAwareScroll({
     enabled: open,
     scrollContainerRef: dialogContentRef,
   });
@@ -147,6 +147,10 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
         onOpenAutoFocus={(event) => event.preventDefault()}
         style={{
           WebkitOverflowScrolling: "touch",
+          transition:
+            isNativeIos && !prefersReducedMotion
+              ? "padding-bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1), max-height 0.28s cubic-bezier(0.32, 0.72, 0, 1), top 0.28s cubic-bezier(0.32, 0.72, 0, 1), transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)"
+              : undefined,
           maxHeight:
             isNativeIos && keyboardOpen
               ? "calc(100dvh - max(0.75rem, env(safe-area-inset-top, 0px)) - 0.75rem)"
