@@ -702,8 +702,20 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   });
 
   // Filter artists based on search term
-  const filteredArtists = verifiedArtists.filter((artist: any) => 
+  const filteredArtists = verifiedArtists.filter((artist: any) =>
     artist.username.toLowerCase().includes(artistSearchTerm.toLowerCase())
+  );
+
+  // Keep existing list order, but pin the logged-in verified artist to the top when present.
+  const shouldPinCurrentArtistInMentions = userType === "artist" && verifiedArtist && !!contextUsername;
+  const normalizedContextUsername = (contextUsername ?? "").toLowerCase();
+  const pinnedArtistIndex = shouldPinCurrentArtistInMentions
+    ? filteredArtists.findIndex((artist: any) => artist.username?.toLowerCase() === normalizedContextUsername)
+    : -1;
+  const pinnedArtist = pinnedArtistIndex >= 0 ? filteredArtists[pinnedArtistIndex] : null;
+  const mentionArtists = (pinnedArtist
+    ? [pinnedArtist, ...filteredArtists.filter((artist: any, index: number) => index !== pinnedArtistIndex)]
+    : filteredArtists
   ).slice(0, 5); // Limit to 5 results
 
   const addCommentMutation = useMutation({
@@ -1446,9 +1458,12 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           )}
           <div className="relative">
             {/* Artist Auto-complete Dropdown */}
-            {showArtistDropdown && filteredArtists.length > 0 && (
+            {showArtistDropdown && mentionArtists.length > 0 && (
               <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-border dark:bg-popover dark:shadow-black/40">
-                {filteredArtists.map((artist: any) => (
+                {mentionArtists.map((artist: any) => {
+                  const isPinnedCurrentArtist =
+                    !!pinnedArtist && artist.username?.toLowerCase() === normalizedContextUsername;
+                  return (
                   <button
                     key={artist.id}
                     type="button"
@@ -1468,10 +1483,15 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         </span>
                         <CheckCircle className="w-3 h-3 text-yellow-400" />
                       </div>
-                      <span className="text-xs text-gray-500 dark:text-muted-foreground">{formatUsernameDisplay(artist.username)}</span>
+                      <span className="text-xs text-gray-500 dark:text-muted-foreground">
+                        {isPinnedCurrentArtist
+                          ? "Tag yourself if this is your ID"
+                          : formatUsernameDisplay(artist.username)}
+                      </span>
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
             
