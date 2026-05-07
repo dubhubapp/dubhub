@@ -29,6 +29,7 @@ import { StatInfoPopover } from "@/components/stat-info-popover";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { ARTIST_BETA_PROFILE_NOTE } from "@/lib/artist-beta-copy";
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -1925,6 +1926,16 @@ export default function UserProfile() {
             </TabsList>
 
             <TabsContent value="profile" className="space-y-4 mt-5">
+              {currentUser?.userType === "artist" ? (
+                <div
+                  className="rounded-xl border border-[#4ae9df]/25 bg-[#4ae9df]/[0.07] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(74,233,223,0.1)]"
+                  role="note"
+                  data-testid="artist-beta-profile-note"
+                >
+                  <p className="text-[11px] leading-snug text-white/80">{ARTIST_BETA_PROFILE_NOTE}</p>
+                </div>
+              ) : null}
+
               {userType === "artist" && artistStats ? (
                 <div>
                   <div className="flex justify-center my-3">

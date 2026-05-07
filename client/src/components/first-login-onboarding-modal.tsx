@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { GoldVerifiedTick } from "@/components/verified-artist";
 import { STATUS_GLOW_PILL_BG, getGenreGlowPillStyle } from "@/lib/genre-styles";
+import { ARTIST_BETA_ONBOARDING_MESSAGE } from "@/lib/artist-beta-copy";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 
 type OnboardingAudience = "user" | "artist";
@@ -148,6 +149,16 @@ export function FirstLoginOnboardingModal({
               Quick tips to get the most out of your feed.
             </DialogDescription>
           </DialogHeader>
+
+          {isArtist ? (
+            <div
+              className="mt-3 rounded-lg border border-[#4ae9df]/25 bg-[#4ae9df]/[0.07] p-3 shadow-[inset_0_0_0_1px_rgba(74,233,223,0.1)]"
+              role="note"
+              data-testid="artist-beta-onboarding-note"
+            >
+              <p className="text-xs leading-relaxed text-white/80">{ARTIST_BETA_ONBOARDING_MESSAGE}</p>
+            </div>
+          ) : null}
 
           <TipsList tips={isArtist ? artistMainTips : userCommunityTips} />
 
