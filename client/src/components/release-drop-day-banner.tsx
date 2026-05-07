@@ -120,8 +120,8 @@ export function ReleaseDropDayBanner() {
   const ownCount = useMemo(() => releases.filter((r) => r.artistId === currentUser?.id).length, [releases, currentUser?.id]);
   const savedOnlyCount = useMemo(() => releases.length - ownCount, [releases.length, ownCount]);
 
-  // Only show the celebration/banner for the current artist's own release(s).
-  const isVisible = dismissalLoaded && isPageVisible && !dismissed && !isLoading && ownCount > 0;
+  // Show for any connected out-today release (owner or saved/liked/uploaded path).
+  const isVisible = dismissalLoaded && isPageVisible && !dismissed && !isLoading && releases.length > 0;
 
   const celebrationSessionKey = useMemo(() => {
     return `${SESSION_CELEBRATION_FIRED_KEY}:${currentUser?.id ?? "anon"}:${todayKey}`;

@@ -42,6 +42,10 @@ interface ReleaseDayOutPayload extends BaseEventPayload {
   artistId: string;
   /** Human-readable title for alert body (not the APNs title). */
   releaseTitle: string;
+  /** Artist username for contextual copy when available. */
+  artistUsername?: string;
+  /** Accepted collaborator usernames when cheaply available. */
+  collaboratorUsernames?: string[];
 }
 
 interface ModeratorCommunityVerificationPayload extends BaseEventPayload {
@@ -85,9 +89,25 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       };
     case "release_day_out_today": {
       const name = payload.releaseTitle.trim() || "Release";
+      const artist = toMention(payload.artistUsername);
+      const collaborators = Array.from(
+        new Set(
+          (payload.collaboratorUsernames ?? [])
+            .map((u) => toMention(u))
+            .filter((u): u is string => Boolean(u) && u !== artist),
+        ),
+      );
+      let body = `${name} is out today.`;
+      if (artist && collaborators.length === 1) {
+        body = `${artist} & ${collaborators[0]} - ${name} is out today.`;
+      } else if (artist && collaborators.length > 1) {
+        body = `${artist} + collaborators - ${name} is out today.`;
+      } else if (artist) {
+        body = `${artist} - ${name} is out today.`;
+      }
       return {
         title: "Out today",
-        body: `${name} is out today.`,
+        body,
       };
     }
     case "moderator_community_verification_pending":
@@ -101,6 +121,12 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
         body: "A new report needs review.",
       };
   }
+}
+
+function toMention(username: unknown): string | null {
+  const cleaned = String(username ?? "").trim().replace(/^@+/, "");
+  if (!cleaned) return null;
+  return `@${cleaned}`;
 }
 
 export async function sendPushToUser(

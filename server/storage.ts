@@ -2875,6 +2875,8 @@ export class DatabaseStorage implements IStorage {
               postId: string | null;
               artistId: string;
               releaseTitle: string;
+              artistUsername: string;
+              collaboratorUsernames?: string[];
             },
           ) => Promise<void>)
         | null = null;
@@ -2923,6 +2925,11 @@ export class DatabaseStorage implements IStorage {
         const firstPostId = postIds[0] ?? null;
         const artistProfile = await this.getUser(r.artist_id);
         const artistUsername = artistProfile?.username ?? "Artist";
+        const collaborators = await this.getReleaseCollaborators(r.id);
+        const collaboratorUsernames = collaborators
+          .filter((c: any) => c?.status === "ACCEPTED" && typeof c?.username === "string")
+          .map((c: any) => String(c.username).trim())
+          .filter((name: string) => name.length > 0);
         const message = `${artistUsername} released ${r.title}`;
         for (const row of recipientRows) {
           const recipientId = row.user_id;
@@ -2963,6 +2970,8 @@ export class DatabaseStorage implements IStorage {
               postId: firstPostId,
               artistId: r.artist_id,
               releaseTitle,
+              artistUsername,
+              collaboratorUsernames,
             }),
           );
           pushTaskRecipients.push(recipientId);
