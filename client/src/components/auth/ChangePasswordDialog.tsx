@@ -20,6 +20,15 @@ interface ChangePasswordDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function isEditableElement(target: EventTarget | null): target is HTMLElement {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement) return true;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLSelectElement) return true;
+  if (target.isContentEditable) return true;
+  return false;
+}
+
 function getPasswordStrength(password: string) {
   const value = password.trim();
   let score = 0;
@@ -59,6 +68,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     enabled: open,
     scrollContainerRef: dialogContentRef,
   });
+  const keyboardAwareLayoutActive = open && isNativeIos && keyboardOpen;
 
   const resetForm = () => {
     setCurrentPassword("");
@@ -68,7 +78,13 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   };
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) resetForm();
+    if (!next) {
+      const activeEl = document.activeElement;
+      if (isEditableElement(activeEl) && dialogContentRef.current?.contains(activeEl)) {
+        activeEl.blur();
+      }
+      resetForm();
+    }
     onOpenChange(next);
   };
 
@@ -142,7 +158,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
       <DialogContent
         ref={dialogContentRef}
         className={`w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg max-h-[90vh] overflow-y-auto ${
-          isNativeIos && keyboardOpen ? "!top-[max(0.75rem,env(safe-area-inset-top,0px))] !translate-y-0" : ""
+          keyboardAwareLayoutActive ? "!top-[max(0.75rem,env(safe-area-inset-top,0px))] !translate-y-0" : ""
         }`}
         onOpenAutoFocus={(event) => event.preventDefault()}
         style={{
@@ -152,11 +168,11 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
               ? "padding-bottom 300ms ease-in-out, max-height 300ms ease-in-out, top 300ms ease-in-out, transform 300ms ease-in-out"
               : undefined,
           maxHeight:
-            isNativeIos && keyboardOpen
+            keyboardAwareLayoutActive
               ? "calc(100dvh - max(0.75rem, env(safe-area-inset-top, 0px)) - 0.75rem)"
               : undefined,
           paddingBottom:
-            isNativeIos && keyboardHeight > 0
+            keyboardAwareLayoutActive
               ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px) + 1rem)`
               : undefined,
         }}
