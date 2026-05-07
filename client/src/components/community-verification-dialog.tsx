@@ -125,7 +125,11 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
           </div>
         ) : (
           <div className="mt-4 space-y-4 overflow-x-hidden">
-            <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId} className="overflow-x-hidden">
+            <RadioGroup
+              value={selectedCommentId}
+              onValueChange={setSelectedCommentId}
+              className="space-y-3 overflow-x-hidden px-1 py-1"
+            >
               {sortedComments.map((comment) => {
                 const isSelected = selectedCommentId === comment.id;
                 const isOldest = comment.id === oldestCommentId;
@@ -148,7 +152,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                 return (
                   <div
                     key={comment.id}
-                    className={`flex min-w-0 items-start space-x-3 overflow-x-hidden rounded-lg border p-3 transition-colors ${highlightClass} ${
+                    className={`flex min-w-0 items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
                       isSelected ? selectionRingClass : ""
                     } ${
                       isSelected && !isOldest && !isFirstComment
@@ -161,7 +165,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                       id={comment.id}
                       data-testid={`radio-comment-${comment.id}`}
                     />
-                    <Label htmlFor={comment.id} className="min-w-0 flex-1 cursor-pointer overflow-x-hidden">
+                    <Label htmlFor={comment.id} className="min-w-0 flex-1 cursor-pointer">
                       <div className="mb-2 min-w-0">
                         <div className="flex min-w-0 items-start gap-2">
                           <div
@@ -190,9 +194,9 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                               >
                                 {formatUsernameDisplay(comment.user.username)}
                               </span>
-                            {comment.user.verified_artist && (
+                              {comment.user.verified_artist && (
                                 <CheckCircle className="h-4 w-4 shrink-0 text-[#FFD700]" />
-                            )}
+                              )}
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-1">
                               {isOldest && (
@@ -256,7 +260,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                     ? "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)] hover:bg-[#FFD700]/35 hover:text-white"
                     : selectedIsOldest
                       ? "border-[#3B82F6] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.40)] hover:bg-[#1D4ED8]/90 hover:text-white"
-                      : "border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                      : "border-white bg-white text-black shadow-[0_0_14px_rgba(255,255,255,0.22)] hover:bg-white/90 hover:text-black"
                 }
                 data-testid="button-submit-verification"
               >
