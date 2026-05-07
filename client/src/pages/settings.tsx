@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, MessageSquare, Moon, Settings as SettingsIcon } from "lucide-react";
+import { App as CapacitorApp } from "@capacitor/app";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 import { playThemeToggleHaptic } from "@/lib/haptic";
@@ -22,6 +24,15 @@ import {
 
 const THEME_TRANSITION_CLASS = "theme-transitioning";
 const THEME_TRANSITION_MS = 180;
+const FEEDBACK_CATEGORIES = [
+  "UX / Design",
+  "Bug / Issue",
+  "Feature Request",
+  "Performance",
+  "Notifications",
+  "Account / Verification",
+  "Other",
+] as const;
 
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
@@ -36,8 +47,10 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const isModerator = userType === "moderator";
   const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState<boolean | null>(null);
   const [feedbackBody, setFeedbackBody] = useState("");
+  const [feedbackCategory, setFeedbackCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]>("Bug / Issue");
   const [feedbackStatus, setFeedbackStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackAppVersion, setFeedbackAppVersion] = useState("unknown");
   useIosKeyboardResizeNone(true);
 
   useEffect(() => {
@@ -47,6 +60,30 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
       const receive = await getPushReceivePermission();
       if (!cancelled) {
         setPushDeviceAlertsEnabled(receive === "granted");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!Capacitor.isNativePlatform()) {
+        const webVersion = (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim() || "web";
+        if (!cancelled) setFeedbackAppVersion(webVersion);
+        return;
+      }
+      try {
+        const info = await CapacitorApp.getInfo();
+        if (!cancelled) {
+          setFeedbackAppVersion(info.version?.trim() || "unknown");
+        }
+      } catch {
+        if (!cancelled) {
+          setFeedbackAppVersion("unknown");
+        }
       }
     })();
     return () => {
@@ -115,8 +152,20 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
 
     setFeedbackStatus(null);
     setIsSubmittingFeedback(true);
+    const platform = Capacitor.isNativePlatform()
+      ? (Capacitor.getPlatform() === "ios"
+        ? "ios"
+        : Capacitor.getPlatform() === "android"
+          ? "android"
+          : "web")
+      : "web";
     try {
-      await apiRequest("POST", "/api/feedback", { feedback: trimmed });
+      await apiRequest("POST", "/api/feedback", {
+        feedback: trimmed,
+        category: feedbackCategory,
+        app_version: feedbackAppVersion,
+        platform,
+      });
       setFeedbackBody("");
       setFeedbackStatus({ type: "success", message: "Thanks. Your feedback has been sent." });
     } catch (error) {
@@ -155,24 +204,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
           </div>
 
           <div className="space-y-3">
-            <div className="w-full rounded-xl border border-white/10 bg-black/30 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md flex items-center justify-between gap-4">
-              <div className="flex items-center space-x-3 min-w-0">
-                <Moon className="w-5 h-5 text-muted-foreground shrink-0" aria-hidden />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">Light mode</p>
-                  <p className="text-xs text-muted-foreground">
-                    Switch to a brighter dub hub experience.
-                  </p>
-                </div>
-              </div>
-              <Switch
-                checked={themeMode === "light"}
-                onCheckedChange={handleThemeToggle}
-                aria-label="Light mode"
-                data-testid="switch-light-mode"
-              />
-            </div>
-
             <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md">
               <div className="flex items-start gap-3">
                 <Bell className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
@@ -258,20 +289,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               </div>
             </div>
 
-            <Button
-              variant="ghost"
-              type="button"
-              className="w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-              onClick={() => setChangePasswordOpen(true)}
-              data-testid="button-change-password"
-            >
-              <div className="flex items-center space-x-3">
-                <KeyRound className="w-5 h-5 text-gray-400" />
-                <span className="text-sm">Change Password</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
-            </Button>
-
             <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md">
               <div className="flex items-start gap-3">
                 <MessageSquare className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
@@ -282,6 +299,24 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   </p>
                 </div>
               </div>
+              <Select
+                value={feedbackCategory}
+                onValueChange={(value) => {
+                  setFeedbackCategory(value as (typeof FEEDBACK_CATEGORIES)[number]);
+                  if (feedbackStatus) setFeedbackStatus(null);
+                }}
+              >
+                <SelectTrigger data-testid="select-feedback-category">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FEEDBACK_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Textarea
                 value={feedbackBody}
                 onChange={(event) => {
@@ -289,7 +324,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   if (feedbackStatus) setFeedbackStatus(null);
                 }}
                 maxLength={INPUT_LIMITS.feedbackBody}
-                placeholder="Share your feedback..."
+                placeholder="Found a bug? Have an idea? Tell us what happened or what you'd love to see in dub hub."
                 className="min-h-[96px]"
                 data-testid="textarea-feedback"
               />
@@ -317,6 +352,42 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 </p>
               ) : null}
             </div>
+
+            <div className="px-1 pt-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Account</p>
+            </div>
+
+            <div className="w-full rounded-xl border border-white/10 bg-black/30 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md flex items-center justify-between gap-4">
+              <div className="flex items-center space-x-3 min-w-0">
+                <Moon className="w-5 h-5 text-muted-foreground shrink-0" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">Light mode</p>
+                  <p className="text-xs text-muted-foreground">
+                    Switch to a brighter dub hub experience.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={themeMode === "light"}
+                onCheckedChange={handleThemeToggle}
+                aria-label="Light mode"
+                data-testid="switch-light-mode"
+              />
+            </div>
+
+            <Button
+              variant="ghost"
+              type="button"
+              className="w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+              onClick={() => setChangePasswordOpen(true)}
+              data-testid="button-change-password"
+            >
+              <div className="flex items-center space-x-3">
+                <KeyRound className="w-5 h-5 text-gray-400" />
+                <span className="text-sm">Change Password</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </Button>
 
             <Button
               variant="ghost"

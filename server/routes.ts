@@ -3735,6 +3735,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const rawFeedback = typeof req.body?.feedback === "string" ? req.body.feedback : "";
       const feedback = rawFeedback.trim();
+      const rawCategory = typeof req.body?.category === "string" ? req.body.category : "";
+      const category = rawCategory.trim();
+      const rawAppVersion = typeof req.body?.app_version === "string" ? req.body.app_version : "";
+      const appVersion = rawAppVersion.trim() || "unknown";
+      const rawPlatform = typeof req.body?.platform === "string" ? req.body.platform : "";
+      const platform = rawPlatform.trim().toLowerCase();
+      const allowedCategories = new Set([
+        "UX / Design",
+        "Bug / Issue",
+        "Feature Request",
+        "Performance",
+        "Notifications",
+        "Account / Verification",
+        "Other",
+      ]);
 
       if (!feedback) {
         return res.status(400).json({ message: "Feedback cannot be empty" });
@@ -3744,10 +3759,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .status(400)
           .json({ message: `Feedback must be at most ${INPUT_LIMITS.feedbackBody} characters` });
       }
+      if (!allowedCategories.has(category)) {
+        return res.status(400).json({ message: "Invalid feedback category" });
+      }
+      if (!platform || !["ios", "web", "android"].includes(platform)) {
+        return res.status(400).json({ message: "Invalid platform" });
+      }
+      if (appVersion.length > 64) {
+        return res.status(400).json({ message: "app_version is too long" });
+      }
 
       await db.execute(sql`
-        INSERT INTO feedback_submissions (user_id, body, created_at)
-        VALUES (${req.dbUser.id}, ${feedback}, NOW())
+        INSERT INTO feedback_submissions (user_id, category, body, app_version, platform, created_at)
+        VALUES (${req.dbUser.id}, ${category}, ${feedback}, ${appVersion}, ${platform}, NOW())
       `);
 
       res.status(201).json({ message: "Feedback sent" });
