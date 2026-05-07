@@ -24,6 +24,7 @@ import { resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -92,6 +93,7 @@ export default function ReleaseEdit() {
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleBack = () => navigate("/releases");
+  useIosKeyboardResizeNone(true);
 
   const { data: release, isLoading } = useQuery({
     queryKey: ["/api/releases", releaseId],

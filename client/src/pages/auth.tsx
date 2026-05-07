@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SignIn } from '@/components/auth/SignIn';
 import { SignUp } from '@/components/auth/SignUp';
 import { Logo } from '@/components/brand/Logo';
+import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 
 interface AuthPageProps {
   onAuthSuccess: (role: string) => void;
@@ -10,6 +11,7 @@ interface AuthPageProps {
 
 export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: AuthPageProps) {
   const [isSignUp, setIsSignUp] = useState(defaultToSignUp);
+  useIosKeyboardResizeNone(true);
 
   const toggleMode = () => {
     setIsSignUp(!isSignUp);

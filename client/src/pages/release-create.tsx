@@ -15,6 +15,7 @@ import { apiUrl } from "@/lib/apiBase";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -80,6 +81,7 @@ export default function ReleaseCreate() {
   const [collabSearch, setCollabSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleBack = () => navigate("/releases");
+  useIosKeyboardResizeNone(true);
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
