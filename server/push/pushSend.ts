@@ -74,18 +74,18 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
   switch (payload.type) {
     case "comment_on_post":
       return {
-        title: "New comment",
+        title: "New comment 💬",
         body: `@${payload.actorUsername} commented on your post.`,
       };
     case "artist_identified_post":
       return {
-        title: "Track identified",
-        body: "An artist identified your track.",
+        title: "Track identified ✅",
+        body: "Your post has been identified by the artist.",
       };
     case "release_attached_to_liked_or_uploaded_post":
       return {
-        title: "Release added",
-        body: "A track you interacted with has been added to your Releases.",
+        title: "Release added 🗓️",
+        body: "A track you liked now has a release.",
       };
     case "release_day_out_today": {
       const name = payload.releaseTitle.trim() || "Release";
@@ -99,26 +99,26 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       );
       let body = `${name} is out today.`;
       if (artist && collaborators.length === 1) {
-        body = `${artist} & ${collaborators[0]} - ${name} is out today.`;
+        body = `${artist} & ${collaborators[0]} - ${name} just dropped.`;
       } else if (artist && collaborators.length > 1) {
-        body = `${artist} + collaborators - ${name} is out today.`;
+        body = `${artist} + collaborators - ${name} just dropped.`;
       } else if (artist) {
-        body = `${artist} - ${name} is out today.`;
+        body = `${artist} - ${name} just dropped.`;
       }
       return {
-        title: "Out today",
+        title: "Out today 🎧",
         body,
       };
     }
     case "moderator_community_verification_pending":
       return {
-        title: "Verification queue",
-        body: "Community ID needs review.",
+        title: "ID review 🕵️",
+        body: "A community ID needs reviewing.",
       };
     case "moderator_report_opened":
       return {
-        title: "New report",
-        body: "A new report needs review.",
+        title: "New report ⚠️",
+        body: "A new report needs review.ing",
       };
   }
 }
