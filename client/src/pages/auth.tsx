@@ -51,7 +51,7 @@ export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: Aut
         WebkitOverflowScrolling: "touch",
         transition:
           isNativeIos && !prefersReducedMotion
-            ? "padding-bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1), padding-top 0.28s cubic-bezier(0.32, 0.72, 0, 1)"
+            ? "padding-bottom 300ms ease-in-out, padding-top 300ms ease-in-out"
             : undefined,
         paddingBottom:
           isNativeIos && keyboardHeight > 0

@@ -149,7 +149,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
           WebkitOverflowScrolling: "touch",
           transition:
             isNativeIos && !prefersReducedMotion
-              ? "padding-bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1), max-height 0.28s cubic-bezier(0.32, 0.72, 0, 1), top 0.28s cubic-bezier(0.32, 0.72, 0, 1), transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)"
+              ? "padding-bottom 300ms ease-in-out, max-height 300ms ease-in-out, top 300ms ease-in-out, transform 300ms ease-in-out"
               : undefined,
           maxHeight:
             isNativeIos && keyboardOpen
