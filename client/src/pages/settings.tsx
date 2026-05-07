@@ -31,7 +31,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const notificationPrefs = useNotificationPreferences();
   const { userType } = useUser();
   const isModerator = userType === "moderator";
-  const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState(false);
+  const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState<boolean | null>(null);
   useIosKeyboardResizeNone(true);
 
   useEffect(() => {
@@ -50,6 +50,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
 
   const handlePushDeviceToggle = async (enabled: boolean) => {
     if (!Capacitor.isNativePlatform()) return;
+    if (pushDeviceAlertsEnabled === null) return;
     if (enabled) {
       await requestPushPermissionAndRegister();
       const receive = await getPushReceivePermission();
@@ -201,15 +202,24 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                       In-app notification types above still apply.
                     </p>
                   </div>
-                  <Switch
-                    checked={pushDeviceAlertsEnabled}
-                    onCheckedChange={(v) => {
-                      void handlePushDeviceToggle(v);
-                    }}
-                    disabled={!Capacitor.isNativePlatform()}
-                    aria-label="Device push alerts"
-                    data-testid="switch-push-device-alerts"
-                  />
+                  {pushDeviceAlertsEnabled === null ? (
+                    <div
+                      className="inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent bg-input opacity-50"
+                      aria-hidden
+                    >
+                      <span className="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0" />
+                    </div>
+                  ) : (
+                    <Switch
+                      checked={pushDeviceAlertsEnabled}
+                      onCheckedChange={(v) => {
+                        void handlePushDeviceToggle(v);
+                      }}
+                      disabled={!Capacitor.isNativePlatform()}
+                      aria-label="Device push alerts"
+                      data-testid="switch-push-device-alerts"
+                    />
+                  )}
                 </div>
               </div>
             </div>

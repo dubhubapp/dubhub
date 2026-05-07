@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { useUser } from "@/lib/user-context";
+import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
 
 interface CommunityVerificationDialogProps {
   postId: string;
@@ -25,6 +26,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
   const queryClient = useQueryClient();
   const { currentUser } = useUser();
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
+  const initialFocusRef = useRef<HTMLDivElement | null>(null);
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
@@ -90,25 +92,36 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-background/95 backdrop-blur-md">
-        <DialogHeader>
-          <DialogTitle>ID Track</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          initialFocusRef.current?.focus();
+        }}
+        overlayClassName={ID_MARKING_DIALOG_OVERLAY_CLASS}
+        className={ID_MARKING_DIALOG_CONTENT_CLASS}
+      >
+        <div ref={initialFocusRef} tabIndex={-1} />
+        <DialogHeader className="space-y-1.5 text-center">
+          <DialogTitle className="text-lg font-semibold text-white">ID Track</DialogTitle>
+          <DialogDescription className="text-sm text-white/75">
             Select the comment that contains the correct track identification.
             A moderator will review your selection.
           </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
+          <div className="mt-4 flex items-center justify-center rounded-lg border border-white/10 bg-black/15 py-8">
+            <div className="flex flex-col items-center gap-2 text-white/75">
+              <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
+              <p className="text-xs">Loading comments...</p>
+            </div>
           </div>
         ) : comments.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
+          <div className="mt-4 rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
             <p>No comments yet. Community members need to comment with track IDs first.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="mt-4 space-y-4">
             <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
               {sortedComments.map((comment) => {
                 const isSelected = selectedCommentId === comment.id;
@@ -116,7 +129,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
 
                 const highlightClass = isOldest
                   ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
-                  : "border-border hover:bg-accent/50";
+                  : "border-white/20 hover:bg-white/10";
 
                 const selectionRingClass = isSelected
                   ? isOldest
@@ -182,15 +195,15 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                           )}
                         </div>
 
-                        <div className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <div className="ml-auto flex items-center gap-1 text-[11px] text-white/65">
                           <Clock3 className="h-3.5 w-3.5" />
                           <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                         </div>
                       </div>
 
-                      <p className="text-sm text-foreground">{comment.body}</p>
+                      <p className="text-sm text-white/92">{comment.body}</p>
                       {comment.taggedArtist && (
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="mt-1 text-xs text-white/65">
                           Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
                         </p>
                       )}
@@ -200,10 +213,11 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
               })}
             </RadioGroup>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-border">
+            <div className="flex justify-end gap-2 border-t border-white/15 pt-4">
               <Button
                 variant="outline"
                 onClick={onClose}
+                className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
                 data-testid="button-cancel-verification"
               >
                 Cancel

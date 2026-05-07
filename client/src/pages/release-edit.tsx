@@ -421,6 +421,7 @@ export default function ReleaseEdit() {
 
   return (
     <SwipeBackPage
+      enabled={false}
       onBack={handleBack}
       className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
     >
