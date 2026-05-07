@@ -1,0 +1,9 @@
+/**
+ * Canonical public web origin for off-device links (share, future Universal Links).
+ * Not the Capacitor WebView origin (e.g. capacitor://localhost).
+ */
+export const DUBHUB_PUBLIC_ORIGIN = "https://dubhub.uk";
+
+export function getPublicPostShareUrl(postId: string): string {
+  return `${DUBHUB_PUBLIC_ORIGIN}/?post=${encodeURIComponent(postId)}`;
+}

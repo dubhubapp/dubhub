@@ -168,7 +168,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
         platform,
       });
       setFeedbackBody("");
-      setFeedbackStatus({ type: "success", message: "Thanks. Your feedback has been sent." });
+      setFeedbackStatus({ type: "success", message: "Thanks for your feedback :)" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send feedback";
       setFeedbackStatus({ type: "error", message });

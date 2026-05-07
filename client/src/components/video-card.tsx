@@ -32,6 +32,7 @@ import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { RandomDiceButton } from "@/components/random-dice-button";
 import { playInteractionLight } from "@/lib/haptic";
+import { getPublicPostShareUrl } from "@/lib/public-app-url";
 import {
   dubhubVideoDebugEnabled,
   dubhubVideoDebugLog,
@@ -1600,7 +1601,7 @@ function VideoCardInner({
   });
 
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/?post=${post.id}`;
+    const shareUrl = getPublicPostShareUrl(post.id);
     try {
       await navigator.clipboard.writeText(shareUrl);
       toast({
