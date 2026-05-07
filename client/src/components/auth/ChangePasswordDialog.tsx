@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { validateSignupPassword } from "@/lib/password-validation";
 import { Eye, EyeOff } from "lucide-react";
+import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 
 interface ChangePasswordDialogProps {
   open: boolean;
@@ -43,6 +44,7 @@ function getPasswordStrength(password: string) {
 }
 
 export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialogProps) {
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -53,6 +55,10 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   const [errorMessage, setErrorMessage] = useState("");
   const { toast } = useToast();
   const passwordStrength = getPasswordStrength(newPassword);
+  const { isNativeIos, keyboardHeight } = useIosKeyboardAwareScroll({
+    enabled: open,
+    scrollContainerRef: dialogContentRef,
+  });
 
   const resetForm = () => {
     setCurrentPassword("");
@@ -134,8 +140,15 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
+        ref={dialogContentRef}
         className="w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg max-h-[90vh] overflow-y-auto"
         onOpenAutoFocus={(event) => event.preventDefault()}
+        style={{
+          paddingBottom:
+            isNativeIos && keyboardHeight > 0
+              ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px) + 1rem)`
+              : undefined,
+        }}
       >
         <DialogHeader>
           <DialogTitle>Change password</DialogTitle>

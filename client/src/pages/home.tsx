@@ -639,6 +639,15 @@ export default function Home() {
     [sortMode, randomViewExiting],
   );
 
+  useEffect(() => {
+    const q = search.startsWith("?") ? search.slice(1) : search;
+    const params = new URLSearchParams(q);
+    const sortParam = (params.get("sort") || "").toLowerCase();
+    if (sortParam !== "hottest" && sortParam !== "newest") return;
+    if (sortMode === sortParam) return;
+    handleFeedSortChange(sortParam);
+  }, [search, sortMode, handleFeedSortChange]);
+
   // Random feed only serves unidentified tracks; keep menu + ring in sync if filters change while Random is on.
   useEffect(() => {
     if (sortMode !== "random") return;

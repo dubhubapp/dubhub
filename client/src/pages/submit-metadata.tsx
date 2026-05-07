@@ -33,6 +33,7 @@ import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
 import { Capacitor } from "@capacitor/core";
+import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 import { nativeOutputUriToFileFallback, nativePreviewUri } from "@/lib/native-video-editor";
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
@@ -46,6 +47,76 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+type FeedPageLike = {
+  items?: PostWithUser[];
+  hasMore?: boolean;
+  nextCursor?: string | null;
+};
+
+type InfiniteFeedLike = {
+  pages: FeedPageLike[];
+  pageParams: unknown[];
+};
+
+function isPostArrayCache(value: unknown): value is PostWithUser[] {
+  return Array.isArray(value);
+}
+
+function isInfiniteFeedCache(value: unknown): value is InfiniteFeedLike {
+  if (!value || typeof value !== "object") return false;
+  const v = value as { pages?: unknown; pageParams?: unknown };
+  return Array.isArray(v.pages) && Array.isArray(v.pageParams);
+}
+
+function insertCreatedPostIntoCache(
+  oldValue: unknown,
+  fullPost: PostWithUser,
+): { nextValue: unknown; updated: boolean; supportedShape: boolean } {
+  if (isPostArrayCache(oldValue)) {
+    const idx = oldValue.findIndex((p) => p.id === fullPost.id);
+    if (idx >= 0) {
+      const next = [...oldValue];
+      next[idx] = fullPost;
+      return { nextValue: next, updated: true, supportedShape: true };
+    }
+    return { nextValue: [fullPost, ...oldValue], updated: true, supportedShape: true };
+  }
+
+  if (isInfiniteFeedCache(oldValue)) {
+    if (oldValue.pages.length === 0) {
+      return {
+        nextValue: {
+          ...oldValue,
+          pages: [{ items: [fullPost], hasMore: false, nextCursor: null }],
+        },
+        updated: true,
+        supportedShape: true,
+      };
+    }
+    const firstPage = oldValue.pages[0] ?? {};
+    const firstItems = Array.isArray(firstPage.items) ? firstPage.items : [];
+    const firstIdx = firstItems.findIndex((p) => p.id === fullPost.id);
+    const nextFirstItems =
+      firstIdx >= 0
+        ? firstItems.map((p, i) => (i === firstIdx ? fullPost : p))
+        : [fullPost, ...firstItems];
+    const nextFirstPage: FeedPageLike = {
+      ...firstPage,
+      items: nextFirstItems,
+    };
+    return {
+      nextValue: {
+        ...oldValue,
+        pages: [nextFirstPage, ...oldValue.pages.slice(1)],
+      },
+      updated: true,
+      supportedShape: true,
+    };
+  }
+
+  return { nextValue: oldValue, updated: false, supportedShape: false };
+}
 
 const getTodayInputValue = () => {
   const d = new Date();
@@ -175,6 +246,7 @@ export default function SubmitMetadata() {
   const [thumbnailSrc, setThumbnailSrc] = useState<string | null>(null);
   /** Display aspect for preview card (native / thumbnail metadata); avoids forcing 16:9 on portrait clips. */
   const [clipPreviewAspect, setClipPreviewAspect] = useState<{ w: number; h: number } | null>(null);
+  const pageScrollRef = useRef<HTMLDivElement | null>(null);
   const submitClickTsRef = useRef<number>(0);
   const submitSuccessRef = useRef(false);
 
@@ -182,6 +254,113 @@ export default function SubmitMetadata() {
     dubhubVideoDebugLog("[DubHub][SubmitDetails]", "mounted thumbnail-only mode", {
       route: "/submit-metadata",
     });
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    // Defensive cleanup from earlier route-scoped keyboard experiments.
+    document.body.classList.remove("submit-metadata-route");
+    document.body.classList.remove("submit-metadata-keyboard-open");
+    document.body.style.removeProperty("--app-bottom-nav-block");
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+    let cancelled = false;
+    let previousMode: KeyboardResize | null = null;
+    let hideTick = 0;
+
+    const isEditableTarget = (target: EventTarget | null): target is HTMLElement => {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target instanceof HTMLInputElement) return true;
+      if (target instanceof HTMLTextAreaElement) return true;
+      if (target instanceof HTMLSelectElement) return true;
+      if (target.isContentEditable) return true;
+      return target.getAttribute("role") === "combobox";
+    };
+
+    const clampPageScroll = () => {
+      const el = pageScrollRef.current;
+      if (!el) return;
+      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      if (el.scrollTop > maxScrollTop) {
+        el.scrollTop = maxScrollTop;
+      }
+    };
+
+    const runKeyboardHideLayoutReset = () => {
+      hideTick += 1;
+      const token = hideTick;
+      const activeEl = document.activeElement;
+      if (isEditableTarget(activeEl)) {
+        activeEl.blur();
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (token !== hideTick) return;
+          clampPageScroll();
+        });
+      });
+    };
+
+    const applyRouteResizeMode = async () => {
+      try {
+        const current = await Keyboard.getResizeMode();
+        previousMode = current?.mode ?? KeyboardResize.Native;
+      } catch (err) {
+        console.warn("[submit-metadata] keyboard getResizeMode failed; using native fallback", err);
+        previousMode = KeyboardResize.Native;
+      }
+      try {
+        await Keyboard.setResizeMode({ mode: KeyboardResize.None });
+      } catch (err) {
+        console.error("[submit-metadata] keyboard setResizeMode(none) failed", err);
+      }
+    };
+
+    void applyRouteResizeMode();
+
+    let removeDidHide: (() => Promise<void>) | null = null;
+    let removeWillHide: (() => Promise<void>) | null = null;
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const onViewportResize = () => {
+      // On close, iOS can leave scroll offset beyond new max until another relayout (e.g. genre select).
+      if (!vv) return;
+      const coveredPx = window.innerHeight - vv.height - vv.offsetTop;
+      if (coveredPx <= 0.5) {
+        runKeyboardHideLayoutReset();
+      }
+    };
+    vv?.addEventListener("resize", onViewportResize);
+
+    void Keyboard.addListener("keyboardWillHide", () => {
+      runKeyboardHideLayoutReset();
+    }).then((h) => {
+      removeWillHide = () => h.remove();
+    });
+    void Keyboard.addListener("keyboardDidHide", () => {
+      runKeyboardHideLayoutReset();
+    }).then((h) => {
+      removeDidHide = () => h.remove();
+    });
+
+    return () => {
+      cancelled = true;
+      vv?.removeEventListener("resize", onViewportResize);
+      void removeWillHide?.();
+      void removeDidHide?.();
+      const restoreMode = previousMode ?? KeyboardResize.Native;
+      void Keyboard.setResizeMode({ mode: restoreMode }).catch((err) => {
+        if (!cancelled) {
+          console.error("[submit-metadata] keyboard resize mode restore failed", err);
+        }
+      });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          clampPageScroll();
+        });
+      });
+    };
   }, []);
 
   // Track if component is mounted to prevent state updates after unmount
@@ -634,10 +813,6 @@ export default function SubmitMetadata() {
     onSuccess: (data) => {
       setUploadedVideoUrl(data.url);
       setUploadProgress(0);
-      toast({
-        title: "Video Uploaded!",
-        description: "Your video has been processed and uploaded successfully.",
-      });
     },
     onError: (error: Error) => {
       if (
@@ -710,8 +885,8 @@ export default function SubmitMetadata() {
       }
 
       toast({
-        title: "Track Submitted!",
-        description: "Your track ID request has been submitted successfully.",
+        title: "Video Posted!",
+        description: "Your ID has been uploaded successfully.",
       });
       dubhubVideoDebugLog("[DubHub][PostSubmit]", "success-toast-fired", {
         postId: newPostId ?? null,
@@ -739,19 +914,35 @@ export default function SubmitMetadata() {
           dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-fetch-success", {
             postId: fullPost.id,
           });
-          queryClient.setQueriesData(
-            { queryKey: ["/api/posts"], exact: false },
-            (old: PostWithUser[] | undefined) => {
-              if (!old) return [fullPost];
-              const idx = old.findIndex((p) => p.id === fullPost.id);
-              if (idx >= 0) {
-                const next = [...old];
-                next[idx] = fullPost;
-                return next;
-              }
-              return [fullPost, ...old];
-            },
-          );
+          const cachedPostQueries = queryClient.getQueriesData<unknown>({
+            queryKey: ["/api/posts"],
+            exact: false,
+          });
+          let updatedAnyFeedCache = false;
+          let skippedUnexpectedShape = 0;
+
+          for (const [queryKey, oldValue] of cachedPostQueries) {
+            if (oldValue == null) continue;
+            const { nextValue, updated, supportedShape } = insertCreatedPostIntoCache(oldValue, fullPost);
+            if (!supportedShape) {
+              skippedUnexpectedShape += 1;
+              continue;
+            }
+            if (updated) {
+              queryClient.setQueryData(queryKey, nextValue);
+              updatedAnyFeedCache = true;
+            }
+          }
+
+          if (!updatedAnyFeedCache || skippedUnexpectedShape > 0) {
+            dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-cache-update-skipped-or-fallback", {
+              postId: fullPost.id,
+              updatedAnyFeedCache,
+              skippedUnexpectedShape,
+              matchedQueries: cachedPostQueries.length,
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/posts"], exact: false });
+          }
         } catch (e) {
           dubhubVideoDebugLog("[DubHub][PostSubmit]", "post-fetch-warning", {
             postId: newPostId,
@@ -775,7 +966,7 @@ export default function SubmitMetadata() {
           route: "/",
           postId: newPostId,
         });
-        setLocation(`/?post=${encodeURIComponent(newPostId)}`);
+        setLocation(`/?post=${encodeURIComponent(newPostId)}&sort=newest`);
       } else {
         dubhubVideoDebugLog("[DubHub][PostFlow][route]", "submit success -> Home", {
           route: "/",
@@ -1049,6 +1240,7 @@ export default function SubmitMetadata() {
 
   return (
     <div
+      ref={pageScrollRef}
       className={cn(
         "bg-dark max-w-full overflow-x-hidden touch-pan-y overscroll-x-none",
         APP_PAGE_SCROLL_CLASS,

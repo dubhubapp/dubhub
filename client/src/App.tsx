@@ -44,7 +44,11 @@ import {
   hasPendingOnboardingForEmail,
   WELCOME_BACK_FLAG_KEY,
 } from "@/lib/onboarding";
-import { registerPushListeners, deactivateCurrentPushToken } from "@/lib/push-notifications";
+import {
+  deactivateCurrentPushToken,
+  registerPushListeners,
+  unregisterPushListeners,
+} from "@/lib/push-notifications";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -394,6 +398,9 @@ function App() {
   useEffect(() => {
     // Best-effort: set up native push listeners on app shell mount.
     void registerPushListeners();
+    return () => {
+      void unregisterPushListeners();
+    };
   }, []);
 
   useEffect(() => {

@@ -124,19 +124,47 @@ export default function ModeratorPage() {
     }
   }, [userType, currentUser, activeTab, queryClient]);
 
+  const moderatorQueueStaleOptions = {
+    staleTime: 0,
+    refetchOnMount: "always" as const,
+    refetchOnWindowFocus: true,
+  };
+
   // Query for pending community verifications
-  const { data: pendingVerifications = [], isLoading: isPendingLoading } = useQuery<PostWithUser[]>({
+  const {
+    data: pendingVerifications = [],
+    isLoading: isPendingLoading,
+    isFetching: isPendingFetching,
+  } = useQuery<PostWithUser[]>({
     queryKey: ["/api/moderator/pending-verifications"],
+    ...moderatorQueueStaleOptions,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/moderator/pending-verifications");
+      return res.json();
+    },
   });
 
   // Query for reported tracks
-  const { data: reportedContent = [], isLoading: isReportsLoading } = useQuery<any[]>({
+  const {
+    data: reportedContent = [],
+    isLoading: isReportsLoading,
+    isFetching: isReportsFetching,
+  } = useQuery<any[]>({
     queryKey: ["/api/moderator/reports"],
+    ...moderatorQueueStaleOptions,
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/moderator/reports");
       return response.json();
     },
   });
+
+  useEffect(() => {
+    if (activeTab === "pending") {
+      void queryClient.refetchQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+    } else if (activeTab === "reports") {
+      void queryClient.refetchQueries({ queryKey: ["/api/moderator/reports"] });
+    }
+  }, [activeTab, queryClient]);
 
   const { data: userStats } = useQuery({
     queryKey: ["/api/moderator/stats"],
@@ -426,6 +454,9 @@ export default function ModeratorPage() {
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   Pending Verifications
                   <ModeratorQueueCountBadge count={pendingVerificationCount} />
+                  {isPendingFetching && !isPendingLoading ? (
+                    <span className="text-xs font-normal text-muted-foreground">Refreshing…</span>
+                  ) : null}
                 </CardTitle>
                 <CardDescription className="text-muted-foreground/90">
                   Community-verified posts awaiting moderator confirmation
@@ -606,6 +637,9 @@ export default function ModeratorPage() {
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   Reports
                   <ModeratorQueueCountBadge count={unresolvedReportsCount} />
+                  {isReportsFetching && !isReportsLoading ? (
+                    <span className="text-xs font-normal text-muted-foreground">Refreshing…</span>
+                  ) : null}
                 </CardTitle>
                 <CardDescription className="text-muted-foreground/90">
                   Content flagged by users for review

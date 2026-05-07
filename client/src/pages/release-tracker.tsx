@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
 import { isReleaseDayToday } from "@/lib/release-status";
-import { ReleaseDayCelebration } from "@/components/release-day-celebration";
+import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
@@ -224,6 +224,14 @@ export default function ReleaseTracker() {
     () => feed.filter((r) => r.releaseDate && !r.isComingSoon && !featuredReleaseIds.has(r.id)),
     [feed, featuredReleaseIds]
   );
+  const standardOutTodayFeed = useMemo(
+    () => standardDatedFeed.filter((r) => isReleaseDayToday(r.isComingSoon, r.releaseDate)),
+    [standardDatedFeed]
+  );
+  const standardNonOutTodayFeed = useMemo(
+    () => standardDatedFeed.filter((r) => !isReleaseDayToday(r.isComingSoon, r.releaseDate)),
+    [standardDatedFeed]
+  );
 
   const renderReleaseCard = (r: ReleaseFeedItem, opts?: { featured?: boolean }) => {
     const normalized = normalizeReleaseCardFields(r);
@@ -231,15 +239,23 @@ export default function ReleaseTracker() {
     const releaseDayHighlight = isReleaseDayHighlight(r);
     const isOwnerReleaseDay = r.artistId === currentUser?.id && releaseDayHighlight;
     const featured = !!opts?.featured;
+    const openRelease = () => {
+      const params = new URLSearchParams();
+      if (isArtist) params.set("scope", scope);
+      params.set("view", feedView);
+      navigate(`/releases/${r.id}?${params}`);
+    };
     return (
-      <button
+      <div
         key={r.id}
-        type="button"
-        onClick={() => {
-          const params = new URLSearchParams();
-          if (isArtist) params.set("scope", scope);
-          params.set("view", feedView);
-          navigate(`/releases/${r.id}?${params}`);
+        role="button"
+        tabIndex={0}
+        onClick={openRelease}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openRelease();
+          }
         }}
         className={cn(
           releaseCardBaseClass,
@@ -309,7 +325,7 @@ export default function ReleaseTracker() {
             )}
           </div>
           {r.links && r.links.length > 0 && (
-            <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+            <div className="flex gap-1 mt-2 flex-wrap">
               {sortLinksByPlatform(r.links).map((link) => (
                 <a
                   key={link.id}
@@ -318,6 +334,7 @@ export default function ReleaseTracker() {
                   rel="noopener noreferrer"
                   className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
                   title={getPlatformLabel(link.platform)}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
                   <span className="max-w-[10rem] truncate">
@@ -329,7 +346,7 @@ export default function ReleaseTracker() {
             </div>
           )}
         </div>
-      </button>
+      </div>
     );
   };
 
@@ -425,8 +442,31 @@ export default function ReleaseTracker() {
           </div>
         ) : (
           <div className="space-y-6">
+            {standardOutTodayFeed.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-white/85">
+                  Released today
+                </h2>
+                {standardOutTodayFeed[0].artistId === currentUser?.id ? (
+                  <ReleaseDayCelebration
+                    releaseId={standardOutTodayFeed[0].id}
+                    title={standardOutTodayFeed[0].title}
+                    variant="inline"
+                  />
+                ) : (
+                  <SavedReleaseDayCelebration
+                    releaseId={standardOutTodayFeed[0].id}
+                    title={standardOutTodayFeed[0].title}
+                    variant="inline"
+                  />
+                )}
+                <div className="space-y-4">
+                  {standardOutTodayFeed.map((r) => renderReleaseCard(r))}
+                </div>
+              </section>
+            )}
             {groupReleasesByMonth(
-              standardDatedFeed,
+              standardNonOutTodayFeed,
               effectiveView === "upcoming" || effectiveView === "collaborations"
             ).map(({ key: monthKey, label: monthLabel, items }) => (
               <section key={monthKey}>
@@ -449,14 +489,24 @@ export default function ReleaseTracker() {
                     .map((r) => {
                       const normalized = normalizeReleaseCardFields(r);
                       return (
-                      <button
+                      <div
                         key={r.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           const params = new URLSearchParams();
                           if (isArtist) params.set("scope", scope);
                           params.set("view", feedView);
                           navigate(`/releases/${r.id}?${params}`);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            const params = new URLSearchParams();
+                            if (isArtist) params.set("scope", scope);
+                            params.set("view", feedView);
+                            navigate(`/releases/${r.id}?${params}`);
+                          }
                         }}
                         className={`${releaseCardBaseClass} min-w-0 overflow-hidden`}
                       >
@@ -501,7 +551,7 @@ export default function ReleaseTracker() {
                             )}
                           </div>
                           {r.links && r.links.length > 0 && (
-                            <div className="flex gap-1 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex gap-1 mt-2 flex-wrap">
                               {sortLinksByPlatform(r.links).map((link) => (
                                 <a
                                   key={link.id}
@@ -510,6 +560,7 @@ export default function ReleaseTracker() {
                                   rel="noopener noreferrer"
                                   className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
                                   title={getPlatformLabel(link.platform)}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
                                   <span className="max-w-[10rem] truncate">
@@ -521,7 +572,7 @@ export default function ReleaseTracker() {
                             </div>
                           )}
                         </div>
-                      </button>
+                      </div>
                     );
                     })}
                 </div>
@@ -531,23 +582,27 @@ export default function ReleaseTracker() {
         )}
       </div>
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-nav-block)] bg-background" />
-      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-gap-above-nav))] z-30">
-        <div className="absolute inset-x-0 bottom-0 h-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] bg-background" />
-        <div className="absolute inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] h-[var(--releases-cta-fade-block)] bg-gradient-to-t from-background via-background/95 via-45% to-transparent" />
-        <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-background/90 via-background/60 to-transparent" />
-        <div className="relative mx-auto max-w-md px-4">
-          <div className="relative pt-1 pb-0.5">
-            <Button
-              onClick={() => navigate("/releases/new")}
-              className="ios-press pointer-events-auto h-12 w-full rounded-xl border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]"
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Add Release
-            </Button>
+      {isArtist && (
+        <>
+          <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-nav-block)] bg-background" />
+          <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-gap-above-nav))] z-30">
+            <div className="absolute inset-x-0 bottom-0 h-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] bg-background" />
+            <div className="absolute inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] h-[var(--releases-cta-fade-block)] bg-gradient-to-t from-background via-background/95 via-45% to-transparent" />
+            <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-background/90 via-background/60 to-transparent" />
+            <div className="relative mx-auto max-w-md px-4">
+              <div className="relative pt-1 pb-0.5">
+                <Button
+                  onClick={() => navigate("/releases/new")}
+                  className="ios-press pointer-events-auto h-12 w-full rounded-xl border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]"
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add Release
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

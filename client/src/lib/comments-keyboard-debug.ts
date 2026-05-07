@@ -8,7 +8,9 @@ export function commentsKeyboardDebugEnabled(): boolean {
   if (typeof window === "undefined") return false;
   try {
     if (localStorage.getItem("dubhub-debug-comments-keyboard") === "1") return true;
-    return new URLSearchParams(window.location.search).get("debug") === "comments-keyboard";
+    if (localStorage.getItem("dubhub.debug.commentsKeyboard") === "1") return true;
+    const debugParam = new URLSearchParams(window.location.search).get("debug");
+    return debugParam === "comments-keyboard" || debugParam === "comments";
   } catch {
     return false;
   }

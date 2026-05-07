@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { SignIn } from '@/components/auth/SignIn';
 import { SignUp } from '@/components/auth/SignUp';
 import { Logo } from '@/components/brand/Logo';
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
+import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 
 interface AuthPageProps {
   onAuthSuccess: (role: string) => void;
@@ -11,7 +12,12 @@ interface AuthPageProps {
 
 export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: AuthPageProps) {
   const [isSignUp, setIsSignUp] = useState(defaultToSignUp);
+  const authScrollRef = useRef<HTMLDivElement | null>(null);
   useIosKeyboardResizeNone(true);
+  const { isNativeIos, keyboardHeight } = useIosKeyboardAwareScroll({
+    enabled: true,
+    scrollContainerRef: authScrollRef,
+  });
 
   const toggleMode = () => {
     setIsSignUp(!isSignUp);
@@ -36,8 +42,17 @@ export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: Aut
   };
 
   return (
-    <div className="min-h-screen h-screen overflow-y-auto bg-[#0f1324] flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-md">
+    <div
+      ref={authScrollRef}
+      className="min-h-screen h-screen overflow-y-auto bg-[#0f1324] flex items-start sm:items-center justify-center px-4 pt-6 sm:pt-8"
+      style={{
+        paddingBottom:
+          isNativeIos && keyboardHeight > 0
+            ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px) + 1rem)`
+            : undefined,
+      }}
+    >
+      <div className="w-full max-w-md py-2">
         
         {isSignUp ? (
           <SignUp onToggleMode={toggleMode} onAuthSuccess={handleAuthSuccess} />

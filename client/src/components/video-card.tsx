@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, mem
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX, Calendar, Disc3 } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -62,6 +62,9 @@ const HOLD_2X_MOVE_CANCEL_PX = 22;
 /** If vertical movement dominates and exceeds this (px), treat as feed scroll — cancel 2× (no preventDefault on touch). */
 const HOLD_2X_SCROLL_CANCEL_DY_PX = 14;
 const ARTIST_SELF_TAG_HINT_DISMISSED_EVENT = "dubhub:hint:artist-self-tag-dismissed";
+
+/** Lucide-aligned post metadata icons: same box, stroke 2 @ 24px, `currentColor`. */
+const POST_META_ICON_CLASS = "h-4 w-4 shrink-0 text-gray-300";
 
 function estimateCoverMaxCropFraction(
   vw: number,
@@ -2288,7 +2291,7 @@ function VideoCardInner({
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:pl-4",
-          "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+          "transition-[opacity,padding-top,padding-bottom] duration-300 ease-in-out motion-reduce:transition-none",
           isScrubbingUi ? "opacity-[0.18]" : "opacity-100",
           overlayCollapsed
             ? "pt-8 pb-3.5 sm:pt-9 sm:pb-4"
@@ -2442,33 +2445,28 @@ function VideoCardInner({
                   >
                     <div className="min-h-0 overflow-hidden">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-                        <span className="text-gray-500 select-none" aria-hidden>
-                          •
-                        </span>
-                        {post.djName && <span>Played by: {post.djName}</span>}
-                        {post.djName && (
-                          <span className="text-gray-500 select-none" aria-hidden>
-                            •
+                        {post.djName ? (
+                          <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                            <Disc3 className={POST_META_ICON_CLASS} aria-hidden />
+                            <span className="min-w-0 break-words">{post.djName}</span>
+                          </span>
+                        ) : null}
+                        {post.playedDate ? (
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <Calendar className={POST_META_ICON_CLASS} aria-hidden />
+                            <span className="min-w-0 break-words">{formatPlayedDate(post.playedDate)}</span>
+                          </span>
+                        ) : (
+                          <span className="min-w-0 break-words">
+                            {post.createdAt ? formatTimeAgo(post.createdAt) : "Recently"}
                           </span>
                         )}
-                        <span>
-                          {post.playedDate
-                            ? `Played on: ${formatPlayedDate(post.playedDate)}`
-                            : post.createdAt
-                              ? formatTimeAgo(post.createdAt)
-                              : "Recently"}
-                        </span>
-                        {post.location && (
-                          <>
-                            <span className="text-gray-500 select-none" aria-hidden>
-                              •
-                            </span>
-                            <span className="inline-flex min-w-0 items-center gap-1.5">
-                              <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-300" aria-hidden />
-                              <span className="truncate">{post.location}</span>
-                            </span>
-                          </>
-                        )}
+                        {post.location ? (
+                          <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                            <MapPin className={POST_META_ICON_CLASS} aria-hidden />
+                            <span className="min-w-0 break-words">{post.location}</span>
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -2573,33 +2571,28 @@ function VideoCardInner({
                     </>
                   ) : null}
                   {genrePillEl}
-                  <span className="text-gray-500 select-none" aria-hidden>
-                    •
-                  </span>
-                  {post.djName && <span>Played by: {post.djName}</span>}
-                  {post.djName && (
-                    <span className="text-gray-500 select-none" aria-hidden>
-                      •
+                  {post.djName ? (
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                      <Disc3 className={POST_META_ICON_CLASS} aria-hidden />
+                      <span className="min-w-0 break-words">{post.djName}</span>
+                    </span>
+                  ) : null}
+                  {post.playedDate ? (
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <Calendar className={POST_META_ICON_CLASS} aria-hidden />
+                      <span className="min-w-0 break-words">{formatPlayedDate(post.playedDate)}</span>
+                    </span>
+                  ) : (
+                    <span className="min-w-0 break-words">
+                      {post.createdAt ? formatTimeAgo(post.createdAt) : "Recently"}
                     </span>
                   )}
-                  <span>
-                    {post.playedDate
-                      ? `Played on: ${formatPlayedDate(post.playedDate)}`
-                      : post.createdAt
-                        ? formatTimeAgo(post.createdAt)
-                        : "Recently"}
-                  </span>
-                  {post.location && (
-                    <>
-                      <span className="text-gray-500 select-none" aria-hidden>
-                        •
-                      </span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-300" aria-hidden />
-                        <span className="truncate">{post.location}</span>
-                      </span>
-                    </>
-                  )}
+                  {post.location ? (
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                      <MapPin className={POST_META_ICON_CLASS} aria-hidden />
+                      <span className="min-w-0 break-words">{post.location}</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
 

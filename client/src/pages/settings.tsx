@@ -10,6 +10,7 @@ import { setNotificationPreferences, useNotificationPreferences } from "@/lib/no
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { Capacitor } from "@capacitor/core";
+import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import {
   getPushReceivePermission,
   requestPushPermissionAndRegister,
@@ -31,6 +32,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const { userType } = useUser();
   const isModerator = userType === "moderator";
   const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState(false);
+  useIosKeyboardResizeNone(true);
 
   useEffect(() => {
     let cancelled = false;

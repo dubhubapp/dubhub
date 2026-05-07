@@ -360,12 +360,6 @@ export default function ReleaseDetail() {
           </div>
         )}
 
-        {release.postIds?.length > 0 && (
-          <p className="text-sm text-muted-foreground mb-4">
-            {release.postIds.length} attached post{release.postIds.length !== 1 ? "s" : ""}
-          </p>
-        )}
-
         {stats && (
           <StatsCardSection
             title="Release stats"

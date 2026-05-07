@@ -25,6 +25,8 @@ import { useUserProfileLightPopup } from "@/components/user-profile-light-popup"
 import { formatUsernameDisplay } from "@/lib/utils";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -78,8 +80,20 @@ function computeCommentsSheetMaxPx(): number {
   return Math.min(preferredCap, visibleBudget);
 }
 
+/** Native iOS keyboard mode keeps layout viewport fixed; cap from innerHeight only. */
+function computeCommentsSheetMaxPxWithoutVisualViewport(): number {
+  if (typeof window === "undefined") {
+    return COMMENTS_SHEET_REM_CAP * 16;
+  }
+  const innerH = window.innerHeight;
+  const preferredCap = Math.min(innerH * COMMENTS_SHEET_VH_FRACTION, COMMENTS_SHEET_REM_CAP * 16);
+  const visibleBudget = Math.max(COMMENTS_SHEET_MIN_PX, Math.floor(innerH - COMMENTS_SHEET_TOP_RESERVE_PX));
+  return Math.min(preferredCap, visibleBudget);
+}
+
 export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const closeCommittedRef = useRef(false);
+  const drawerContentRef = useRef<HTMLDivElement | null>(null);
 
   const handleClose = useCallback(() => {
     if (closeCommittedRef.current) return;
@@ -94,11 +108,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [currentMentionStart, setCurrentMentionStart] = useState(-1);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
+  const [nativeKeyboardInsetPx, setNativeKeyboardInsetPx] = useState(0);
+  const [nativeKeyboardLayoutActive, setNativeKeyboardLayoutActive] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist, userType } = useUser();
-  const debugComments =
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
+  const debugComments = commentsKeyboardDebugEnabled();
+  const debugKeyboardTiming = commentsKeyboardDebugEnabled() || debugComments;
   const composerFieldId = useId();
   /** Set while comments viewport lock is active; used to resync offset immediately on composer focus. */
   const viewportHostVvSyncRef = useRef<(() => void) | null>(null);
@@ -122,6 +138,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       });
     }
   }, [isOpen, post.id, debugComments]);
+
+  useEffect(() => {
+    if (!isOpen || !debugKeyboardTiming) return;
+    console.log("[CommentsModal][kbd-timing] instrumentation-active", {
+      postId: post.id,
+      search: typeof window !== "undefined" ? window.location.search : "",
+      localStorageLegacy: typeof window !== "undefined" ? localStorage.getItem("dubhub-debug-comments-keyboard") : null,
+      localStorageNative: typeof window !== "undefined" ? localStorage.getItem("dubhub.debug.commentsKeyboard") : null,
+    });
+  }, [debugKeyboardTiming, isOpen, post.id]);
 
   /**
    * Keep shell `pb-[var(--app-bottom-nav-block)]` identical for the whole time comments are open.
@@ -169,10 +195,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
 
     /** Apply immediately (same tick as WebKit’s viewport change) plus one rAF so we match layout after paint. */
     const syncVvOffsetThorough = () => {
+      logKeyboardTiming("viewport-host-sync:start");
       syncVvOffset();
       if (rafFollowUpId) cancelAnimationFrame(rafFollowUpId);
+      logKeyboardTiming("viewport-host-sync:raf-scheduled");
       rafFollowUpId = requestAnimationFrame(() => {
         rafFollowUpId = 0;
+        logKeyboardTiming("viewport-host-sync:raf-fired");
         syncVvOffset();
       });
     };
@@ -197,7 +226,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     applyLock();
 
     const vv = window.visualViewport;
-    const onVv = () => syncVvOffsetThorough();
+    const onVv = () => {
+      logKeyboardTiming("viewport-host-sync:event");
+      syncVvOffsetThorough();
+    };
     vv?.addEventListener("resize", onVv);
     vv?.addEventListener("scroll", onVv);
     window.addEventListener("resize", onVv);
@@ -251,7 +283,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       body.classList.remove("comments-modal-open");
       clearDismissPullGuardTimer();
       body.classList.add("comments-dismiss-pull-guard");
+      logKeyboardTiming("dismiss-pull-guard-timeout:scheduled", { delayMs: 520 });
       dismissPullGuardTimer = window.setTimeout(() => {
+        logKeyboardTiming("dismiss-pull-guard-timeout:fired");
         dismissPullGuardTimer = null;
         body.classList.remove("comments-dismiss-pull-guard");
       }, 520);
@@ -272,15 +306,24 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     const vv = window.visualViewport;
     let t: ReturnType<typeof setTimeout> | undefined;
     const onVv = () => {
+      logKeyboardTiming("debug-vv-listener:event");
       clearTimeout(t);
-      t = setTimeout(() => logCommentsKeyboardSnapshot("visual-viewport-resize"), 80);
+      logKeyboardTiming("debug-vv-listener:timeout-scheduled", { delayMs: 80 });
+      t = setTimeout(() => {
+        logKeyboardTiming("debug-vv-listener:timeout-fired", { delayMs: 80 });
+        logCommentsKeyboardSnapshot("visual-viewport-resize");
+      }, 80);
     };
     vv?.addEventListener("resize", onVv);
     vv?.addEventListener("scroll", onVv);
     let moT: ReturnType<typeof setTimeout> | undefined;
     const mo = new MutationObserver(() => {
       clearTimeout(moT);
-      moT = setTimeout(() => logCommentsKeyboardSnapshot("html-body-style-mutation"), 80);
+      logKeyboardTiming("debug-mutation-listener:timeout-scheduled", { delayMs: 80 });
+      moT = setTimeout(() => {
+        logKeyboardTiming("debug-mutation-listener:timeout-fired", { delayMs: 80 });
+        logCommentsKeyboardSnapshot("html-body-style-mutation");
+      }, 80);
     });
     mo.observe(document.body, { attributes: true, attributeFilter: ["style", "class"] });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
@@ -364,24 +407,218 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     userType === "artist" &&
     verifiedArtist &&
     !isArtistIdentifiedPost;
+  const commentsSheetMaxPx = isOpen
+    ? nativeKeyboardLayoutActive
+      ? computeCommentsSheetMaxPxWithoutVisualViewport()
+      : computeCommentsSheetMaxPx()
+    : null;
+  const commentsKeyboardBottomInset = isOpen
+    ? nativeKeyboardLayoutActive
+      ? nativeKeyboardInsetPx
+      : computeCommentsKeyboardBottomInset()
+    : 0;
+
+  function logKeyboardTiming(phase: string, extra?: Record<string, unknown>) {
+    if (!debugKeyboardTiming || typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    const composerRect = commentInputRef.current?.getBoundingClientRect();
+    const drawerRect = drawerContentRef.current?.getBoundingClientRect();
+    const drawerStyle = drawerContentRef.current ? getComputedStyle(drawerContentRef.current) : null;
+    const keyboardInset = vv
+      ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+      : 0;
+
+    console.log("[CommentsModal][kbd-timing]", {
+      phase,
+      tPerfMs: Math.round(performance.now() * 100) / 100,
+      tIso: new Date().toISOString(),
+      isOpen,
+      innerHeight: window.innerHeight,
+      visualViewportHeight: vv?.height ?? null,
+      visualViewportOffsetTop: vv?.offsetTop ?? null,
+      computedKeyboardInset: keyboardInset,
+      drawerBottom: drawerStyle?.bottom ?? null,
+      commentsSheetMaxPx,
+      nativeKeyboardLayoutActive,
+      nativeKeyboardInsetPx,
+      effectiveDrawerBottomInset: commentsKeyboardBottomInset,
+      composerRect: composerRect
+        ? {
+            top: Math.round(composerRect.top * 100) / 100,
+            bottom: Math.round(composerRect.bottom * 100) / 100,
+            height: Math.round(composerRect.height * 100) / 100,
+          }
+        : null,
+      drawerRect: drawerRect
+        ? {
+            top: Math.round(drawerRect.top * 100) / 100,
+            bottom: Math.round(drawerRect.bottom * 100) / 100,
+            height: Math.round(drawerRect.height * 100) / 100,
+          }
+        : null,
+      ...extra,
+    });
+  }
+
+  useEffect(() => {
+    if (!isOpen) {
+      setNativeKeyboardInsetPx(0);
+      setNativeKeyboardLayoutActive(false);
+      return;
+    }
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") {
+      setNativeKeyboardInsetPx(0);
+      setNativeKeyboardLayoutActive(false);
+      return;
+    }
+
+    let cancelled = false;
+    let previousResizeMode: KeyboardResize | null = null;
+    let removeWillShow: (() => Promise<void>) | null = null;
+    let removeWillHide: (() => Promise<void>) | null = null;
+    let removeDidHide: (() => Promise<void>) | null = null;
+    const onWindowResize = () => {
+      logKeyboardTiming("native-ios:window-resize-observed");
+    };
+
+    const setupNativeKeyboardMode = async () => {
+      try {
+        const current = await Keyboard.getResizeMode();
+        previousResizeMode = current?.mode ?? KeyboardResize.Native;
+      } catch {
+        previousResizeMode = KeyboardResize.Native;
+      }
+
+      try {
+        await Keyboard.setResizeMode({ mode: KeyboardResize.None });
+        if (cancelled) return;
+        setNativeKeyboardLayoutActive(true);
+        logKeyboardTiming("native-ios:resize-mode-set-none");
+      } catch (err) {
+        if (!cancelled) {
+          setNativeKeyboardLayoutActive(false);
+          setNativeKeyboardInsetPx(0);
+          logKeyboardTiming("native-ios:resize-mode-set-none-failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return;
+      }
+
+      window.addEventListener("resize", onWindowResize);
+
+      try {
+        const h = await Keyboard.addListener("keyboardWillShow", (info) => {
+          const height = Math.max(0, Math.round((info as { keyboardHeight?: number }).keyboardHeight ?? 0));
+          logKeyboardTiming("native-ios:keyboardWillShow", { keyboardHeight: height });
+          setNativeKeyboardInsetPx(height);
+        });
+        removeWillShow = () => h.remove();
+      } catch (err) {
+        logKeyboardTiming("native-ios:keyboardWillShow-listener-failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      try {
+        const h = await Keyboard.addListener("keyboardWillHide", () => {
+          logKeyboardTiming("native-ios:keyboardWillHide");
+          setNativeKeyboardInsetPx(0);
+        });
+        removeWillHide = () => h.remove();
+      } catch (err) {
+        logKeyboardTiming("native-ios:keyboardWillHide-listener-failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      try {
+        const h = await Keyboard.addListener("keyboardDidHide", () => {
+          logKeyboardTiming("native-ios:keyboardDidHide");
+          setNativeKeyboardInsetPx(0);
+        });
+        removeDidHide = () => h.remove();
+      } catch (err) {
+        logKeyboardTiming("native-ios:keyboardDidHide-listener-failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    void setupNativeKeyboardMode();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("resize", onWindowResize);
+      setNativeKeyboardInsetPx(0);
+      setNativeKeyboardLayoutActive(false);
+      void removeWillShow?.();
+      void removeWillHide?.();
+      void removeDidHide?.();
+      const restoreMode = previousResizeMode ?? KeyboardResize.Native;
+      void Keyboard.setResizeMode({ mode: restoreMode })
+        .then(() => {
+          logKeyboardTiming("native-ios:resize-mode-restored", { mode: restoreMode });
+        })
+        .catch((err) => {
+          logKeyboardTiming("native-ios:resize-mode-restore-failed", {
+            mode: restoreMode,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || typeof window === "undefined") return;
     const vv = window.visualViewport;
-    const bump = () => bumpForVisualViewport();
-    bump();
-    vv?.addEventListener("resize", bump);
-    vv?.addEventListener("scroll", bump);
-    window.addEventListener("resize", bump);
+    const bump = (reason: string) => {
+      logKeyboardTiming("layout-bump:before", { reason });
+      bumpForVisualViewport();
+      logKeyboardTiming("layout-bump:after", { reason });
+      requestAnimationFrame(() => {
+        logKeyboardTiming("layout-bump:after-raf", { reason });
+      });
+    };
+    const onVvResize = () => {
+      logKeyboardTiming("visualViewport:resize:before");
+      bump("visualViewport.resize");
+      logKeyboardTiming("visualViewport:resize:after");
+      requestAnimationFrame(() => logKeyboardTiming("visualViewport:resize:after-raf"));
+    };
+    const onVvScroll = () => {
+      logKeyboardTiming("visualViewport:scroll:before");
+      bump("visualViewport.scroll");
+      logKeyboardTiming("visualViewport:scroll:after");
+      requestAnimationFrame(() => logKeyboardTiming("visualViewport:scroll:after-raf"));
+    };
+    const onWindowResize = () => {
+      logKeyboardTiming("window:resize:before");
+      bump("window.resize");
+      logKeyboardTiming("window:resize:after");
+      requestAnimationFrame(() => logKeyboardTiming("window:resize:after-raf"));
+    };
+    logKeyboardTiming("layout-bump:effect-mounted");
+    bump("effect-mount");
+    vv?.addEventListener("resize", onVvResize);
+    vv?.addEventListener("scroll", onVvScroll);
+    window.addEventListener("resize", onWindowResize);
     return () => {
-      vv?.removeEventListener("resize", bump);
-      vv?.removeEventListener("scroll", bump);
-      window.removeEventListener("resize", bump);
+      logKeyboardTiming("layout-bump:effect-cleanup");
+      vv?.removeEventListener("resize", onVvResize);
+      vv?.removeEventListener("scroll", onVvScroll);
+      window.removeEventListener("resize", onWindowResize);
     };
   }, [isOpen]);
 
-  const commentsSheetMaxPx = isOpen ? computeCommentsSheetMaxPx() : null;
-  const commentsKeyboardBottomInset = isOpen ? computeCommentsKeyboardBottomInset() : 0;
+  useEffect(() => {
+    if (!isOpen) return;
+    logKeyboardTiming("layout-values:render");
+  }, [commentsKeyboardBottomInset, commentsSheetMaxPx, isOpen]);
+
+  useEffect(() => {
+    logKeyboardTiming("modal-open-state-change");
+  }, [isOpen]);
 
   const {
     data: commentsData,
@@ -632,6 +869,14 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     setReplyingTo(null);
   };
 
+  const activateReplyTarget = useCallback((parentCommentId: string, username: string) => {
+    setReplyingTo({ id: parentCommentId, username });
+    setNewComment(`${formatUsernameDisplay(username)} `);
+    requestAnimationFrame(() => {
+      commentInputRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
   useLayoutEffect(() => {
     const el = commentInputRef.current;
     if (!el) return;
@@ -664,11 +909,17 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         noBodyStyles
       >
       <DrawerContent
+        ref={drawerContentRef}
         overlayClassName="z-[60] bg-transparent"
         className="bottom-0 z-[60] mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm dark:border dark:border-border/55 dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md"
         style={
           commentsSheetMaxPx != null
-            ? { maxHeight: commentsSheetMaxPx, bottom: commentsKeyboardBottomInset }
+            ? {
+                maxHeight: commentsSheetMaxPx,
+                bottom: commentsKeyboardBottomInset,
+                transition: "bottom 0.5s cubic-bezier(0.32, 0.72, 0, 1)",
+                willChange: "bottom",
+              }
             : undefined
         }
       >
@@ -966,10 +1217,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   </button>
                   <button 
                     className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/70 dark:hover:text-white"
-                    onClick={() => {
-                      setReplyingTo({id: comment.id, username: comment.user.username});
-                      setNewComment(`${formatUsernameDisplay(comment.user.username)} `);
+                    onPointerDown={(e) => {
+                      // Keep textarea focus/keyboard active when switching reply target.
+                      e.preventDefault();
                     }}
+                    onClick={() => activateReplyTarget(comment.id, comment.user.username)}
                     data-testid={`reply-button-${comment.id}`}
                   >
                     Reply
@@ -1147,10 +1399,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                             </button>
                             <button 
                               className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/70 dark:hover:text-white"
-                              onClick={() => {
-                                setReplyingTo({id: comment.id, username: reply.user.username});
-                                setNewComment(`${formatUsernameDisplay(reply.user.username)} `);
+                              onPointerDown={(e) => {
+                                // Keep textarea focus/keyboard active when switching reply target.
+                                e.preventDefault();
                               }}
+                              onClick={() => activateReplyTarget(comment.id, reply.user.username)}
                               data-testid={`reply-button-${reply.id}`}
                             >
                               Reply
@@ -1251,26 +1504,62 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     onChange={handleCommentChange}
                     onKeyDown={handleComposerKeyDown}
                     onFocus={() => {
-                      viewportHostVvSyncRef.current?.();
-                      requestAnimationFrame(() => {
+                      logKeyboardTiming("composer:focus");
+                      if (!nativeKeyboardLayoutActive) {
+                        logKeyboardTiming("composer:focus:before-sync");
                         viewportHostVvSyncRef.current?.();
-                        requestAnimationFrame(() => viewportHostVvSyncRef.current?.());
-                      });
+                        logKeyboardTiming("composer:focus:after-sync");
+                        logKeyboardTiming("composer:focus:raf-scheduled:1");
+                        requestAnimationFrame(() => {
+                          logKeyboardTiming("composer:focus:raf-fired:1-before-sync");
+                          viewportHostVvSyncRef.current?.();
+                          logKeyboardTiming("composer:focus:raf-fired:1-after-sync");
+                          logKeyboardTiming("composer:focus:raf-scheduled:2");
+                          requestAnimationFrame(() => {
+                            logKeyboardTiming("composer:focus:raf-fired:2-before-sync");
+                            viewportHostVvSyncRef.current?.();
+                            logKeyboardTiming("composer:focus:raf-fired:2-after-sync");
+                          });
+                        });
+                      } else {
+                        logKeyboardTiming("composer:focus:vv-sync-skipped-native-ios");
+                      }
                       if (commentsKeyboardDebugEnabled()) {
                         queueMicrotask(() =>
                           logCommentsKeyboardSnapshot("textarea-focus", { postId: post.id }),
                         );
-                        window.setTimeout(() => {
-                          logCommentsKeyboardSnapshot("textarea-focus+~350ms", { postId: post.id });
-                        }, 350);
+                        if (!nativeKeyboardLayoutActive) {
+                          logKeyboardTiming("composer:focus:timeout-scheduled", { delayMs: 350 });
+                          window.setTimeout(() => {
+                            logKeyboardTiming("composer:focus:timeout-fired", { delayMs: 350 });
+                            logCommentsKeyboardSnapshot("textarea-focus+~350ms", { postId: post.id });
+                          }, 350);
+                        } else {
+                          logKeyboardTiming("composer:focus:timeout-skipped-native-ios");
+                        }
                       }
                     }}
                     onBlur={() => {
-                      viewportHostVvSyncRef.current?.();
-                      requestAnimationFrame(() => {
+                      logKeyboardTiming("composer:blur");
+                      if (!nativeKeyboardLayoutActive) {
+                        logKeyboardTiming("composer:blur:before-sync");
                         viewportHostVvSyncRef.current?.();
-                        requestAnimationFrame(() => viewportHostVvSyncRef.current?.());
-                      });
+                        logKeyboardTiming("composer:blur:after-sync");
+                        logKeyboardTiming("composer:blur:raf-scheduled:1");
+                        requestAnimationFrame(() => {
+                          logKeyboardTiming("composer:blur:raf-fired:1-before-sync");
+                          viewportHostVvSyncRef.current?.();
+                          logKeyboardTiming("composer:blur:raf-fired:1-after-sync");
+                          logKeyboardTiming("composer:blur:raf-scheduled:2");
+                          requestAnimationFrame(() => {
+                            logKeyboardTiming("composer:blur:raf-fired:2-before-sync");
+                            viewportHostVvSyncRef.current?.();
+                            logKeyboardTiming("composer:blur:raf-fired:2-after-sync");
+                          });
+                        });
+                      } else {
+                        logKeyboardTiming("composer:blur:vv-sync-skipped-native-ios");
+                      }
                       if (commentsKeyboardDebugEnabled()) {
                         queueMicrotask(() =>
                           logCommentsKeyboardSnapshot("textarea-blur", { postId: post.id }),
