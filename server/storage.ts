@@ -134,7 +134,13 @@ export interface IStorage {
   getEligiblePostsForArtist(artistId: string, currentReleaseId?: string): Promise<any[]>;
   notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean>;
   maybeNotifyReleasePublic(releaseId: string): Promise<void>;
-  notifyReleaseDayLikers(): Promise<{ count: number; releaseIds: string[] }>;
+  notifyReleaseDayLikers(): Promise<{
+    count: number;
+    notificationsCreated: number;
+    pushAttempts: number;
+    pushFailures: number;
+    releaseIds: string[];
+  }>;
   getReleaseCollaborators(releaseId: string): Promise<any[]>;
   canManageRelease(releaseId: string, userId: string): Promise<boolean>;
   inviteCollaborator(releaseId: string, ownerId: string, artistId: string): Promise<{ ok: boolean; error?: string; code?: string }>;
@@ -2852,12 +2858,40 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async notifyReleaseDayLikers(): Promise<{ count: number; releaseIds: string[] }> {
+  async notifyReleaseDayLikers(): Promise<{
+    count: number;
+    notificationsCreated: number;
+    pushAttempts: number;
+    pushFailures: number;
+    releaseIds: string[];
+  }> {
     try {
+      let sendPushToUserFn:
+        | ((
+            recipientUserId: string,
+            payload: {
+              type: "release_day_out_today";
+              releaseId: string;
+              postId: string | null;
+              artistId: string;
+              releaseTitle: string;
+            },
+          ) => Promise<void>)
+        | null = null;
+      let pushImportError: unknown = null;
+      try {
+        const mod = await import("./push/pushSend");
+        sendPushToUserFn = mod.sendPushToUser;
+      } catch (importError) {
+        pushImportError = importError;
+        console.error("[notifyReleaseDayLikers] Failed to import push sender", importError);
+      }
+
       const releasesResult = await db.execute(sql`
         SELECT r.id, r.artist_id, r.title, r.release_date, r.release_day_notified_at, r.artwork_url
         FROM releases r
         WHERE r.release_day_notified_at IS NULL
+          AND r.is_public = true
           AND r.is_coming_soon = false
           AND r.release_date IS NOT NULL
           AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
@@ -2866,8 +2900,12 @@ export class DatabaseStorage implements IStorage {
       `);
       const releases = (releasesResult as any).rows || [];
       const notifiedReleaseIds: string[] = [];
-      let totalSent = 0;
+      let notificationsCreated = 0;
+      let pushAttempts = 0;
+      let pushFailures = 0;
       for (const r of releases) {
+        const pushTasks: Promise<void>[] = [];
+        const pushTaskRecipients: string[] = [];
         const recipientsResult = await db.execute(sql`
           SELECT DISTINCT user_id FROM (
             SELECT pl.user_id FROM release_posts rp
@@ -2896,17 +2934,85 @@ export class DatabaseStorage implements IStorage {
             releaseId: r.id,
             message,
           });
-          totalSent++;
+          notificationsCreated++;
+          const releaseTitle =
+            typeof r.title === "string" && r.title.trim().length > 0 ? r.title.trim() : "Release";
+          pushAttempts++;
+          console.log("[notifyReleaseDayLikers] Push attempt", {
+            releaseId: r.id,
+            recipientId,
+            postId: firstPostId,
+            pushType: "release_day_out_today",
+            pushAttempted: true,
+          });
+          if (!sendPushToUserFn) {
+            pushFailures++;
+            console.error("[notifyReleaseDayLikers] Push failed before send (push sender unavailable)", {
+              releaseId: r.id,
+              recipientId,
+              postId: firstPostId,
+              pushType: "release_day_out_today",
+              error: pushImportError instanceof Error ? pushImportError.message : String(pushImportError),
+            });
+            continue;
+          }
+          pushTasks.push(
+            sendPushToUserFn(recipientId, {
+              type: "release_day_out_today",
+              releaseId: r.id,
+              postId: firstPostId,
+              artistId: r.artist_id,
+              releaseTitle,
+            }),
+          );
+          pushTaskRecipients.push(recipientId);
         }
+
+        const pushResults = await Promise.allSettled(pushTasks);
+        for (let i = 0; i < pushResults.length; i++) {
+          const recipientId = pushTaskRecipients[i] ?? null;
+          const result = pushResults[i];
+          if (result.status === "fulfilled") {
+            console.log("[notifyReleaseDayLikers] Push dispatch resolved", {
+              releaseId: r.id,
+              recipientId,
+              postId: firstPostId,
+              pushType: "release_day_out_today",
+            });
+          } else {
+            pushFailures++;
+            console.error("[notifyReleaseDayLikers] Push dispatch failed", {
+              releaseId: r.id,
+              recipientId,
+              postId: firstPostId,
+              pushType: "release_day_out_today",
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            });
+          }
+        }
+
         await db.execute(sql`
           UPDATE releases SET release_day_notified_at = NOW() WHERE id = ${r.id}
         `);
+        console.log("[notifyReleaseDayLikers] Release processing completed", {
+          releaseId: r.id,
+          recipients: recipientRows.length,
+          notificationsCreated,
+          pushAttempts,
+          pushFailures,
+        });
         notifiedReleaseIds.push(r.id);
       }
-      return { count: totalSent, releaseIds: notifiedReleaseIds };
+      return {
+        count: notificationsCreated,
+        notificationsCreated,
+        pushAttempts,
+        pushFailures,
+        releaseIds: notifiedReleaseIds,
+      };
     } catch (error) {
       console.error("[notifyReleaseDayLikers] Error:", error);
-      return { count: 0, releaseIds: [] };
+      return { count: 0, notificationsCreated: 0, pushAttempts: 0, pushFailures: 0, releaseIds: [] };
     }
   }
 
