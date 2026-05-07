@@ -44,6 +44,9 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
   });
 
   const oldestCommentId = sortedComments[0]?.id ?? null;
+  const firstCommentId = sortedComments.find((comment) => !!comment.taggedArtist)?.id ?? null;
+  const selectedIsOldest = selectedCommentId !== "" && selectedCommentId === oldestCommentId;
+  const selectedIsFirstComment = selectedCommentId !== "" && selectedCommentId === firstCommentId;
 
   const formatCommentTimestamp = (value: Date | string | null | undefined) => {
     if (!value) return "Unknown time";
@@ -98,7 +101,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
           initialFocusRef.current?.focus();
         }}
         overlayClassName={ID_MARKING_DIALOG_OVERLAY_CLASS}
-        className={ID_MARKING_DIALOG_CONTENT_CLASS}
+        className={`${ID_MARKING_DIALOG_CONTENT_CLASS} overflow-x-hidden`}
       >
         <div ref={initialFocusRef} tabIndex={-1} />
         <DialogHeader className="space-y-1.5 text-center">
@@ -121,29 +124,34 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
             <p>No comments yet. Community members need to comment with track IDs first.</p>
           </div>
         ) : (
-          <div className="mt-4 space-y-4">
-            <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
+          <div className="mt-4 space-y-4 overflow-x-hidden">
+            <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId} className="overflow-x-hidden">
               {sortedComments.map((comment) => {
                 const isSelected = selectedCommentId === comment.id;
                 const isOldest = comment.id === oldestCommentId;
+                const isFirstComment = comment.id === firstCommentId;
 
-                const highlightClass = isOldest
-                  ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
-                  : "border-white/20 hover:bg-white/10";
+                const highlightClass = isFirstComment
+                  ? "border-[#FFD700]/80 bg-[#FFD700]/10 shadow-[0_0_22px_rgba(255,215,0,0.55)]"
+                  : isOldest
+                    ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
+                    : "border-white/20 hover:bg-white/10";
 
                 const selectionRingClass = isSelected
-                  ? isOldest
-                    ? "ring-2 ring-[#3B82F6]/95 shadow-[0_0_24px_rgba(59,130,246,0.65)]"
-                    : "ring-2 ring-white shadow-[0_0_28px_rgba(255,255,255,0.45)]"
+                  ? isFirstComment
+                    ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
+                    : isOldest
+                      ? "ring-2 ring-[#3B82F6]/95 shadow-[0_0_24px_rgba(59,130,246,0.65)]"
+                      : "ring-2 ring-white shadow-[0_0_28px_rgba(255,255,255,0.45)]"
                   : "";
 
                 return (
                   <div
                     key={comment.id}
-                    className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${highlightClass} ${
+                    className={`flex min-w-0 items-start space-x-3 overflow-x-hidden rounded-lg border p-3 transition-colors ${highlightClass} ${
                       isSelected ? selectionRingClass : ""
                     } ${
-                      isSelected && !isOldest
+                      isSelected && !isOldest && !isFirstComment
                         ? "bg-white/8 border-white/95 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)]"
                         : ""
                     }`}
@@ -153,11 +161,11 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                       id={comment.id}
                       data-testid={`radio-comment-${comment.id}`}
                     />
-                    <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
-                      <div className="mb-2 flex items-center gap-2">
-                        <div className="flex items-center gap-2">
+                    <Label htmlFor={comment.id} className="min-w-0 flex-1 cursor-pointer overflow-x-hidden">
+                      <div className="mb-2 min-w-0">
+                        <div className="flex min-w-0 items-start gap-2">
                           <div
-                            className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center border ${
+                            className={`h-8 w-8 shrink-0 rounded-full overflow-hidden flex items-center justify-center border ${
                               comment.user.verified_artist
                                 ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                                 : "border-primary/20"
@@ -173,37 +181,54 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                               <User className="w-4 h-4 text-primary" />
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span
+                                className={`truncate text-sm font-medium ${
+                                  comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
+                                }`}
+                              >
+                                {formatUsernameDisplay(comment.user.username)}
+                              </span>
                             {comment.user.verified_artist && (
-                              <CheckCircle className="w-4 h-4 text-primary" />
+                                <CheckCircle className="h-4 w-4 shrink-0 text-[#FFD700]" />
                             )}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                              {isOldest && (
+                                <span
+                                  className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                    isSelected && !isFirstComment
+                                      ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
+                                      : "border-[#3B82F6] bg-[#3B82F6] text-white"
+                                  }`}
+                                >
+                                  Oldest Comment
+                                </span>
+                              )}
+                              {isFirstComment && (
+                                <span
+                                  className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                    isSelected
+                                      ? "border-[#FFD700]/90 bg-[#FFD700]/35 text-white shadow-[0_0_16px_rgba(255,215,0,0.55)]"
+                                      : "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]"
+                                  }`}
+                                >
+                                  First Comment
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-1">
-                          {isOldest && (
-                            <span
-                              className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                                isSelected
-                                  ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
-                                  : "border-[#3B82F6] bg-[#3B82F6] text-white"
-                              }`}
-                            >
-                              Oldest Comment
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="ml-auto flex items-center gap-1 text-[11px] text-white/65">
+                        <div className="mt-2 flex items-center gap-1 text-[11px] text-white/65">
                           <Clock3 className="h-3.5 w-3.5" />
                           <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                         </div>
                       </div>
 
-                      <p className="text-sm text-white/92">{comment.body}</p>
+                      <p className="break-words text-sm text-white/92">{comment.body}</p>
                       {comment.taggedArtist && (
-                        <p className="mt-1 text-xs text-white/65">
+                        <p className="mt-1 break-words text-xs text-white/65">
                           Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
                         </p>
                       )}
@@ -223,8 +248,16 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                 Cancel
               </Button>
               <Button
+                variant="outline"
                 onClick={() => verifyMutation.mutate()}
                 disabled={!selectedCommentId || verifyMutation.isPending}
+                className={
+                  selectedIsFirstComment
+                    ? "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)] hover:bg-[#FFD700]/35 hover:text-white"
+                    : selectedIsOldest
+                      ? "border-[#3B82F6] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.40)] hover:bg-[#1D4ED8]/90 hover:text-white"
+                      : "border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                }
                 data-testid="button-submit-verification"
               >
                 {verifyMutation.isPending ? "Submitting..." : "Submit for Review"}
