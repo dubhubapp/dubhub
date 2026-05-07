@@ -119,7 +119,7 @@ NOT `user_id` or `from_user_id`.
 |------------|-------------|----------|-------------------|-------|
 | id         | uuid        | NO       | gen_random_uuid() | Primary key |
 | user_id    | uuid        | NO       | –                 | FK → profiles.id (ON DELETE CASCADE) |
-| category   | text        | NO       | –                 | UX / Design, Bug / Issue, Feature Request, Performance, Notifications, Account / Verification, Other |
+| category   | text        | NO       | –                 | Canonical values: ux, bug, feature_request, performance, notifications, account_verification, other |
 | body       | text        | NO       | –                 | Feedback text (1-1000 chars, trimmed non-empty) |
 | app_version| text        | NO       | 'unknown'         | App version string (max 64 chars) |
 | platform   | text        | NO       | 'web'             | ios / web / android |
@@ -127,7 +127,7 @@ NOT `user_id` or `from_user_id`.
 
 ⚠️ **Important:**
 - Intended for app feedback submitted from Settings.
-- `category` is constraint-validated to approved values only.
+- `category` stores canonical enum-like values (lowercase with underscores), not display labels.
 - RLS enabled; authenticated users can insert only rows where `user_id = auth.uid()`.
 
 ---

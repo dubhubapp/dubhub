@@ -3736,20 +3736,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rawFeedback = typeof req.body?.feedback === "string" ? req.body.feedback : "";
       const feedback = rawFeedback.trim();
       const rawCategory = typeof req.body?.category === "string" ? req.body.category : "";
-      const category = rawCategory.trim();
+      const normalizedCategoryInput = rawCategory.trim().toLowerCase();
+      const categoryAliasToCanonical: Record<string, string> = {
+        ux: "ux",
+        "ux / design": "ux",
+        bug: "bug",
+        "bug / issue": "bug",
+        feature_request: "feature_request",
+        "feature request": "feature_request",
+        performance: "performance",
+        notifications: "notifications",
+        account_verification: "account_verification",
+        "account / verification": "account_verification",
+        other: "other",
+      };
+      const category = categoryAliasToCanonical[normalizedCategoryInput];
       const rawAppVersion = typeof req.body?.app_version === "string" ? req.body.app_version : "";
       const appVersion = rawAppVersion.trim() || "unknown";
       const rawPlatform = typeof req.body?.platform === "string" ? req.body.platform : "";
       const platform = rawPlatform.trim().toLowerCase();
-      const allowedCategories = new Set([
-        "UX / Design",
-        "Bug / Issue",
-        "Feature Request",
-        "Performance",
-        "Notifications",
-        "Account / Verification",
-        "Other",
-      ]);
+      const allowedCategories = new Set(["ux", "bug", "feature_request", "performance", "notifications", "account_verification", "other"]);
 
       if (!feedback) {
         return res.status(400).json({ message: "Feedback cannot be empty" });
@@ -3759,7 +3765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .status(400)
           .json({ message: `Feedback must be at most ${INPUT_LIMITS.feedbackBody} characters` });
       }
-      if (!allowedCategories.has(category)) {
+      if (!category || !allowedCategories.has(category)) {
         return res.status(400).json({ message: "Invalid feedback category" });
       }
       if (!platform || !["ios", "web", "android"].includes(platform)) {

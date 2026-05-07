@@ -25,14 +25,15 @@ import {
 const THEME_TRANSITION_CLASS = "theme-transitioning";
 const THEME_TRANSITION_MS = 180;
 const FEEDBACK_CATEGORIES = [
-  "UX / Design",
-  "Bug / Issue",
-  "Feature Request",
-  "Performance",
-  "Notifications",
-  "Account / Verification",
-  "Other",
+  { label: "UX / Design", value: "ux" },
+  { label: "Bug / Issue", value: "bug" },
+  { label: "Feature Request", value: "feature_request" },
+  { label: "Performance", value: "performance" },
+  { label: "Notifications", value: "notifications" },
+  { label: "Account / Verification", value: "account_verification" },
+  { label: "Other", value: "other" },
 ] as const;
+type FeedbackCategoryValue = (typeof FEEDBACK_CATEGORIES)[number]["value"];
 
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
@@ -47,7 +48,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const isModerator = userType === "moderator";
   const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState<boolean | null>(null);
   const [feedbackBody, setFeedbackBody] = useState("");
-  const [feedbackCategory, setFeedbackCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]>("Bug / Issue");
+  const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategoryValue>("bug");
   const [feedbackStatus, setFeedbackStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackAppVersion, setFeedbackAppVersion] = useState("unknown");
@@ -302,7 +303,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               <Select
                 value={feedbackCategory}
                 onValueChange={(value) => {
-                  setFeedbackCategory(value as (typeof FEEDBACK_CATEGORIES)[number]);
+                  setFeedbackCategory(value as FeedbackCategoryValue);
                   if (feedbackStatus) setFeedbackStatus(null);
                 }}
               >
@@ -311,8 +312,8 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {FEEDBACK_CATEGORIES.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
