@@ -14,7 +14,7 @@ export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: Aut
   const [isSignUp, setIsSignUp] = useState(defaultToSignUp);
   const authScrollRef = useRef<HTMLDivElement | null>(null);
   useIosKeyboardResizeNone(true);
-  const { isNativeIos, keyboardHeight } = useIosKeyboardAwareScroll({
+  const { isNativeIos, keyboardHeight, keyboardOpen } = useIosKeyboardAwareScroll({
     enabled: true,
     scrollContainerRef: authScrollRef,
   });
@@ -44,8 +44,11 @@ export default function AuthPage({ onAuthSuccess, defaultToSignUp = false }: Aut
   return (
     <div
       ref={authScrollRef}
-      className="min-h-screen h-screen overflow-y-auto bg-[#0f1324] flex items-start sm:items-center justify-center px-4 pt-6 sm:pt-8"
+      className={`min-h-screen h-screen overflow-y-auto bg-[#0f1324] flex justify-center px-4 sm:items-center ${
+        isNativeIos && keyboardOpen ? "items-start pt-4" : "items-center py-8"
+      }`}
       style={{
+        WebkitOverflowScrolling: "touch",
         paddingBottom:
           isNativeIos && keyboardHeight > 0
             ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px) + 1rem)`

@@ -27,6 +27,7 @@ export function useIosKeyboardAwareScroll({
     [],
   );
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardOpen = isNativeIos && keyboardHeight > 0;
 
   useEffect(() => {
     if (!enabled || !isNativeIos) {
@@ -97,5 +98,5 @@ export function useIosKeyboardAwareScroll({
     };
   }, [enabled, isNativeIos, scrollContainerRef, scrollDelayMs]);
 
-  return { isNativeIos, keyboardHeight };
+  return { isNativeIos, keyboardHeight, keyboardOpen };
 }
