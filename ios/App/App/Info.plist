@@ -43,12 +43,12 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>192.168.1.184</key>
+			<key>https://dubhub-production.up.railway.app</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<true/>
 				<key>NSIncludesSubdomains</key>
-				<false/>
+				<true/>
 			</dict>
 		</dict>
 	</dict>

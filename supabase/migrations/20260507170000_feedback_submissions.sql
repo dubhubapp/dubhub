@@ -8,13 +8,13 @@ CREATE TABLE IF NOT EXISTS public.feedback_submissions (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT feedback_submissions_category_check CHECK (
     category IN (
-      'UX / Design',
-      'Bug / Issue',
-      'Feature Request',
-      'Performance',
-      'Notifications',
-      'Account / Verification',
-      'Other'
+      'ux',
+      'bug',
+      'feature_request',
+      'performance',
+      'notifications',
+      'account_verification',
+      'other'
     )
   ),
   CONSTRAINT feedback_submissions_body_not_empty CHECK (char_length(btrim(body)) > 0),

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { GoldVerifiedTick } from "@/components/verified-artist";
 import { STATUS_GLOW_PILL_BG, getGenreGlowPillStyle } from "@/lib/genre-styles";
-import { ARTIST_BETA_ONBOARDING_MESSAGE } from "@/lib/artist-beta-copy";
+import { ARTIST_BETA_ARTIST_TOOLS_MESSAGE } from "@/lib/artist-beta-copy";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 
 type OnboardingAudience = "user" | "artist";
@@ -156,7 +156,7 @@ export function FirstLoginOnboardingModal({
               role="note"
               data-testid="artist-beta-onboarding-note"
             >
-              <p className="text-xs leading-relaxed text-white/80">{ARTIST_BETA_ONBOARDING_MESSAGE}</p>
+              <p className="text-xs leading-relaxed text-white/80">{ARTIST_BETA_ARTIST_TOOLS_MESSAGE}</p>
             </div>
           ) : null}
 
