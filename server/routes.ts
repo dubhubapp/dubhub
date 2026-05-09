@@ -855,7 +855,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Ensure user profile exists in Supabase (called after Supabase sign-up)
+  // Idempotent lookup: returning user if `public.profiles` already exists for auth user id.
+  // Profiles are created after email confirmation (handle_user_confirmed)—absence is normal pre-verify.
   app.post("/api/users", async (req, res) => {
     try {
       console.log('[/api/users] Received request:', JSON.stringify(req.body));
@@ -879,16 +880,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // If we reach here, the Supabase auth user exists but profile is missing.
-      // Profile creation is normally handled by the `handle_new_user` trigger.
-      // We don't attempt a second insert here to avoid conflicting with trigger logic.
-      console.warn('[/api/users] Supabase profile not found for auth user. This indicates trigger misconfiguration.', {
+      // Auth user exists but no profile row: usually unconfirmed email (confirm first) or ingestion lag.
+      // If this appears long after verified sign-in, investigate handle_user_confirmed / RLS — not triggered here.
+      console.warn('[/api/users] No profiles row yet for auth user.', {
         userId: id,
         username,
         userType,
+        hint: 'Expected until email is verified unless calling after confirmation.',
       });
       return res.status(404).json({
-        message: "User profile not found in Supabase. Please contact support.",
+        message:
+          "User profile not found in Supabase yet. Complete email verification first, then sign in again.",
       });
     } catch (error: any) {
       console.error('[/api/users] ERROR:', error);

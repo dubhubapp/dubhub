@@ -49,6 +49,13 @@ import {
   registerPushListeners,
   unregisterPushListeners,
 } from "@/lib/push-notifications";
+import {
+  clearDubhubAuthLocalMarkers,
+  hardResetLocalAuthState,
+  isProfileRowMissingError,
+  isRecoverableAuthSessionError,
+  shouldDeferSignOutForAuthCallback,
+} from "@/lib/auth-session-utils";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -116,6 +123,8 @@ function App() {
     banned: false,
     suspendedUntil: null,
   });
+  /** Shown on auth screens when JWT exists but no profiles row — matches UserContext semantics. */
+  const [profileGateBanner, setProfileGateBanner] = useState<string | null>(null);
 
   useEffect(() => {
     const DUBHUB_UNIVERSAL_HOSTS = new Set(["dubhub.uk", "www.dubhub.uk"]);
@@ -284,7 +293,21 @@ function App() {
         
         if (error) {
           console.error('Auth check error:', error);
+          if (isRecoverableAuthSessionError(error)) {
+            await hardResetLocalAuthState({ clearSessionStorage: false });
+          } else {
+            try {
+              await supabase.auth.signOut();
+            } catch {
+              // ignore
+            }
+            queryClient.clear();
+            clearDubhubAuthLocalMarkers();
+          }
+          setProfileGateBanner(null);
           setIsAuthenticated(false);
+          setIsHomeFeedReady(false);
+          setEnforcementState({ banned: false, suspendedUntil: null });
           setIsLoading(false);
           return;
         }
@@ -304,6 +327,7 @@ function App() {
             const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
             const isBanned = profileData.banned === true;
             if (isBanned || isSuspended) {
+              setProfileGateBanner(null);
               setIsAuthenticated(false);
               setIsHomeFeedReady(false);
               setEnforcementState({
@@ -318,11 +342,12 @@ function App() {
             if (profileData.account_type === 'artist' && !profileData.verified_artist) {
               console.warn('[App] Unverified artist blocked from login');
               await supabase.auth.signOut();
+              queryClient.clear();
+              clearDubhubAuthLocalMarkers();
+              setProfileGateBanner(null);
               setIsAuthenticated(false);
               setIsHomeFeedReady(false);
               setUserRole('user');
-              localStorage.removeItem('dubhub-authenticated');
-              localStorage.removeItem('dubhub-user-role');
               setIsLoading(false);
               return;
             }
@@ -343,14 +368,29 @@ function App() {
             // Also store in localStorage for backward compatibility
             localStorage.setItem('dubhub-authenticated', 'true');
             localStorage.setItem('dubhub-user-role', userRole);
+            setProfileGateBanner(null);
           } else {
-            setIsAuthenticated(true);
+            const likelyNoRow =
+              profileError == null || isProfileRowMissingError(profileError);
+            setProfileGateBanner(
+              likelyNoRow
+                ? 'Your dub hub profile is not loaded yet—if you just signed up, use the verification link in your dub hub email first. Already verified? Return to sign in (use Sign out on the Profile screen if you are stuck there). Forgot your password? Use Forgot password from sign in.'
+                : 'We could not verify your dub hub profile. Tap Sign out, then sign in again—or reset your password from the sign-in screen.'
+            );
+            clearDubhubAuthLocalMarkers();
+            if (!shouldDeferSignOutForAuthCallback()) {
+              await hardResetLocalAuthState({ clearSessionStorage: false });
+            }
+            setIsAuthenticated(false);
+            setIsHomeFeedReady(false);
             setUserRole('user');
+            setEnforcementState({ banned: false, suspendedUntil: null });
           }
         } else {
           setIsAuthenticated(false);
         setIsHomeFeedReady(false);
         setEnforcementState({ banned: false, suspendedUntil: null });
+        setProfileGateBanner(null);
           // Clear localStorage if no session
           localStorage.removeItem('dubhub-authenticated');
           localStorage.removeItem('dubhub-user-role');
@@ -358,6 +398,7 @@ function App() {
       } catch (error) {
         console.error('Auth check error:', error);
         setIsAuthenticated(false);
+        setProfileGateBanner(null);
       } finally {
         setIsLoading(false);
       }
@@ -374,7 +415,7 @@ function App() {
           .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
           .eq('id', session.user.id)
           .single()
-          .then(({ data: profileData }) => {
+          .then(async ({ data: profileData }) => {
             if (profileData) {
               const suspendedUntil = profileData.suspended_until ? new Date(profileData.suspended_until) : null;
               const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
@@ -392,12 +433,13 @@ function App() {
               // Block unverified artists from logging in
               if (profileData.account_type === 'artist' && !profileData.verified_artist) {
                 console.warn('[App] Unverified artist blocked from login');
-                supabase.auth.signOut();
+                await supabase.auth.signOut();
+                queryClient.clear();
                 setIsAuthenticated(false);
                 setIsHomeFeedReady(false);
                 setUserRole('user');
-                localStorage.removeItem('dubhub-authenticated');
-                localStorage.removeItem('dubhub-user-role');
+                clearDubhubAuthLocalMarkers();
+                setProfileGateBanner(null);
                 return;
               }
               
@@ -416,6 +458,19 @@ function App() {
               });
               localStorage.setItem('dubhub-authenticated', 'true');
               localStorage.setItem('dubhub-user-role', userRole);
+              setProfileGateBanner(null);
+            } else {
+              setEnforcementState({ banned: false, suspendedUntil: null });
+              setProfileGateBanner(
+                'Your dub hub profile is not loaded yet—if you just signed up, verify your email from the dub hub email first. Already verified? Return to sign in, or tap Sign out on the Profile screen if you are stuck there.'
+              );
+              clearDubhubAuthLocalMarkers();
+              setIsAuthenticated(false);
+              setIsHomeFeedReady(false);
+              setUserRole('user');
+              if (!shouldDeferSignOutForAuthCallback()) {
+                await hardResetLocalAuthState({ clearSessionStorage: false });
+              }
             }
           });
       } else if (event === 'SIGNED_OUT') {
@@ -425,6 +480,7 @@ function App() {
         setEnforcementState({ banned: false, suspendedUntil: null });
         localStorage.removeItem('dubhub-authenticated');
         localStorage.removeItem('dubhub-user-role');
+        setProfileGateBanner(null);
       }
     });
 
@@ -468,6 +524,7 @@ function App() {
   }, []);
 
   const handleAuthSuccess = (role: string) => {
+    setProfileGateBanner(null);
     localStorage.setItem('dubhub-authenticated', 'true');
     localStorage.setItem('dubhub-user-role', role);
     setIsAuthenticated(true);
@@ -481,6 +538,7 @@ function App() {
 
     // Sign out from Supabase
     await supabase.auth.signOut();
+    queryClient.clear();
 
     // Clear all authentication and user data from localStorage and sessionStorage
     localStorage.removeItem('dubhub-authenticated');
@@ -494,6 +552,7 @@ function App() {
     sessionStorage.clear();
     
     // Reset authentication state
+    setProfileGateBanner(null);
     setIsAuthenticated(false);
     setUserRole('user');
     setFirstLoginOnboarding({ open: false, audience: "user", userId: null, email: null });
@@ -528,7 +587,11 @@ function App() {
               <Route path="/auth-callback" component={AuthCallbackPage} />
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route>
-                <AuthPage onAuthSuccess={handleAuthSuccess} defaultToSignUp={false} />
+                <AuthPage
+                  onAuthSuccess={handleAuthSuccess}
+                  defaultToSignUp={false}
+                  authBanner={profileGateBanner}
+                />
               </Route>
             </Switch>
             <Toaster />

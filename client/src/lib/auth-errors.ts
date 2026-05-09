@@ -51,3 +51,24 @@ export function isDuplicateSignupEmailError(error: unknown): boolean {
   if (msg.includes("user already exists")) return true;
   return false;
 }
+
+/**
+ * Supabase / GoTrue “try signup again for an existing account” style errors
+ * (dashboard may log repeated_signup).
+ */
+export function isRepeatedSignupAttemptError(error: unknown): boolean {
+  if (isDuplicateSignupEmailError(error)) return false;
+  const e = asAuthLike(error);
+  if (!e) return false;
+  const msg = (e.message ?? "").toLowerCase();
+  const code = (e.code ?? "").toLowerCase();
+  if (code === "repeated_signup" || code === "signup_disabled") return true;
+  if (msg.includes("repeated_signup")) return true;
+  if (msg.includes("repeated signup")) return true;
+  return false;
+}
+
+/** Existing confirmed account / duplicate signup — guide user to sign in or reset password. */
+export function isExistingAccountSignupBlockError(error: unknown): boolean {
+  return isDuplicateSignupEmailError(error) || isRepeatedSignupAttemptError(error);
+}

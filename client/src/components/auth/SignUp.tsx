@@ -17,7 +17,7 @@ import { checkUsernameAvailability } from '@shared/usernameAvailability';
 import {
   AUTH_EMAIL_RATE_LIMIT_MESSAGE,
   isAuthEmailRateLimitError,
-  isDuplicateSignupEmailError,
+  isExistingAccountSignupBlockError,
 } from '@/lib/auth-errors';
 import { getAuthCallbackUrl } from '@/lib/auth-callback-url';
 import { markOnboardingPendingForEmail } from '@/lib/onboarding';
@@ -287,36 +287,18 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         }
       });
 
-      // Check if user was created successfully (even if there's a warning/error)
+      if (error && isExistingAccountSignupBlockError(error)) {
+        setErrorMessage(
+          'That email already has a dub hub account. Switch to Sign in below, or tap Forgot password on the sign-in screen if you need access.',
+        );
+        return;
+      }
+
+      // New account: Supabase creates auth.users only; `public.profiles` is inserted after email
+      // confirmation via handle_user_confirmed—not during this success path (no profile API here).
       if (data?.user && !error) {
         setSignupCooldownRemaining(SIGNUP_EMAIL_COOLDOWN_SECONDS);
-        // User was created successfully - treat as success even if error exists
-        // (magic-link scenarios may have warnings but user is still created)
-        console.log('[SignUp] User created successfully:', data.user.id);
-        
-        // Log successful user creation
-        console.log('[SignUp] User created in Supabase, profile will be auto-created by trigger');
-        
-        // DO NOT verify profile immediately - trigger creates it asynchronously in Supabase
-        // Any profile fetch here could fail due to RLS or timing, and we don't want that to block signup
-        // A separate backend endpoint can be used to verify profile existence if needed
-        // Profile is automatically created by Supabase trigger (handle_new_user)
-        console.log('[SignUp] User created in Supabase, profile auto-created by trigger');
-
-        // Call backend helper to ensure the Supabase profile exists / is readable
-        // This is a best-effort sync and MUST NOT block a successful signup flow
-        console.log('[SignUp] Calling backend to verify Supabase profile for user ID:', data.user.id);
-        try {
-          await apiRequest('POST', '/api/users', {
-            id: data.user.id,
-            username: trimmedUsername, // Send original username with casing preserved
-            userType: accountType,
-          });
-          console.log('[SignUp] Backend confirmed Supabase profile for user.');
-        } catch (profileSyncError: any) {
-          // This endpoint is best-effort only. Log and continue.
-          console.error('[SignUp] Backend profile verification error (non-blocking):', profileSyncError?.message || profileSyncError);
-        }
+        console.log('[SignUp] Auth user created; awaiting email verification before profile row:', data.user.id);
 
         // Add user to MailerLite (non-blocking - don't fail sign-up if this fails)
         try {
@@ -361,8 +343,10 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
             (em.includes('username') && em.includes('taken'));
 
-          if (isDuplicateSignupEmailError(error)) {
-            setErrorMessage('An account with this email already exists');
+          if (isExistingAccountSignupBlockError(error)) {
+            setErrorMessage(
+              'That email already has a dub hub account. Switch to Sign in below, or tap Forgot password on the sign-in screen if you need access.',
+            );
           } else if (isUsernameConflict) {
             setErrorMessage('Username already taken, please choose another.');
           } else if (
@@ -403,8 +387,10 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
             (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
           (em.includes('username') && em.includes('taken'));
 
-        if (isDuplicateSignupEmailError(error)) {
-          setErrorMessage('An account with this email already exists');
+        if (isExistingAccountSignupBlockError(error)) {
+          setErrorMessage(
+            'That email already has a dub hub account. Switch to Sign in below, or tap Forgot password on the sign-in screen if you need access.',
+          );
         } else if (isUsernameConflict) {
           setErrorMessage('Username already taken, please choose another.');
         } else {

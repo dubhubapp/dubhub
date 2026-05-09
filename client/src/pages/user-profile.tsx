@@ -9,6 +9,7 @@ import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
+import { hardResetLocalAuthState } from "@/lib/auth-session-utils";
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
 import { exportCroppedAvatar } from "@/lib/avatar-crop";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
@@ -1677,12 +1678,24 @@ export default function UserProfile() {
     };
   }, [pendingAvatarSrc]);
 
-  // Early return if no current user
   if (!currentUser) {
+    const handleRecoverAuth = async () => {
+      await hardResetLocalAuthState({ clearSessionStorage: false });
+      navigate("/", { replace: true });
+    };
+
     return (
-      <div className="flex-1 bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-400">Please log in to view your profile</p>
+      <div className="flex-1 bg-background flex items-center justify-center px-6 py-10">
+        <div className="max-w-md w-full space-y-4 rounded-xl border border-white/10 bg-black/25 p-6 text-center">
+          <p className="text-base font-medium text-gray-100">
+            We couldn&apos;t load your dub hub profile
+          </p>
+          <p className="text-sm text-muted-foreground">
+            If you haven&apos;t verified your email yet, open the link in your dub hub email first. Otherwise your saved sign-in may be out of date—tap below to sign out, then sign in again.
+          </p>
+          <Button type="button" className="w-full" variant="secondary" onClick={() => void handleRecoverAuth()}>
+            Sign out &amp; return to sign in
+          </Button>
         </div>
       </div>
     );
