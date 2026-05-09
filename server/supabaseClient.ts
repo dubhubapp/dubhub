@@ -2,8 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 // Prefer service key for server-side operations (storage uploads)
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey =
+  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+/** Service role is required for Auth Admin API (e.g. email existence checks). */
+export const supabaseAdminEnabled = !!supabaseServiceKey;
 
 // Use service key if available (for storage uploads), otherwise fall back to anon key
 const supabaseKey = supabaseServiceKey || supabaseAnonKey;

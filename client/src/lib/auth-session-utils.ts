@@ -44,14 +44,42 @@ function hasAuthCallbackUrlPayload(): boolean {
 }
 
 /**
- * When the WebView is handling a Supabase redirect (PKCE/hash), avoid signOut
- * during SIGNED_IN/profile races so the callback can finish exchange.
+ * True while `/auth-callback` still carries OAuth/PKCE/hash fragments.
+ * Use to:
+ * - avoid tearing down sessions during transient “no profile” races, and
+ * - keep the **unauthenticated** shell so `AuthCallbackPage` is not remounted
+ *   into the logged-in `Switch` mid-PKCE (which would retry exchange and hit “already used”).
  */
-export function shouldDeferSignOutForAuthCallback(): boolean {
-  if (typeof window === "undefined") return false;
-  const path = window.location.pathname.toLowerCase();
-  const onCallbackPath = path === "/auth-callback" || path.startsWith("/auth-callback/");
-  return onCallbackPath && hasAuthCallbackUrlPayload();
+const OAUTH_FRAGMENT_IN_PATH = /\b(?:code|type|error|error_description|access_token|refresh_token)=/;
+
+/**
+ * @param wouterLocation pass latest `useLocation()[0]` (use a ref) — Capacitor often keeps `window` on `/`
+ * while wouter carries `/auth-callback?…` from the deep link.
+ */
+export function shouldDeferSignOutForAuthCallback(wouterLocation?: string): boolean {
+  const raw = (wouterLocation ?? "").trim();
+  const pathFromRouter = raw.split(/[?#]/)[0].toLowerCase();
+  const onRouter =
+    pathFromRouter === "/auth-callback" || pathFromRouter.startsWith("/auth-callback/");
+
+  if (typeof window === "undefined") {
+    return onRouter && OAUTH_FRAGMENT_IN_PATH.test(raw);
+  }
+
+  const pathWin = window.location.pathname.toLowerCase();
+  const onWindow = pathWin === "/auth-callback" || pathWin.startsWith("/auth-callback/");
+  const onCallbackPath = onRouter || onWindow;
+
+  if (!onCallbackPath) return false;
+
+  const hasRouterFragments = OAUTH_FRAGMENT_IN_PATH.test(raw);
+  const webRootOnly = pathWin === "/" || pathWin === "/index.html";
+  // Native WebView commonly leaves address bar at / while router handles the callback route.
+  if (onRouter && webRootOnly) return true;
+
+  if (hasAuthCallbackUrlPayload() || hasRouterFragments) return true;
+
+  return false;
 }
 
 export function clearDubhubAuthLocalMarkers(): void {

@@ -27,6 +27,9 @@ interface SignUpProps {
   onAuthSuccess: (role: string) => void;
 }
 
+const DUPLICATE_EMAIL_SIGNUP_MESSAGE =
+  "That email already has a dub hub account. Please sign in instead, or use Forgot password if you can't remember your password.";
+
 function getPasswordStrength(password: string) {
   const value = password.trim();
 
@@ -273,10 +276,29 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         return;
       }
 
+      const trimmedEmail = email.trim();
+
+      try {
+        const checkRes = await apiRequest('POST', '/api/auth/check-email', {
+          email: trimmedEmail,
+        });
+        const checkBody = (await checkRes.json()) as { exists: boolean };
+        if (checkBody.exists) {
+          setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
+          return;
+        }
+      } catch (checkErr) {
+        console.error('[SignUp] Email availability check failed:', checkErr);
+        setErrorMessage(
+          'We could not verify that email right now. Please try again in a moment.',
+        );
+        return;
+      }
+
       // Create Supabase auth user with ORIGINAL username (preserve casing)
       const emailRedirectTo = getAuthCallbackUrl();
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: trimmedEmail,
         password: password,
         options: {
           emailRedirectTo,
@@ -288,9 +310,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
       });
 
       if (error && isExistingAccountSignupBlockError(error)) {
-        setErrorMessage(
-          'That email already has a dub hub account. Switch to Sign in below, or tap Forgot password on the sign-in screen if you need access.',
-        );
+        setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
         return;
       }
 
@@ -303,7 +323,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         // Add user to MailerLite (non-blocking - don't fail sign-up if this fails)
         try {
           await apiRequest('POST', '/api/addToMailerLite', {
-            email: email.trim(),
+            email: trimmedEmail,
             role: accountType,
             username: trimmedUsername, // Use original username
           });
@@ -317,7 +337,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           title: "Account Created",
           description: "Please check your email to verify your account.",
         });
-        markOnboardingPendingForEmail(email);
+        markOnboardingPendingForEmail(trimmedEmail);
 
         // Show verification modal
         openVerificationModal();
@@ -344,9 +364,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
             (em.includes('username') && em.includes('taken'));
 
           if (isExistingAccountSignupBlockError(error)) {
-            setErrorMessage(
-              'That email already has a dub hub account. Switch to Sign in below, or tap Forgot password on the sign-in screen if you need access.',
-            );
+            setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
           } else if (isUsernameConflict) {
             setErrorMessage('Username already taken, please choose another.');
           } else if (
@@ -359,15 +377,8 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           }
         }
       } else {
-        setSignupCooldownRemaining(SIGNUP_EMAIL_COOLDOWN_SECONDS);
-        // No error but no user - might be magic-link scenario
-        // Don't show error, just show email verification message
-        toast({
-          title: "Account Created",
-          description: "Please check your email to verify your account.",
-        });
-        markOnboardingPendingForEmail(email);
-        openVerificationModal();
+        // Supabase duplicate signup often returns 200 with no error and no user (no verification email sent).
+        setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
       }
     } catch (error: unknown) {
       console.error('[SignUp] Unexpected signup error:', error);
@@ -388,9 +399,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           (em.includes('username') && em.includes('taken'));
 
         if (isExistingAccountSignupBlockError(error)) {
-          setErrorMessage(
-            'That email already has a dub hub account. Switch to Sign in below, or tap Forgot password on the sign-in screen if you need access.',
-          );
+          setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
         } else if (isUsernameConflict) {
           setErrorMessage('Username already taken, please choose another.');
         } else {

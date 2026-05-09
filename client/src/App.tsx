@@ -49,6 +49,7 @@ import {
   registerPushListeners,
   unregisterPushListeners,
 } from "@/lib/push-notifications";
+import { storePendingNativeAuthCallbackUrl } from "@/lib/native-auth-callback-url";
 import {
   clearDubhubAuthLocalMarkers,
   hardResetLocalAuthState,
@@ -104,6 +105,9 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
 
 function App() {
   const [location, setLocation] = useLocation();
+  /** Always read `.current` inside auth async handlers — closures may outlive route changes (Capacitor deep links). */
+  const wouterLocationRef = useRef(location);
+  wouterLocationRef.current = location;
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string>('user');
   const [isLoading, setIsLoading] = useState(true);
@@ -210,6 +214,9 @@ function App() {
 
     const webFallbackRoute = toWebFallbackAuthCallbackRoute();
     if (webFallbackRoute) {
+      if (typeof window !== "undefined") {
+        storePendingNativeAuthCallbackUrl(window.location.href);
+      }
       setLocation(webFallbackRoute);
     }
 
@@ -219,7 +226,12 @@ function App() {
         if (cancelled || !launchUrl) return;
         const targetRoute = resolveIncomingUniversalAppUrl(launchUrl);
         logAppUrlResolution("launch-url", launchUrl, targetRoute);
-        if (targetRoute) setLocation(targetRoute);
+        if (targetRoute) {
+          if (targetRoute.startsWith("/auth-callback")) {
+            storePendingNativeAuthCallbackUrl(launchUrl);
+          }
+          setLocation(targetRoute);
+        }
       })
       .catch(() => {
         // Best effort: warm open listener below still handles deep links.
@@ -230,6 +242,9 @@ function App() {
       const targetRoute = resolveIncomingUniversalAppUrl(url);
       logAppUrlResolution("app-url-open", url, targetRoute);
       if (targetRoute) {
+        if (targetRoute.startsWith("/auth-callback")) {
+          storePendingNativeAuthCallbackUrl(url);
+        }
         setLocation(targetRoute);
       }
     })
@@ -356,19 +371,27 @@ function App() {
             if (profileData.moderator) {
               userRole = 'moderator';
             }
-            setIsAuthenticated(true);
-            setUserRole(userRole);
-            maybeQueueFirstLoginOnboarding({
-              userId: profileData.id,
-              email: profileData.email ?? session.user.email,
-              accountType: profileData.account_type,
-              verifiedArtist: profileData.verified_artist,
-              emailConfirmed: !!session.user.email_confirmed_at,
-            });
-            // Also store in localStorage for backward compatibility
-            localStorage.setItem('dubhub-authenticated', 'true');
-            localStorage.setItem('dubhub-user-role', userRole);
-            setProfileGateBanner(null);
+            // Keep logged-out shell while /auth-callback still has PKCE/hash in the URL.
+            // Otherwise SIGNED_IN + profile promotes to the authenticated Switch mid-callback,
+            // remounting AuthCallback and re-running exchangeCodeForSession (“already used” / Link not usable).
+            if (shouldDeferSignOutForAuthCallback(wouterLocationRef.current)) {
+              console.log(
+                "[dubhub][App][checkAuth] deferred authenticated shell: auth-callback OAuth payload active",
+              );
+            } else {
+              setIsAuthenticated(true);
+              setUserRole(userRole);
+              maybeQueueFirstLoginOnboarding({
+                userId: profileData.id,
+                email: profileData.email ?? session.user.email,
+                accountType: profileData.account_type,
+                verifiedArtist: profileData.verified_artist,
+                emailConfirmed: !!session.user.email_confirmed_at,
+              });
+              localStorage.setItem("dubhub-authenticated", "true");
+              localStorage.setItem("dubhub-user-role", userRole);
+              setProfileGateBanner(null);
+            }
           } else {
             const likelyNoRow =
               profileError == null || isProfileRowMissingError(profileError);
@@ -378,7 +401,7 @@ function App() {
                 : 'We could not verify your dub hub profile. Tap Sign out, then sign in again—or reset your password from the sign-in screen.'
             );
             clearDubhubAuthLocalMarkers();
-            if (!shouldDeferSignOutForAuthCallback()) {
+            if (!shouldDeferSignOutForAuthCallback(wouterLocationRef.current)) {
               await hardResetLocalAuthState({ clearSessionStorage: false });
             }
             setIsAuthenticated(false);
@@ -447,18 +470,24 @@ function App() {
               if (profileData.moderator) {
                 userRole = 'moderator';
               }
-              setIsAuthenticated(true);
-              setUserRole(userRole);
-              maybeQueueFirstLoginOnboarding({
-                userId: profileData.id,
-                email: profileData.email ?? session.user.email,
-                accountType: profileData.account_type,
-                verifiedArtist: profileData.verified_artist,
-                emailConfirmed: !!session.user.email_confirmed_at,
-              });
-              localStorage.setItem('dubhub-authenticated', 'true');
-              localStorage.setItem('dubhub-user-role', userRole);
-              setProfileGateBanner(null);
+              if (shouldDeferSignOutForAuthCallback(wouterLocationRef.current)) {
+                console.log(
+                  "[dubhub][App][onAuthStateChange] deferred authenticated shell: auth-callback OAuth payload active",
+                );
+              } else {
+                setIsAuthenticated(true);
+                setUserRole(userRole);
+                maybeQueueFirstLoginOnboarding({
+                  userId: profileData.id,
+                  email: profileData.email ?? session.user.email,
+                  accountType: profileData.account_type,
+                  verifiedArtist: profileData.verified_artist,
+                  emailConfirmed: !!session.user.email_confirmed_at,
+                });
+                localStorage.setItem("dubhub-authenticated", "true");
+                localStorage.setItem("dubhub-user-role", userRole);
+                setProfileGateBanner(null);
+              }
             } else {
               setEnforcementState({ banned: false, suspendedUntil: null });
               setProfileGateBanner(
@@ -468,7 +497,7 @@ function App() {
               setIsAuthenticated(false);
               setIsHomeFeedReady(false);
               setUserRole('user');
-              if (!shouldDeferSignOutForAuthCallback()) {
+              if (!shouldDeferSignOutForAuthCallback(wouterLocationRef.current)) {
                 await hardResetLocalAuthState({ clearSessionStorage: false });
               }
             }

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { supabase } from "./supabaseClient";
+import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import {
@@ -852,6 +852,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         error: error instanceof Error ? error.message : 'Failed to update profile image' 
       });
+    }
+  });
+
+  /** Returns whether an Auth user exists for this email (service role only; no sensitive fields). */
+  app.post("/api/auth/check-email", async (req, res) => {
+    try {
+      const bodySchema = z.object({
+        email: z.string().max(320),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "invalid_request" });
+      }
+      const normalized = parsed.data.email.trim().toLowerCase();
+      if (normalized.length < 3 || !normalized.includes("@")) {
+        return res.status(400).json({ error: "invalid_request" });
+      }
+
+      if (!supabaseAdminEnabled) {
+        console.warn("[/api/auth/check-email] Missing Supabase service role key");
+        return res.status(503).json({ error: "unavailable" });
+      }
+
+      const supabaseUrl = process.env.SUPABASE_URL ?? "";
+      const serviceKey =
+        process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!;
+      const base = supabaseUrl.replace(/\/+$/, "");
+
+      const listUrl =
+        `${base}/auth/v1/admin/users?page=1&per_page=100` +
+        `&filter=${encodeURIComponent(normalized)}`;
+
+      const adminResp = await fetch(listUrl, {
+        method: "GET",
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      });
+
+      if (!adminResp.ok) {
+        const preview = (await adminResp.text()).slice(0, 200);
+        console.error("[/api/auth/check-email] Admin list failed", adminResp.status, preview);
+        return res.status(503).json({ error: "unavailable" });
+      }
+
+      const payload = (await adminResp.json()) as {
+        users?: Array<{ email?: string | null }>;
+      };
+      const users = payload.users ?? [];
+      const exists = users.some(
+        (u) => String(u.email ?? "").trim().toLowerCase() === normalized,
+      );
+
+      return res.json({ exists });
+    } catch (err) {
+      console.error("[/api/auth/check-email]", err);
+      return res.status(503).json({ error: "unavailable" });
     }
   });
 
