@@ -25,8 +25,11 @@ import {
   buildCompressOnlyArgs,
   buildTrimCompressArgs,
   ensureFfprobeAvailable,
+  isMp4LikeClientVideo,
   probeDurationSeconds,
+  probePretrimmedCompressSkip,
   runFfmpeg,
+  type PretrimmedCompressSkipReason,
 } from "./ffmpegVideo";
 import {
   awardConfirmedIdKarma,
@@ -416,6 +419,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     },
     async (req, res) => {
+      const uploadWallT0 = Date.now();
       try {
         const authHeader = req.headers.authorization;
         let userId = "anonymous";
@@ -466,6 +470,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const outputFilename = `processed_${timestamp}_${randomId}.mp4`;
         const compressedFilename = `compressed_${timestamp}_${randomId}.mp4`;
 
+        const logUploadTiming = (phase: string, detail: Record<string, unknown> = {}) => {
+          console.log("[upload-video][timing]", {
+            phase,
+            elapsedMs: Date.now() - uploadWallT0,
+            timingKey: `${timestamp}_${randomId}`,
+            randomId,
+            originalname: req.file?.originalname ?? null,
+            inputFilename,
+            outputFilename,
+            preTrimmed,
+            ...detail,
+          });
+        };
+        logUploadTiming("handler_start", {
+          note: "route handler entered (multer already parsed body)",
+          reqFileBytes: req.file.size ?? null,
+        });
+
         const processedDir = path.join(process.cwd(), "processed");
         if (!fs.existsSync(processedDir)) {
           fs.mkdirSync(processedDir, { recursive: true });
@@ -489,6 +511,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reqFileSize: req.file.size ?? null,
           bufferLength: req.file.buffer?.length ?? null,
           writtenInputSize,
+        });
+        logUploadTiming("input_write_complete", {
+          writtenInputSize: writtenInputSize ?? null,
         });
 
         let startTime = 0;
@@ -552,6 +577,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
             clipDurationSec = durationSec;
             endTime = durationSec;
+            logUploadTiming("duration_probe_complete", {
+              clipDurationSec,
+            });
           } else {
             startTime = parseFloat(req.body.start || "0");
             endTime = parseFloat(req.body.end || "30");
@@ -586,38 +614,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
             }
             clipDurationSec = endTime - startTime;
+            logUploadTiming("duration_resolve_complete", {
+              clipDurationSec,
+              startTime,
+              endTime,
+            });
           }
 
           let pathToUpload: string;
           let serverCompressed = false;
 
-          try {
-            if (preTrimmed) {
-              await runFfmpeg(buildCompressOnlyArgs(inputPath, compressedPath));
-            } else {
-              await runFfmpeg(
-                buildTrimCompressArgs(inputPath, compressedPath, startTime, clipDurationSec),
-              );
-            }
+          let skipServerCompression = false;
+          let skipCompressionReason: PretrimmedCompressSkipReason | "not_evaluated" = "not_evaluated";
+          const fileBytesForProbe = writtenInputSize ?? req.file.size ?? 0;
+
+          if (preTrimmed && isMp4LikeClientVideo(req.file.mimetype ?? "", fileExtension)) {
+            const skipProbe = await probePretrimmedCompressSkip(inputPath, {
+              durationSec: clipDurationSec,
+              fileSizeBytes: fileBytesForProbe,
+            });
+            skipServerCompression = skipProbe.skip;
+            skipCompressionReason = skipProbe.reason;
+            console.log("[upload-video] preTrimmed compression decision", {
+              skipServerCompression,
+              reason: skipProbe.reason,
+              mimetype: req.file.mimetype,
+              fileExtension,
+            });
+            logUploadTiming("skip_compression_probe_complete", {
+              skipServerCompression,
+              skipCompressionReason: skipProbe.reason,
+              fileBytesForProbe,
+            });
+          } else {
+            logUploadTiming("skip_compression_probe_complete", {
+              skipServerCompression: false,
+              skipCompressionReason: "not_evaluated",
+              note: "!preTrimmed or not_mp4_like path — probe not run",
+            });
+          }
+
+          if (skipServerCompression) {
+            pathToUpload = inputPath;
+            serverCompressed = false;
+          } else {
+            const ffmpegWallT0 = Date.now();
+            logUploadTiming("ffmpeg_compression_start", {
+              mode: preTrimmed ? "compress_only" : "trim_compress",
+              clipDurationSec,
+            });
             try {
-              fs.unlinkSync(inputPath);
-            } catch {
-              /* ignore */
-            }
-            pathToUpload = compressedPath;
-            serverCompressed = true;
-          } catch (compressErr) {
-            console.warn("[upload-video] Server compression failed:", compressErr);
-            if (!preTrimmed) {
+              if (preTrimmed) {
+                await runFfmpeg(buildCompressOnlyArgs(inputPath, compressedPath));
+              } else {
+                await runFfmpeg(
+                  buildTrimCompressArgs(inputPath, compressedPath, startTime, clipDurationSec),
+                );
+              }
+              logUploadTiming("ffmpeg_compression_complete", {
+                success: true,
+                ffmpegElapsedMs: Date.now() - ffmpegWallT0,
+              });
               try {
                 fs.unlinkSync(inputPath);
               } catch {
                 /* ignore */
               }
-              throw compressErr;
+              pathToUpload = compressedPath;
+              serverCompressed = true;
+            } catch (compressErr) {
+              logUploadTiming("ffmpeg_compression_failed", {
+                success: false,
+                ffmpegElapsedMs: Date.now() - ffmpegWallT0,
+                compressErrorMessage:
+                  compressErr instanceof Error ? compressErr.message : String(compressErr),
+              });
+              console.warn("[upload-video] Server compression failed:", compressErr);
+              if (!preTrimmed) {
+                try {
+                  fs.unlinkSync(inputPath);
+                } catch {
+                  /* ignore */
+                }
+                throw compressErr;
+              }
+              console.warn(
+                "[upload-video] Falling back to original pre-trimmed upload (no server re-encode).",
+                {
+                  originalname: req.file.originalname,
+                  mimetype: req.file.mimetype,
+                  inputPath,
+                },
+              );
+              logUploadTiming("fallback_original_pretrimmed_selected", {
+                serverCompressedWillBe: false,
+              });
+              pathToUpload = inputPath;
+              serverCompressed = false;
             }
-            pathToUpload = inputPath;
-            serverCompressed = false;
           }
 
           const videoBuffer = fs.readFileSync(pathToUpload);
@@ -639,14 +733,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             serverCompressed,
           });
 
+          const supabaseWallT0 = Date.now();
+          logUploadTiming("supabase_upload_start", {
+            storagePath,
+            videoBufferBytes: videoBuffer.length,
+            serverCompressed,
+            skipCompressionReason,
+          });
+
           const { error: uploadError } = await supabase.storage.from("videos").upload(storagePath, videoBuffer, {
             contentType: "video/mp4",
             cacheControl: "3600",
             upsert: false,
           });
 
+          logUploadTiming("supabase_upload_complete", {
+            supabaseElapsedMs: Date.now() - supabaseWallT0,
+            storageOk: !uploadError,
+            storageErrorMessage: uploadError?.message ?? null,
+          });
+
           if (uploadError) {
             console.error("Supabase storage upload error:", uploadError);
+            logUploadTiming("response_sent", {
+              success: false,
+              httpStatus: 500,
+              phaseStorage: "supabase_upload_error",
+              serverCompressed,
+              skipCompressionReason,
+            });
             return res.status(500).json({
               success: false,
               error: `Failed to upload video to storage: ${uploadError.message}`,
@@ -679,6 +794,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             publicUrl,
             preTrimmed,
             serverCompressed,
+          });
+
+          logUploadTiming("response_sent", {
+            success: true,
+            serverCompressed,
+            skipCompressionReason,
+            publicUrlPreview: String(publicUrl).slice(0, 120),
           });
 
           res.json(result);

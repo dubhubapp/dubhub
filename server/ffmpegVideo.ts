@@ -1,9 +1,12 @@
 import { execFile, spawn } from "child_process";
 import fs from "fs";
 
-/** Fit inside 1920×1920 box; keeps vertical/horizontal aspect ratio, no stretch. */
+/**
+ * Fit inside 1920×1920 without ever enlarging: each side is capped by source (min(iw,1920)) so
+ * 720×1280 stays 720×1280; 2160×3840 still downscales to 1080×1920.
+ */
 export const FEED_SCALE_FILTER =
-  "scale=w=1920:h=1920:force_original_aspect_ratio=decrease";
+  "scale=w=min(iw\\,1920):h=min(ih\\,1920):force_original_aspect_ratio=decrease";
 
 const BASE_ENCODE_ARGS = [
   "-c:v",
@@ -43,8 +46,14 @@ export function runFfmpeg(args: string[]): Promise<void> {
     ffmpegProcess.stderr.on("data", (d) => {
       stderr += d.toString();
     });
-    ffmpegProcess.on("close", (code) => {
+    ffmpegProcess.on("close", (code, signal) => {
       if (code === 0) resolve();
+      else if (code == null)
+        reject(
+          new Error(
+            `FFmpeg stopped without exit code (signal ${signal ?? "unknown"}): ${stderr.slice(-4000)}`,
+          ),
+        );
       else reject(new Error(`FFmpeg exited ${code}: ${stderr.slice(-4000)}`));
     });
     ffmpegProcess.on("error", (err) => {
@@ -226,6 +235,128 @@ export async function probeDurationSeconds(filePath: string): Promise<number> {
   };
   console.error("[ffprobe] unable to derive finite positive duration", diagnostic);
   throw new Error("Invalid duration from ffprobe");
+}
+
+/** Match feed/native scale cap (~1080p class); avoids pointless server re-encode for client-trimmed H.264. */
+const PRETRIMMED_SKIP_MAX_LONG_EDGE_PX = 1920;
+
+const PRETRIMMED_SKIP_MAX_VIDEO_BITRATE = 8_000_000;
+
+/** Re-encode if measured container average exceeds this (~8 Mbps) despite codec hints. */
+const PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC = 8_000_000;
+
+export type PretrimmedCompressSkipReason =
+  | "probe_failed"
+  | "not_mp4_like"
+  | "not_h264_video"
+  | "audio_present_not_aac"
+  | "resolution_too_large"
+  | "video_bitrate_too_high"
+  | "file_average_bitrate_too_high"
+  | "pretrimmed_h264_aac_ok";
+
+export type PretrimmedCompressSkipContext = {
+  durationSec: number;
+  fileSizeBytes: number;
+};
+
+export async function probePretrimmedCompressSkip(
+  inputPath: string,
+  ctx?: PretrimmedCompressSkipContext,
+): Promise<{
+  skip: boolean;
+  reason: PretrimmedCompressSkipReason;
+}> {
+  await ensureFfprobeAvailable();
+  let probe: FfprobeRunResult;
+  try {
+    probe = await runFfprobe([
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=codec_type,codec_name,width,height,bit_rate",
+      "-of",
+      "json",
+      inputPath,
+    ]);
+  } catch {
+    return { skip: false, reason: "probe_failed" };
+  }
+
+  if (probe.exitCode !== 0 || !probe.stdout.trim()) {
+    return { skip: false, reason: "probe_failed" };
+  }
+
+  type StreamProbe = {
+    codec_type?: string;
+    codec_name?: string;
+    width?: unknown;
+    height?: unknown;
+    bit_rate?: unknown;
+  };
+
+  let streams: StreamProbe[];
+  try {
+    streams = (
+      JSON.parse(probe.stdout.trim()) as {
+        streams?: StreamProbe[];
+      }
+    ).streams ?? [];
+  } catch {
+    return { skip: false, reason: "probe_failed" };
+  }
+
+  const v = streams.find((s) => s.codec_type === "video");
+  const a = streams.find((s) => s.codec_type === "audio");
+  if (!v || String(v.codec_name).toLowerCase() !== "h264") {
+    return { skip: false, reason: "not_h264_video" };
+  }
+
+  const w = Number(v.width);
+  const h = Number(v.height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return { skip: false, reason: "probe_failed" };
+  }
+
+  if (Math.max(w, h) > PRETRIMMED_SKIP_MAX_LONG_EDGE_PX) {
+    return { skip: false, reason: "resolution_too_large" };
+  }
+
+  if (ctx != null) {
+    const d = ctx.durationSec;
+    const sz = ctx.fileSizeBytes;
+    if (
+      Number.isFinite(d) &&
+      d > 0 &&
+      Number.isFinite(sz) &&
+      sz > 0 &&
+      (sz * 8) / d > PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC
+    ) {
+      return { skip: false, reason: "file_average_bitrate_too_high" };
+    }
+  }
+
+  const brRaw = v.bit_rate;
+  if (brRaw != null && String(brRaw).trim() !== "") {
+    const parsedBr = Number.parseInt(String(brRaw).trim(), 10);
+    if (Number.isFinite(parsedBr) && parsedBr > PRETRIMMED_SKIP_MAX_VIDEO_BITRATE) {
+      return { skip: false, reason: "video_bitrate_too_high" };
+    }
+  }
+
+  if (a && String(a.codec_name).toLowerCase() !== "aac") {
+    return { skip: false, reason: "audio_present_not_aac" };
+  }
+
+  return { skip: true, reason: "pretrimmed_h264_aac_ok" };
+}
+
+export function isMp4LikeClientVideo(mimetype: string, extension: string): boolean {
+  const mt = mimetype.toLowerCase();
+  const ext = extension.toLowerCase().replace(/^\./, "");
+  const mp4Mime = mt === "video/mp4" || mt === "video/quicktime" || mt === "video/x-quicktime";
+  const mp4Ext = ext === "mp4" || ext === "mov";
+  return mp4Mime || mp4Ext;
 }
 
 export function buildCompressOnlyArgs(inputPath: string, outputPath: string): string[] {
