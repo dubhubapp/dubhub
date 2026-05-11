@@ -248,8 +248,6 @@ export default function SubmitMetadata() {
   const { nativePostArtifact, clearNativePostArtifact } = useSubmitClip();
   
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
-  /** Server-generated feed thumbnail URL from last successful /api/upload-video (forwarded into create-post). */
-  const [uploadedThumbnailUrl, setUploadedThumbnailUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   /**
@@ -867,7 +865,7 @@ export default function SubmitMetadata() {
       setUploadHandoff(false);
       hasRealProgressRef.current = false;
       creepStartedRef.current = false;
-      return new Promise<{ url: string; filename: string; thumbnail_url: string | null }>((resolve, reject) => {
+      return new Promise<{ url: string; filename: string }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         activeUploadXhrRef.current = xhr;
         dubhubVideoDebugLog("[DubHub][PostFlow][resource]", "upload xhr created", {
@@ -949,7 +947,6 @@ export default function SubmitMetadata() {
             try {
               const response = JSON.parse(raw) as {
                 url?: string;
-                thumbnail_url?: string | null;
                 filename?: string;
                 success?: boolean;
                 error?: string;
@@ -969,11 +966,7 @@ export default function SubmitMetadata() {
               }
               setUploadProgress(100);
               setUploadHandoff(true);
-              const thumb =
-                typeof response.thumbnail_url === "string" && response.thumbnail_url.trim().length > 0
-                  ? response.thumbnail_url.trim()
-                  : null;
-              resolve({ url: response.url, filename: String(response.filename ?? ""), thumbnail_url: thumb });
+              resolve({ url: response.url, filename: String(response.filename ?? "") });
             } catch (parseErr) {
               console.error("[upload-video] JSON parse failed", {
                 status: xhr.status,
@@ -1032,25 +1025,17 @@ export default function SubmitMetadata() {
         // Start upload with auth header
         xhr.open('POST', uploadUrl);
         xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
-        if (import.meta.env.DEV) {
-          console.log("[AUDIT_UPLOAD_TEMP] pre-xhr-send", {
-            fileName,
-            fileBytes: file.size,
-            fileMb: Number((file.size / (1024 * 1024)).toFixed(3)),
-            nativePassthroughSkipsAssetWriter,
-          });
-        }
+        console.log("[AUDIT_UPLOAD_TEMP] pre-xhr-send", {
+          fileName,
+          fileBytes: file.size,
+          fileMb: Number((file.size / (1024 * 1024)).toFixed(3)),
+          nativePassthroughSkipsAssetWriter,
+        });
         xhr.send(formData);
       });
     },
     onSuccess: (data) => {
-      console.log("[THUMBNAIL_DEBUG] upload mutation onSuccess", {
-        hasThumbnailUrl: typeof data.thumbnail_url === "string" && data.thumbnail_url.trim().length > 0,
-        thumbnailPreview:
-          typeof data.thumbnail_url === "string" ? data.thumbnail_url.trim().slice(0, 140) : null,
-      });
       setUploadedVideoUrl(data.url);
-      setUploadedThumbnailUrl(data.thumbnail_url);
       // Intentionally do NOT reset uploadProgress here — it stays at 100 so the
       // overlay/button keep showing "Processing video…" through the create-post
       // network call until uploadCompleteOpeningPost flips on. uploadHandoff was
@@ -1076,7 +1061,7 @@ export default function SubmitMetadata() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: async (data: { formData: SubmitFormData; videoUrl: string; thumbnailUrl?: string | null }) => {
+    mutationFn: async (data: { formData: SubmitFormData; videoUrl: string }) => {
       if (!data.videoUrl) {
         throw new Error("Video URL is required");
       }
@@ -1085,7 +1070,7 @@ export default function SubmitMetadata() {
       });
 
       // Map form data to backend's expected snake_case format
-      const submitData: Record<string, unknown> = {
+      const submitData = {
         title: data.formData.title.trim(),
         video_url: data.videoUrl,
         genre: data.formData.genre.trim(),
@@ -1094,23 +1079,8 @@ export default function SubmitMetadata() {
         dj_name: data.formData.djName?.trim() || null,
         played_date: data.formData.playedDate || null,
       };
-      if (data.thumbnailUrl && data.thumbnailUrl.trim().length > 0) {
-        submitData.thumbnail_url = data.thumbnailUrl.trim();
-      }
-      console.log("[THUMBNAIL_DEBUG] submit payload", {
-        hasThumbnailUrl: typeof submitData.thumbnail_url === "string" && submitData.thumbnail_url.length > 0,
-        thumbnailPreview:
-          typeof submitData.thumbnail_url === "string"
-            ? submitData.thumbnail_url.slice(0, 140)
-            : null,
-        uploadMutationThumbInput: data.thumbnailUrl ?? null,
-        keys: Object.keys(submitData),
-      });
-
-      console.log("Submitting post with data:", {
-        ...submitData,
-        video_url: `${String(data.videoUrl).slice(0, 50)}…`,
-      });
+      
+      console.log("Submitting post with data:", { ...submitData, video_url: submitData.video_url.substring(0, 50) + "..." });
       const response = await apiRequest("POST", "/api/posts", submitData);
       const text = await response.text();
       let responseData: { id?: string };
@@ -1214,7 +1184,6 @@ export default function SubmitMetadata() {
         });
         form.reset();
         setUploadedVideoUrl(null);
-        setUploadedThumbnailUrl(null);
         setVideoFile(null);
         clearNativePostArtifact();
       };
@@ -1392,15 +1361,6 @@ export default function SubmitMetadata() {
         }
         
         console.log("Video uploaded successfully, URL:", videoUrl);
-        console.log("[THUMBNAIL_DEBUG] upload mutateAsync result", {
-          hasThumbnailUrl:
-            typeof uploadResult.thumbnail_url === "string" &&
-            uploadResult.thumbnail_url.trim().length > 0,
-          thumbnailPreview:
-            typeof uploadResult.thumbnail_url === "string"
-              ? uploadResult.thumbnail_url.trim().slice(0, 140)
-              : null,
-        });
         
         // Set the uploaded URL for UI state
         setUploadedVideoUrl(videoUrl);
@@ -1410,11 +1370,7 @@ export default function SubmitMetadata() {
         });
         
         // Submit with the video URL directly
-        submitMutation.mutate({
-          formData: data,
-          videoUrl,
-          thumbnailUrl: uploadResult.thumbnail_url,
-        });
+        submitMutation.mutate({ formData: data, videoUrl });
       } catch (error) {
         console.error("Upload/Submit error:", error);
         dubhubVideoDebugLog("[DubHub][NativePost]", "submit-upload-failure", {
@@ -1434,11 +1390,7 @@ export default function SubmitMetadata() {
       // Re-submitting metadata for a clip we already uploaded: jump straight to
       // the "Processing video…" handoff so the overlay never shows "Uploading 0%".
       setUploadHandoff(true);
-      submitMutation.mutate({
-        formData: data,
-        videoUrl: uploadedVideoUrl,
-        thumbnailUrl: uploadedThumbnailUrl,
-      });
+      submitMutation.mutate({ formData: data, videoUrl: uploadedVideoUrl });
     }
   };
 

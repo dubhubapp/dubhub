@@ -31,7 +31,6 @@ import {
   runFfmpeg,
   type PretrimmedCompressSkipReason,
 } from "./ffmpegVideo";
-import { extractPostThumbnailJpeg } from "./postThumbnail";
 import {
   awardConfirmedIdKarma,
   awardCommentLikeKarma,
@@ -76,75 +75,6 @@ function parseReportedCommentId(description: unknown): string | null {
   if (typeof description !== "string" || !description) return null;
   const m = description.match(/COMMENT_ID:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
   return m ? m[1] : null;
-}
-
-const MAX_POST_MEDIA_URL_LENGTH = 2048;
-
-const PUBLIC_VIDEOS_MARKER = "/storage/v1/object/public/videos/";
-
-function supabaseProjectOrigin(): string | null {
-  const raw = process.env.SUPABASE_URL;
-  if (!raw) return null;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return null;
-  }
-}
-
-/** First path segment after `.../public/videos/` (user id or `anonymous`). */
-function extractPublicVideosUserFolder(pathname: string): string | null {
-  const m = pathname.match(/\/storage\/v1\/object\/public\/videos\/([^/]+)\//);
-  return m ? m[1] : null;
-}
-
-/**
- * v1: thumbnail must be a public-object JPEG under our Supabase project's `videos` bucket,
- * under `{userId}/thumbnails/...`. Video URL may use a different origin (native proxy / API base)
- * as long as it clearly references the same `{userId}` folder in the path string.
- */
-function explainTrustedPostThumbnailReject(thumbnailUrl: string, videoUrl: string): string | null {
-  const tRaw = thumbnailUrl.trim();
-  const vRaw = String(videoUrl).trim();
-  if (!tRaw || !vRaw) return "empty_thumb_or_video";
-  if (tRaw.length > MAX_POST_MEDIA_URL_LENGTH || vRaw.length > MAX_POST_MEDIA_URL_LENGTH) {
-    return "url_too_long";
-  }
-  let t: URL;
-  try {
-    t = new URL(tRaw);
-  } catch {
-    return "thumb_url_parse_error";
-  }
-  const projectOrigin = supabaseProjectOrigin();
-  if (!projectOrigin || t.origin !== projectOrigin) {
-    return `thumb_origin_not_project:${t.origin}`;
-  }
-  if (!t.pathname.includes(PUBLIC_VIDEOS_MARKER) || !t.pathname.includes("/thumbnails/")) {
-    return "thumb_path_not_public_videos_thumbnails";
-  }
-  if (!/\.jpe?g$/i.test(t.pathname)) return "thumb_path_not_jpeg";
-  const thumbFolder = extractPublicVideosUserFolder(t.pathname);
-  if (!thumbFolder) return "thumb_missing_user_folder";
-
-  const encodedFolderA = `videos%2F${thumbFolder}%2F`;
-  const encodedFolderB = `videos%2f${thumbFolder}%2f`;
-  const plainFolder = `/videos/${thumbFolder}/`;
-  if (vRaw.includes(plainFolder) || vRaw.includes(encodedFolderA) || vRaw.includes(encodedFolderB)) {
-    return null;
-  }
-
-  let v: URL;
-  try {
-    v = new URL(vRaw);
-  } catch {
-    return "video_url_parse_error_no_folder_match";
-  }
-  if (!v.pathname.includes(PUBLIC_VIDEOS_MARKER)) return "video_path_missing_public_videos_marker";
-  const videoFolder = extractPublicVideosUserFolder(v.pathname);
-  if (videoFolder !== thumbFolder) return `video_folder_mismatch:${videoFolder ?? "null"}_vs_${thumbFolder}`;
-  if (v.origin === t.origin) return null;
-  return `video_origin_mismatch:${v.origin}_vs_${t.origin}`;
 }
 
 function moderationReasonFromRequest(
@@ -520,7 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reqFileSize: req.file.size ?? null,
           bufferLength: req.file.buffer?.length ?? null,
         });
-        if (process.env.NODE_ENV === "development") {
+        {
           const receivedBytes = req.file.buffer?.length ?? req.file.size ?? 0;
           console.log("[AUDIT_UPLOAD_TEMP] upload-video multipart received", {
             originalname: req.file.originalname,
@@ -794,75 +724,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           const videoBuffer = fs.readFileSync(pathToUpload);
-
-          const { supabase } = await import("./supabaseClient");
-
-          let thumbnailPublicUrl: string | null = null;
-          let thumbDebug: Record<string, unknown> = { phase: "skipped" };
-          try {
-            const thumbFilename = `thumb_${timestamp}_${randomId}.jpg`;
-            const thumbLocalPath = path.join(processedDir, thumbFilename);
-            await extractPostThumbnailJpeg(pathToUpload, thumbLocalPath);
-            let thumbBuffer: Buffer;
-            try {
-              thumbBuffer = fs.readFileSync(thumbLocalPath);
-            } finally {
-              try {
-                fs.unlinkSync(thumbLocalPath);
-              } catch {
-                /* ignore */
-              }
-            }
-            const thumbStoragePath = `${userId}/thumbnails/${thumbFilename}`;
-            const { error: thumbUploadErr } = await supabase.storage.from("videos").upload(thumbStoragePath, thumbBuffer, {
-              contentType: "image/jpeg",
-              cacheControl: "86400",
-              upsert: false,
-            });
-            if (thumbUploadErr) {
-              console.warn("[upload-video] thumbnail storage upload failed:", thumbUploadErr.message);
-              thumbDebug = {
-                phase: "storage_upload_failed",
-                thumbStoragePath,
-                thumbBytes: thumbBuffer.length,
-                message: thumbUploadErr.message,
-                userId,
-              };
-            } else {
-              const {
-                data: { publicUrl: thumbUrl },
-              } = supabase.storage.from("videos").getPublicUrl(thumbStoragePath);
-              thumbnailPublicUrl = thumbUrl ?? null;
-              thumbDebug = {
-                phase: "ok",
-                thumbStoragePath,
-                thumbBytes: thumbBuffer.length,
-                thumbPublicUrlPreview: thumbnailPublicUrl ? String(thumbnailPublicUrl).slice(0, 140) : null,
-                userId,
-              };
-            }
-          } catch (thumbErr) {
-            const msg = thumbErr instanceof Error ? thumbErr.message : String(thumbErr);
-            console.warn("[upload-video] thumbnail generation failed", msg);
-            thumbDebug = {
-              phase: "ffmpeg_or_read_failed",
-              error: msg,
-              userId,
-              inputPathPreview: String(pathToUpload).slice(0, 160),
-            };
-          }
-          console.log("[THUMBNAIL_DEBUG] upload-video result", {
-            hasThumbnailUrl: !!thumbnailPublicUrl,
-            thumbnailPublicUrlPreview: thumbnailPublicUrl ? thumbnailPublicUrl.slice(0, 140) : null,
-            ...thumbDebug,
-          });
-
           try {
             fs.unlinkSync(pathToUpload);
           } catch {
             /* ignore */
           }
 
+          const { supabase } = await import("./supabaseClient");
           const storagePath = `${userId}/${outputFilename}`;
 
           console.log("Uploading video to Supabase Storage:", {
@@ -916,7 +784,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const result = {
             success: true,
             url: publicUrl,
-            thumbnail_url: thumbnailPublicUrl,
             filename: outputFilename,
             start_time: preTrimmed ? 0 : startTime,
             end_time: preTrimmed ? clipDurationSec : endTime,
@@ -1431,13 +1298,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const userId = req.dbUser.id;
       
-      const { title, video_url, thumbnail_url: thumbnail_url_body, genre, description, location, dj_name, played_date } =
-        req.body as Record<string, unknown>;
+      const { title, video_url, genre, description, location, dj_name, played_date } = req.body;
 
       const titleTrim = String(title ?? "").trim();
       const genreTrim = String(genre ?? "").trim();
-      const videoUrlTrim = typeof video_url === "string" ? video_url.trim() : "";
-      if (!titleTrim || !videoUrlTrim) {
+      if (!titleTrim || !video_url) {
         return res.status(400).json({ message: "Title and video_url are required" });
       }
       if (!genreTrim) {
@@ -1475,34 +1340,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "played_date cannot be in the future" });
         }
       }
-
-      let thumbnail_url: string | null = null;
-      const thumbRaw = thumbnail_url_body ?? (req.body as { thumbnailUrl?: unknown }).thumbnailUrl;
-      console.log("[THUMBNAIL_DEBUG] create-post received", {
-        hasThumbBody: thumbRaw != null && String(thumbRaw).trim() !== "",
-        thumbKeySnake: typeof thumbnail_url_body === "string" ? "string" : typeof thumbnail_url_body,
-        thumbKeyCamel: typeof (req.body as { thumbnailUrl?: unknown }).thumbnailUrl,
-        videoUrlPreview: videoUrlTrim.slice(0, 140),
-      });
-      if (thumbRaw != null && String(thumbRaw).trim() !== "") {
-        const candidate = String(thumbRaw).trim();
-        const rejectReason = explainTrustedPostThumbnailReject(candidate, videoUrlTrim);
-        if (rejectReason) {
-          console.warn("[THUMBNAIL_DEBUG] create-post thumb rejected", {
-            rejectReason,
-            thumbPreview: candidate.slice(0, 160),
-            videoUrlPreview: videoUrlTrim.slice(0, 160),
-          });
-          return res.status(400).json({ message: "Invalid thumbnail_url" });
-        }
-        thumbnail_url = candidate;
-      }
-
+      
       const post = await storage.createPost({
         userId,
         title: titleTrim,
-        video_url: videoUrlTrim,
-        thumbnail_url,
+        video_url,
         genre: genreTrim,
         description: descStr.trim() || undefined,
         location: locStr.trim() || undefined,

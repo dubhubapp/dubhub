@@ -1411,19 +1411,17 @@ export default function TrimVideo() {
           } catch {
             nativePassthroughSkipsAssetWriter = null;
           }
-          if (import.meta.env.DEV) {
-            console.log("[AUDIT_UPLOAD_TEMP] native-trim-output", {
-              nativePassthroughSkipsAssetWriter,
-              note:
-                "When true, native code copies passthrough trim MP4 (no AVAssetWriter). When false, H.264 ~2.2Mbps re-encode.",
-              fileBytes: finalOutputSize,
-              fileMb: Number((finalOutputSize / (1024 * 1024)).toFixed(3)),
-              durationMs: trimResult.durationMs,
-              width: trimResult.width,
-              height: trimResult.height,
-              mimeType: trimResult.mimeType || "video/mp4",
-            });
-          }
+          console.log("[AUDIT_UPLOAD_TEMP] native-trim-output", {
+            nativePassthroughSkipsAssetWriter,
+            note:
+              "When true, native code copies passthrough trim MP4 (no AVAssetWriter). When false, H.264 ~2.2Mbps re-encode.",
+            fileBytes: finalOutputSize,
+            fileMb: Number((finalOutputSize / (1024 * 1024)).toFixed(3)),
+            durationMs: trimResult.durationMs,
+            width: trimResult.width,
+            height: trimResult.height,
+            mimeType: trimResult.mimeType || "video/mp4",
+          });
         }
         dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "native output prepared for preview only", {
           outputUriPreview: trimResult.outputUri.slice(0, 120),
