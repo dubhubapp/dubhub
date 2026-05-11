@@ -34,6 +34,8 @@ export const posts = pgTable("posts", {
   userId: varchar("user_id").notNull().references(() => profiles.id),
   title: text("title"),
   videoUrl: text("video_url").notNull(),
+  /** Public URL of server-generated feed thumbnail (JPEG in Storage); null for legacy / failed gen */
+  thumbnailUrl: text("thumbnail_url"),
   description: text("description"),
   genre: text("genre"),
   djName: text("dj_name"),
@@ -240,6 +242,7 @@ export const insertPostSchema = z.object({
   userId: z.string(),
   title: z.string().max(INPUT_LIMITS.postTitle).optional(),
   videoUrl: z.string(),
+  thumbnailUrl: z.string().max(2048).optional().nullable(),
   description: z.string().max(INPUT_LIMITS.postDescription).optional(),
   genre: z.string().max(INPUT_LIMITS.postGenre).optional(),
   djName: z.string().max(INPUT_LIMITS.postDjName).optional(),

@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 07-05-2026
+Last updated: 11-05-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -173,6 +173,7 @@ NOT `user_id` or `from_user_id`.
 | user_id               | uuid        | YES      | –                 | FK → profiles.id                        |
 | title                 | text        | YES      | –                 | Title                                   |
 | video_url             | text        | NO       | –                 | Video source                            |
+| thumbnail_url         | text        | YES      | –                 | Public URL of server-generated feed still (JPEG in Storage); null for legacy / failed generation |
 | genre                 | text        | YES      | –                 | Genre                                   |
 | description           | text        | YES      | –                 | Description                             |
 | location              | text        | YES      | –                 | Filming location                        |

@@ -100,7 +100,7 @@ function estimateCoverMaxCropFraction(
 
 function getPostFeedPosterRaw(post: PostWithUser): string | null {
   const v =
-    (post as { thumbnailUrl?: string }).thumbnailUrl ??
+    post.thumbnailUrl ??
     (post as { thumbnail_url?: string }).thumbnail_url ??
     (post as { previewImage?: string }).previewImage ??
     (post as { preview_image?: string }).preview_image ??
@@ -1583,11 +1583,13 @@ function VideoCardInner({
   const hasPosterBackedFallback = homeFeedPosterFallback && !!displayPosterUrl;
   const forceTopImmediateFallbackVisible = pendingForceTopCard && !isVideoReady;
   const effectiveShowLoadingFallback = showLoadingFallback || forceTopImmediateFallbackVisible;
-  // Keep force-top explicit, but restore poster guard for normal active scrolling.
+  // Poster (API thumb or cached synthetic frame) always wins over the loading overlay, including
+  // during force-top sort handoff. Overlay only appears when there is truly nothing else to paint.
   const overlayVisible =
     !isVideoReady &&
+    !hasPosterBackedFallback &&
     (forceTopImmediateFallbackVisible ||
-      (isActive && effectiveShowLoadingFallback && !hasPosterBackedFallback));
+      (isActive && effectiveShowLoadingFallback));
   useEffect(() => {
     if (!(pendingForceTopCard || homeTopRowAuditState)) return;
     const video = videoRef.current;
