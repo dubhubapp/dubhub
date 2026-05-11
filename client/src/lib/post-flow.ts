@@ -4,7 +4,7 @@ import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/ex
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
 
-export function bumpDubhubHomeMediaEpoch(reason: string): void {
+export function bumpDubhubHomeMediaEpoch(reason: string): number {
   try {
     const currentRaw = sessionStorage.getItem(DUBHUB_HOME_MEDIA_EPOCH_KEY);
     const current = currentRaw ? Number(currentRaw) : 0;
@@ -14,8 +14,9 @@ export function bumpDubhubHomeMediaEpoch(reason: string): void {
       reason,
       mediaEpoch: next,
     });
+    return next;
   } catch {
-    /* ignore */
+    return 0;
   }
 }
 

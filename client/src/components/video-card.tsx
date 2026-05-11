@@ -1,4 +1,12 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, memo } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useCallback,
+  memo,
+} from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
@@ -40,6 +48,12 @@ import {
   mediaResetLogCall,
   mediaResetLogTarget,
 } from "@/lib/video-debug";
+import {
+  applyPostDeletionToQueryCaches,
+  DUBHUB_POST_DELETED_EVENT,
+  invalidateQueriesAfterPostDeletion,
+} from "@/lib/post-delete-cache-updates";
+import { isWideLandscapePresentation } from "@/lib/wide-landscape-presentation";
 // Removed placeholder video import - now using real uploaded videos
 
 /**
@@ -136,6 +150,22 @@ function tryCaptureVideoPosterJpegDataUrl(video: HTMLVideoElement): string | nul
   }
 }
 
+/** Home-only synthetic poster: avoid t≈0 black frames (screen recordings / letterbox intros). */
+function homeFeedPosterCaptureTimeSec(duration: number): number {
+  const fallback = 0.25;
+  if (!Number.isFinite(duration) || duration <= 0) return fallback;
+  if (duration > 2) {
+    const mid = duration / 2;
+    return Math.min(Math.max(mid, 1), duration - 1);
+  }
+  if (duration <= 0.15) {
+    return duration / 2;
+  }
+  const mid = duration / 2;
+  const edge = 0.05;
+  return Math.min(Math.max(mid, edge), duration - edge);
+}
+
 function resolveFeedVideoObjectFit(
   vw: number,
   vh: number,
@@ -170,6 +200,10 @@ interface VideoCardProps {
   embeddedFeed?: boolean;
   isMuted?: boolean;
   isActive?: boolean;
+  /** Home force-top handoff visual state for index 0 before `activePostId` commits. */
+  pendingForceTopCard?: boolean;
+  /** Home-only runtime-audit marker for index 0 while `activePostId` is null. */
+  homeTopRowAuditState?: boolean;
   shouldLoadVideo?: boolean;
   videoPreload?: "none" | "metadata" | "auto";
   onToggleMute?: () => void;
@@ -217,6 +251,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.embeddedFeed === next.embeddedFeed &&
     prev.isMuted === next.isMuted &&
     prev.isActive === next.isActive &&
+    prev.pendingForceTopCard === next.pendingForceTopCard &&
+    prev.homeTopRowAuditState === next.homeTopRowAuditState &&
     prev.shouldLoadVideo === next.shouldLoadVideo &&
     prev.videoPreload === next.videoPreload &&
     prev.onToggleMute === next.onToggleMute &&
@@ -239,6 +275,8 @@ function VideoCardInner({
   embeddedFeed = false,
   isMuted = true,
   isActive = true,
+  pendingForceTopCard = false,
+  homeTopRowAuditState = false,
   shouldLoadVideo = true,
   videoPreload = "metadata",
   onToggleMute,
@@ -303,13 +341,65 @@ function VideoCardInner({
   const [menuOpen, setMenuOpen] = useState(false);
   const [artistSelfTagHintSeen, setArtistSelfTagHintSeen] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  /** Last committed `<video>` node; used so key-swap teardown targets the outgoing element (see `setVideoDomRef`). */
+  const committedVideoElRef = useRef<HTMLVideoElement | null>(null);
   const isActiveRef = useRef(isActive);
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
   const isPlayingRef = useRef(true);
   const activationRunRef = useRef(0);
+
+  /**
+   * Pause + drop media source. Used on VideoCard unmount and when ref(null) detaches the outgoing
+   * `<video>` (inner React key / mediaEpoch swap — ref targets the element being removed).
+   */
+  const hardDisposeVideoElement = useCallback((video: HTMLVideoElement) => {
+    dubhubVideoDebugLog("[DubHub][VideoCard][reset]", "hard dispose outgoing video element", {
+      postId: post.id,
+      readyStateBefore: video.readyState,
+      readyStateLabelBefore: getMediaReadyStateLabel(video.readyState),
+      currentSrc: video.currentSrc || null,
+    });
+    try {
+      mediaResetLogCall("video-card:unmount", "pause during unmount teardown", video, { postId: post.id });
+      video.pause();
+      mediaResetLogTarget("video-card:unmount", "pause during unmount teardown", video, { postId: post.id });
+    } catch {
+      /* ignore */
+    }
+    try {
+      mediaResetLogCall("video-card:unmount", "remove src and load during unmount teardown", video, {
+        postId: post.id,
+      });
+      video.removeAttribute("src");
+      video.load();
+      mediaResetLogTarget("video-card:unmount", "remove src and load during unmount teardown", video, {
+        postId: post.id,
+      });
+    } catch {
+      /* ignore */
+    }
+  }, [post.id]);
+
+  const setVideoDomRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      if (node) {
+        committedVideoElRef.current = node;
+        videoRef.current = node;
+        return;
+      }
+      const outgoing = committedVideoElRef.current;
+      if (outgoing) {
+        hardDisposeVideoElement(outgoing);
+      }
+      committedVideoElRef.current = null;
+      videoRef.current = null;
+    },
+    [hardDisposeVideoElement],
+  );
+
   const primedAtStartRef = useRef(false);
   const hasManuallyToggledLike = useRef(false);
   const desiredLikedRef = useRef(post.hasLiked || false);
@@ -448,8 +538,8 @@ function VideoCardInner({
     setGeneratedFeedPosterUrl(null);
   }, [post.id, videoSrc, mediaEpoch, homeFeedPosterFallback, feedPosterUrl]);
 
-  // Home-only: lightweight first-frame JPEG from the existing `<video>` once data is decoded
-  // (same element / preload tier as nearby cards — no extra network).
+  // Home-only: JPEG from `<video>` after a short seek — avoid t≈0 black frames (screen recordings).
+  // (Same element / preload tier as nearby cards — no extra network.)
   useEffect(() => {
     if (!homeFeedPosterFallback || feedPosterUrl) return;
     if (!shouldLoadVideo || !videoSrc) return;
@@ -473,34 +563,9 @@ function VideoCardInner({
       }
     };
 
-    const run = () => {
+    const seekAndCapture = () => {
       if (cancelled) return;
-      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
       if (feedPosterCaptureKeyRef.current === captureKey) return;
-
-      const silent = tryCaptureVideoPosterJpegDataUrl(video);
-      if (silent) {
-        feedPosterCaptureKeyRef.current = captureKey;
-        setGeneratedFeedPosterUrl(silent);
-        return;
-      }
-
-      // Avoid pause/seek while snapped-active — fights the activation pipeline. Retry after decode.
-      if (isActiveRef.current) {
-        if (activeRetryTimer != null) window.clearTimeout(activeRetryTimer);
-        activeRetryTimer = window.setTimeout(() => {
-          activeRetryTimer = null;
-          if (cancelled) return;
-          if (feedPosterCaptureKeyRef.current === captureKey) return;
-          const retry = tryCaptureVideoPosterJpegDataUrl(video);
-          if (retry) {
-            feedPosterCaptureKeyRef.current = captureKey;
-            setGeneratedFeedPosterUrl(retry);
-          }
-        }, 320);
-        return;
-      }
-
       if (feedInvasiveCaptureTriedRef.current) return;
       feedInvasiveCaptureTriedRef.current = true;
 
@@ -542,10 +607,10 @@ function VideoCardInner({
         detachSeeked = null;
       };
 
+      const target = homeFeedPosterCaptureTimeSec(video.duration);
       try {
-        const target = Math.min(0.05, Number.isFinite(video.duration) && video.duration > 0.12 ? 0.05 : 0);
         video.currentTime = target;
-        if (Math.abs(video.currentTime - target) < 0.02) {
+        if (Number.isFinite(target) && Math.abs(video.currentTime - target) < 0.02) {
           detachSeeked?.();
           finishCapture();
           restore();
@@ -555,6 +620,41 @@ function VideoCardInner({
         finishCapture();
         restore();
       }
+    };
+
+    const run = () => {
+      if (cancelled) return;
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      if (feedPosterCaptureKeyRef.current === captureKey) return;
+
+      const d = video.duration;
+      if (!Number.isFinite(d) || d <= 0) {
+        video.addEventListener(
+          "loadedmetadata",
+          () => {
+            if (!cancelled) run();
+          },
+          { once: true },
+        );
+        return;
+      }
+
+      const scheduleSeek = () => {
+        if (cancelled) return;
+        if (feedPosterCaptureKeyRef.current === captureKey) return;
+        // Defer briefly while snapped-active to reduce contention with playback pipeline.
+        if (isActiveRef.current) {
+          if (activeRetryTimer != null) window.clearTimeout(activeRetryTimer);
+          activeRetryTimer = window.setTimeout(() => {
+            activeRetryTimer = null;
+            if (!cancelled) seekAndCapture();
+          }, 320);
+          return;
+        }
+        seekAndCapture();
+      };
+
+      scheduleSeek();
     };
 
     run();
@@ -612,9 +712,25 @@ function VideoCardInner({
       ? "minimal"
       : "current";
   const isMinimalBootMode = bootMode === "minimal";
+  /** Must match the `<video>` React `key` — swap disposes the outgoing element via `setVideoDomRef`. */
+  const videoDomKey = `${post.id}-${isMinimalBootMode ? "minimal" : String(mediaEpoch)}`;
   const shouldLogActivationTiming =
     typeof window !== "undefined" &&
     (process.env.NODE_ENV === "development" || (Capacitor.isNativePlatform() && dubhubVideoDebugEnabled()));
+
+  /** Feed swipe / delete handoff: ensure `isPlayingRef` allows play() after inactive→active without tab focus. */
+  const prevIsActiveForFeedRef = useRef(false);
+  useEffect(() => {
+    if (!homeFeedPosterFallback || embeddedFeed) {
+      prevIsActiveForFeedRef.current = isActive;
+      return;
+    }
+    const becameActive = isActive && !prevIsActiveForFeedRef.current;
+    prevIsActiveForFeedRef.current = isActive;
+    if (becameActive) {
+      setIsPlaying(true);
+    }
+  }, [isActive, homeFeedPosterFallback, embeddedFeed, post.id, mediaEpoch, isMinimalBootMode]);
 
   const clearHold2xWinListeners = useCallback(() => {
     const fn = hold2xWinCleanupRef.current;
@@ -816,7 +932,18 @@ function VideoCardInner({
     // WKWebView re-entry edge case: element can remain HAVE_NOTHING and never fire media events.
     // Also observed: DOM video may report no bound `src` even though React state has a URL.
     if (video.readyState !== 0) return;
-    if (forcedLoadAtSrcRef.current === videoSrc) return;
+    if (forcedLoadAtSrcRef.current === videoSrc) {
+      // #region agent log
+      debugLoadLog("bootstrap skipped: src already force-loaded for this card instance", {
+        readyState: video.readyState,
+        readyStateLabel: getMediaReadyStateLabel(video.readyState),
+        currentSrc: video.currentSrc || null,
+        hasSrcAttr: !!video.getAttribute("src"),
+        forcedLoadAtSrc: forcedLoadAtSrcRef.current,
+      });
+      // #endregion
+      return;
+    }
 
     forcedLoadAtSrcRef.current = videoSrc;
     const srcAttr = video.getAttribute("src");
@@ -964,6 +1091,14 @@ function VideoCardInner({
     );
   }, [videoIntrinsic, stageSize]);
 
+  const feedWideLandscape =
+    videoIntrinsic != null && isWideLandscapePresentation(videoIntrinsic.w, videoIntrinsic.h);
+
+  const feedForegroundFitClass =
+    feedVideoObjectFit === "cover"
+      ? "object-cover object-center"
+      : "object-contain";
+
   // Ensure looping remains seamless once a clip is actively playing.
   useEffect(() => {
     const video = videoRef.current;
@@ -1070,37 +1205,14 @@ function VideoCardInner({
   useEffect(() => {
     if (isMinimalBootMode) return;
     return () => {
-      const video = videoRef.current;
+      // Prefer `committedVideoElRef` if ref callback already cleared `videoRef` (full unmount / key swap).
+      const video = videoRef.current ?? committedVideoElRef.current;
       if (!video) return;
       // True disposal only: do not run this on normal active/inactive transitions,
       // otherwise WKWebView can churn media state and starve normal preload/activation.
-      dubhubVideoDebugLog("[DubHub][VideoCard][reset]", "aggressive teardown on unmount", {
-        postId: post.id,
-        readyStateBefore: video.readyState,
-        readyStateLabelBefore: getMediaReadyStateLabel(video.readyState),
-        currentSrc: video.currentSrc || null,
-      });
-      try {
-        mediaResetLogCall("video-card:unmount", "pause during unmount teardown", video, { postId: post.id });
-        video.pause();
-        mediaResetLogTarget("video-card:unmount", "pause during unmount teardown", video, { postId: post.id });
-      } catch {
-        /* ignore */
-      }
-      try {
-        mediaResetLogCall("video-card:unmount", "remove src and load during unmount teardown", video, {
-          postId: post.id,
-        });
-        video.removeAttribute("src");
-        video.load();
-        mediaResetLogTarget("video-card:unmount", "remove src and load during unmount teardown", video, {
-          postId: post.id,
-        });
-      } catch {
-        /* ignore */
-      }
+      hardDisposeVideoElement(video);
     };
-  }, [isMinimalBootMode, post.id]);
+  }, [hardDisposeVideoElement, isMinimalBootMode, post.id]);
 
   // Pre-warm nearby inactive videos to frame 0 so next swipe can reveal instantly.
   useEffect(() => {
@@ -1420,7 +1532,17 @@ function VideoCardInner({
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("canplay", onCanPlay);
     };
-  }, [isActive, post.id, shouldLoadVideo, shouldLogActivationTiming, videoSrc]);
+  }, [
+    isActive,
+    post.id,
+    shouldLoadVideo,
+    shouldLogActivationTiming,
+    videoSrc,
+    mediaEpoch,
+    homeFeedPosterFallback,
+    embeddedFeed,
+    isMinimalBootMode,
+  ]);
 
   useEffect(() => {
     if (!shouldLoadVideo) {
@@ -1439,8 +1561,14 @@ function VideoCardInner({
   }, [shouldLoadVideo, post.id]);
 
   useEffect(() => {
-    if (!isActive || isVideoReady) {
+    const shouldShowFallbackForState = isActive || pendingForceTopCard;
+    if (!shouldShowFallbackForState || isVideoReady) {
       setShowLoadingFallback(false);
+      return;
+    }
+    // Force-top pre-active handoff: show loading UI immediately (no timer gate).
+    if (pendingForceTopCard) {
+      setShowLoadingFallback(true);
       return;
     }
     // If no poster exists, show a visual placeholder immediately to avoid a dark/blank snap handoff.
@@ -1450,13 +1578,65 @@ function VideoCardInner({
     }
     const t = window.setTimeout(() => setShowLoadingFallback(true), 160);
     return () => window.clearTimeout(t);
-  }, [displayPosterUrl, homeFeedPosterFallback, isActive, isVideoReady, post.id]);
+  }, [displayPosterUrl, homeFeedPosterFallback, isActive, pendingForceTopCard, isVideoReady, post.id]);
 
+  const hasPosterBackedFallback = homeFeedPosterFallback && !!displayPosterUrl;
+  const forceTopImmediateFallbackVisible = pendingForceTopCard && !isVideoReady;
+  const effectiveShowLoadingFallback = showLoadingFallback || forceTopImmediateFallbackVisible;
+  // Keep force-top explicit, but restore poster guard for normal active scrolling.
   const overlayVisible =
-    isActive &&
     !isVideoReady &&
-    !(homeFeedPosterFallback && !!displayPosterUrl) &&
-    showLoadingFallback;
+    (forceTopImmediateFallbackVisible ||
+      (isActive && effectiveShowLoadingFallback && !hasPosterBackedFallback));
+  useEffect(() => {
+    if (!(pendingForceTopCard || homeTopRowAuditState)) return;
+    const video = videoRef.current;
+    const stage = videoStageRef.current;
+    const overlayNode = stage?.querySelector<HTMLElement>('[data-overlay-visible-node="1"]') ?? null;
+    const overlayChildNode = overlayNode?.querySelector<HTMLElement>('[data-overlay-visible-child="1"]') ?? null;
+    const videoStyle = video ? window.getComputedStyle(video) : null;
+    const overlayStyle = overlayNode ? window.getComputedStyle(overlayNode) : null;
+    const stageStyle = stage ? window.getComputedStyle(stage) : null;
+    dubhubVideoDebugLog("[DubHub][VideoCard][runtime-audit]", "pending force-top visual snapshot", {
+      postId: post.id,
+      isActive,
+      pendingForceTopCard,
+      homeTopRowAuditState,
+      isVideoReady,
+      showLoadingFallback,
+      forceTopImmediateFallbackVisible,
+      effectiveShowLoadingFallback,
+      overlayIntendedVisible: overlayVisible,
+      videoOpacityClass: isVideoReady ? "opacity-100" : "opacity-0",
+      videoOpacityValue: video ? window.getComputedStyle(video).opacity : null,
+      hasPosterSource: !!displayPosterUrl,
+      hasHomePosterFallback: homeFeedPosterFallback,
+      hasVideoSrc: !!videoSrc,
+      overlayClassName: overlayNode?.className ?? null,
+      overlayChildClassName: overlayChildNode?.className ?? null,
+      overlayComputedZIndex: overlayStyle?.zIndex ?? null,
+      overlayComputedOpacity: overlayStyle?.opacity ?? null,
+      overlayComputedBg: overlayStyle?.backgroundColor ?? null,
+      overlayComputedPosition: overlayStyle?.position ?? null,
+      videoComputedZIndex: videoStyle?.zIndex ?? null,
+      videoComputedOpacity: videoStyle?.opacity ?? null,
+      stageComputedBg: stageStyle?.backgroundColor ?? null,
+      stageComputedPosition: stageStyle?.position ?? null,
+    });
+  }, [
+    post.id,
+    isActive,
+    pendingForceTopCard,
+    homeTopRowAuditState,
+    isVideoReady,
+    showLoadingFallback,
+    forceTopImmediateFallbackVisible,
+    effectiveShowLoadingFallback,
+    overlayVisible,
+    displayPosterUrl,
+    homeFeedPosterFallback,
+    videoSrc,
+  ]);
   useEffect(() => {
     if (!overlayVisible) return;
     const v = videoRef.current;
@@ -1589,7 +1769,15 @@ function VideoCardInner({
   const deleteMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/posts/${post.id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      applyPostDeletionToQueryCaches(queryClient, post.id, contextUser?.id);
+      invalidateQueriesAfterPostDeletion(queryClient, post.id, contextUser?.id);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(DUBHUB_POST_DELETED_EVENT, {
+            detail: { postId: post.id },
+          }),
+        );
+      }
       toast({
         title: "Post Deleted",
         description: "Your post has been successfully deleted.",
@@ -1871,6 +2059,9 @@ function VideoCardInner({
       data-video-ready={isVideoReady ? "1" : "0"}
       data-video-overlay-visible={overlayVisible ? "1" : "0"}
       data-video-has-src={videoSrc ? "1" : "0"}
+      data-pending-force-top-card={pendingForceTopCard ? "1" : "0"}
+      data-overlay-intended-visible={overlayVisible ? "1" : "0"}
+      data-show-loading-fallback={showLoadingFallback ? "1" : "0"}
     >
       {/* Video background: ratio-tiered cover vs contain. Home uses near-black stage + poster to avoid snap flash. */}
       <div
@@ -1878,24 +2069,29 @@ function VideoCardInner({
         className={`absolute inset-0 flex select-none items-center justify-center [-webkit-touch-callout:none] [-webkit-user-select:none] ${
           homeFeedPosterFallback ? "bg-zinc-950" : "bg-black"
         }`}
+        data-container-bg-class={homeFeedPosterFallback ? "bg-zinc-950" : "bg-black"}
       >
         {displayPosterUrl ? (
           <img
             src={displayPosterUrl}
             alt=""
             draggable={false}
-            className={`pointer-events-none absolute inset-0 z-0 h-full w-full select-none transition-opacity duration-150 motion-reduce:transition-none [-webkit-touch-callout:none] [-webkit-user-select:none] ${
-              feedVideoObjectFit === "cover" ? "object-cover object-center" : "object-contain"
-            } ${shouldShowPoster ? "opacity-100" : "opacity-0"}`}
+            className={cn(
+              "pointer-events-none absolute inset-0 z-10 h-full w-full select-none transition-opacity duration-150 motion-reduce:transition-none [-webkit-touch-callout:none] [-webkit-user-select:none]",
+              feedForegroundFitClass,
+              shouldShowPoster ? "opacity-100" : "opacity-0",
+            )}
           />
         ) : null}
         <video
-          key={`${post.id}-${isMinimalBootMode ? "minimal" : String(mediaEpoch)}`}
-          ref={videoRef}
+          key={videoDomKey}
+          ref={setVideoDomRef}
           data-debug-media-id={`home-feed-${post.id}`}
-          className={`absolute inset-0 z-[1] h-full w-full cursor-pointer select-none transition-opacity duration-150 [-webkit-touch-callout:none] [-webkit-user-select:none] ${
-            feedVideoObjectFit === "cover" ? "object-cover object-center" : "object-contain"
-          } ${isVideoReady ? "opacity-100" : "opacity-0"}`}
+          className={cn(
+            "absolute inset-0 z-[11] h-full w-full cursor-pointer select-none transition-opacity duration-150 [-webkit-touch-callout:none] [-webkit-user-select:none]",
+            feedForegroundFitClass,
+            isVideoReady ? "opacity-100" : "opacity-0",
+          )}
           src={shouldLoadVideo ? (videoSrc || undefined) : undefined}
           crossOrigin={homeFeedPosterFallback && !feedPosterUrl ? "anonymous" : undefined}
           muted={isMuted || !isActive}
@@ -1953,21 +2149,40 @@ function VideoCardInner({
           }}
         />
         {overlayVisible ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-gradient-to-b from-zinc-900/85 via-zinc-900/75 to-zinc-950/90">
-            <div className="flex flex-col items-center gap-2">
+          <div
+            data-overlay-visible-node="1"
+            data-overlay-class="pointer-events-none absolute inset-0 z-[12] flex items-center justify-center bg-gradient-to-b from-zinc-900/85 via-zinc-900/75 to-zinc-950/90"
+            data-overlay-has-poster-source={displayPosterUrl ? "1" : "0"}
+            data-overlay-has-home-poster-fallback={homeFeedPosterFallback ? "1" : "0"}
+            data-overlay-has-visible-bg="1"
+            data-overlay-z-index-class="z-[12]"
+            data-video-z-index-class="z-[11]"
+            data-overlay-opacity-class="opacity-100-default"
+            className="pointer-events-none absolute inset-0 z-[12] flex items-center justify-center bg-gradient-to-b from-zinc-900/85 via-zinc-900/75 to-zinc-950/90"
+          >
+            <div
+              data-overlay-visible-child="1"
+              data-overlay-child-class="flex flex-col items-center gap-2"
+              className="flex flex-col items-center gap-2"
+            >
               <VinylLoader size="md" />
               <span className="text-[10px] font-medium tracking-wide text-white/70">Loading video</span>
             </div>
           </div>
         ) : null}
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-0 bg-gradient-to-b from-black/20 to-black/60",
-            "transition-opacity duration-300 ease-out motion-reduce:transition-none",
-            isScrubbingUi ? "opacity-[0.35]" : "opacity-100",
-          )}
-        />
-        {/* Narrow far-right strip (middle half vertically); rail z-20 stays tappable above. No touchstart preventDefault — scroll uses pan-y. */}
+        {feedWideLandscape ? null : (
+          <div
+            data-feed-vignette="1"
+            className={cn(
+              "pointer-events-none absolute transition-opacity duration-300 ease-out motion-reduce:transition-none",
+              isScrubbingUi ? "opacity-[0.35]" : "opacity-100",
+              feedVideoObjectFit === "contain"
+                ? "inset-x-0 bottom-0 top-auto h-[min(40vh,340px)] bg-gradient-to-t from-black/50 via-black/12 to-transparent"
+                : "inset-0 bg-gradient-to-b from-black/20 to-black/60",
+            )}
+          />
+        )}
+        {/* Narrow far-right strip (middle half vertically); rail z-12 stays tappable above. No touchstart preventDefault — scroll uses pan-y. */}
         <div
           ref={hold2xZoneRef}
           data-feed-2x-hold-zone

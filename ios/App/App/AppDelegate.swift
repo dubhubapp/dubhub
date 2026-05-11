@@ -69,6 +69,8 @@ public class DubHubVideoEditorPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getVideoInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "trimVideo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "generateThumbnail", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCompressPassthrough", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getCompressPassthrough", returnType: CAPPluginReturnPromise),
     ]
 
     private let implementation = DubHubVideoEditor()
@@ -109,6 +111,25 @@ public class DubHubVideoEditorPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject(error.localizedDescription)
             }
         }
+    }
+
+    @objc func setCompressPassthrough(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        let key = "dubhub_native_compress_passthrough"
+        UserDefaults.standard.set(enabled, forKey: key)
+        let effective = implementation.compressPassthroughSkipsAssetWriter()
+        NSLog(
+            "[DubHub][NativeTrim] setCompressPassthrough storedRequested=%d effectiveSkipAssetWriter=%d key=%@",
+            enabled ? 1 : 0,
+            effective ? 1 : 0,
+            key
+        )
+        call.resolve(["dubhub_native_compress_passthrough": effective])
+    }
+
+    @objc func getCompressPassthrough(_ call: CAPPluginCall) {
+        let effective = implementation.compressPassthroughSkipsAssetWriter()
+        call.resolve(["dubhub_native_compress_passthrough": effective])
     }
 
     @objc func generateThumbnail(_ call: CAPPluginCall) {
@@ -159,6 +180,8 @@ enum DubHubVideoEditorError: LocalizedError {
     }
 }
 
+/// Trim uses `AVAssetExportPresetPassthrough`, then either copies that MP4 to the final path (default) or
+/// runs `AVAssetWriter` when `UserDefaults` `dubhub_native_compress_passthrough` is explicitly set to `false`.
 final class DubHubVideoEditor {
     private let minClipMs: Double = 3000
     private let maxClipMs: Double = 30000
@@ -182,6 +205,19 @@ final class DubHubVideoEditor {
     private func firstCMFormatDescription(from track: AVAssetTrack) -> CMFormatDescription? {
         guard let any = track.formatDescriptions.first else { return nil }
         return (any as! CMFormatDescription)
+    }
+
+    /** When `true`, skip `AVAssetWriter` and copy the passthrough-trim MP4 to the final path. Unset defaults to **true** (no automatic AssetWriter). */
+    private func dubhubNativeCompressPassthroughEnabled() -> Bool {
+        let key = "dubhub_native_compress_passthrough"
+        if UserDefaults.standard.object(forKey: key) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    func compressPassthroughSkipsAssetWriter() -> Bool {
+        dubhubNativeCompressPassthroughEnabled()
     }
 
     func getVideoInfo(
@@ -312,6 +348,18 @@ final class DubHubVideoEditor {
         let compressedUrl = makeTempURL(ext: "mp4", prefix: "dubhub_trim_final_")
         try? FileManager.default.removeItem(at: compressedUrl)
 
+        if dubhubNativeCompressPassthroughEnabled() {
+            do {
+                try FileManager.default.copyItem(at: rawTrimUrl, to: compressedUrl)
+                let compressedSize = (try? compressedUrl.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+                NSLog("[DubHub][NativeTrim][passthrough] final copy size bytes=%d url=%@", compressedSize, compressedUrl.lastPathComponent)
+                completion(.success(compressedUrl))
+            } catch {
+                completion(.failure(stagedError("compress:passthroughCopy", error.localizedDescription, sourceUri)))
+            }
+            return
+        }
+
         exportCompressedVideoWithAssetWriter(
             asset: trimmedAsset,
             outputURL: compressedUrl,
@@ -336,7 +384,10 @@ final class DubHubVideoEditor {
         }
 
         let audioTrack = asset.tracks(withMediaType: .audio).first
-        let (outW, outH, videoComposition) = buildScalingVideoComposition(videoTrack: videoTrack, asset: asset)
+        let (outW, outH, videoComposition) = buildScalingVideoComposition(
+            videoTrack: videoTrack,
+            asset: asset
+        )
         let durationSeconds = max(0.001, CMTimeGetSeconds(asset.duration))
 
         let colorPropsLog = videoColorPropertiesForExport(videoTrack: videoTrack)
@@ -647,19 +698,23 @@ final class DubHubVideoEditor {
     /// When `preferredTransform` is non-identity (typical portrait iPhone clips stored as landscape + rotation),
     /// we must use `AVAssetReaderVideoCompositionOutput` — plain `AVAssetReaderTrackOutput` yields encoded-buffer
     /// orientation while the writer is configured for display size, which stretches or swaps the image.
-    private func buildScalingVideoComposition(videoTrack: AVAssetTrack, asset: AVAsset) -> (Int, Int, AVVideoComposition?) {
+    private func buildScalingVideoComposition(
+        videoTrack: AVAssetTrack,
+        asset: AVAsset
+    ) -> (Int, Int, AVVideoComposition?) {
         let natural = videoTrack.naturalSize
         let tx = videoTrack.preferredTransform
         let bounds = CGRect(origin: .zero, size: natural).applying(tx)
         let srcW = abs(bounds.width)
         let srcH = abs(bounds.height)
+        let longest = srcW > 1 && srcH > 1 ? max(srcW, srcH) : max(natural.width, natural.height)
+
         guard srcW > 1, srcH > 1 else {
             let w = evenDimension(CGFloat(max(320, natural.width)))
             let h = evenDimension(CGFloat(max(240, natural.height)))
             return (w, h, nil)
         }
 
-        let longest = max(srcW, srcH)
         let scale: CGFloat = longest > maxOutputLongestEdge ? (maxOutputLongestEdge / longest) : 1.0
         let targetW = evenDimension(srcW * scale)
         let targetH = evenDimension(srcH * scale)

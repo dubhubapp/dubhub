@@ -36,3 +36,24 @@ export function kickVideoFrameToScreen(video: HTMLVideoElement, timeSec: number)
     );
   }
 }
+
+/**
+ * Extra `<video>` layers (wide-landscape blurred backdrop) often stay black on WebKit until the same
+ * micro-play+seek used for the primary preview. When the primary is already playing, only align time;
+ * do not call {@link kickVideoFrameToScreen} or we would pause the backdrop out of sync.
+ */
+export function syncBackdropVideoDecodedFrame(
+  primary: HTMLVideoElement,
+  backdrop: HTMLVideoElement,
+): void {
+  const t = Number.isFinite(primary.currentTime) ? primary.currentTime : 0;
+  try {
+    backdrop.currentTime = t;
+  } catch {
+    /* ignore */
+  }
+  if (!primary.paused) {
+    return;
+  }
+  kickVideoFrameToScreen(backdrop, t);
+}

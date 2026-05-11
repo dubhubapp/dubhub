@@ -450,6 +450,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reqFileSize: req.file.size ?? null,
           bufferLength: req.file.buffer?.length ?? null,
         });
+        {
+          const receivedBytes = req.file.buffer?.length ?? req.file.size ?? 0;
+          console.log("[AUDIT_UPLOAD_TEMP] upload-video multipart received", {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            receivedBytes,
+            receivedMb: Number((receivedBytes / (1024 * 1024)).toFixed(3)),
+          });
+        }
 
         if (req.file.size > MAX_VIDEO_UPLOAD_BYTES) {
           return res.status(413).json({

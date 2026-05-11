@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Play, Pause, SkipBack, SkipForward, Check, ArrowLeft } from "lucide-react";
 import { TrimWaveformMatchedFallback } from "@/components/trim-waveform-matched-fallback";
+import { TrimNativePassthroughToggle } from "@/components/trim-native-passthrough-toggle";
 import { VinylPullRefreshIndicator } from "@/components/vinyl-pull-refresh-indicator";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -22,8 +23,14 @@ import {
   MAX_VIDEO_UPLOAD_BYTES,
   MAX_VIDEO_UPLOAD_MB,
 } from "@shared/video-upload";
-import { kickVideoFrameToScreen } from "@/lib/kick-video-frame";
-import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import { kickVideoFrameToScreen, syncBackdropVideoDecodedFrame } from "@/lib/kick-video-frame";
+import { dubhubVideoDebugEnabled, dubhubVideoDebugLog } from "@/lib/video-debug";
+import {
+  isWideLandscapePresentation,
+  trimWideLandscapeForegroundBandLayoutClass,
+  wideLandscapeBackdropClass,
+  wideLandscapeReadabilityOverlayClass,
+} from "@/lib/wide-landscape-presentation";
 import { isWaveSurferWaveformCanvasVisuallyBlank } from "@/lib/trim-waveform-paint-detect";
 import {
   neutralWaveformPeaksNormalized,
@@ -34,6 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
 import {
+  getNativeCompressPassthrough,
   isNativeIosVideoEditorPath,
   materializeSourceUriForNativeEditor,
   nativeGenerateThumbnail,
@@ -121,6 +129,18 @@ function persistSelection(start: number, end: number) {
   }
 }
 
+/** Sample time (ms) for native trimmed-clip poster — mid-clip, inset from edges when long enough. */
+function nativeTrimThumbnailSampleAtMs(durationMs: number): number {
+  const d = durationMs;
+  if (!Number.isFinite(d) || d <= 0) return 0;
+  const edgeMs = 500;
+  const midpoint = d / 2;
+  if (d <= 2 * edgeMs) {
+    return Math.round(midpoint);
+  }
+  return Math.round(Math.min(Math.max(midpoint, edgeMs), d - edgeMs));
+}
+
 /**
  * Timeline length for H.264-style assets — `HTMLMediaElement.duration` is usually enough.
  * iPhone camera-roll / HEVC frequently keeps `duration === NaN` (or 0) while `seekable` already
@@ -183,8 +203,18 @@ export default function TrimVideo() {
   /** No WaveSurfer region (media-probe trim path) — enable dragging the whole blue selection band. */
   const [trimLightDomWholeRangeDrag, setTrimLightDomWholeRangeDrag] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  /** Intrinsic size for wide-landscape blurred backdrop (foreground stays object-contain). */
+  const [trimVideoIntrinsic, setTrimVideoIntrinsic] = useState<{ w: number; h: number } | null>(
+    null,
+  );
+  /** Wide backdrop duplicates the same `<video>`; mount only after foreground has decoded data (WebKit). */
+  const [trimBackdropSourceReady, setTrimBackdropSourceReady] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  /** Duplicated wide-landscape backdrop video (blurred); kept in sync with foreground. */
+  const trimBackdropVideoRef = useRef<HTMLVideoElement>(null);
+  /** Flex-1 stage behind trim `<video>` (for layout diagnostics). */
+  const trimVideoStageRef = useRef<HTMLDivElement>(null);
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionPluginRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
@@ -375,19 +405,123 @@ export default function TrimVideo() {
   }, [state?.videoUrl]);
 
   useEffect(() => {
+    setTrimVideoIntrinsic(null);
+    setTrimBackdropSourceReady(false);
+  }, [state?.videoUrl]);
+
+  const trimWideBackdrop =
+    trimVideoIntrinsic != null &&
+    isWideLandscapePresentation(trimVideoIntrinsic.w, trimVideoIntrinsic.h);
+
+  /** Keep blurred backdrop video aligned with the main trim `<video>`; kick decode when paused (WebKit). */
+  useEffect(() => {
+    if (!trimWideBackdrop || !trimBackdropSourceReady || !state?.videoUrl) return;
+    const main = videoRef.current;
+    const bg = trimBackdropVideoRef.current;
+    if (!main || !bg) return;
+
+    const driftKick = () => {
+      try {
+        if (Math.abs(bg.currentTime - main.currentTime) > 0.05) {
+          bg.currentTime = main.currentTime;
+        }
+        if (main.paused) {
+          syncBackdropVideoDecodedFrame(main, bg);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const syncPlayback = () => {
+      try {
+        bg.playbackRate = main.playbackRate;
+        if (main.paused) {
+          bg.pause();
+          driftKick();
+        } else {
+          void bg.play().catch(() => {
+            /* ignore */
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const onTimeUpdate = () => {
+      try {
+        if (main.paused) return;
+        if (Math.abs(bg.currentTime - main.currentTime) > 0.35) {
+          bg.currentTime = main.currentTime;
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    main.addEventListener("timeupdate", onTimeUpdate);
+    main.addEventListener("seeked", driftKick);
+    main.addEventListener("pause", syncPlayback);
+    main.addEventListener("play", syncPlayback);
+    driftKick();
+    syncPlayback();
+
+    return () => {
+      main.removeEventListener("timeupdate", onTimeUpdate);
+      main.removeEventListener("seeked", driftKick);
+      main.removeEventListener("pause", syncPlayback);
+      main.removeEventListener("play", syncPlayback);
+    };
+  }, [trimWideBackdrop, trimBackdropSourceReady, state?.videoUrl]);
+
+  useLayoutEffect(() => {
+    if (!trimWideBackdrop || !trimBackdropSourceReady || !state?.videoUrl) return;
+    const main = videoRef.current;
+    const bg = trimBackdropVideoRef.current;
+    if (!main || !bg) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          if (Math.abs(bg.currentTime - main.currentTime) > 0.05) {
+            bg.currentTime = main.currentTime;
+          }
+          syncBackdropVideoDecodedFrame(main, bg);
+        } catch {
+          /* ignore */
+        }
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [trimWideBackdrop, trimBackdropSourceReady, state?.videoUrl]);
+
+  useEffect(() => {
     const v = videoRef.current;
     if (!v || !state?.videoUrl) return;
 
-    const onData = () => kickVideoFrameToScreen(v, startTimeRef.current);
+    const onData = () => {
+      kickVideoFrameToScreen(v, startTimeRef.current);
+      const bg = trimBackdropVideoRef.current;
+      if (bg) {
+        syncBackdropVideoDecodedFrame(v, bg);
+      }
+    };
+    const onIntrinsic = () => {
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        setTrimVideoIntrinsic({ w: v.videoWidth, h: v.videoHeight });
+      }
+    };
 
     v.addEventListener("loadeddata", onData);
     v.addEventListener("canplay", onData);
     v.addEventListener("loadedmetadata", onData);
+    v.addEventListener("loadedmetadata", onIntrinsic);
 
     return () => {
       v.removeEventListener("loadeddata", onData);
       v.removeEventListener("canplay", onData);
       v.removeEventListener("loadedmetadata", onData);
+      v.removeEventListener("loadedmetadata", onIntrinsic);
     };
   }, [state?.videoUrl]);
 
@@ -559,6 +693,11 @@ export default function TrimVideo() {
     window.addEventListener("pointercancel", onUp);
   }, [trimTimelineSeconds]);
 
+  /**
+   * WaveSurfer: decorative waveform synced to the same `<video>` (MediaElement backend). It renders
+   * peaks / regions for trim UX; timeline length and clipping still come from probe + video element.
+   * If decode/peaks/load fail, trim continues via probe + light-DOM fallback (see trimWavePaintFallback).
+   */
   useLayoutEffect(() => {
     if (!state?.videoUrl || !waveformRef.current) return;
     const trimSourceUrl = state.videoUrl;
@@ -758,10 +897,26 @@ export default function TrimVideo() {
 
         const video = videoRef.current;
         if (video) {
+          const kickBg = () => {
+            const bg = trimBackdropVideoRef.current;
+            if (bg) {
+              syncBackdropVideoDecodedFrame(video, bg);
+            }
+          };
           kickVideoFrameToScreen(video, clamped.start);
-          requestAnimationFrame(() => kickVideoFrameToScreen(video, clamped.start));
-          window.setTimeout(() => kickVideoFrameToScreen(video, clamped.start), 80);
-          window.setTimeout(() => kickVideoFrameToScreen(video, clamped.start), 250);
+          kickBg();
+          requestAnimationFrame(() => {
+            kickVideoFrameToScreen(video, clamped.start);
+            kickBg();
+          });
+          window.setTimeout(() => {
+            kickVideoFrameToScreen(video, clamped.start);
+            kickBg();
+          }, 80);
+          window.setTimeout(() => {
+            kickVideoFrameToScreen(video, clamped.start);
+            kickBg();
+          }, 250);
         }
       }
 
@@ -968,12 +1123,36 @@ export default function TrimVideo() {
         }
       } catch (error) {
         if (waveformCancelled) return;
+        dubhubVideoDebugLog("[DubHub][Trim][WaveSurfer]", "load primary path failed", {
+          errorName: error instanceof Error ? error.name : "unknown",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          trimSourceUrlPreview: trimSourceUrl.slice(0, 160),
+          fileType: state.fileType ?? null,
+          blobMimeType:
+            state.fileType && state.fileType.trim().length > 0 ? state.fileType : "video/mp4",
+          scope: "waveform/audio-decode-independent-of-video-css",
+        });
         try {
           await ws.load(trimSourceUrl);
         } catch (e2) {
           const err = e2 as Error;
-          if (err?.name !== "AbortError" && isLoadingRef.current) {
-            console.error("WaveSurfer load error:", e2);
+          dubhubVideoDebugLog("[DubHub][Trim][WaveSurfer]", "load fallback after primary failure also failed", {
+            errorName: err?.name ?? "unknown",
+            errorMessage: err?.message ?? String(e2),
+            trimSourceUrlPreview: trimSourceUrl.slice(0, 160),
+            fileType: state.fileType ?? null,
+            scope: "waveform/audio-decode-independent-of-video-css",
+          });
+          if (
+            dubhubVideoDebugEnabled() &&
+            err?.name !== "AbortError" &&
+            isLoadingRef.current &&
+            !waveformCancelled
+          ) {
+            console.warn("[DubHub][Trim][WaveSurfer] fallback load failed (trim still works)", e2);
+          }
+          if (!waveformCancelled && err?.name !== "AbortError") {
+            setTrimWavePaintFallback(true);
           }
         }
       }
@@ -1019,48 +1198,96 @@ export default function TrimVideo() {
   const togglePlayPause = useCallback(() => {
     const ws = wavesurferRef.current;
     const videoEl = videoRef.current;
-    if (!ws || !videoEl) return;
+    if (!videoEl) return;
 
     const s = startTimeRef.current;
     const e = endTimeRef.current;
-    const t = ws.getCurrentTime();
+    let t = videoEl.currentTime;
+    if (ws) {
+      try {
+        const wt = ws.getCurrentTime();
+        if (Number.isFinite(wt)) t = wt;
+      } catch {
+        /* keep video currentTime */
+      }
+    }
 
     if (!videoEl.paused) {
-      ws.pause();
+      try {
+        ws?.pause();
+      } catch {
+        /* ignore */
+      }
+      videoEl.pause();
       return;
     }
 
     if (t < s || t >= e - 0.05) {
-      ws.setTime(s);
+      try {
+        ws?.setTime(s);
+      } catch {
+        /* ignore */
+      }
       videoEl.currentTime = s;
     }
     videoEl.muted = false;
     setVideoMuted(false);
-    void ws.play();
+    void videoEl.play().catch(() => {
+      /* ignore */
+    });
+    try {
+      void ws?.play();
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const skipBackward = useCallback(() => {
     const ws = wavesurferRef.current;
     const videoEl = videoRef.current;
-    if (!ws) return;
+    if (!videoEl) return;
     const s = startTimeRef.current;
     const e = endTimeRef.current;
-    const t = ws.getCurrentTime();
+    let t = videoEl.currentTime;
+    if (ws) {
+      try {
+        const wt = ws.getCurrentTime();
+        if (Number.isFinite(wt)) t = wt;
+      } catch {
+        /* keep video currentTime */
+      }
+    }
     const newTime = Math.max(s, Math.min(e - 0.05, t - 5));
-    ws.setTime(newTime);
-    if (videoEl) videoEl.currentTime = newTime;
+    try {
+      ws?.setTime(newTime);
+    } catch {
+      /* ignore */
+    }
+    videoEl.currentTime = newTime;
   }, []);
 
   const skipForward = useCallback(() => {
     const ws = wavesurferRef.current;
     const videoEl = videoRef.current;
-    if (!ws) return;
+    if (!videoEl) return;
     const s = startTimeRef.current;
     const e = endTimeRef.current;
-    const t = ws.getCurrentTime();
+    let t = videoEl.currentTime;
+    if (ws) {
+      try {
+        const wt = ws.getCurrentTime();
+        if (Number.isFinite(wt)) t = wt;
+      } catch {
+        /* keep video currentTime */
+      }
+    }
     const newTime = Math.max(s, Math.min(e - 0.05, t + 5));
-    ws.setTime(newTime);
-    if (videoEl) videoEl.currentTime = newTime;
+    try {
+      ws?.setTime(newTime);
+    } catch {
+      /* ignore */
+    }
+    videoEl.currentTime = newTime;
   }, []);
 
   const handleNext = useCallback(async () => {
@@ -1176,6 +1403,26 @@ export default function TrimVideo() {
           previewUriPreview: webViewUri.slice(0, 120),
           fileSize: finalOutputSize,
         });
+        {
+          let nativePassthroughSkipsAssetWriter: boolean | null = null;
+          try {
+            const st = await getNativeCompressPassthrough();
+            nativePassthroughSkipsAssetWriter = st.dubhub_native_compress_passthrough;
+          } catch {
+            nativePassthroughSkipsAssetWriter = null;
+          }
+          console.log("[AUDIT_UPLOAD_TEMP] native-trim-output", {
+            nativePassthroughSkipsAssetWriter,
+            note:
+              "When true, native code copies passthrough trim MP4 (no AVAssetWriter). When false, H.264 ~2.2Mbps re-encode.",
+            fileBytes: finalOutputSize,
+            fileMb: Number((finalOutputSize / (1024 * 1024)).toFixed(3)),
+            durationMs: trimResult.durationMs,
+            width: trimResult.width,
+            height: trimResult.height,
+            mimeType: trimResult.mimeType || "video/mp4",
+          });
+        }
         dubhubVideoDebugLog("[DubHub][NativeUploadPath]", "native output prepared for preview only", {
           outputUriPreview: trimResult.outputUri.slice(0, 120),
           previewUriPreview: webViewUri.slice(0, 120),
@@ -1188,9 +1435,14 @@ export default function TrimVideo() {
         const thumbStartMs = Date.now();
         let thumbnailUri: string | null = null;
         try {
+          const thumbnailAtMs = nativeTrimThumbnailSampleAtMs(trimResult.durationMs);
+          dubhubVideoDebugLog("[DubHub][NativeTrim]", "native thumbnail sample time", {
+            durationMs: trimResult.durationMs,
+            atMs: thumbnailAtMs,
+          });
           const thumb = await nativeGenerateThumbnail({
             sourceUri: trimResult.outputUri,
-            atMs: Math.round(Math.min(250, trimResult.durationMs / 3)),
+            atMs: thumbnailAtMs,
           });
           thumbnailUri = Capacitor.convertFileSrc(thumb.thumbnailUri);
           localStorage.setItem(
@@ -1476,73 +1728,120 @@ export default function TrimVideo() {
         </div>
       </div>
 
-      <div className="flex-1 relative min-h-0 overflow-hidden">
-        <video
-          key={state.videoUrl}
-          ref={videoRef}
-          data-debug-media-id="trim-preview"
-          src={state.videoUrl}
-          className="absolute inset-0 z-10 h-full w-full object-contain bg-black"
-          playsInline
-          muted={videoMuted}
-          preload="auto"
-          data-testid="video-preview"
-          onError={(e) => {
-            console.error("Video load error:", e);
-            const target = e.target as HTMLVideoElement;
-            if (target.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-              console.warn("Blob URL may have been revoked or is invalid");
-              dubhubVideoDebugLog("[DubHub][NativeBridge]", "fatal-js-exception-guard", {
-                stage: "trim-video:video-src-not-supported",
-                sourcePreview: state.videoUrl.slice(0, 120),
-              });
-              if (isNativeIosVideoEditorPath()) {
-                let recovered = false;
-                try {
-                  const candidateUri = state.sourceNativeUri;
-                  if (candidateUri) {
-                    const restored = nativePreviewUri(candidateUri);
-                    setState((prev) => (prev ? { ...prev, videoUrl: restored } : prev));
-                    upsertTrimState({ videoUrl: restored, sourceNativeUri: candidateUri });
-                    recovered = true;
-                    dubhubVideoDebugLog("[DubHub][NativeBridge]", "trim-handoff-success", {
-                      sourceUriPreview: candidateUri.slice(0, 120),
-                      restoredPreview: restored.slice(0, 120),
-                    });
+      <div ref={trimVideoStageRef} className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        {trimWideBackdrop && trimBackdropSourceReady ? (
+          <video
+            key={`${state.videoUrl}::wide-backdrop`}
+            ref={trimBackdropVideoRef}
+            data-debug-media-id="trim-preview-wide-bg"
+            src={state.videoUrl}
+            className={wideLandscapeBackdropClass}
+            playsInline
+            muted
+            preload="auto"
+            tabIndex={-1}
+            aria-hidden
+            onLoadedMetadata={() => {
+              const main = videoRef.current;
+              const bg = trimBackdropVideoRef.current;
+              if (!main || !bg) return;
+              syncBackdropVideoDecodedFrame(main, bg);
+            }}
+            onLoadedData={() => {
+              const main = videoRef.current;
+              const bg = trimBackdropVideoRef.current;
+              if (!main || !bg) return;
+              syncBackdropVideoDecodedFrame(main, bg);
+            }}
+          />
+        ) : null}
+        {trimWideBackdrop && trimBackdropSourceReady ? (
+          <div className={wideLandscapeReadabilityOverlayClass} aria-hidden />
+        ) : null}
+        <div
+          className={cn(
+            trimWideBackdrop
+              ? cn(trimWideLandscapeForegroundBandLayoutClass, "z-10")
+              : "absolute inset-0 z-10",
+          )}
+        >
+          <video
+            key={state.videoUrl}
+            ref={videoRef}
+            data-debug-media-id="trim-preview"
+            src={state.videoUrl}
+            className={`absolute inset-0 h-full w-full object-contain object-center ${trimWideBackdrop ? "bg-transparent" : "bg-black"}`}
+            playsInline
+            muted={videoMuted}
+            preload="auto"
+            data-testid="video-preview"
+            onLoadedData={() => setTrimBackdropSourceReady(true)}
+            onCanPlay={() => setTrimBackdropSourceReady(true)}
+            onError={(e) => {
+              console.error("Video load error:", e);
+              const target = e.target as HTMLVideoElement;
+              if (target.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+                console.warn("Blob URL may have been revoked or is invalid");
+                dubhubVideoDebugLog("[DubHub][NativeBridge]", "fatal-js-exception-guard", {
+                  stage: "trim-video:video-src-not-supported",
+                  sourcePreview: state.videoUrl.slice(0, 120),
+                });
+                if (isNativeIosVideoEditorPath()) {
+                  let recovered = false;
+                  try {
+                    const candidateUri = state.sourceNativeUri;
+                    if (candidateUri) {
+                      const restored = nativePreviewUri(candidateUri);
+                      setState((prev) => (prev ? { ...prev, videoUrl: restored } : prev));
+                      upsertTrimState({ videoUrl: restored, sourceNativeUri: candidateUri });
+                      recovered = true;
+                      dubhubVideoDebugLog("[DubHub][NativeBridge]", "trim-handoff-success", {
+                        sourceUriPreview: candidateUri.slice(0, 120),
+                        restoredPreview: restored.slice(0, 120),
+                      });
+                    }
+                  } catch {
+                    recovered = false;
                   }
-                } catch {
-                  recovered = false;
+                  if (!recovered && state.videoUrl.startsWith("blob:")) {
+                    toast({
+                      title: "Could not restore clip",
+                      description:
+                        "We couldn't restore this clip after reload. Please choose it again.",
+                      variant: "destructive",
+                    });
+                    localStorage.removeItem("dubhub-trim-state");
+                    localStorage.removeItem("dubhub-trim-source");
+                    localStorage.removeItem("dubhub-trim-times");
+                    setLocation("/submit");
+                  }
+                  return;
                 }
-                if (!recovered && state.videoUrl.startsWith("blob:")) {
-                  toast({
-                    title: "Could not restore clip",
-                    description: "We couldn't restore this clip after reload. Please choose it again.",
-                    variant: "destructive",
-                  });
+                if (state.videoUrl.startsWith("blob:")) {
                   localStorage.removeItem("dubhub-trim-state");
                   localStorage.removeItem("dubhub-trim-source");
                   localStorage.removeItem("dubhub-trim-times");
+                  toast({
+                    title: "Could not restore clip",
+                    description: "Please choose the video again.",
+                    variant: "destructive",
+                  });
                   setLocation("/submit");
                 }
-                return;
               }
-              if (state.videoUrl.startsWith("blob:")) {
-                localStorage.removeItem("dubhub-trim-state");
-                localStorage.removeItem("dubhub-trim-source");
-                localStorage.removeItem("dubhub-trim-times");
-                toast({
-                  title: "Could not restore clip",
-                  description: "Please choose the video again.",
-                  variant: "destructive",
-                });
-                setLocation("/submit");
-              }
-            }
-          }}
-        />
+            }}
+          />
+        </div>
 
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-          <div className="pointer-events-auto mb-28 flex items-center justify-center gap-4 touch-manipulation">
+        <div
+          className={cn(
+            "pointer-events-none z-20 flex items-center justify-center",
+            trimWideBackdrop
+              ? trimWideLandscapeForegroundBandLayoutClass
+              : "absolute inset-0",
+          )}
+        >
+          <div className="pointer-events-auto mb-10 flex items-center justify-center gap-4 touch-manipulation">
             <Button
               variant="outline"
               size="icon"
@@ -1577,7 +1876,8 @@ export default function TrimVideo() {
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/85 to-transparent pb-[calc(1rem+var(--app-bottom-nav-block))] pt-20">
+        {/* Shorter fade (less pt) + softer mid-stop so gradient does not veil the lower half of letterboxed landscape video. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/95 via-black/45 to-transparent pb-[calc(1rem+var(--app-bottom-nav-block))] pt-10">
           <div className="pointer-events-auto space-y-3 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
             <p className="text-center text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
               Drag handles or blue range · {MIN_CLIP_DURATION_SECONDS}–{MAX_CLIP_DURATION_SECONDS}{" "}
@@ -1696,6 +1996,9 @@ export default function TrimVideo() {
           </div>
         </div>
       </div>
+
+      <TrimNativePassthroughToggle />
+
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
