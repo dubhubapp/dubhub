@@ -42,6 +42,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     enabled: isOpen,
   });
 
+  const commentsList = Array.isArray(comments) ? comments : [];
+
   const resetState = () => {
     setStep("verify");
     setSelectedCommentId("");
@@ -216,7 +218,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
 
   const handleConfirm = () => confirmMutation.mutate();
   const handleDeny = () => denyMutation.mutate();
-  const sortedComments = [...comments].sort((a, b) => {
+  const sortedComments = [...commentsList].sort((a, b) => {
     const toTime = (value: unknown) => {
       if (!value) return 0;
       if (value instanceof Date) return value.getTime();
@@ -304,7 +306,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                     </div>
                   </div>
                 </div>
-              ) : comments.length === 0 ? (
+              ) : commentsList.length === 0 ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
                   <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
                     <p className="text-sm font-medium text-white">

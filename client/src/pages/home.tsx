@@ -540,10 +540,7 @@ export default function Home() {
   const [diceRailEnterGen, setDiceRailEnterGen] = useState(0);
   const randomExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
-  const [isFeedMuted, setIsFeedMuted] = useState(true);
-  const toggleFeedMute = useCallback(() => {
-    setIsFeedMuted((m) => !m);
-  }, []);
+  const { registerHomeWhileOnHomeHandler, isFeedMuted, toggleFeedMute } = useHomeFeedInteraction();
   /** Persists while scrolling the home feed (and between Random / sorted feeds). */
   const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
   const [activePostId, setActivePostId] = useState<string | null>(null);
@@ -1484,8 +1481,6 @@ export default function Home() {
       });
     }
   }, [sortMode]);
-
-  const { registerHomeWhileOnHomeHandler } = useHomeFeedInteraction();
 
   useEffect(() => {
     if (isInitialFeedLoad || isError) {

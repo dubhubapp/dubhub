@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+/** Readable stacks / Safari mapping for Capacitor (set `VITE_CAP_DEBUG=1` when building). */
+const capDebug = process.env.VITE_CAP_DEBUG === "1";
+
 export default defineConfig({
   plugins: [
     react(),
@@ -19,6 +22,10 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    /** Emit `.map` files so Safari Web Inspector can map minified stacks to source (dev workflow). */
+    sourcemap: capDebug ? true : process.env.VITE_SOURCEMAP === "1" ? true : false,
+    /** Turn off minification for Capacitor debug builds — stacks show real file/line in Safari. */
+    minify: capDebug ? false : "esbuild",
   },
   server: {
     host: true, // Listen on 0.0.0.0 so dev server is accessible from local network (e.g. http://192.168.1.xxx:5173)

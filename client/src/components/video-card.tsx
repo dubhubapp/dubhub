@@ -1841,53 +1841,11 @@ function VideoCardInner({
     );
 
     const verificationStatus = post.verificationStatus ?? (post as any).verification_status;
-    const isVerifiedCommunity =
-      !!((post as any).isVerifiedCommunity ?? (post as any).is_verified_community);
     const isModeratorVerified =
       !!((post as any).verifiedByModerator ?? (post as any).verified_by_moderator);
-
-    // Moderator “keep as community”: distinct from pending community review + full moderator confirm
-    if (verificationStatus === "community_approved" || isVerifiedCommunity) {
-      return renderStatus(
-        <Users className={iconBaseClass} />,
-        "Identified",
-        "badge-community-approved-identified",
-        STATUS_GLOW_PILL_BG.identified,
-      );
-    }
-
-    // Community source first so it never falls through to another identified source
-    if (verificationStatus === "community") {
-      return renderStatus(
-        <Users className={iconBaseClass} />,
-        "Identified",
-        "badge-community-identified",
-        STATUS_GLOW_PILL_BG.identified,
-      );
-    }
-
-    // Artist verification takes precedence: if artist confirmed, show Artist Verified
     const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
     const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
-    if (isArtistVerifiedPost && artistVerifiedBy) {
-      return renderStatus(
-        <GoldVerifiedTick className={`${iconBaseClass} text-[#FFD700]`} />,
-        "Identified",
-        "badge-artist-verified",
-        STATUS_GLOW_PILL_BG.identified,
-      );
-    }
-    
-    // Show identified badge if moderator confirmed (fallback when no artist verification)
-    if (verificationStatus === "identified" || isModeratorVerified) {
-      return renderStatus(
-        <Check className={`${iconBaseClass} text-white`} />,
-        "Identified",
-        "badge-identified",
-        STATUS_GLOW_PILL_BG.identified,
-      );
-    }
-    
+
     // Show under review badge
     if (verificationStatus === "under_review") {
       return (
@@ -1915,7 +1873,47 @@ function VideoCardInner({
         </span>
       );
     }
-    
+
+    // Elevated identification tiers first — do not let stale `isVerifiedCommunity` override these.
+    // 1) Artist confirmed on post
+    if (isArtistVerifiedPost && artistVerifiedBy) {
+      return renderStatus(
+        <GoldVerifiedTick className={`${iconBaseClass} text-[#FFD700]`} />,
+        "Identified",
+        "badge-artist-verified",
+        STATUS_GLOW_PILL_BG.identified,
+      );
+    }
+
+    // 2) Moderator full confirmation / generic identified (matches comments-modal gates)
+    if (verificationStatus === "identified" || isModeratorVerified) {
+      return renderStatus(
+        <Check className={`${iconBaseClass} text-white`} />,
+        "Identified",
+        "badge-identified",
+        STATUS_GLOW_PILL_BG.identified,
+      );
+    }
+
+    // 3) Community-only pills — gated on verification_status only (not bare isVerifiedCommunity)
+    if (verificationStatus === "community_approved") {
+      return renderStatus(
+        <Users className={iconBaseClass} />,
+        "Identified",
+        "badge-community-approved-identified",
+        STATUS_GLOW_PILL_BG.identified,
+      );
+    }
+
+    if (verificationStatus === "community") {
+      return renderStatus(
+        <Users className={iconBaseClass} />,
+        "Identified",
+        "badge-community-identified",
+        STATUS_GLOW_PILL_BG.identified,
+      );
+    }
+
     return null;
   };
 

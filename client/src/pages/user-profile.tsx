@@ -338,6 +338,8 @@ export default function UserProfile() {
   /** Nearest snapped page in full-screen post viewers — drives a single active VideoCard (avoids N× `preload=auto`). */
   const [postsViewerSnapIndex, setPostsViewerSnapIndex] = useState(0);
   const [likesViewerSnapIndex, setLikesViewerSnapIndex] = useState(0);
+  const [profileViewerMuted, setProfileViewerMuted] = useState(true);
+  const toggleProfileViewerMute = useCallback(() => setProfileViewerMuted((m) => !m), []);
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const [pendingAvatarFileName, setPendingAvatarFileName] = useState<string | null>(null);
   const [pendingAvatarSrc, setPendingAvatarSrc] = useState<string | null>(null);
@@ -2247,6 +2249,8 @@ export default function UserProfile() {
                             post={post}
                             showStatusBadge
                             embeddedFeed
+                            isMuted={profileViewerMuted}
+                            onToggleMute={toggleProfileViewerMute}
                             isActive={index === postsViewerSnapIndex}
                             shouldLoadVideo={dSnap <= 1}
                             videoPreload={
@@ -2345,6 +2349,8 @@ export default function UserProfile() {
                             post={post}
                             showStatusBadge
                             embeddedFeed
+                            isMuted={profileViewerMuted}
+                            onToggleMute={toggleProfileViewerMute}
                             isActive={index === likesViewerSnapIndex}
                             shouldLoadVideo={dSnap <= 1}
                             videoPreload={

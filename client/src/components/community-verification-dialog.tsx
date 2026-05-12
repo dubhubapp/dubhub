@@ -33,7 +33,9 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
     enabled: isOpen,
   });
 
-  const sortedComments = [...comments].sort((a, b) => {
+  const commentsList = Array.isArray(comments) ? comments : [];
+
+  const sortedComments = [...commentsList].sort((a, b) => {
     const toTime = (value: unknown) => {
       if (!value) return 0;
       if (value instanceof Date) return value.getTime();
@@ -119,7 +121,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
               <p className="text-xs">Loading comments...</p>
             </div>
           </div>
-        ) : comments.length === 0 ? (
+        ) : commentsList.length === 0 ? (
           <div className="mt-4 rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
             <p>No comments yet. Community members need to comment with track IDs first.</p>
           </div>
