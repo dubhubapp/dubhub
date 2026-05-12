@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -31,10 +32,29 @@ import { playSuccessNotification } from "@/lib/haptic";
 import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import {
+  isWideLandscapePresentation,
+  wideLandscapeBackdropClipWrapperClass,
+  wideLandscapeCssBackgroundCoverStyle,
+  wideLandscapeReadabilityOverlayClass,
+} from "@/lib/wide-landscape-presentation";
 import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
-import { nativeOutputUriToFileFallback, nativePreviewUri } from "@/lib/native-video-editor";
+import { blurActiveElementAfterIosSoftKeyboardHideIfNeeded } from "@/lib/ios-soft-keyboard-hide-blur";
+import {
+  clampSubmitMetadataScrollRoot,
+  flushSubmitMetadataIosDocumentWindowScroll,
+  isSubmitMetadataKbdMetricsDebugEnabled,
+  logSubmitMetadataKbdDeep,
+  probeSubmitMetadataScrollLayout,
+  scrollSubmitMetadataActiveFieldAboveIosKeyboard,
+} from "@/lib/submit-metadata-ios-kbd-diagnostics";
+import {
+  getNativeCompressPassthrough,
+  nativeOutputUriToFileFallback,
+  nativePreviewUri,
+} from "@/lib/native-video-editor";
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import {
@@ -230,6 +250,12 @@ export default function SubmitMetadata() {
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  /**
+   * Latches true once the upload reaches 100% (or when re-submitting a clip we already uploaded),
+   * and stays true through the create-post → navigation handoff. Prevents a brief
+   * "Uploading 0%" flash when uploadProgress is reset before uploadCompleteOpeningPost flips on.
+   */
+  const [uploadHandoff, setUploadHandoff] = useState(false);
   const simulatedProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const creepTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const hasRealProgressRef = useRef(false);
@@ -246,15 +272,31 @@ export default function SubmitMetadata() {
   const [thumbnailSrc, setThumbnailSrc] = useState<string | null>(null);
   /** Display aspect for preview card (native / thumbnail metadata); avoids forcing 16:9 on portrait clips. */
   const [clipPreviewAspect, setClipPreviewAspect] = useState<{ w: number; h: number } | null>(null);
+  /** Natural pixel size of the loaded thumbnail (refines wide-landscape detection vs aspect metadata). */
+  const [thumbNaturalDims, setThumbNaturalDims] = useState<{ w: number; h: number } | null>(null);
+  const metadataThumbWrapperRef = useRef<HTMLDivElement | null>(null);
+  const metadataThumbImgRef = useRef<HTMLImageElement | null>(null);
   const pageScrollRef = useRef<HTMLDivElement | null>(null);
+  /** iOS diagnostics: true while IME is up (from willShow / didShow until didHide). */
+  const submitMetadataKeyboardOpenRef = useRef(false);
+  const lastIosKeyboardCapHeightPxRef = useRef(0);
   const submitClickTsRef = useRef<number>(0);
   const submitSuccessRef = useRef(false);
+  /** Deferred until after navigate/unmount — avoids flashing an empty metadata form during cache fetch. */
+  const deferredPostSuccessCleanupRef = useRef<(() => void) | null>(null);
+
+  /** Terminal success: post API succeeded; hides idle form until home navigation. */
+  const [uploadCompleteOpeningPost, setUploadCompleteOpeningPost] = useState(false);
 
   useEffect(() => {
     dubhubVideoDebugLog("[DubHub][SubmitDetails]", "mounted thumbnail-only mode", {
       route: "/submit-metadata",
     });
   }, []);
+
+  useEffect(() => {
+    setThumbNaturalDims(null);
+  }, [thumbnailSrc]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -268,39 +310,62 @@ export default function SubmitMetadata() {
     if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
     let cancelled = false;
     let previousMode: KeyboardResize | null = null;
-    let hideTick = 0;
 
-    const isEditableTarget = (target: EventTarget | null): target is HTMLElement => {
-      if (!(target instanceof HTMLElement)) return false;
-      if (target instanceof HTMLInputElement) return true;
-      if (target instanceof HTMLTextAreaElement) return true;
-      if (target instanceof HTMLSelectElement) return true;
-      if (target.isContentEditable) return true;
-      return target.getAttribute("role") === "combobox";
-    };
+    /** Extra scroll extent so short forms can lift bottom fields above the IME (removed on hide — not window scroll). */
+    const IOS_SUBMIT_METADATA_KB_PADDING_BUFFER_PX = 28;
 
-    const clampPageScroll = () => {
+    const applyIosKeyboardBottomScrollSlack = (phaseSuffix: string) => {
       const el = pageScrollRef.current;
-      if (!el) return;
-      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
-      if (el.scrollTop > maxScrollTop) {
-        el.scrollTop = maxScrollTop;
-      }
+      const vvInner = typeof window !== "undefined" ? window.visualViewport : null;
+      if (!el || !vvInner) return;
+      if (!submitMetadataKeyboardOpenRef.current) return;
+
+      const coveredPx = Math.max(
+        0,
+        Math.round(window.innerHeight - vvInner.offsetTop - vvInner.height),
+      );
+      const capPx = Math.max(0, Math.round(lastIosKeyboardCapHeightPxRef.current));
+      const spacer =
+        Math.max(coveredPx, capPx, 24) + IOS_SUBMIT_METADATA_KB_PADDING_BUFFER_PX;
+
+      el.style.paddingBottom = `${spacer}px`;
+
+      scrollSubmitMetadataActiveFieldAboveIosKeyboard(
+        el,
+        `keyboardBottomSlack:${phaseSuffix}:sync`,
+      );
+      requestAnimationFrame(() => {
+        if (!submitMetadataKeyboardOpenRef.current) return;
+        scrollSubmitMetadataActiveFieldAboveIosKeyboard(
+          el,
+          `keyboardBottomSlack:${phaseSuffix}:rAF`,
+        );
+      });
     };
 
-    const runKeyboardHideLayoutReset = () => {
-      hideTick += 1;
-      const token = hideTick;
-      const activeEl = document.activeElement;
-      if (isEditableTarget(activeEl)) {
-        activeEl.blur();
+    const runKeyboardHideLayoutReset = (
+      reason: string,
+      labels?: { before: string; after: string },
+    ) => {
+      const el = pageScrollRef.current;
+      el?.style.removeProperty("padding-bottom");
+
+      const beforeLabel = labels?.before ?? `keyboardHideReset:beforeBlur:${reason}`;
+      const afterLabel = labels?.after ?? `keyboardHideReset:afterBlurClamp:${reason}`;
+
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep(beforeLabel, el);
       }
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (token !== hideTick) return;
-          clampPageScroll();
-        });
-      });
+
+      blurActiveElementAfterIosSoftKeyboardHideIfNeeded();
+
+      clampSubmitMetadataScrollRoot(el, `afterBlur:${reason}`);
+
+      flushSubmitMetadataIosDocumentWindowScroll(`keyboardHideReset:${reason}`);
+
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep(afterLabel, pageScrollRef.current);
+      }
     };
 
     const applyRouteResizeMode = async () => {
@@ -322,31 +387,119 @@ export default function SubmitMetadata() {
 
     let removeDidHide: (() => Promise<void>) | null = null;
     let removeWillHide: (() => Promise<void>) | null = null;
+    let removeWillShow: (() => Promise<void>) | null = null;
+    let removeDidShow: (() => Promise<void>) | null = null;
+
+    void Keyboard.addListener("keyboardWillShow", (info) => {
+      submitMetadataKeyboardOpenRef.current = true;
+      const keyboardHeight = Math.max(0, Math.round((info as { keyboardHeight?: number }).keyboardHeight ?? 0));
+      lastIosKeyboardCapHeightPxRef.current = keyboardHeight;
+      applyIosKeyboardBottomScrollSlack("willShow");
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep("keyboardWillShow", pageScrollRef.current, {
+          ...(probeSubmitMetadataScrollLayout(pageScrollRef.current) ?? {}),
+          keyboardHeight,
+        });
+      }
+    }).then((h) => {
+      removeWillShow = () => h.remove();
+    });
+
+    void Keyboard.addListener("keyboardDidShow", (info) => {
+      submitMetadataKeyboardOpenRef.current = true;
+      const keyboardHeight = Math.max(0, Math.round((info as { keyboardHeight?: number }).keyboardHeight ?? 0));
+      lastIosKeyboardCapHeightPxRef.current = Math.max(lastIosKeyboardCapHeightPxRef.current, keyboardHeight);
+      applyIosKeyboardBottomScrollSlack("didShow");
+      requestAnimationFrame(() => applyIosKeyboardBottomScrollSlack("didShow+rAF"));
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep("keyboardDidShow", pageScrollRef.current, {
+          ...(probeSubmitMetadataScrollLayout(pageScrollRef.current) ?? {}),
+          keyboardHeight,
+        });
+      }
+    }).then((h) => {
+      removeDidShow = () => h.remove();
+    });
+
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const vvCoveredPx = () => window.innerHeight - (vv?.height ?? 0) - (vv?.offsetTop ?? 0);
+
     const onViewportResize = () => {
-      // On close, iOS can leave scroll offset beyond new max until another relayout (e.g. genre select).
       if (!vv) return;
-      const coveredPx = window.innerHeight - vv.height - vv.offsetTop;
+      const coveredPx = vvCoveredPx();
+      const keyboardSessionActive = submitMetadataKeyboardOpenRef.current;
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep("visualViewport:resize", pageScrollRef.current, {
+          coveredPx: Math.round(coveredPx * 100) / 100,
+          keyboardSessionActive,
+          ...(probeSubmitMetadataScrollLayout(pageScrollRef.current) ?? {}),
+        });
+      }
+      /** `coveredPx` lies during IME open — never treat vv alone as keyboard-dismissed until `keyboardDidHide` clears the ref. */
+      if (keyboardSessionActive) {
+        applyIosKeyboardBottomScrollSlack("vvResize");
+        return;
+      }
       if (coveredPx <= 0.5) {
-        runKeyboardHideLayoutReset();
+        runKeyboardHideLayoutReset("visualViewport:resize", {
+          before: "visualViewport:resize:beforeBlur",
+          after: "visualViewport:resize:afterBlurClamp",
+        });
       }
     };
+
+    const onViewportScroll = () => {
+      if (!vv) return;
+      const coveredPx = vvCoveredPx();
+      const keyboardSessionActive = submitMetadataKeyboardOpenRef.current;
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep("visualViewport:scroll", pageScrollRef.current, {
+          coveredPx: Math.round(coveredPx * 100) / 100,
+          keyboardSessionActive,
+          ...(probeSubmitMetadataScrollLayout(pageScrollRef.current) ?? {}),
+        });
+      }
+      if (keyboardSessionActive) {
+        scrollSubmitMetadataActiveFieldAboveIosKeyboard(pageScrollRef.current, "visualViewport:scroll");
+        return;
+      }
+      if (coveredPx <= 0.5) {
+        clampSubmitMetadataScrollRoot(pageScrollRef.current, "visualViewport:scroll");
+        flushSubmitMetadataIosDocumentWindowScroll("visualViewport:scroll");
+      }
+    };
+
     vv?.addEventListener("resize", onViewportResize);
+    vv?.addEventListener("scroll", onViewportScroll);
 
     void Keyboard.addListener("keyboardWillHide", () => {
-      runKeyboardHideLayoutReset();
+      runKeyboardHideLayoutReset("keyboardWillHide", {
+        before: "keyboardWillHide:beforeBlur",
+        after: "keyboardWillHide:afterBlurClamp",
+      });
     }).then((h) => {
       removeWillHide = () => h.remove();
     });
     void Keyboard.addListener("keyboardDidHide", () => {
-      runKeyboardHideLayoutReset();
+      runKeyboardHideLayoutReset("keyboardDidHide", {
+        before: "keyboardDidHide:beforeReset",
+        after: "keyboardDidHide:afterReset",
+      });
+      submitMetadataKeyboardOpenRef.current = false;
+      lastIosKeyboardCapHeightPxRef.current = 0;
     }).then((h) => {
       removeDidHide = () => h.remove();
     });
 
     return () => {
       cancelled = true;
+      submitMetadataKeyboardOpenRef.current = false;
+      lastIosKeyboardCapHeightPxRef.current = 0;
+      pageScrollRef.current?.style.removeProperty("padding-bottom");
       vv?.removeEventListener("resize", onViewportResize);
+      vv?.removeEventListener("scroll", onViewportScroll);
+      void removeWillShow?.();
+      void removeDidShow?.();
       void removeWillHide?.();
       void removeDidHide?.();
       const restoreMode = previousMode ?? KeyboardResize.Native;
@@ -355,13 +508,61 @@ export default function SubmitMetadata() {
           console.error("[submit-metadata] keyboard resize mode restore failed", err);
         }
       });
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          clampPageScroll();
-        });
-      });
+      if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+        logSubmitMetadataKbdDeep("route-unmount:beforeClamp", pageScrollRef.current);
+      }
+      clampSubmitMetadataScrollRoot(pageScrollRef.current, "route-unmount");
     };
   }, []);
+
+  /** When the page scroll root exists, reclaim lawful scrollTop after WKWebKit relayout (keyboard dismissal). */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+    if (!trimState || !trimTimes) return;
+    const el = pageScrollRef.current;
+    if (!el) return;
+
+    const flush = () => {
+      clampSubmitMetadataScrollRoot(el, "resizeObserver");
+    };
+
+    const ro = new ResizeObserver(() => flush());
+    ro.observe(el);
+    const inner = el.firstElementChild;
+    if (inner instanceof HTMLElement) {
+      ro.observe(inner);
+    }
+    const shell = document.querySelector<HTMLElement>("[data-app-shell]");
+    if (shell) {
+      ro.observe(shell);
+    }
+
+    return () => {
+      ro.disconnect();
+    };
+  }, [trimState, trimTimes]);
+
+  /** Throttled scroll logs while IME is reported open (paired with keyboard listeners via ref). */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+    if (!trimState || !trimTimes) return;
+    const el = pageScrollRef.current;
+    if (!el) return;
+
+    let lastTs = 0;
+    const throttleMs = 120;
+    const onScroll = () => {
+      if (!isSubmitMetadataKbdMetricsDebugEnabled()) return;
+      if (!submitMetadataKeyboardOpenRef.current) return;
+      const now = performance.now();
+      if (now - lastTs < throttleMs) return;
+      lastTs = now;
+      logSubmitMetadataKbdDeep("pageScrollRef:scroll:throttled(keyboard-open)", pageScrollRef.current);
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [trimState, trimTimes]);
 
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -579,6 +780,12 @@ export default function SubmitMetadata() {
         }
         activeUploadXhrRef.current = null;
       }
+      try {
+        deferredPostSuccessCleanupRef.current?.();
+      } catch {
+        /* ignore */
+      }
+      deferredPostSuccessCleanupRef.current = null;
       dubhubVideoDebugLog("[DubHub][SubmitDetails]", "unmount cleanup done", {});
       // Don't revoke Blob URL here - let it be cleaned up by the submit success handler
       // or when user navigates back to trim page
@@ -600,6 +807,7 @@ export default function SubmitMetadata() {
     activeUploadXhrRef.current = null;
     setIsUploading(false);
     setUploadProgress(0);
+    setUploadHandoff(false);
   }, []);
 
   const form = useForm<SubmitFormData>({
@@ -626,6 +834,14 @@ export default function SubmitMetadata() {
 
   const uploadMutation = useMutation({
     mutationFn: async ({ file, fileName }: { file: Blob; fileName: string }) => {
+      let nativePassthroughSkipsAssetWriter: boolean | null = null;
+      try {
+        const passthroughState = await getNativeCompressPassthrough();
+        nativePassthroughSkipsAssetWriter =
+          passthroughState.dubhub_native_compress_passthrough;
+      } catch {
+        nativePassthroughSkipsAssetWriter = null;
+      }
       if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
         throw new Error(
           `Your trimmed clip is over ${MAX_VIDEO_UPLOAD_MB}MB. Try trimming a shorter segment on the previous step.`,
@@ -646,6 +862,7 @@ export default function SubmitMetadata() {
       
       // Use XMLHttpRequest for real upload progress tracking
       setUploadProgress(0);
+      setUploadHandoff(false);
       hasRealProgressRef.current = false;
       creepStartedRef.current = false;
       return new Promise<{ url: string; filename: string }>((resolve, reject) => {
@@ -748,6 +965,7 @@ export default function SubmitMetadata() {
                 return;
               }
               setUploadProgress(100);
+              setUploadHandoff(true);
               resolve({ url: response.url, filename: String(response.filename ?? "") });
             } catch (parseErr) {
               console.error("[upload-video] JSON parse failed", {
@@ -807,12 +1025,22 @@ export default function SubmitMetadata() {
         // Start upload with auth header
         xhr.open('POST', uploadUrl);
         xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+        console.log("[AUDIT_UPLOAD_TEMP] pre-xhr-send", {
+          fileName,
+          fileBytes: file.size,
+          fileMb: Number((file.size / (1024 * 1024)).toFixed(3)),
+          nativePassthroughSkipsAssetWriter,
+        });
         xhr.send(formData);
       });
     },
     onSuccess: (data) => {
       setUploadedVideoUrl(data.url);
-      setUploadProgress(0);
+      // Intentionally do NOT reset uploadProgress here — it stays at 100 so the
+      // overlay/button keep showing "Processing video…" through the create-post
+      // network call until uploadCompleteOpeningPost flips on. uploadHandoff was
+      // latched true in the xhr 'load' handler. Both reset on next upload start
+      // or on a terminal error.
     },
     onError: (error: Error) => {
       if (
@@ -823,6 +1051,7 @@ export default function SubmitMetadata() {
         return;
       }
       setUploadProgress(0);
+      setUploadHandoff(false);
       toast({
         title: "Upload Failed",
         description: error.message || "There was an error uploading your video.",
@@ -877,6 +1106,7 @@ export default function SubmitMetadata() {
     },
     onSuccess: async (created: { id?: string }) => {
       submitSuccessRef.current = true;
+      setUploadCompleteOpeningPost(true);
       const newPostId = created?.id;
       if (!newPostId) {
         console.error("Post created but response missing id:", created);
@@ -891,16 +1121,6 @@ export default function SubmitMetadata() {
       dubhubVideoDebugLog("[DubHub][PostSubmit]", "success-toast-fired", {
         postId: newPostId ?? null,
       });
-
-      clearDubhubTrimSession({ revokeAfterMs: 500 });
-      dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "clear trim session after submit success", {
-        revokeAfterMs: 500,
-      });
-      
-      form.reset();
-      setUploadedVideoUrl(null);
-      setVideoFile(null); // Clear video file reference
-      clearNativePostArtifact();
 
       // Put the new post in every cached feed variant so it appears immediately under Hottest/Newest
       // (feed is limited to 10; a 0-like post may not be in the refetched page without this).
@@ -957,6 +1177,17 @@ export default function SubmitMetadata() {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
       }
 
+      deferredPostSuccessCleanupRef.current = () => {
+        clearDubhubTrimSession({ revokeAfterMs: 500 });
+        dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "deferred cleanup after submit success", {
+          revokeAfterMs: 500,
+        });
+        form.reset();
+        setUploadedVideoUrl(null);
+        setVideoFile(null);
+        clearNativePostArtifact();
+      };
+
       // Deep-link to the post so Home scrolls/highlights by ID (not feed position / sort order).
       if (newPostId) {
         dubhubVideoDebugLog("[DubHub][PostSubmit]", "navigate-to-created-post", {
@@ -973,6 +1204,14 @@ export default function SubmitMetadata() {
         });
         setLocation("/");
       }
+
+      queueMicrotask(() => {
+        try {
+          deferredPostSuccessCleanupRef.current?.();
+        } finally {
+          deferredPostSuccessCleanupRef.current = null;
+        }
+      });
     },
     onError: (error: Error) => {
       dubhubVideoDebugLog("[DubHub][PostSubmit]", "create-failure", {
@@ -984,6 +1223,8 @@ export default function SubmitMetadata() {
         });
         return;
       }
+      setUploadHandoff(false);
+      setUploadProgress(0);
       console.error("Post submission error:", error);
       dubhubVideoDebugLog("[DubHub][PostSubmit]", "error-toast-fired", {
         message: error.message,
@@ -1146,6 +1387,9 @@ export default function SubmitMetadata() {
         setIsUploading(false);
       }
     } else {
+      // Re-submitting metadata for a clip we already uploaded: jump straight to
+      // the "Processing video…" handoff so the overlay never shows "Uploading 0%".
+      setUploadHandoff(true);
       submitMutation.mutate({ formData: data, videoUrl: uploadedVideoUrl });
     }
   };
@@ -1229,8 +1473,27 @@ export default function SubmitMetadata() {
   const watched = form.watch();
   const requiredFieldsReady =
     isTitleComplete(watched.title) && isGenreComplete(watched.genre);
-  const submitBusy = isUploading || submitMutation.isPending;
+  /** True only after Submit is pressed — never during passive metadata edits. */
+  const isActuallySubmittingUpload =
+    isUploading || submitMutation.isPending;
+  /** Button + transient states; same predicate as the blocking overlay below. */
+  const submitBusy =
+    uploadCompleteOpeningPost || isActuallySubmittingUpload;
+  /** Portal to body: fixed inside overflow-y-auto (pageScrollRef) breaks iOS scroll/IME. */
+  const showBlockingUploadOverlay = submitBusy;
   const submitEnabled = requiredFieldsReady && !submitBusy;
+
+  const submitMetaWideBackdrop = useMemo(() => {
+    const n = thumbNaturalDims;
+    if (n != null && n.w > 0 && n.h > 0) {
+      return isWideLandscapePresentation(n.w, n.h);
+    }
+    const a = clipPreviewAspect;
+    if (a != null && a.w > 0 && a.h > 0) {
+      return isWideLandscapePresentation(a.w, a.h);
+    }
+    return false;
+  }, [thumbNaturalDims, clipPreviewAspect]);
 
   if (!trimState || !trimTimes) {
     return null;
@@ -1246,6 +1509,39 @@ export default function SubmitMetadata() {
         APP_PAGE_SCROLL_CLASS,
       )}
     >
+      {typeof document !== "undefined" &&
+        showBlockingUploadOverlay &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 px-5"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            <div className="w-full max-w-md space-y-3 rounded-xl border border-gray-700/50 bg-surface/90 p-4 shadow-lg backdrop-blur-sm">
+              {!uploadCompleteOpeningPost ? (
+                <>
+                  <Progress
+                    value={uploadHandoff ? 100 : uploadProgress}
+                    className="h-2.5 bg-gray-800"
+                  />
+                  <p className="text-center text-sm text-gray-300 tabular-nums">
+                    {uploadHandoff || uploadProgress >= 99
+                      ? "Processing video…"
+                      : `Uploading... ${Math.round(uploadProgress)}%`}
+                  </p>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-1">
+                  <InlineSpinner className="border-white" sizeClassName="h-8 w-8" />
+                  <p className="text-center text-sm text-gray-200">
+                    Upload complete — opening post…
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
       <div className="app-page-top-pad w-full min-w-0 max-w-full p-5 pb-10 sm:p-6 sm:pb-12">
         <div className="mx-auto w-full min-w-0 max-w-md space-y-4">
           <div className="flex items-center gap-2">
@@ -1274,6 +1570,7 @@ export default function SubmitMetadata() {
 
           <div className="rounded-2xl overflow-hidden border border-gray-800/90 bg-black shadow-sm w-full">
             <div
+              ref={metadataThumbWrapperRef}
               className="relative w-full max-h-[min(70vh,520px)] mx-auto"
               style={
                 clipPreviewAspect
@@ -1282,12 +1579,40 @@ export default function SubmitMetadata() {
               }
             >
               {thumbnailSrc ? (
-                <img
-                  src={thumbnailSrc}
-                  alt="Selected clip thumbnail"
-                  className="absolute inset-0 h-full w-full object-contain object-center bg-black"
-                  data-testid="image-metadata-preview"
-                />
+                <>
+                  {submitMetaWideBackdrop ? (
+                    <div className={cn(wideLandscapeBackdropClipWrapperClass, "relative")}>
+                      <div
+                        aria-hidden
+                        data-debug-media-id="submit-metadata-thumb-wide-bg"
+                        className="absolute inset-0"
+                        style={wideLandscapeCssBackgroundCoverStyle(thumbnailSrc)}
+                      />
+                    </div>
+                  ) : null}
+                  {submitMetaWideBackdrop ? (
+                    <div className={wideLandscapeReadabilityOverlayClass} aria-hidden />
+                  ) : null}
+                  <img
+                    ref={metadataThumbImgRef}
+                    src={thumbnailSrc}
+                    alt="Selected clip thumbnail"
+                    className={cn(
+                      "absolute inset-0 z-[10] h-full w-full object-contain object-center",
+                      submitMetaWideBackdrop ? "bg-transparent" : "bg-black",
+                    )}
+                    data-testid="image-metadata-preview"
+                    onLoad={(e) => {
+                      const im = e.currentTarget;
+                      if (im.naturalWidth > 0 && im.naturalHeight > 0) {
+                        setThumbNaturalDims({
+                          w: im.naturalWidth,
+                          h: im.naturalHeight,
+                        });
+                      }
+                    }}
+                  />
+                </>
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800">
                   <p className="px-4 text-center text-xs text-gray-300">
@@ -1295,7 +1620,14 @@ export default function SubmitMetadata() {
                   </p>
                 </div>
               )}
-              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 to-transparent pt-10 pb-3 px-3">
+              <div
+                className={cn(
+                  "pointer-events-none absolute bottom-0 inset-x-0 z-[15] flex flex-col justify-end pb-2 px-3 pt-1",
+                  thumbnailSrc && submitMetaWideBackdrop
+                    ? "h-14 bg-gradient-to-t from-black/55 via-black/18 to-transparent"
+                    : "h-16 bg-gradient-to-t from-black/80 via-black/35 to-transparent",
+                )}
+              >
                 <p className="text-xs font-medium text-white/95">
                   Selected clip · {clipSeconds}s
                 </p>
@@ -1304,7 +1636,22 @@ export default function SubmitMetadata() {
           </div>
           
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="min-w-0 space-y-4">
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="min-w-0 space-y-4"
+              onFocusCapture={(e) => {
+                if (!isSubmitMetadataKbdMetricsDebugEnabled()) return;
+                const t = e.target;
+                const fieldLabel =
+                  t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement
+                    ? (t.name || t.getAttribute("data-testid") || "").trim()
+                    : t instanceof HTMLElement
+                      ? (t.getAttribute("data-testid") || "").trim()
+                      : "";
+                if (!fieldLabel) return;
+                logSubmitMetadataKbdDeep(`focusCapture:${fieldLabel}`, pageScrollRef.current);
+              }}
+            >
               <FormField
                 control={form.control}
                 name="title"
@@ -1602,7 +1949,15 @@ export default function SubmitMetadata() {
                               }
                             }}
                             onOpenChange={(open) => {
+                              if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
+                                logSubmitMetadataKbdDeep("genre:beforeOpen", pageScrollRef.current);
+                              }
                               setFieldFocused((f) => ({ ...f, genre: open }));
+                              if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
+                                queueMicrotask(() => {
+                                  logSubmitMetadataKbdDeep("genre:afterOpen", pageScrollRef.current);
+                                });
+                              }
                               if (!open) {
                                 field.onBlur();
                                 queueMicrotask(() => {
@@ -1651,17 +2006,6 @@ export default function SubmitMetadata() {
                 }}
               />
 
-              {isUploading && (
-                <div className="rounded-xl bg-surface/80 border border-gray-700/50 p-4 space-y-3">
-                  <Progress
-                    value={uploadProgress}
-                    className="h-2.5 bg-gray-800"
-                  />
-                  <p className="text-sm text-gray-400 text-center tabular-nums">
-                    Uploading... {Math.round(uploadProgress)}%
-                  </p>
-                </div>
-              )}
               <div
                 className={cn(
                   "relative w-full rounded-xl transition-[filter,box-shadow] duration-700",
@@ -1707,7 +2051,13 @@ export default function SubmitMetadata() {
                     {submitBusy ? (
                       <>
                         <InlineSpinner className="mr-2 border-white" sizeClassName="h-4 w-4" />
-                        {isUploading ? "Uploading..." : "Submitting..."}
+                        {uploadCompleteOpeningPost
+                          ? "Opening post…"
+                          : uploadHandoff || uploadProgress >= 99
+                            ? "Processing video…"
+                            : isUploading
+                              ? "Uploading..."
+                              : "Submitting..."}
                       </>
                     ) : (
                       "Submit Track ID"

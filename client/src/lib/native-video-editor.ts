@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
-import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import { dubhubVideoDebugEnabled, dubhubVideoDebugLog } from "@/lib/video-debug";
 
 export type NativeVideoInfo = {
   durationMs: number;
@@ -20,6 +20,10 @@ export type NativeThumbnailResult = {
   height: number;
 };
 
+export type NativeCompressPassthroughToggleResult = {
+  dubhub_native_compress_passthrough: boolean;
+};
+
 type DubHubVideoEditorPlugin = {
   getVideoInfo(options: { sourceUri: string }): Promise<NativeVideoInfo>;
   trimVideo(options: {
@@ -31,12 +35,44 @@ type DubHubVideoEditorPlugin = {
     sourceUri: string;
     atMs?: number;
   }): Promise<NativeThumbnailResult>;
+  setCompressPassthrough(options: { enabled: boolean }): Promise<NativeCompressPassthroughToggleResult>;
+  getCompressPassthrough(): Promise<NativeCompressPassthroughToggleResult>;
 };
 
 const DubHubVideoEditor = registerPlugin<DubHubVideoEditorPlugin>("DubHubVideoEditor");
 
 export function isNativeIosVideoEditorPath(): boolean {
   return Capacitor.getPlatform() === "ios" && Capacitor.isNativePlatform();
+}
+
+/**
+ * Writes `UserDefaults` `dubhub_native_compress_passthrough` (skip AVAssetWriter, copy passthrough trim → final MP4).
+ * Only effective on Capacitor iOS. Logs `dubhub_native_compress_passthrough=true|false` for Safari inspector.
+ */
+export async function setNativeCompressPassthrough(
+  enabled: boolean,
+): Promise<NativeCompressPassthroughToggleResult> {
+  if (!isNativeIosVideoEditorPath()) {
+    console.warn("dubhub_native_compress_passthrough not applied (requires native Capacitor iOS)");
+    return { dubhub_native_compress_passthrough: false };
+  }
+  const out = await DubHubVideoEditor.setCompressPassthrough({ enabled });
+  const v = !!out.dubhub_native_compress_passthrough;
+  if (dubhubVideoDebugEnabled()) {
+    console.log(`dubhub_native_compress_passthrough=${v}`);
+    dubhubVideoDebugLog("[DubHub][NativeTrim]", "setCompressPassthrough", {
+      dubhub_native_compress_passthrough: v,
+    });
+  }
+  return { dubhub_native_compress_passthrough: v };
+}
+
+export async function getNativeCompressPassthrough(): Promise<NativeCompressPassthroughToggleResult> {
+  if (!isNativeIosVideoEditorPath()) {
+    return { dubhub_native_compress_passthrough: false };
+  }
+  const out = await DubHubVideoEditor.getCompressPassthrough();
+  return { dubhub_native_compress_passthrough: !!out.dubhub_native_compress_passthrough };
 }
 
 /** Rejects if `promise` does not settle in time (safety valve if native export hangs). */
