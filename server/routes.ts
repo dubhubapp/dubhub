@@ -649,11 +649,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               reason: skipProbe.reason,
               mimetype: req.file.mimetype,
               fileExtension,
+              ...skipProbe.probeDetails,
             });
             logUploadTiming("skip_compression_probe_complete", {
               skipServerCompression,
               skipCompressionReason: skipProbe.reason,
               fileBytesForProbe,
+              ...skipProbe.probeDetails,
             });
           } else {
             logUploadTiming("skip_compression_probe_complete", {

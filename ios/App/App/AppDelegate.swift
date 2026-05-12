@@ -180,8 +180,9 @@ enum DubHubVideoEditorError: LocalizedError {
     }
 }
 
-/// Trim uses `AVAssetExportPresetPassthrough`, then either copies that MP4 to the final path (default) or
-/// runs `AVAssetWriter` when `UserDefaults` `dubhub_native_compress_passthrough` is explicitly set to `false`.
+/// Trim uses `AVAssetExportPresetPassthrough`, then either copies that MP4 to the final path,
+/// runs conditional `AVAssetWriter` when the passthrough trim is “heavy”, or runs `AVAssetWriter` for every clip
+/// when `UserDefaults` `dubhub_native_compress_passthrough` is explicitly set to `false`.
 final class DubHubVideoEditor {
     private let minClipMs: Double = 3000
     private let maxClipMs: Double = 30000
@@ -192,6 +193,30 @@ final class DubHubVideoEditor {
     /// Longest edge cap (1080p-class); do not upscale smaller sources.
     private let maxOutputLongestEdge: CGFloat = 1920
     private let targetAudioBitrate = 160_000
+    /// Align with server `PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC` — encode locally when container avg exceeds this.
+    private let conditionalCompressMaxAvgBitsPerSec: Double = 15_000_000
+    /// Align with server `PRETRIMMED_SKIP_MAX_LONG_EDGE_PX`.
+    private let conditionalCompressMaxLongEdgePx: Int = 1920
+
+    private struct ConditionalPassthroughMetrics {
+        let fileSizeBytes: Int64
+        let durationSec: Double
+        let avgBitsPerSec: Double
+        let width: Int
+        let height: Int
+        let longestEdge: Int
+        let codecSubtypeHex: String
+        let isHevc: Bool
+
+        func heavyDecision(maxAvgBps: Double, maxLongEdge: Int) -> (needsEncode: Bool, reason: String) {
+            var parts: [String] = []
+            if isHevc { parts.append("hevc_codec") }
+            if longestEdge > maxLongEdge { parts.append("long_edge_exceeds_1920") }
+            if avgBitsPerSec > maxAvgBps { parts.append("avg_bitrate_exceeds_15mbps") }
+            if parts.isEmpty { return (false, "within_thresholds") }
+            return (true, parts.joined(separator: "+"))
+        }
+    }
 
     private func stagedError(_ stage: String, _ reason: String, _ sourceUri: String) -> Error {
         NSError(
@@ -207,7 +232,67 @@ final class DubHubVideoEditor {
         return (any as! CMFormatDescription)
     }
 
-    /** When `true`, skip `AVAssetWriter` and copy the passthrough-trim MP4 to the final path. Unset defaults to **true** (no automatic AssetWriter). */
+    private func utf8FourCharCode(_ s: String) -> FourCharCode {
+        let scalars = Array(s.unicodeScalars.prefix(4))
+        guard scalars.count == 4 else { return 0 }
+        var r: UInt32 = 0
+        for sc in scalars {
+            r = (r << 8) | UInt32(sc.value)
+        }
+        return r
+    }
+
+    private func fourCharCodeHex(_ code: FourCharCode) -> String {
+        String(format: "%08x", UInt32(code))
+    }
+
+    /// Same display-oriented dimensions as `buildInfoPayload` (natural size × preferred transform).
+    private func displayVideoDimensions(asset: AVAsset) -> (width: Int, height: Int) {
+        guard let track = asset.tracks(withMediaType: .video).first else { return (0, 0) }
+        let natural = track.naturalSize
+        let transformed = natural.applying(track.preferredTransform)
+        return (Int(abs(transformed.width)), Int(abs(transformed.height)))
+    }
+
+    private func isLikelyHevcVideo(videoTrack: AVAssetTrack) -> Bool {
+        guard let desc = firstCMFormatDescription(from: videoTrack) else { return false }
+        let sub = CMFormatDescriptionGetMediaSubType(desc)
+        if sub == kCMVideoCodecType_HEVC { return true }
+        if sub == utf8FourCharCode("hvc1") { return true }
+        if sub == utf8FourCharCode("hev1") { return true }
+        return false
+    }
+
+    private func measureConditionalPassthrough(rawTrimUrl: URL, asset: AVURLAsset) -> ConditionalPassthroughMetrics {
+        let fileSizeBytes = Int64((try? rawTrimUrl.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        let durRaw = CMTimeGetSeconds(asset.duration)
+        let durationSec = (durRaw.isFinite && durRaw > 0) ? durRaw : 0.001
+        let avgBitsPerSec = Double(fileSizeBytes * 8) / durationSec
+        let (w, h) = displayVideoDimensions(asset: asset)
+        let longestEdge = max(w, h)
+        let vt = asset.tracks(withMediaType: .video).first
+        let isHevc = vt.map { self.isLikelyHevcVideo(videoTrack: $0) } ?? false
+        let codecHex: String
+        if let vt = vt, let desc = firstCMFormatDescription(from: vt) {
+            codecHex = fourCharCodeHex(CMFormatDescriptionGetMediaSubType(desc))
+        } else {
+            codecHex = "nil"
+        }
+        return ConditionalPassthroughMetrics(
+            fileSizeBytes: fileSizeBytes,
+            durationSec: durationSec,
+            avgBitsPerSec: avgBitsPerSec,
+            width: w,
+            height: h,
+            longestEdge: longestEdge,
+            codecSubtypeHex: codecHex,
+            isHevc: isHevc
+        )
+    }
+
+    /**
+     * `UserDefaults` `dubhub_native_compress_passthrough`: missing/`true` => **conditional** mode (copy light trims, run existing `AVAssetWriter` when heavy); explicit `false` => **always** `AVAssetWriter`.
+     */
     private func dubhubNativeCompressPassthroughEnabled() -> Bool {
         let key = "dubhub_native_compress_passthrough"
         if UserDefaults.standard.object(forKey: key) == nil {
@@ -348,24 +433,77 @@ final class DubHubVideoEditor {
         let compressedUrl = makeTempURL(ext: "mp4", prefix: "dubhub_trim_final_")
         try? FileManager.default.removeItem(at: compressedUrl)
 
-        if dubhubNativeCompressPassthroughEnabled() {
-            do {
-                try FileManager.default.copyItem(at: rawTrimUrl, to: compressedUrl)
-                let compressedSize = (try? compressedUrl.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-                NSLog("[DubHub][NativeTrim][passthrough] final copy size bytes=%d url=%@", compressedSize, compressedUrl.lastPathComponent)
-                completion(.success(compressedUrl))
-            } catch {
-                completion(.failure(stagedError("compress:passthroughCopy", error.localizedDescription, sourceUri)))
-            }
+        let metrics = measureConditionalPassthrough(rawTrimUrl: rawTrimUrl, asset: trimmedAsset)
+
+        // UserDefaults explicitly false => always AssetWriter (existing debug / force-encode behaviour).
+        if !dubhubNativeCompressPassthroughEnabled() {
+            NSLog(
+                "[DubHubVideoEditor][conditional-compress] fileSizeBytes=%lld durationSec=%.4f avgBitsPerSec=%.0f width=%d height=%d longestEdge=%d codecSubtype=0x%@ isHevc=%d decision=asset_writer_compress reason=user_defaults_force_encode",
+                metrics.fileSizeBytes,
+                metrics.durationSec,
+                metrics.avgBitsPerSec,
+                metrics.width,
+                metrics.height,
+                metrics.longestEdge,
+                metrics.codecSubtypeHex,
+                metrics.isHevc ? 1 : 0
+            )
+            exportCompressedVideoWithAssetWriter(
+                asset: trimmedAsset,
+                outputURL: compressedUrl,
+                sourceUri: sourceUri,
+                completion: completion
+            )
             return
         }
 
-        exportCompressedVideoWithAssetWriter(
-            asset: trimmedAsset,
-            outputURL: compressedUrl,
-            sourceUri: sourceUri,
-            completion: completion
+        let (needsEncode, reason) = metrics.heavyDecision(
+            maxAvgBps: conditionalCompressMaxAvgBitsPerSec,
+            maxLongEdge: conditionalCompressMaxLongEdgePx
         )
+
+        if needsEncode {
+            NSLog(
+                "[DubHubVideoEditor][conditional-compress] fileSizeBytes=%lld durationSec=%.4f avgBitsPerSec=%.0f width=%d height=%d longestEdge=%d codecSubtype=0x%@ isHevc=%d decision=asset_writer_compress reason=%@",
+                metrics.fileSizeBytes,
+                metrics.durationSec,
+                metrics.avgBitsPerSec,
+                metrics.width,
+                metrics.height,
+                metrics.longestEdge,
+                metrics.codecSubtypeHex,
+                metrics.isHevc ? 1 : 0,
+                reason
+            )
+            exportCompressedVideoWithAssetWriter(
+                asset: trimmedAsset,
+                outputURL: compressedUrl,
+                sourceUri: sourceUri,
+                completion: completion
+            )
+            return
+        }
+
+        NSLog(
+            "[DubHubVideoEditor][conditional-compress] fileSizeBytes=%lld durationSec=%.4f avgBitsPerSec=%.0f width=%d height=%d longestEdge=%d codecSubtype=0x%@ isHevc=%d decision=passthrough_copy reason=%@",
+            metrics.fileSizeBytes,
+            metrics.durationSec,
+            metrics.avgBitsPerSec,
+            metrics.width,
+            metrics.height,
+            metrics.longestEdge,
+            metrics.codecSubtypeHex,
+            metrics.isHevc ? 1 : 0,
+            reason
+        )
+        do {
+            try FileManager.default.copyItem(at: rawTrimUrl, to: compressedUrl)
+            let compressedSize = (try? compressedUrl.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+            NSLog("[DubHub][NativeTrim][passthrough] final copy size bytes=%d url=%@", compressedSize, compressedUrl.lastPathComponent)
+            completion(.success(compressedUrl))
+        } catch {
+            completion(.failure(stagedError("compress:passthroughCopy", error.localizedDescription, sourceUri)))
+        }
     }
 
     // MARK: - AVAssetWriter export (explicit H.264 + AAC)
@@ -669,6 +807,7 @@ final class DubHubVideoEditor {
     }
 
     /// Builds a composition that applies `layerTransform` into `renderWidth`×`renderHeight` (display-oriented pixels).
+    /// `layerTransform` must map track coordinates into `[0,renderWidth)×[0,renderHeight)` without clipping (see `fittedLayerTransformForExport`).
     private func makeVideoComposition(
         asset: AVAsset,
         videoTrack: AVAssetTrack,
@@ -693,6 +832,74 @@ final class DubHubVideoEditor {
         return composition
     }
 
+    /// Multiplies affine transforms in **standard** column-vector order: `(lhs * rhs) * p = lhs * (rhs * p)` — apply `rhs` first, then `lhs`.
+    /// Matches Core Graphics layout: `x' = a*x + c*y + tx`, `y' = b*x + d*y + ty`.
+    private func affineMultiply(_ lhs: CGAffineTransform, _ rhs: CGAffineTransform) -> CGAffineTransform {
+        let a = lhs.a * rhs.a + lhs.c * rhs.b
+        let b = lhs.b * rhs.a + lhs.d * rhs.b
+        let c = lhs.a * rhs.c + lhs.c * rhs.d
+        let d = lhs.b * rhs.c + lhs.d * rhs.d
+        let txv = lhs.a * rhs.tx + lhs.c * rhs.ty + lhs.tx
+        let tyv = lhs.b * rhs.tx + lhs.d * rhs.ty + lhs.ty
+        return CGAffineTransform(a: a, b: b, c: c, d: d, tx: txv, ty: tyv)
+    }
+
+    /// Maps natural × `preferredTransform` into `renderSize` with **aspect-fit**: translate transformed AABB to origin, then uniform scale so the image fits inside `renderW×renderH` (no overflow / center-crop).
+    /// Point order: **preferredTransform → translate origin to zero → uniform scale** → `fitted * p = scaleFit * translateToOrigin * preferredTransform * p`.
+    /// Uses explicit `affineMultiply` so translation is scaled (avoids `concatenating` order ambiguity vs Core Graphics).
+    private func fittedLayerTransformForExport(
+        natural: CGSize,
+        preferredTransform tx: CGAffineTransform,
+        transformedBounds: CGRect,
+        renderW: Int,
+        renderH: Int
+    ) -> CGAffineTransform {
+        let bw = transformedBounds.width
+        let bh = transformedBounds.height
+        guard bw > 0.5, bh > 0.5, renderW > 0, renderH > 0 else {
+            NSLog(
+                "[DubHubVideoEditor][geometry-fix] skip-fit bw=%.2f bh=%.2f render=%dx%d — fallback tx",
+                bw,
+                bh,
+                renderW,
+                renderH
+            )
+            return tx
+        }
+        let fitScale = min(CGFloat(renderW) / bw, CGFloat(renderH) / bh)
+        let translateToOrigin = CGAffineTransform(
+            translationX: -transformedBounds.origin.x,
+            y: -transformedBounds.origin.y
+        )
+        let scaleFit = CGAffineTransform(scaleX: fitScale, y: fitScale)
+        let fitted = affineMultiply(affineMultiply(scaleFit, translateToOrigin), tx)
+        NSLog(
+            "[DubHubVideoEditor][geometry-fix] natural=%.1fx%.1f tx=[%.5f,%.5f,%.5f,%.5f,%.3f,%.3f] bounds=(%.2f,%.2f,%.2fx%.2f) target=%dx%d fitScale=%.6f fitted=[%.5f,%.5f,%.5f,%.5f,%.3f,%.3f]",
+            natural.width,
+            natural.height,
+            tx.a,
+            tx.b,
+            tx.c,
+            tx.d,
+            tx.tx,
+            tx.ty,
+            transformedBounds.origin.x,
+            transformedBounds.origin.y,
+            bw,
+            bh,
+            renderW,
+            renderH,
+            fitScale,
+            fitted.a,
+            fitted.b,
+            fitted.c,
+            fitted.d,
+            fitted.tx,
+            fitted.ty
+        )
+        return fitted
+    }
+
     /// Returns (width,height) even display dimensions and a composition whenever rotation and/or downscale must be baked in.
     ///
     /// When `preferredTransform` is non-identity (typical portrait iPhone clips stored as landscape + rotation),
@@ -704,9 +911,9 @@ final class DubHubVideoEditor {
     ) -> (Int, Int, AVVideoComposition?) {
         let natural = videoTrack.naturalSize
         let tx = videoTrack.preferredTransform
-        let bounds = CGRect(origin: .zero, size: natural).applying(tx)
-        let srcW = abs(bounds.width)
-        let srcH = abs(bounds.height)
+        let transformedBounds = CGRect(origin: .zero, size: natural).applying(tx)
+        let srcW = abs(transformedBounds.width)
+        let srcH = abs(transformedBounds.height)
         let longest = srcW > 1 && srcH > 1 ? max(srcW, srcH) : max(natural.width, natural.height)
 
         guard srcW > 1, srcH > 1 else {
@@ -715,30 +922,42 @@ final class DubHubVideoEditor {
             return (w, h, nil)
         }
 
-        let scale: CGFloat = longest > maxOutputLongestEdge ? (maxOutputLongestEdge / longest) : 1.0
-        let targetW = evenDimension(srcW * scale)
-        let targetH = evenDimension(srcH * scale)
+        let scalePolicy: CGFloat = longest > maxOutputLongestEdge ? (maxOutputLongestEdge / longest) : 1.0
+        let targetW = evenDimension(srcW * scalePolicy)
+        let targetH = evenDimension(srcH * scalePolicy)
 
-        if scale >= 0.999 {
-            if tx.isIdentity {
-                return (targetW, targetH, nil)
-            }
-            let composition = makeVideoComposition(
-                asset: asset,
-                videoTrack: videoTrack,
-                layerTransform: tx,
-                renderWidth: targetW,
-                renderHeight: targetH
+        // Fast path: passthrough-equivalent — no rotation, AABB at origin, dimensions match encode size (skip composition reader).
+        if scalePolicy >= 0.999,
+           tx.isIdentity,
+           abs(transformedBounds.origin.x) < 0.001,
+           abs(transformedBounds.origin.y) < 0.001,
+           abs(CGFloat(targetW) - natural.width) < 1.6,
+           abs(CGFloat(targetH) - natural.height) < 1.6 {
+            NSLog(
+                "[DubHubVideoEditor][geometry-fix] decision=directTrack natural=%.1fx%.1f boundsOrigin=(%.2f,%.2f) target=%dx%d policyScale=%.4f",
+                natural.width,
+                natural.height,
+                transformedBounds.origin.x,
+                transformedBounds.origin.y,
+                targetW,
+                targetH,
+                scalePolicy
             )
-            return (targetW, targetH, composition)
+            return (targetW, targetH, nil)
         }
 
-        let scaleT = CGAffineTransform(scaleX: scale, y: scale)
-        let combined = scaleT.concatenating(tx)
+        let fittedLayer = fittedLayerTransformForExport(
+            natural: natural,
+            preferredTransform: tx,
+            transformedBounds: transformedBounds,
+            renderW: targetW,
+            renderH: targetH
+        )
+
         let composition = makeVideoComposition(
             asset: asset,
             videoTrack: videoTrack,
-            layerTransform: combined,
+            layerTransform: fittedLayer,
             renderWidth: targetW,
             renderHeight: targetH
         )
