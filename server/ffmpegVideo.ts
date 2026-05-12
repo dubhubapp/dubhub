@@ -240,13 +240,12 @@ export async function probeDurationSeconds(filePath: string): Promise<number> {
 /** Match feed/native scale cap (~1080p class); avoids pointless server re-encode for client-trimmed H.264. */
 const PRETRIMMED_SKIP_MAX_LONG_EDGE_PX = 1920;
 
-/** When ffprobe reports per-stream `bit_rate` on the video stream, re-encode above this (bps). */
-const PRETRIMMED_SKIP_MAX_VIDEO_BITRATE = 8_000_000;
+/** When ffprobe reports per-stream `bit_rate` on the video stream, re-encode above this (bps). Aligned with avg ceiling (~15 Mbps). */
+const PRETRIMMED_SKIP_MAX_VIDEO_BITRATE = 15_000_000;
 
 /**
  * Whole-file container average: (fileSizeBytes * 8) / durationSec.
- * Higher than {@link PRETRIMMED_SKIP_MAX_VIDEO_BITRATE} so normal 1080p iPhone trims skip Railway transcode;
- * capped (~15 Mbps) to limit beta feed egress/storage vs a fully permissive container ceiling.
+ * Same ~15 Mbps compatibility ceiling as {@link PRETRIMMED_SKIP_MAX_VIDEO_BITRATE}; skips pointless Railway transcode for typical H.264 trims after device-side compression.
  */
 const PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC = 15_000_000;
 
