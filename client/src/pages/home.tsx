@@ -27,13 +27,6 @@ import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
 import { dubhubVideoDebugLog, dubhubVideoDebugEnabled } from "@/lib/video-debug";
-import { bumpDubhubHomeMediaEpoch } from "@/lib/post-flow";
-import { DUBHUB_POST_DELETED_EVENT } from "@/lib/post-delete-cache-updates";
-import {
-  buildHomePathPreservingNonPostParams,
-  getHomePostOrTrackId,
-  homeSearchHasPostOrTrack,
-} from "@/lib/home-deeplink-url";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
@@ -72,91 +65,26 @@ const HOME_FEED_VIDEO_MOUNT_RADIUS = 2;
  * card is merely closer than the previous one. */
 const HOME_FEED_SNAP_ACTIVE_EPS_PX = 12;
 
-/** Snap row for the end-of-feed card; not a `VideoCard`, but participates in scroll snapping. */
-const HOME_FEED_END_CARD_ID = "home-feed-end-card";
+/** Temporary Newest / `201eaa05…` investigation — no behaviour impact. Enable in devtools: `sessionStorage.setItem("dubhub_newest_201_trace","1")`, then reload. Remove when done. */
+const NEWEST_201_TRACE_SESSION_KEY = "dubhub_newest_201_trace";
+const NEWEST_201_TRACE_POST_ID = "201eaa05-bd99-4925-82d2-527b618945ee";
 
-function isValidHomeActivePostId(activePostId: string | null, uiPosts: PostWithUser[]): boolean {
-  if (!activePostId) return false;
-  if (activePostId === HOME_FEED_END_CARD_ID) return true;
-  return uiPosts.some((p) => p.id === activePostId);
-}
-
-function nearestAllowedFeedPostId(
-  feedEl: HTMLElement,
-  uiPosts: PostWithUser[],
-  scrollTop: number,
-): string | null {
-  const allowed = new Set<string>([HOME_FEED_END_CARD_ID, ...uiPosts.map((p) => p.id)]);
-  const nodes = Array.from(feedEl.querySelectorAll<HTMLElement>("[data-post-id]"));
-  let bestId: string | null = null;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const n of nodes) {
-    const id = n.dataset.postId ?? null;
-    if (!id || !allowed.has(id)) continue;
-    const d = Math.abs(scrollTop - n.offsetTop);
-    if (d < bestDist) {
-      bestDist = d;
-      bestId = id;
-    }
-  }
-  if (!bestId) return uiPosts[0]?.id ?? null;
-  return bestId;
-}
-
-const HOME_DEEPLINK_DEBUG_KEY = "dubhub_home_deeplink_debug";
-
-/** Temporary: trace when this id reappears as `activePostId` (sessionStorage: `dubhub_stale_post_debug=1`). */
-const STALE_ACTIVE_POST_DEBUG_ID = "201eaa05-bd99-4925-82d2-527b618945ee";
-
-function homeDeeplinkDebug(message: string, payload?: Record<string, unknown>): void {
-  if (typeof window === "undefined") return;
-  try {
-    const on =
-      apiDevDiagnosticsEnabled() || sessionStorage.getItem(HOME_DEEPLINK_DEBUG_KEY) === "1";
-    if (!on) return;
-    if (payload) {
-      console.log("[DubHub][Home][deeplink]", message, payload);
-    } else {
-      console.log("[DubHub][Home][deeplink]", message);
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-function homeRuntimeAuditEnabled(): boolean {
+function newest201TraceEnabled(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return sessionStorage.getItem("dubhub_runtime_audit") === "1";
+    return sessionStorage.getItem(NEWEST_201_TRACE_SESSION_KEY) === "1";
   } catch {
     return false;
   }
 }
 
-function homeRuntimeAuditLog(
-  hypothesisId: "H1" | "H2" | "H3" | "H4" | "H5",
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-): void {
-  if (!homeRuntimeAuditEnabled()) return;
-  let runId = "run-unknown";
-  try {
-    runId = sessionStorage.getItem("dubhub_runtime_audit_run_id") || "run-unknown";
-  } catch {
-    /* ignore */
-  }
-  // #region agent log
-  console.log("[DubHub][Home][runtime-audit]", {
-    sessionId: "7738bf",
-    runId,
-    hypothesisId,
-    location,
-    message,
-    data,
-    timestamp: Date.now(),
-  });
-  // #endregion
+function newest201Trace(source: string, payload: Record<string, unknown>): void {
+  if (!newest201TraceEnabled()) return;
+  console.log("[NEWEST_201_TRACE]", source, { ...payload, t: Date.now() });
+}
+
+function newest201IndexOf(ids: readonly { id: string }[]): number {
+  return ids.findIndex((p) => p.id === NEWEST_201_TRACE_POST_ID);
 }
 
 /** Keep in sync with `animation.dice-spin` duration in `tailwind.config.ts` (0.42s). */
@@ -496,6 +424,11 @@ export default function Home() {
   /** Persists while scrolling the home feed (and between Random / sorted feeds). */
   const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
   const [activePostId, setActivePostId] = useState<string | null>(null);
+  /** Latest `activePostId` for trace logs inside callbacks whose closures may lag one render. */
+  const newest201ActivePostIdRef = useRef<string | null>(null);
+  newest201ActivePostIdRef.current = activePostId;
+  const newest201SortModeRef = useRef<FeedSortMode>(sortMode);
+  newest201SortModeRef.current = sortMode;
   const [isAppForegroundActive, setIsAppForegroundActive] = useState(true);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const [location, navigate] = useLocation();
@@ -516,51 +449,13 @@ export default function Home() {
   const deepLinkWatchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Post id the active watchdog was scheduled for (skip redundant timer resets). */
   const deepLinkWatchdogForPostRef = useRef<string | null>(null);
-  /** After Home delete: activate first row once `uiPosts` updates post-refetch (see delete listener). */
-  const homeFeedActivateFirstAfterDeleteRef = useRef(false);
-  /** Tracks sort + Posts-tab filters so we can reset layout without fighting `?post=` / order-restore. */
-  const feedChromeLayoutRef = useRef<{
-    sortMode: FeedSortMode;
-    identificationFilter: string;
-    genresKey: string;
-    manualResetNonce: number;
-  } | null>(null);
-  /** Previous feed chrome key for skipping “snap back to active post” after Hottest reorders vs sort change. */
+  /** True from the moment sort/filter changes until real (non-placeholder) query data arrives. */
+  const feedChromeResetPendingRef = useRef(false);
+  const [feedChromeResetPending, setFeedChromeResetPending] = useState(false);
+  /** Prior feed chrome key so order-restore skips the frame sort/filter changed (not a pure reorder). */
   const prevFeedChromeKeyRef = useRef<string | null>(null);
-  /**
-   * After explicit feed chrome changes, hold scroll/active until real query data + first ui row align
-   * (blocks nearest-from-scroll and order-restore fighting scroll-to-top).
-   */
-  const forceTopAfterChromeChangeRef = useRef(false);
-  /** Pending top-row post id while force-top waits for `activePostId` state to commit. */
-  const forceTopTargetPostIdRef = useRef<string | null>(null);
-  /** Index-0 row-local pending-force-top snapshot captured during render, logged post-commit. */
-  const pendingForceTopCardSnapshotRef = useRef<{
-    sortMode: FeedSortMode;
-    postId: string | null;
-    index: number;
-    forceTopRenderMode: boolean;
-    forceTopAfterChrome: boolean;
-    forceTopTargetPostId: string | null;
-    forceTopTargetMatchesThisRow: boolean;
-    pendingForceTopCard: boolean;
-    activePostId: string | null;
-    activeIndex: number;
-    feedRenderAnchorIndex: number;
-    feedPreloadAnchorIndex: number;
-  } | null>(null);
-  /** Mirrors `activePostId` for logging / guards (updated when active changes). */
-  const activePostIdRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-
-  const clearDeepLinkWatchdog = useCallback(() => {
-    if (deepLinkWatchdogTimerRef.current) {
-      clearTimeout(deepLinkWatchdogTimerRef.current);
-      deepLinkWatchdogTimerRef.current = null;
-    }
-    deepLinkWatchdogForPostRef.current = null;
-  }, []);
 
   const { currentUser } = useUser();
   const homeReadySignalSentRef = useRef(false);
@@ -572,8 +467,6 @@ export default function Home() {
   } | null>(null);
 
   const genresKey = [...selectedGenres].sort().join(",");
-  /** Bumped when the user explicitly taps Hottest/Newest in the menu (even if already selected). */
-  const [feedManualResetNonce, setFeedManualResetNonce] = useState(0);
 
   useEffect(() => {
     try {
@@ -740,6 +633,18 @@ export default function Home() {
 
   const handleFeedSortChange = useCallback(
     (mode: FeedSortMode) => {
+      const traceSortTap = (source: string) => {
+        const el = videoFeedRef.current;
+        newest201Trace(source, {
+          requestedSortMode: mode,
+          previousSortMode: sortMode,
+          activePostId: newest201ActivePostIdRef.current,
+          scrollTop: el?.scrollTop ?? null,
+          href: typeof window !== "undefined" ? window.location.href : "",
+          search: typeof window !== "undefined" ? window.location.search : "",
+          hash: typeof window !== "undefined" ? window.location.hash : "",
+        });
+      };
       if (mode === "random" && randomViewExiting) {
         if (randomExitTimerRef.current) {
           clearTimeout(randomExitTimerRef.current);
@@ -748,26 +653,6 @@ export default function Home() {
         setRandomViewExiting(false);
         return;
       }
-
-      /**
-       * Strip `?post=` / `?track=` before any early return so sort handlers still clear stale links
-       * when URL sort already matches state (e.g. `?post=&sort=newest` while on Newest).
-       */
-      if (homeSearchHasPostOrTrack(search)) {
-        const beforeUrl = typeof window !== "undefined" ? window.location.href : "";
-        const nextPath = buildHomePathPreservingNonPostParams(search);
-        homeDeeplinkDebug("handleFeedSortChange: clearing post/track", {
-          mode,
-          sortModeBefore: sortMode,
-          beforeUrl,
-          nextPath,
-        });
-        navigate(nextPath, { replace: true });
-        lastScrolledPostId.current = null;
-        mergeAttemptedForPostId.current.clear();
-        clearDeepLinkWatchdog();
-      }
-
       if (mode === sortMode && !randomViewExiting) return;
 
       if (mode !== "random" && sortMode === "random") {
@@ -779,6 +664,7 @@ export default function Home() {
             setIdentificationFilter("all");
             setSelectedGenres([]);
           }
+          traceSortTap("sort/handleFeedSortChange(random-exit-delayed)");
           setSortMode(mode);
           setRandomViewExiting(false);
         }, RANDOM_DICE_RAIL_EXIT_MS);
@@ -793,9 +679,10 @@ export default function Home() {
       if (mode === "random") {
         setIdentificationFilter("unidentified");
       }
+      traceSortTap("sort/handleFeedSortChange(immediate)");
       setSortMode(mode);
     },
-    [sortMode, randomViewExiting, search, navigate, clearDeepLinkWatchdog],
+    [sortMode, randomViewExiting],
   );
 
   useEffect(() => {
@@ -987,221 +874,14 @@ export default function Home() {
     });
   }, [posts, identificationFilter, selectedGenres, sortMode]);
 
-  const uiPostsRef = useRef<PostWithUser[]>([]);
-  uiPostsRef.current = uiPosts;
+  const uiPostsNewest201TraceRef = useRef(uiPosts);
+  uiPostsNewest201TraceRef.current = uiPosts;
 
-  /** Prior `uiPosts` id sequence for same-feed order restore (Hottest like bumps); reset on feed chrome change. */
-  const prevUiPostsOrderKeyRef = useRef<string | null>(null);
-
-  const logHomeActivePostId = useCallback(
-    (source: string, nextId: string | null, prevId: string | null) => {
-      const el = videoFeedRef.current;
-      const posts = uiPostsRef.current;
-      const first = posts[0];
-      let firstOffsetTop: number | undefined;
-      let staleTargetOffsetTop: number | undefined;
-      try {
-        if (first && el) {
-          const esc =
-            typeof CSS !== "undefined" && typeof CSS.escape === "function"
-              ? CSS.escape(first.id)
-              : first.id;
-          const n = el.querySelector<HTMLElement>(`[data-post-id="${esc}"]`);
-          firstOffsetTop = n?.offsetTop;
-        }
-        if (el) {
-          const escStale =
-            typeof CSS !== "undefined" && typeof CSS.escape === "function"
-              ? CSS.escape(STALE_ACTIVE_POST_DEBUG_ID)
-              : STALE_ACTIVE_POST_DEBUG_ID;
-          const staleN = el.querySelector<HTMLElement>(`[data-post-id="${escStale}"]`);
-          staleTargetOffsetTop = staleN?.offsetTop;
-        }
-      } catch {
-        /* ignore */
-      }
-      homeDeeplinkDebug(`setActivePostId: ${source}`, {
-        source,
-        nextId,
-        prevId,
-        sortMode,
-        scrollTop: el?.scrollTop,
-        firstPostId: first?.id,
-        firstOffsetTop,
-        staleTargetOffsetTop,
-        forceTopAfterChromeChange: forceTopAfterChromeChangeRef.current,
-      });
-    },
-    [sortMode],
-  );
-
-  const setHomeActivePostId = useCallback(
-    (nextId: string | null, source: string) => {
-      setActivePostId((prev) => {
-        if (nextId === prev) return prev;
-        activePostIdRef.current = nextId;
-        logHomeActivePostId(source, nextId, prev);
-        return nextId;
-      });
-    },
-    [logHomeActivePostId],
-  );
-
-  const patchHomeActivePostId = useCallback(
-    (updater: (prev: string | null) => string | null, source: string) => {
-      setActivePostId((prev) => {
-        const nextId = updater(prev);
-        if (nextId === prev) return prev;
-        activePostIdRef.current = nextId;
-        logHomeActivePostId(source, nextId, prev);
-        return nextId;
-      });
-    },
-    [logHomeActivePostId],
-  );
-
-  useLayoutEffect(() => {
-    activePostIdRef.current = activePostId;
-  }, [activePostId]);
-
-  /**
-   * On Hottest ↔ Newest (or identification/genre filter) changes, reset scroll + active id before
-   * order-restore runs — otherwise {@link prevUiPostsOrderKeyRef} snaps back to the old
-   * `activePostId` and fights “scroll to top” + URL stripping.
-   */
-  useLayoutEffect(() => {
-    if (sortMode === "random") return;
-    const cur = {
-      sortMode,
-      identificationFilter,
-      genresKey,
-      manualResetNonce: feedManualResetNonce,
-    };
-    const prev = feedChromeLayoutRef.current;
-    feedChromeLayoutRef.current = cur;
-    if (prev === null) return;
-    const changed =
-      prev.sortMode !== cur.sortMode ||
-      prev.identificationFilter !== cur.identificationFilter ||
-      prev.genresKey !== cur.genresKey ||
-      prev.manualResetNonce !== cur.manualResetNonce;
-    if (!changed) return;
-    forceTopAfterChromeChangeRef.current = true;
-    forceTopTargetPostIdRef.current = null;
-    prevUiPostsOrderKeyRef.current = null;
-    homeFeedActivateFirstAfterDeleteRef.current = false;
-    const el = videoFeedRef.current;
-    if (el) el.scrollTop = 0;
-    setHomeActivePostId(null, "feed-chrome-layout-reset");
-    setHighlightedPostId(null);
-    lastScrolledPostId.current = null;
-    const epoch = bumpDubhubHomeMediaEpoch("home-feed-sort-filter-layout-reset");
-    if (epoch > 0) setHomeMediaEpoch(epoch);
-    homeDeeplinkDebug("layout: sort/filter changed → scrollTop=0, activePostId=null, epoch", {
-      prev,
-      cur,
-      epoch,
-    });
-    homeRuntimeAuditLog("H5", "home.tsx:feed-chrome-layout-reset", "sort/filter changed and forceTop armed", {
-      sortMode: cur.sortMode,
-      feedManualResetNonce: cur.manualResetNonce,
-      activePostIdBeforeReset: activePostIdRef.current,
-      forceTopAfterChrome: forceTopAfterChromeChangeRef.current,
-      isPlaceholderData,
-      uiPosts0: uiPostsRef.current[0]?.id ?? null,
-      uiPostsLen: uiPostsRef.current.length,
-      mediaEpoch: epoch,
-    });
-  }, [sortMode, identificationFilter, genresKey, feedManualResetNonce, setHomeActivePostId]);
-
-  /**
-   * After feed chrome change: scroll to the first real row for the active query and pin active to
-   * `uiPosts[0]` once placeholder data is gone — avoids nearest-from-scroll / order-restore using a
-   * stale scroll offset or prior active id.
-   */
-  useLayoutEffect(() => {
-    if (sortMode === "random") return;
-    if (!forceTopAfterChromeChangeRef.current) return;
-    if (uiPosts.length === 0) {
-      homeRuntimeAuditLog("H5", "home.tsx:force-top-after-chrome", "forceTop blocked: uiPosts empty", {
-        sortMode,
-        isPlaceholderData,
-        forceTopAfterChrome: forceTopAfterChromeChangeRef.current,
-      });
-      return;
-    }
-    if (isPlaceholderData) {
-      homeRuntimeAuditLog("H2", "home.tsx:force-top-after-chrome", "forceTop blocked: placeholder data", {
-        sortMode,
-        uiPosts0: uiPosts[0]?.id ?? null,
-        suppressPlaceholderFeedRows,
-        forceTopAfterChrome: forceTopAfterChromeChangeRef.current,
-      });
-      return;
-    }
-
-    const el = videoFeedRef.current;
-    if (!el) return;
-    const firstId = uiPosts[0]!.id;
-    const escaped =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(firstId)
-        : firstId;
-    const firstEl = el.querySelector<HTMLElement>(`[data-post-id="${escaped}"]`);
-    if (!firstEl) {
-      homeRuntimeAuditLog("H1", "home.tsx:force-top-after-chrome", "forceTop blocked: first row missing in DOM", {
-        firstId,
-        domPostIdCount: el.querySelectorAll("[data-post-id]").length,
-        domVideoCount: el.querySelectorAll("video").length,
-      });
-      return;
-    }
-
-    const targetTop = firstEl.offsetTop;
-    el.scrollTo({ top: targetTop, behavior: "auto" });
-    // Stage target + mirror ref now; completion is finalized only after `activePostId` catches up.
-    forceTopTargetPostIdRef.current = firstId;
-    activePostIdRef.current = firstId;
-    setHomeActivePostId(firstId, "force-top-after-chrome");
-  }, [sortMode, uiPosts, isPlaceholderData, setHomeActivePostId]);
-
-  useLayoutEffect(() => {
-    if (sortMode === "random") return;
-    if (!forceTopAfterChromeChangeRef.current) return;
-    const targetId = forceTopTargetPostIdRef.current;
-    if (!targetId) return;
-    if (activePostId !== targetId) return;
-    const el = videoFeedRef.current;
-    prevUiPostsOrderKeyRef.current = uiPosts.map((p) => p.id).join("\0");
-    forceTopAfterChromeChangeRef.current = false;
-    forceTopTargetPostIdRef.current = null;
-    homeRuntimeAuditLog("H4", "home.tsx:force-top-after-chrome", "forceTop completed with first row activation", {
-      firstId: targetId,
-      scrollTopAfter: el?.scrollTop ?? null,
-      activePostIdRef: activePostIdRef.current,
-      activeIndexAfter: uiPosts.findIndex((p) => p.id === targetId),
-    });
-  }, [sortMode, activePostId, uiPosts]);
-
-  /** After delete: scroll is at top + refetch done; activate first row once `uiPosts` has items. */
-  useLayoutEffect(() => {
-    if (sortMode === "random") return;
-    if (!homeFeedActivateFirstAfterDeleteRef.current) return;
-    if (uiPosts.length > 0) {
-      setHomeActivePostId(uiPosts[0]!.id, "delete-flow-first-post");
-      homeFeedActivateFirstAfterDeleteRef.current = false;
-      return;
-    }
-    if (!postsQuery.isFetching && posts.length === 0 && !isInitialFeedLoad) {
-      homeFeedActivateFirstAfterDeleteRef.current = false;
-    }
-  }, [uiPosts, sortMode, posts.length, postsQuery.isFetching, isInitialFeedLoad, setHomeActivePostId]);
-
-  /** Hide stale placeholder pages after feed chrome change until real query data replaces placeholderData. */
+  /** Hide stale placeholder rows after sort/filter change until real query data arrives. */
   const suppressPlaceholderFeedRows =
     sortMode !== "random" &&
-    Boolean(isPlaceholderData) &&
-    forceTopAfterChromeChangeRef.current;
+    feedChromeResetPending &&
+    Boolean(isPlaceholderData);
 
   const shouldShowFeedEndCard =
     sortMode !== "random" &&
@@ -1219,43 +899,49 @@ export default function Home() {
     uiPosts.length > 0 &&
     !suppressPlaceholderFeedRows;
 
+  useEffect(() => {
+    const el = videoFeedRef.current;
+    const u = uiPostsNewest201TraceRef.current;
+    newest201Trace("uiPosts/after-recalc", {
+      sortMode,
+      uiPosts0Id: u[0]?.id ?? null,
+      uiPosts0Title: (u[0] as PostWithUser | undefined)?.title ?? null,
+      uiPosts0CreatedAt: u[0]?.createdAt ?? null,
+      index201: newest201IndexOf(u),
+      activePostId,
+      isPlaceholderData,
+      suppressPlaceholderFeedRows,
+      postsLength: posts.length,
+      uiPostsLength: u.length,
+      scrollTop: el?.scrollTop ?? null,
+    });
+  }, [uiPosts, sortMode, activePostId, isPlaceholderData, suppressPlaceholderFeedRows, posts.length]);
+
+  const tracePrevSortModeRef = useRef<FeedSortMode>(sortMode);
+  useEffect(() => {
+    const prev = tracePrevSortModeRef.current;
+    if (prev !== sortMode) {
+      const el = videoFeedRef.current;
+      const u = uiPostsNewest201TraceRef.current;
+      newest201Trace("sort/sortMode-commit", {
+        previousSortMode: prev,
+        currentSortMode: sortMode,
+        activePostId,
+        uiPosts0Id: u[0]?.id ?? null,
+        index201: newest201IndexOf(u),
+        scrollTop: el?.scrollTop ?? null,
+        href: typeof window !== "undefined" ? window.location.href : "",
+        search,
+        hash: typeof window !== "undefined" ? window.location.hash : "",
+      });
+    }
+    tracePrevSortModeRef.current = sortMode;
+  }, [sortMode, activePostId, uiPosts, search]);
+
   const activePostIndex = useMemo(
     () => (activePostId ? uiPosts.findIndex((post) => post.id === activePostId) : -1),
     [uiPosts, activePostId],
   );
-
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      if (sessionStorage.getItem("dubhub_stale_post_debug") !== "1") return;
-      if (activePostId !== STALE_ACTIVE_POST_DEBUG_ID) return;
-      const stack = new Error("[Home] stale active post id").stack;
-      homeDeeplinkDebug("STALE_ACTIVE_POST_DEBUG_ID observed on activePostId", {
-        activePostId,
-        stack,
-        search,
-        windowSearch: typeof window !== "undefined" ? window.location.search : "",
-        sortMode,
-        activeIndex: uiPosts.findIndex((p) => p.id === activePostId),
-        uiPostsLen: uiPosts.length,
-        lastScrolledPostId: lastScrolledPostId.current,
-        highlightedPostId,
-        homeMediaEpoch,
-        sessionKeysSample: Object.keys(sessionStorage).filter(
-          (k) => k.includes("dubhub") || k.includes("post"),
-        ),
-      });
-    } catch {
-      /* ignore */
-    }
-  }, [
-    activePostId,
-    search,
-    sortMode,
-    uiPosts,
-    highlightedPostId,
-    homeMediaEpoch,
-  ]);
   useEffect(() => {
     const pages = pagedPosts?.pages ?? [];
     const lastPage = pages.length > 0 ? pages[pages.length - 1] : null;
@@ -1272,188 +958,50 @@ export default function Home() {
 
   /** Until `activePostId` matches the scroll snap target, avoid treating every tile as distance 0 (that forced `preload=auto` + src on the entire feed). */
   const feedPreloadAnchorIndex = activePostIndex >= 0 ? activePostIndex : 0;
-  /** Pure render-time force-top mode used for both mount/load anchor and pending visual prop. */
-  const forceTopRenderMode =
-    sortMode !== "random" &&
-    (forceTopAfterChromeChangeRef.current || (uiPosts.length > 0 && activePostIndex < 0));
-  /** Force-top window: render/load anchor uses top row so row 0 mounts as full VideoCard immediately. */
-  const feedRenderAnchorIndex = forceTopRenderMode ? 0 : feedPreloadAnchorIndex;
-
-  useLayoutEffect(() => {
-    if (!homeRuntimeAuditEnabled()) return;
-    if (sortMode === "random") return;
-    const snapshot = pendingForceTopCardSnapshotRef.current;
-    if (!snapshot) return;
-    homeRuntimeAuditLog(
-      "H1",
-      "home.tsx:pending-force-top-card-prop",
-      "top-row pending force-top prop snapshot",
-      snapshot,
-    );
-  }, [
-    sortMode,
-    activePostId,
-    activePostIndex,
-    feedRenderAnchorIndex,
-    feedPreloadAnchorIndex,
-    uiPosts,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!homeRuntimeAuditEnabled()) return;
-    if (sortMode === "random") return;
-    const feedEl = videoFeedRef.current;
-    if (!feedEl) return;
-    const topNode =
-      Array.from(feedEl.querySelectorAll<HTMLElement>("[data-post-id]")).find(
-        (n) => Math.abs(n.offsetTop - feedEl.scrollTop) <= 2,
-      ) ?? null;
-    const topNodePostId = topNode?.dataset.postId ?? null;
-    const topNodeHasVideo = !!topNode?.querySelector("video");
-    const topNodeHasCardMeta = !!topNode?.querySelector("[data-feed-vignette='1']");
-    const topNodeHasMuteButton = !!topNode?.querySelector("[data-testid='button-toggle-mute']");
-    const topVideo = topNode?.querySelector<HTMLVideoElement>("video") ?? null;
-    const playingVideo = Array.from(feedEl.querySelectorAll<HTMLVideoElement>("video")).find((v) => !v.paused) ?? null;
-    const playingVideoContainer = playingVideo?.closest<HTMLElement>("[data-post-id]") ?? null;
-    const genreBackdropVisible = !!document.querySelector("[data-radix-popper-content-wrapper]");
-    homeRuntimeAuditLog("H1", "home.tsx:top-row-dom-snapshot", "top-row render ownership snapshot", {
-      sortMode,
-      activePostId,
-      activeIndex: activePostIndex,
-      feedPreloadAnchorIndex,
-      feedRenderAnchorIndex,
-      suppressPlaceholderFeedRows,
-      forceTopAfterChrome: forceTopAfterChromeChangeRef.current,
-      topNodePostId,
-      topNodeHasVideo,
-      topNodeHasCardMeta,
-      topNodeHasMuteButton,
-      topNodeVideoReadyFlag: topNode?.dataset.videoReady ?? null,
-      topNodeVideoOverlayVisibleFlag: topNode?.dataset.videoOverlayVisible ?? null,
-      topNodeVideoHasSrcFlag: topNode?.dataset.videoHasSrc ?? null,
-      topNodePendingForceTopCardFlag: topNode?.dataset.pendingForceTopCard ?? null,
-      topNodeOverlayIntendedVisibleFlag: topNode?.dataset.overlayIntendedVisible ?? null,
-      topNodeShowLoadingFallbackFlag: topNode?.dataset.showLoadingFallback ?? null,
-      topVideoPaused: topVideo?.paused ?? null,
-      topVideoReadyState: topVideo?.readyState ?? null,
-      topVideoCurrentSrcPresent: topVideo?.currentSrc ? "1" : "0",
-      topVideoCurrentTime: topVideo ? Math.round(topVideo.currentTime * 1000) / 1000 : null,
-      topVideoOpacity: topVideo ? window.getComputedStyle(topVideo).opacity : null,
-      topNodeTagName: topNode?.tagName ?? null,
-      topNodeClass: topNode?.className ?? null,
-      playingPostId: playingVideoContainer?.dataset.postId ?? null,
-      playingCurrentSrc: playingVideo?.currentSrc ? "[present]" : null,
-      uiPosts0: uiPosts[0]?.id ?? null,
-      uiPostsLen: uiPosts.length,
-      genreBackdropVisible,
-      shouldTopLoadVideo:
-        topNodePostId && uiPosts.length > 0
-          ? (() => {
-              const topIndex = uiPosts.findIndex((p) => p.id === topNodePostId);
-              if (topIndex < 0) return null;
-              const distanceToActive = Math.abs(topIndex - feedRenderAnchorIndex);
-              return distanceToActive <= 1;
-            })()
-          : null,
-      shouldTopMountVideoCard:
-        topNodePostId && uiPosts.length > 0
-          ? (() => {
-              const topIndex = uiPosts.findIndex((p) => p.id === topNodePostId);
-              if (topIndex < 0) return null;
-              const distanceToActive = Math.abs(topIndex - feedRenderAnchorIndex);
-              return distanceToActive <= HOME_FEED_VIDEO_MOUNT_RADIUS;
-            })()
-          : null,
-    });
-  }, [
-    sortMode,
-    activePostId,
-    activePostIndex,
-    feedPreloadAnchorIndex,
-    feedRenderAnchorIndex,
-    suppressPlaceholderFeedRows,
-    uiPosts,
-  ]);
-
-  /** Session: `sessionStorage.setItem('dubhub_feed_sort_audit','1')` — concise trace for Newest↔Hottest regressions (no spam by default). */
-  useLayoutEffect(() => {
-    if (sortMode === "random") return;
-    try {
-      if (typeof sessionStorage === "undefined") return;
-      if (sessionStorage.getItem("dubhub_feed_sort_audit") !== "1") return;
-    } catch {
-      return;
-    }
-    const feedEl = videoFeedRef.current;
-    const domIds = feedEl
-      ? Array.from(feedEl.querySelectorAll<HTMLElement>("[data-post-id]")).map((n) => n.dataset.postId ?? "")
-      : [];
-    console.log("[DubHub][Home][feed-audit]", {
-      sortMode,
-      activePostId,
-      activeIndex: activePostIndex,
-      uiPosts0: uiPosts[0]?.id ?? null,
-      uiPostsLen: uiPosts.length,
-      suppressPlaceholderFeedRows,
-      forceTopAfterChrome: forceTopAfterChromeChangeRef.current,
-      isPlaceholderData,
-      homeMediaEpoch,
-      feedPreloadAnchorIndex,
-      domPostIds: domIds.slice(0, 6),
-      domPostIdCount: domIds.length,
-    });
-  }, [
-    sortMode,
-    activePostId,
-    activePostIndex,
-    uiPosts.length,
-    uiPosts[0]?.id,
-    suppressPlaceholderFeedRows,
-    isPlaceholderData,
-    homeMediaEpoch,
-    feedPreloadAnchorIndex,
-  ]);
 
   useLayoutEffect(() => {
     if (!isAppForegroundActive) return;
     if (sortMode === "random" || uiPosts.length === 0) return;
-    if (forceTopAfterChromeChangeRef.current) return;
+    if (isPlaceholderData || suppressPlaceholderFeedRows) return;
     const el = videoFeedRef.current;
-    const st = el?.scrollTop ?? 0;
-    const nearest = el
-      ? nearestAllowedFeedPostId(el, uiPosts, st)
-      : (uiPosts[0]?.id ?? null);
-    if (!nearest) return;
-
-    const valid = isValidHomeActivePostId(activePostId, uiPosts);
-
-    if (!valid && nearest !== activePostId) {
-      const wasStaleFeedPost =
-        !!activePostId &&
-        activePostId !== HOME_FEED_END_CARD_ID &&
-        !uiPosts.some((p) => p.id === activePostId);
-      const prevActive = activePostId;
-
-      setHomeActivePostId(nearest, "active-reconcile-nearest");
-
-      if (wasStaleFeedPost && nearest !== HOME_FEED_END_CARD_ID) {
-        const epoch = bumpDubhubHomeMediaEpoch("home-feed-active-reconcile");
-        if (epoch > 0) setHomeMediaEpoch(epoch);
-        const idxAfter = uiPosts.findIndex((p) => p.id === nearest);
-        homeDeeplinkDebug("active repair after stale id (e.g. delete)", {
-          prevActive,
-          nearest,
-          activeIndexAfter: idxAfter,
-          scrollTop: el?.scrollTop,
-          mediaEpoch: epoch,
-        });
+    const pickNearestPostId = (): string => {
+      if (!el) return uiPosts[0]!.id;
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
+      if (nodes.length === 0) return uiPosts[0]!.id;
+      const st = el.scrollTop;
+      let bestId = uiPosts[0]!.id;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const n of nodes) {
+        const id = n.dataset.postId;
+        if (!id) continue;
+        const d = Math.abs(st - n.offsetTop);
+        if (d < bestDist) {
+          bestDist = d;
+          bestId = id;
+        }
       }
+      return bestId;
+    };
+    const nearest = pickNearestPostId();
+    const valid = !!activePostId && uiPosts.some((p) => p.id === activePostId);
+    if (!valid && nearest !== activePostId) {
+      newest201Trace("setActivePostId/active-reconcile", {
+        sortMode,
+        prev: activePostId,
+        next: nearest,
+        uiPosts0: uiPosts[0]?.id ?? null,
+        scrollTop: el?.scrollTop ?? null,
+        index201: newest201IndexOf(uiPosts),
+        valid,
+        nearest,
+      });
+      setActivePostId(nearest);
     }
-  }, [sortMode, uiPosts, activePostId, isAppForegroundActive, setHomeActivePostId]);
+  }, [sortMode, uiPosts, activePostId, isAppForegroundActive, isPlaceholderData, suppressPlaceholderFeedRows]);
   const plainVideoDiagEnabled =
     typeof window !== "undefined" && sessionStorage.getItem("dubhub_plain_video_diag") === "1";
   const plainVideoDiagPost = useMemo(() => {
-    if (!plainVideoDiagEnabled || uiPosts.length === 0 || suppressPlaceholderFeedRows) return null;
+    if (!plainVideoDiagEnabled || uiPosts.length === 0) return null;
     const p = uiPosts[0];
     const rawUrl =
       (p.videoUrl && String(p.videoUrl)) ||
@@ -1462,7 +1010,7 @@ export default function Home() {
     const resolved = resolveMediaUrl(rawUrl) || "";
     if (!resolved) return null;
     return { postId: p.id, videoUrl: resolved };
-  }, [plainVideoDiagEnabled, uiPosts, suppressPlaceholderFeedRows]);
+  }, [plainVideoDiagEnabled, uiPosts]);
 
   const pauseFeedPlaybackForBackground = useCallback(() => {
     const feedRoot = videoFeedRef.current;
@@ -1486,8 +1034,16 @@ export default function Home() {
         /* ignore */
       }
     }
-    setHomeActivePostId(null, "pause-feed-background");
-  }, [setHomeActivePostId]);
+    newest201Trace("setActivePostId/pause-feed-background", {
+      sortMode: newest201SortModeRef.current,
+      prev: newest201ActivePostIdRef.current,
+      next: null as string | null,
+      uiPosts0: uiPostsNewest201TraceRef.current[0]?.id ?? null,
+      scrollTop: videoFeedRef.current?.scrollTop ?? null,
+      index201: newest201IndexOf(uiPostsNewest201TraceRef.current),
+    });
+    setActivePostId(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1628,10 +1184,47 @@ export default function Home() {
 
   /**
    * Hottest mode re-sorts client-side when like counts change; scrollTop stays fixed so the viewport
-   * can land on the wrong post. After **pure** order changes (same sort + filters), snap back to the
-   * post the user was viewing. Skip when sort or filters changed — that case is handled by
-   * {@link feedChromeLayoutRef} reset + scroll-to-top, not by jumping to the previous `activePostId`.
+   * can land on the wrong post. After any feed order change, snap back to the post the user was
+   * viewing (activePostId) before paint.
    */
+  const prevUiPostsOrderKeyRef = useRef<string | null>(null);
+
+  // Sort/filter: scroll to top + reset active/highlight before paint so order-restore and
+  // nearest-active logic never run against a stale viewport or treat a chrome change as pure reorder.
+  useLayoutEffect(() => {
+    if (sortMode === "random") return;
+    const el = videoFeedRef.current;
+    const u = uiPostsNewest201TraceRef.current;
+    const scrollBefore = el?.scrollTop ?? null;
+    if (el) {
+      el.scrollTo({ top: 0, behavior: "auto" });
+    }
+    const scrollAfter = el?.scrollTop ?? null;
+    newest201Trace("scroll/sort-filter-reset", {
+      targetTop: 0,
+      scrollTopBefore: scrollBefore,
+      scrollTopAfter: scrollAfter,
+      activePostId: newest201ActivePostIdRef.current,
+      uiPosts0: u[0]?.id ?? null,
+      index201: newest201IndexOf(u),
+      sortMode,
+    });
+    setHighlightedPostId(null);
+    lastScrolledPostId.current = null;
+    newest201Trace("setActivePostId/feed-chrome-reset", {
+      sortMode,
+      prev: newest201ActivePostIdRef.current,
+      next: null as string | null,
+      uiPosts0: u[0]?.id ?? null,
+      scrollTop: el?.scrollTop ?? scrollAfter,
+      index201: newest201IndexOf(u),
+    });
+    setActivePostId(null);
+    prevUiPostsOrderKeyRef.current = null;
+    feedChromeResetPendingRef.current = true;
+    setFeedChromeResetPending(true);
+  }, [sortMode, identificationFilter, genresKey]);
+
   useLayoutEffect(() => {
     if (sortMode === "random") return;
     const chromeKeyNow = `${sortMode}\0${identificationFilter}\0${genresKey}`;
@@ -1639,14 +1232,14 @@ export default function Home() {
     prevFeedChromeKeyRef.current = chromeKeyNow;
 
     const orderKey = uiPosts.map((p) => p.id).join("\0");
-    const prevOrder = prevUiPostsOrderKeyRef.current;
+    const prev = prevUiPostsOrderKeyRef.current;
     prevUiPostsOrderKeyRef.current = orderKey;
 
     if (prevChromeKey !== null && chromeKeyNow !== prevChromeKey) return;
 
-    if (forceTopAfterChromeChangeRef.current) return;
+    if (isPlaceholderData || suppressPlaceholderFeedRows) return;
 
-    if (prevOrder === null || prevOrder === orderKey || !activePostId) return;
+    if (prev === null || prev === orderKey || !activePostId) return;
 
     const el = videoFeedRef.current;
     if (!el) return;
@@ -1660,8 +1253,36 @@ export default function Home() {
 
     const targetTop = node.offsetTop;
     if (Math.abs(el.scrollTop - targetTop) <= 2) return;
+    const u = uiPostsNewest201TraceRef.current;
+    const scrollBefore = el.scrollTop;
+    newest201Trace("scroll/order-restore", {
+      targetTop,
+      targetPostId: activePostId,
+      activePostId,
+      uiPosts0: u[0]?.id ?? null,
+      index201: newest201IndexOf(u),
+      scrollTopBefore: scrollBefore,
+      prevChromeKey,
+      chromeKeyNow,
+      prevOrderNull: prev === null,
+    });
     el.scrollTo({ top: targetTop, behavior: "auto" });
-  }, [uiPosts, activePostId, sortMode, identificationFilter, genresKey]);
+    newest201Trace("scroll/order-restore-after", {
+      targetTop,
+      targetPostId: activePostId,
+      scrollTopAfter: el.scrollTop,
+      activePostId,
+      uiPosts0: u[0]?.id ?? null,
+    });
+  }, [
+    uiPosts,
+    activePostId,
+    sortMode,
+    identificationFilter,
+    genresKey,
+    isPlaceholderData,
+    suppressPlaceholderFeedRows,
+  ]);
 
   const handleHomeFeedPullRefresh = useCallback(async () => {
     const result = await refetchPosts();
@@ -1695,16 +1316,49 @@ export default function Home() {
 
   const scrollFeedToFirstPost = useCallback(() => {
     const el = videoFeedRef.current;
+    const u = uiPostsNewest201TraceRef.current;
     if (!el) return;
     if (sortMode === "random") {
+      const sb = el.scrollTop;
       el.scrollTo({ top: 0, behavior: "smooth" });
+      newest201Trace("scroll/scrollFeedToFirstPost", {
+        branch: "random",
+        targetTop: 0,
+        scrollTopBefore: sb,
+        scrollTopAfter: el.scrollTop,
+        activePostId: newest201ActivePostIdRef.current,
+        uiPosts0: u[0]?.id ?? null,
+        index201: newest201IndexOf(u),
+      });
       return;
     }
     const first = el.querySelector<HTMLElement>("[data-post-id]");
     if (first) {
-      el.scrollTo({ top: first.offsetTop, behavior: "smooth" });
+      const sb = el.scrollTop;
+      const tt = first.offsetTop;
+      el.scrollTo({ top: tt, behavior: "smooth" });
+      newest201Trace("scroll/scrollFeedToFirstPost", {
+        branch: "sorted-first-offsetTop",
+        targetTop: tt,
+        targetPostId: first.dataset.postId ?? null,
+        scrollTopBefore: sb,
+        scrollTopAfter: el.scrollTop,
+        activePostId: newest201ActivePostIdRef.current,
+        uiPosts0: u[0]?.id ?? null,
+        index201: newest201IndexOf(u),
+      });
     } else {
+      const sb = el.scrollTop;
       el.scrollTo({ top: 0, behavior: "smooth" });
+      newest201Trace("scroll/scrollFeedToFirstPost", {
+        branch: "sorted-fallback-top0",
+        targetTop: 0,
+        scrollTopBefore: sb,
+        scrollTopAfter: el.scrollTop,
+        activePostId: newest201ActivePostIdRef.current,
+        uiPosts0: u[0]?.id ?? null,
+        index201: newest201IndexOf(u),
+      });
     }
   }, [sortMode]);
 
@@ -1718,9 +1372,20 @@ export default function Home() {
 
     const handler = () => {
       const el = videoFeedRef.current;
+      const u = uiPostsNewest201TraceRef.current;
       if (sortMode === "random") {
         if (el && el.scrollTop > TOP_SCROLL_EPSILON) {
+          const sb = el.scrollTop;
           el.scrollTo({ top: 0, behavior: "smooth" });
+          newest201Trace("scroll/while-on-home-handler", {
+            branch: "random-to-top",
+            targetTop: 0,
+            scrollTopBefore: sb,
+            scrollTopAfter: el.scrollTop,
+            activePostId: newest201ActivePostIdRef.current,
+            uiPosts0: u[0]?.id ?? null,
+            index201: newest201IndexOf(u),
+          });
         }
         return;
       }
@@ -1730,9 +1395,31 @@ export default function Home() {
       if (!isHomeFeedSnappedToFirstPost(el)) {
         const first = el.querySelector<HTMLElement>("[data-post-id]");
         if (first) {
-          el.scrollTo({ top: first.offsetTop, behavior: "smooth" });
+          const sb = el.scrollTop;
+          const tt = first.offsetTop;
+          el.scrollTo({ top: tt, behavior: "smooth" });
+          newest201Trace("scroll/while-on-home-handler", {
+            branch: "sorted-scroll-to-first",
+            targetTop: tt,
+            targetPostId: first.dataset.postId ?? null,
+            scrollTopBefore: sb,
+            scrollTopAfter: el.scrollTop,
+            activePostId: newest201ActivePostIdRef.current,
+            uiPosts0: u[0]?.id ?? null,
+            index201: newest201IndexOf(u),
+          });
         } else {
+          const sb = el.scrollTop;
           el.scrollTo({ top: 0, behavior: "smooth" });
+          newest201Trace("scroll/while-on-home-handler", {
+            branch: "sorted-fallback-top0",
+            targetTop: 0,
+            scrollTopBefore: sb,
+            scrollTopAfter: el.scrollTop,
+            activePostId: newest201ActivePostIdRef.current,
+            uiPosts0: u[0]?.id ?? null,
+            index201: newest201IndexOf(u),
+          });
         }
         return;
       }
@@ -1802,7 +1489,23 @@ export default function Home() {
       const n = nearestPostTop();
       if (!n) return;
       if (n.dist < 6 || n.dist > 80) return;
+      const u = uiPostsNewest201TraceRef.current;
+      const sb = el.scrollTop;
+      newest201Trace("scroll/touch-snap-nudge-scrollend", {
+        targetTop: n.top,
+        scrollTopBefore: sb,
+        activePostId: newest201ActivePostIdRef.current,
+        uiPosts0: u[0]?.id ?? null,
+        index201: newest201IndexOf(u),
+        nudgeDist: n.dist,
+      });
       el.scrollTo({ top: n.top, behavior: "smooth" });
+      newest201Trace("scroll/touch-snap-nudge-scrollend-after", {
+        targetTop: n.top,
+        scrollTopAfter: el.scrollTop,
+        activePostId: newest201ActivePostIdRef.current,
+        uiPosts0: u[0]?.id ?? null,
+      });
     };
 
     const gesture = {
@@ -1914,7 +1617,25 @@ export default function Home() {
 
         const targetTop = nodes[targetIndex].offsetTop;
         if (Math.abs(targetTop - endTop) < 4) return;
+        const u = uiPostsNewest201TraceRef.current;
+        const targetPostId = nodes[targetIndex]?.dataset.postId ?? null;
+        newest201Trace("scroll/touch-snap-nudge-touchend", {
+          targetTop,
+          targetPostId,
+          scrollTopBefore: endTop,
+          activePostId: newest201ActivePostIdRef.current,
+          uiPosts0: u[0]?.id ?? null,
+          index201: newest201IndexOf(u),
+          targetIndex,
+        });
         el.scrollTo({ top: targetTop, behavior: "smooth" });
+        newest201Trace("scroll/touch-snap-nudge-touchend-after", {
+          targetTop,
+          targetPostId,
+          scrollTopAfter: el.scrollTop,
+          activePostId: newest201ActivePostIdRef.current,
+          uiPosts0: u[0]?.id ?? null,
+        });
       };
 
       requestAnimationFrame(runFinish);
@@ -1941,23 +1662,23 @@ export default function Home() {
     const el = videoFeedRef.current;
     if (!el) return;
     if (sortMode === "random") {
-      setHomeActivePostId(
-        isAppForegroundActive ? (randomPost?.id ?? null) : null,
-        "random-mode-sync",
-      );
+      const nextRp = isAppForegroundActive ? (randomPost?.id ?? null) : null;
+      newest201Trace("setActivePostId/random-mode-sync", {
+        sortMode,
+        prev: newest201ActivePostIdRef.current,
+        next: nextRp,
+        uiPosts0: uiPostsNewest201TraceRef.current[0]?.id ?? null,
+        scrollTop: el.scrollTop,
+        index201: newest201IndexOf(uiPostsNewest201TraceRef.current),
+      });
+      setActivePostId(nextRp);
       return;
     }
 
     let raf: number | null = null;
     const applyActiveFromPosition = (committed: boolean) => {
-      if (forceTopAfterChromeChangeRef.current) return;
-      const allowed = new Set<string>([HOME_FEED_END_CARD_ID, ...uiPosts.map((p) => p.id)]);
-      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]")).filter(
-        (node) => {
-          const id = node.dataset.postId;
-          return !!id && allowed.has(id);
-        },
-      );
+      if (isPlaceholderData || suppressPlaceholderFeedRows) return;
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post-id]"));
       if (nodes.length === 0) return;
       const st = el.scrollTop;
       let bestId: string | null = null;
@@ -1971,7 +1692,24 @@ export default function Home() {
       }
       if (!bestId) return;
       if (committed || bestDist <= HOME_FEED_SNAP_ACTIVE_EPS_PX) {
-        patchHomeActivePostId((prev) => (prev === bestId ? prev : bestId), "scroll-snap-apply-active");
+        setActivePostId((prev) => {
+          const next = prev === bestId ? prev : bestId;
+          if (prev !== next) {
+            const u = uiPostsNewest201TraceRef.current;
+            newest201Trace("setActivePostId/scroll-applyActiveFromPosition", {
+              committed,
+              sortMode: newest201SortModeRef.current,
+              prev,
+              next,
+              bestId,
+              bestDist,
+              scrollTop: st,
+              uiPosts0: u[0]?.id ?? null,
+              index201: newest201IndexOf(u),
+            });
+          }
+          return next;
+        });
       }
     };
 
@@ -1995,7 +1733,14 @@ export default function Home() {
       el.removeEventListener("scrollend", onScrollEnd);
       el.removeEventListener("touchend", scheduleSnapAlignmentCheck);
     };
-  }, [sortMode, uiPosts, randomPost?.id, isAppForegroundActive, setHomeActivePostId, patchHomeActivePostId]);
+  }, [
+    sortMode,
+    uiPosts.length,
+    randomPost?.id,
+    isAppForegroundActive,
+    isPlaceholderData,
+    suppressPlaceholderFeedRows,
+  ]);
 
   const shuffleArray = <T,>(arr: T[]): T[] => {
     // Fisher-Yates shuffle
@@ -2167,63 +1912,6 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    const onPostDeleted = (event: Event) => {
-      const ce = event as CustomEvent<{ postId?: string }>;
-      const deletedId = ce.detail?.postId;
-      if (!deletedId) return;
-
-      homeDeeplinkDebug("post deleted event (home)", {
-        deletedId,
-        sortMode,
-        search,
-      });
-
-      if (sortMode !== "random") {
-        homeFeedActivateFirstAfterDeleteRef.current = true;
-        setHomeActivePostId(null, "delete-event-sorted");
-        setHighlightedPostId(null);
-        lastScrolledPostId.current = null;
-        const feedEl = videoFeedRef.current;
-        if (feedEl) feedEl.scrollTop = 0;
-        const epoch = bumpDubhubHomeMediaEpoch("home-feed-delete-reset");
-        if (epoch > 0) setHomeMediaEpoch(epoch);
-        void queryClient.refetchQueries({ queryKey: ["/api/posts"], exact: false });
-      } else {
-        patchHomeActivePostId((cur) => (cur === deletedId ? null : cur), "delete-event-random");
-      }
-
-      const urlPostId = getHomePostOrTrackId(search);
-      if (urlPostId === deletedId) {
-        const beforeUrl = typeof window !== "undefined" ? window.location.href : "";
-        const nextPath = buildHomePathPreservingNonPostParams(search);
-        navigate(nextPath, { replace: true });
-        lastScrolledPostId.current = null;
-        mergeAttemptedForPostId.current.delete(deletedId);
-        clearDeepLinkWatchdog();
-        deepLinkRandomExitForPostRef.current = null;
-        const epoch = bumpDubhubHomeMediaEpoch("home-feed-deleted-post-url-cleanup");
-        if (epoch > 0) setHomeMediaEpoch(epoch);
-        homeDeeplinkDebug("post deleted: cleared ?post / refs", {
-          deletedId,
-          beforeUrl,
-          nextPath,
-          epoch,
-        });
-      }
-
-      if (sortMode === "random" && randomPost?.id === deletedId) {
-        randomPoolRef.current = randomPoolRef.current.filter((p) => p.id !== deletedId);
-        randomSeenIdsRef.current.delete(deletedId);
-        setRandomPost(null);
-        void loadNextRandom({ afterRestart: true });
-      }
-    };
-    window.addEventListener(DUBHUB_POST_DELETED_EVENT, onPostDeleted as EventListener);
-    return () => window.removeEventListener(DUBHUB_POST_DELETED_EVENT, onPostDeleted as EventListener);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortMode, randomPost?.id, search, navigate, clearDeepLinkWatchdog, queryClient]);
-
   // Start a fresh random session when entering Random mode, or when the genre filter changes.
   useEffect(() => {
     if (sortMode !== "random") return;
@@ -2236,33 +1924,57 @@ export default function Home() {
 
   /** Genre menu dice: switching to Random delegates to {@link handleFeedSortChange}; tapping again starts a new session instead of silently no-op'ing while already Random. */
   const handleGenreMenuSortChange = (mode: FeedSortMode) => {
+    const el = videoFeedRef.current;
+    newest201Trace("sort/handleGenreMenuSortChange", {
+      requestedSortMode: mode,
+      previousSortMode: sortMode,
+      activePostId: newest201ActivePostIdRef.current,
+      scrollTop: el?.scrollTop ?? null,
+      href: typeof window !== "undefined" ? window.location.href : "",
+      search: typeof window !== "undefined" ? window.location.search : "",
+      hash: typeof window !== "undefined" ? window.location.hash : "",
+    });
     if (mode === "random" && sortMode === "random") {
       resetRandomSession();
       void loadNextRandom({ afterRestart: true });
       return;
     }
-    if (mode === "hottest" || mode === "newest") {
-      setFeedManualResetNonce((n) => n + 1);
-    }
     handleFeedSortChange(mode);
   };
 
-  // Sort/filter scroll reset + active id clear: `useLayoutEffect` on `feedChromeLayoutRef` above.
+  // Once real (non-placeholder) data arrives after a sort/filter change, lift the suppression.
+  useEffect(() => {
+    if (!feedChromeResetPendingRef.current) return;
+    if (isPlaceholderData) return;
+    feedChromeResetPendingRef.current = false;
+    setFeedChromeResetPending(false);
+  }, [isPlaceholderData]);
 
   // Handle scroll to specific post from notification / ?post= deep link, or merge post into feed when missing (e.g. not in first page under Hottest)
   useEffect(() => {
     const q = search.startsWith("?") ? search.slice(1) : search;
     const params = new URLSearchParams(q);
     const postId = params.get('post') || params.get('track'); // Support both for backward compatibility
+    const idParam = params.get("id");
+    newest201Trace("deepLink/url-scan", {
+      hasPostParam: !!params.get("post"),
+      hasTrackParam: !!params.get("track"),
+      hasIdParam: !!idParam,
+      postTrackId: postId,
+      idParam,
+      postTrackTargets201: postId === NEWEST_201_TRACE_POST_ID,
+      idParamTargets201: idParam === NEWEST_201_TRACE_POST_ID,
+      search,
+      hash: typeof window !== "undefined" ? window.location.hash : "",
+    });
 
-    if (postId) {
-      homeDeeplinkDebug("deep link effect: URL has post/track", {
-        postId,
-        search,
-        sortMode,
-        lastScrolledPostId: lastScrolledPostId.current,
-      });
-    }
+    const clearDeepLinkWatchdog = () => {
+      if (deepLinkWatchdogTimerRef.current) {
+        clearTimeout(deepLinkWatchdogTimerRef.current);
+        deepLinkWatchdogTimerRef.current = null;
+      }
+      deepLinkWatchdogForPostRef.current = null;
+    };
 
     // Path or query changed (e.g. submit success -> `/?post=<id>`): reset scroll/highlight timers.
     const locationChanged = location !== lastLocationRef.current;
@@ -2281,7 +1993,6 @@ export default function Home() {
       deepLinkRandomExitForPostRef.current = null;
       deepLinkTerminalHandledRef.current = null;
       clearDeepLinkWatchdog();
-      homeDeeplinkDebug("no post/track in URL — reset deep-link refs");
       return;
     }
 
@@ -2312,7 +2023,7 @@ export default function Home() {
         description: "Adjust genre or ID filters in the menu, then try opening the notification again.",
         variant: "destructive",
       });
-      navigate(buildHomePathPreservingNonPostParams(search), { replace: true });
+      navigate("/", { replace: true });
       return;
     }
 
@@ -2337,11 +2048,7 @@ export default function Home() {
             description: "Try again from Home or Notifications.",
             variant: "destructive",
           });
-          const curSearch =
-            typeof window !== "undefined" && window.location.search
-              ? window.location.search
-              : search;
-          navigate(buildHomePathPreservingNonPostParams(curSearch), { replace: true });
+          navigate("/", { replace: true });
         }
       }, 12000);
     };
@@ -2375,7 +2082,7 @@ export default function Home() {
                 description: "That link may point to a removed or private clip.",
                 variant: "destructive",
               });
-              navigate(buildHomePathPreservingNonPostParams(search), { replace: true });
+              navigate("/", { replace: true });
             }
             return;
           }
@@ -2411,7 +2118,7 @@ export default function Home() {
               description: "Couldn\u2019t load that clip. Try again later.",
               variant: "destructive",
             });
-            navigate(buildHomePathPreservingNonPostParams(search), { replace: true });
+            navigate("/", { replace: true });
           }
         }
       })();
@@ -2432,28 +2139,35 @@ export default function Home() {
         // Highlight the post
         setHighlightedPostId(postId);
         
+        // Scroll to the post using data-post-id attribute
         scrollTimeoutRef.current = setTimeout(() => {
-          const beforeUrl = typeof window !== "undefined" ? window.location.href : "";
           const postElement = document.querySelector(`[data-post-id="${postId}"]`);
           if (postElement && videoFeedRef.current) {
+            const feed = videoFeedRef.current;
+            const sb = feed.scrollTop;
+            newest201Trace("scroll/deep-link-scrollIntoView", {
+              postId,
+              targets201: postId === NEWEST_201_TRACE_POST_ID,
+              scrollTopBefore: sb,
+              activePostId: newest201ActivePostIdRef.current,
+              uiPosts0: uiPostsNewest201TraceRef.current[0]?.id ?? null,
+              index201: newest201IndexOf(uiPostsNewest201TraceRef.current),
+            });
             postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            newest201Trace("scroll/deep-link-scrollIntoView-after", {
+              postId,
+              scrollTopAfter: feed.scrollTop,
+              activePostId: newest201ActivePostIdRef.current,
+            });
           }
-          const liveSearch =
-            typeof window !== "undefined" && window.location.search
-              ? window.location.search
-              : search;
-          const nextPath = buildHomePathPreservingNonPostParams(liveSearch);
-          navigate(nextPath, { replace: true });
-          homeDeeplinkDebug("deep link resolved: scrolled target, stripped post/track from URL", {
-            postId,
-            beforeUrl,
-            nextPath,
-          });
-          highlightTimeoutRef.current = setTimeout(() => {
-            setHighlightedPostId(null);
-            lastScrolledPostId.current = null;
-          }, 3000);
         }, 100);
+        
+        // Remove highlight after 3 seconds, reset the last scrolled post, and clear query param
+        highlightTimeoutRef.current = setTimeout(() => {
+          setHighlightedPostId(null);
+          lastScrolledPostId.current = null;
+          navigate('/', { replace: true });
+        }, 3000);
       }
     }
   }, [
@@ -2467,7 +2181,6 @@ export default function Home() {
     sortMode,
     handleFeedSortChange,
     posts,
-    clearDeepLinkWatchdog,
   ]);
 
   // Cleanup timeouts on unmount
@@ -2734,84 +2447,52 @@ export default function Home() {
               labelClassName="text-sm text-muted-foreground"
             />
           </div>
-        ) : (
-          <>
-            {uiPosts.map((post, index) => {
-              const distanceToActive = Math.abs(index - feedRenderAnchorIndex);
-              const shouldLoadVideo = distanceToActive <= 1;
-              const videoPreload: "none" | "metadata" | "auto" =
-                distanceToActive === 0 ? "auto" : shouldLoadVideo ? "metadata" : "none";
-              const rowPostId = post.id;
-              const forceTopTargetPostId = forceTopTargetPostIdRef.current;
-              const forceTopAfterChrome = forceTopAfterChromeChangeRef.current;
-              const forceTopTargetMatchesThisRow = forceTopTargetPostId === rowPostId;
-              const isSortedFeedMode = sortMode !== "random";
-              const pendingForceTopCard =
-                index === 0 &&
-                isSortedFeedMode &&
-                (forceTopRenderMode || forceTopTargetMatchesThisRow);
-              if (index === 0) {
-                pendingForceTopCardSnapshotRef.current = {
-                  sortMode,
-                  postId: rowPostId,
-                  index,
-                  forceTopRenderMode,
-                  forceTopAfterChrome,
-                  forceTopTargetPostId,
-                  forceTopTargetMatchesThisRow,
-                  pendingForceTopCard,
-                  activePostId,
-                  activeIndex: activePostIndex,
-                  feedRenderAnchorIndex,
-                  feedPreloadAnchorIndex,
-                };
-              }
-              const homeTopRowAuditState = index === 0 && activePostId === null;
+        ) : uiPosts.map((post, index) => {
+          const distanceToActive = Math.abs(index - feedPreloadAnchorIndex);
+          const shouldLoadVideo = distanceToActive <= 1;
+          const videoPreload: "none" | "metadata" | "auto" =
+            distanceToActive === 0 ? "auto" : shouldLoadVideo ? "metadata" : "none";
 
-              const shouldMountVideoCard = distanceToActive <= HOME_FEED_VIDEO_MOUNT_RADIUS;
+          const shouldMountVideoCard = distanceToActive <= HOME_FEED_VIDEO_MOUNT_RADIUS;
 
-              if (!shouldMountVideoCard) {
-                return (
-                  <div
-                    key={post.id}
-                    data-post-id={post.id}
-                    className={`min-h-full h-full relative w-full shrink-0 snap-start snap-always [scroll-snap-stop:always] bg-black ${
-                      highlightedPostId === post.id ? "ring-4 ring-inset ring-primary" : ""
-                    }`}
-                  />
-                );
-              }
+          if (!shouldMountVideoCard) {
+            return (
+              <div
+                key={post.id}
+                data-post-id={post.id}
+                className={`min-h-full h-full relative w-full shrink-0 snap-start snap-always [scroll-snap-stop:always] bg-black ${
+                  highlightedPostId === post.id ? "ring-4 ring-inset ring-primary" : ""
+                }`}
+              />
+            );
+          }
 
-              return (
-                <VideoCard
-                  key={post.id}
-                  post={post}
-                  isHighlighted={highlightedPostId === post.id}
-                  isMuted={isFeedMuted}
-                  isActive={isAppForegroundActive && activePostId === post.id}
-                  pendingForceTopCard={pendingForceTopCard}
-                  homeTopRowAuditState={homeTopRowAuditState}
-                  shouldLoadVideo={shouldLoadVideo}
-                  videoPreload={videoPreload}
-                  homeFeedPosterFallback
-                  onToggleMute={toggleFeedMute}
-                  feedOverlayCollapsed={isFeedOverlayCollapsed}
-                  onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
-                  mediaEpoch={homeMediaEpoch}
-                  onCommentsOpened={() => {
-                    window.dispatchEvent(new CustomEvent(HINT_COMMENTS_OPENED_EVENT));
-                  }}
-                  onCommentsClosed={() => {
-                    window.dispatchEvent(new CustomEvent(HINT_COMMENTS_CLOSED_EVENT));
-                  }}
-                  onPostLiked={() => {
-                    window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
-                  }}
-                />
-              );
-            })}
-          </>
-        )}
+          return (
+            <VideoCard
+              key={post.id}
+              post={post}
+              isHighlighted={highlightedPostId === post.id}
+              isMuted={isFeedMuted}
+              isActive={isAppForegroundActive && activePostId === post.id}
+              shouldLoadVideo={shouldLoadVideo}
+              videoPreload={videoPreload}
+              homeFeedPosterFallback
+              onToggleMute={toggleFeedMute}
+              feedOverlayCollapsed={isFeedOverlayCollapsed}
+              onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
+              mediaEpoch={homeMediaEpoch}
+              onCommentsOpened={() => {
+                window.dispatchEvent(new CustomEvent(HINT_COMMENTS_OPENED_EVENT));
+              }}
+              onCommentsClosed={() => {
+                window.dispatchEvent(new CustomEvent(HINT_COMMENTS_CLOSED_EVENT));
+              }}
+              onPostLiked={() => {
+                window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
+              }}
+            />
+          );
+        })}
         {shouldShowFeedEndCard ? (
           <div
             key="home-feed-end-card"

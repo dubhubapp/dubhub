@@ -240,10 +240,15 @@ export async function probeDurationSeconds(filePath: string): Promise<number> {
 /** Match feed/native scale cap (~1080p class); avoids pointless server re-encode for client-trimmed H.264. */
 const PRETRIMMED_SKIP_MAX_LONG_EDGE_PX = 1920;
 
+/** When ffprobe reports per-stream `bit_rate` on the video stream, re-encode above this (bps). */
 const PRETRIMMED_SKIP_MAX_VIDEO_BITRATE = 8_000_000;
 
-/** Re-encode if measured container average exceeds this (~8 Mbps) despite codec hints. */
-const PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC = 8_000_000;
+/**
+ * Whole-file container average: (fileSizeBytes * 8) / durationSec.
+ * Higher than {@link PRETRIMMED_SKIP_MAX_VIDEO_BITRATE} so normal 1080p iPhone trims skip Railway transcode;
+ * capped (~15 Mbps) to limit beta feed egress/storage vs a fully permissive container ceiling.
+ */
+const PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC = 15_000_000;
 
 export type PretrimmedCompressSkipReason =
   | "probe_failed"
@@ -260,13 +265,86 @@ export type PretrimmedCompressSkipContext = {
   fileSizeBytes: number;
 };
 
+export type PretrimmedCompressSkipProbeDetails = {
+  durationSec: number | null;
+  fileSizeBytes: number | null;
+  avgBitsPerSec: number | null;
+  maxAvgBitsPerSec: number;
+  videoBitRate: number | null;
+  maxVideoBitrate: number;
+};
+
+export type PretrimmedCompressSkipResult = {
+  skip: boolean;
+  reason: PretrimmedCompressSkipReason;
+  probeDetails: PretrimmedCompressSkipProbeDetails;
+};
+
+type StreamProbe = {
+  codec_type?: string;
+  codec_name?: string;
+  width?: unknown;
+  height?: unknown;
+  bit_rate?: unknown;
+};
+
+function computeContainerAvgBitsPerSec(ctx?: PretrimmedCompressSkipContext): number | null {
+  if (ctx == null) return null;
+  const d = ctx.durationSec;
+  const sz = ctx.fileSizeBytes;
+  if (!Number.isFinite(d) || d <= 0 || !Number.isFinite(sz) || sz <= 0) return null;
+  return (sz * 8) / d;
+}
+
+function baseProbeDetails(ctx?: PretrimmedCompressSkipContext): PretrimmedCompressSkipProbeDetails {
+  return {
+    durationSec:
+      ctx != null && Number.isFinite(ctx.durationSec) && ctx.durationSec > 0 ? ctx.durationSec : null,
+    fileSizeBytes:
+      ctx != null && Number.isFinite(ctx.fileSizeBytes) && ctx.fileSizeBytes > 0
+        ? ctx.fileSizeBytes
+        : null,
+    avgBitsPerSec: computeContainerAvgBitsPerSec(ctx),
+    maxAvgBitsPerSec: PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC,
+    videoBitRate: null,
+    maxVideoBitrate: PRETRIMMED_SKIP_MAX_VIDEO_BITRATE,
+  };
+}
+
+function parseVideoStreamBitrate(v: StreamProbe): number | null {
+  const brRaw = v.bit_rate;
+  if (brRaw == null || String(brRaw).trim() === "") return null;
+  const parsedBr = Number.parseInt(String(brRaw).trim(), 10);
+  return Number.isFinite(parsedBr) ? parsedBr : null;
+}
+
+function logPretrimmedCompressSkipProbe(
+  inputPath: string,
+  skip: boolean,
+  reason: PretrimmedCompressSkipReason,
+  probeDetails: PretrimmedCompressSkipProbeDetails,
+): void {
+  const inputFile =
+    inputPath.includes("/") || inputPath.includes("\\")
+      ? inputPath.replace(/^.*[/\\]/, "")
+      : inputPath;
+  console.log("[pretrimmed_compress_skip]", {
+    inputFile,
+    skip,
+    reason,
+    durationSec: probeDetails.durationSec,
+    fileSizeBytes: probeDetails.fileSizeBytes,
+    avgBitsPerSec: probeDetails.avgBitsPerSec,
+    maxAvgBitsPerSec: probeDetails.maxAvgBitsPerSec,
+    videoBitRate: probeDetails.videoBitRate,
+    maxVideoBitrate: probeDetails.maxVideoBitrate,
+  });
+}
+
 export async function probePretrimmedCompressSkip(
   inputPath: string,
   ctx?: PretrimmedCompressSkipContext,
-): Promise<{
-  skip: boolean;
-  reason: PretrimmedCompressSkipReason;
-}> {
+): Promise<PretrimmedCompressSkipResult> {
   await ensureFfprobeAvailable();
   let probe: FfprobeRunResult;
   try {
@@ -280,20 +358,16 @@ export async function probePretrimmedCompressSkip(
       inputPath,
     ]);
   } catch {
-    return { skip: false, reason: "probe_failed" };
+    const probeDetails = baseProbeDetails(ctx);
+    logPretrimmedCompressSkipProbe(inputPath, false, "probe_failed", probeDetails);
+    return { skip: false, reason: "probe_failed", probeDetails };
   }
 
   if (probe.exitCode !== 0 || !probe.stdout.trim()) {
-    return { skip: false, reason: "probe_failed" };
+    const probeDetails = baseProbeDetails(ctx);
+    logPretrimmedCompressSkipProbe(inputPath, false, "probe_failed", probeDetails);
+    return { skip: false, reason: "probe_failed", probeDetails };
   }
-
-  type StreamProbe = {
-    codec_type?: string;
-    codec_name?: string;
-    width?: unknown;
-    height?: unknown;
-    bit_rate?: unknown;
-  };
 
   let streams: StreamProbe[];
   try {
@@ -303,52 +377,59 @@ export async function probePretrimmedCompressSkip(
       }
     ).streams ?? [];
   } catch {
-    return { skip: false, reason: "probe_failed" };
+    const probeDetails = baseProbeDetails(ctx);
+    logPretrimmedCompressSkipProbe(inputPath, false, "probe_failed", probeDetails);
+    return { skip: false, reason: "probe_failed", probeDetails };
   }
 
   const v = streams.find((s) => s.codec_type === "video");
   const a = streams.find((s) => s.codec_type === "audio");
+
+  const details = baseProbeDetails(ctx);
+  if (v) {
+    details.videoBitRate = parseVideoStreamBitrate(v);
+  }
+
   if (!v || String(v.codec_name).toLowerCase() !== "h264") {
-    return { skip: false, reason: "not_h264_video" };
+    logPretrimmedCompressSkipProbe(inputPath, false, "not_h264_video", details);
+    return { skip: false, reason: "not_h264_video", probeDetails: details };
   }
 
   const w = Number(v.width);
   const h = Number(v.height);
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-    return { skip: false, reason: "probe_failed" };
+    logPretrimmedCompressSkipProbe(inputPath, false, "probe_failed", details);
+    return { skip: false, reason: "probe_failed", probeDetails: details };
   }
 
   if (Math.max(w, h) > PRETRIMMED_SKIP_MAX_LONG_EDGE_PX) {
-    return { skip: false, reason: "resolution_too_large" };
+    logPretrimmedCompressSkipProbe(inputPath, false, "resolution_too_large", details);
+    return { skip: false, reason: "resolution_too_large", probeDetails: details };
   }
 
-  if (ctx != null) {
-    const d = ctx.durationSec;
-    const sz = ctx.fileSizeBytes;
-    if (
-      Number.isFinite(d) &&
-      d > 0 &&
-      Number.isFinite(sz) &&
-      sz > 0 &&
-      (sz * 8) / d > PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC
-    ) {
-      return { skip: false, reason: "file_average_bitrate_too_high" };
-    }
+  if (
+    details.avgBitsPerSec != null &&
+    details.avgBitsPerSec > PRETRIMMED_SKIP_MAX_AVG_BITS_PER_SEC
+  ) {
+    logPretrimmedCompressSkipProbe(inputPath, false, "file_average_bitrate_too_high", details);
+    return { skip: false, reason: "file_average_bitrate_too_high", probeDetails: details };
   }
 
-  const brRaw = v.bit_rate;
-  if (brRaw != null && String(brRaw).trim() !== "") {
-    const parsedBr = Number.parseInt(String(brRaw).trim(), 10);
-    if (Number.isFinite(parsedBr) && parsedBr > PRETRIMMED_SKIP_MAX_VIDEO_BITRATE) {
-      return { skip: false, reason: "video_bitrate_too_high" };
-    }
+  if (
+    details.videoBitRate != null &&
+    details.videoBitRate > PRETRIMMED_SKIP_MAX_VIDEO_BITRATE
+  ) {
+    logPretrimmedCompressSkipProbe(inputPath, false, "video_bitrate_too_high", details);
+    return { skip: false, reason: "video_bitrate_too_high", probeDetails: details };
   }
 
   if (a && String(a.codec_name).toLowerCase() !== "aac") {
-    return { skip: false, reason: "audio_present_not_aac" };
+    logPretrimmedCompressSkipProbe(inputPath, false, "audio_present_not_aac", details);
+    return { skip: false, reason: "audio_present_not_aac", probeDetails: details };
   }
 
-  return { skip: true, reason: "pretrimmed_h264_aac_ok" };
+  logPretrimmedCompressSkipProbe(inputPath, true, "pretrimmed_h264_aac_ok", details);
+  return { skip: true, reason: "pretrimmed_h264_aac_ok", probeDetails: details };
 }
 
 export function isMp4LikeClientVideo(mimetype: string, extension: string): boolean {
