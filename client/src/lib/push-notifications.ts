@@ -34,22 +34,52 @@ export function getConfiguredApnsEnvironment(): ApnsEnvironment {
   return detectEnvironment();
 }
 
+/** APNs may deliver IDs as strings or numbers; treat both as routable. */
+function coerceRoutingId(value: unknown): string | null {
+  if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+/**
+ * Capacitor/iOS may nest fields under `data`, sometimes JSON-stringified. Merge into one object so
+ * `type` / `postId` resolve reliably for comment pushes (flat likes-style payloads keep working).
+ */
+function mergePushNotificationPayload(raw: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  let inner: Record<string, unknown> | undefined;
+  const d = raw.data as unknown;
+  if (typeof d === "string") {
+    try {
+      const p = JSON.parse(d) as unknown;
+      if (p && typeof p === "object" && !Array.isArray(p)) inner = p as Record<string, unknown>;
+    } catch {
+      inner = undefined;
+    }
+  } else if (d !== null && typeof d === "object" && !Array.isArray(d)) {
+    inner = d as Record<string, unknown>;
+  }
+  const merged: Record<string, unknown> = inner ? { ...inner, ...raw } : { ...raw };
+  delete merged.data;
+  return merged;
+}
+
 function resolvePushTapRoute(payload: Record<string, unknown>): string {
   const type = payload.type;
-  const releaseId = payload.releaseId;
-  const postId = payload.postId;
+  const releaseId = coerceRoutingId(payload.releaseId ?? payload.release_id);
+  const postId = coerceRoutingId(payload.postId ?? payload.post_id);
 
   if (
     (type === "release_attached_to_liked_or_uploaded_post" ||
       type === "release_day_out_today") &&
-    typeof releaseId === "string" &&
+    releaseId &&
     releaseId.length > 0
   ) {
     return `/releases/${encodeURIComponent(releaseId)}`;
   }
   if (
     (type === "comment_on_post" || type === "artist_identified_post") &&
-    typeof postId === "string" &&
+    postId &&
     postId.length > 0
   ) {
     return `/?post=${encodeURIComponent(postId)}`;
@@ -65,14 +95,7 @@ function resolvePushTapRoute(payload: Record<string, unknown>): string {
 
 function handlePushNotificationActionPerformed(event: { actionId: string; notification?: { data?: unknown } }) {
   const raw = event.notification?.data as Record<string, unknown> | undefined;
-  const payload =
-    raw?.data !== undefined &&
-    raw.data !== null &&
-    typeof raw.data === "object"
-      ? (raw.data as Record<string, unknown>)
-      : raw && typeof raw === "object"
-        ? raw
-        : null;
+  const payload = mergePushNotificationPayload(raw);
 
   const route = payload ? resolvePushTapRoute(payload) : "/";
 

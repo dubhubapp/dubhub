@@ -27,6 +27,7 @@ import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
 import { dubhubVideoDebugLog, dubhubVideoDebugEnabled } from "@/lib/video-debug";
+import { feedPageRowItems, flattenInfiniteQueryFeedPages } from "@/lib/feed-infinite-pages";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
@@ -407,6 +408,128 @@ function normalizeFeedPageResponse(raw: unknown): FeedPage {
   return { items: [], hasMore: false, nextCursor: null };
 }
 
+function describeDeepLinkCacheShape(old: unknown): string {
+  if (old == null) return "nullish";
+  if (typeof old !== "object") return typeof old;
+  const o = old as Record<string, unknown>;
+  if (!Array.isArray(o.pages)) return "object:no-pages-array";
+  const pages = o.pages as unknown[];
+  const pl = pages.length;
+  const p0 = pages[0];
+  if (p0 == null) return `infinite:pages=${pl}:p0=null`;
+  if (Array.isArray(p0)) return `infinite:pages=${pl}:p0=array`;
+  if (typeof p0 === "object") {
+    const it = (p0 as FeedPage).items;
+    return `infinite:pages=${pl}:p0=feed(items=${Array.isArray(it) ? "array" : "non-array"})`;
+  }
+  return `infinite:pages=${pl}:p0=unknown`;
+}
+
+function alignInfinitePageParams(raw: unknown, pageCount: number): unknown[] {
+  const pp = Array.isArray(raw) ? [...raw] : [];
+  while (pp.length < pageCount) pp.push(null);
+  if (pp.length > pageCount) pp.length = pageCount;
+  return pp;
+}
+
+type DeepLinkMergeOutcome = {
+  next: unknown;
+  branch: string;
+  changed: boolean;
+};
+
+/**
+ * Merge a single post into TanStack infinite-query cache safely. Handles mixed page shapes and
+ * avoids spreading non-iterables (fixes Safari "Spread syntax requires ...iterable" crashes).
+ */
+function mergeFullPostIntoPostsCache(old: unknown, fullPost: PostWithUser): DeepLinkMergeOutcome {
+  if (old == null) {
+    return {
+      next: {
+        pages: [{ items: [fullPost], hasMore: false, nextCursor: null }] as FeedPage[],
+        pageParams: [null],
+      },
+      branch: "null-to-new-infinite",
+      changed: true,
+    };
+  }
+
+  if (typeof old !== "object" || old === null) {
+    return { next: old, branch: "non-object-unchanged", changed: false };
+  }
+
+  const o = old as Record<string, unknown>;
+  const pagesRaw = o.pages;
+  if (!Array.isArray(pagesRaw)) {
+    return { next: old, branch: "no-pages-array-unchanged", changed: false };
+  }
+
+  const pages = pagesRaw as unknown[];
+
+  const alreadyInPages = pages.some((page) =>
+    feedPageRowItems(page).some((p) => p.id === fullPost.id),
+  );
+  if (alreadyInPages) {
+    return { next: old, branch: "already-present-noop", changed: false };
+  }
+
+  if (pages.length === 0) {
+    const newPages: FeedPage[] = [{ items: [fullPost], hasMore: false, nextCursor: null }];
+    return {
+      next: {
+        ...o,
+        pages: newPages,
+        pageParams: alignInfinitePageParams(o.pageParams, newPages.length),
+      },
+      branch: "empty-pages-seeded",
+      changed: true,
+    };
+  }
+
+  const first = pages[0];
+
+  if (Array.isArray(first)) {
+    const arr = feedPageRowItems(first);
+    const nextFirst: FeedPage = {
+      items: [fullPost, ...arr],
+      hasMore: false,
+      nextCursor: null,
+    };
+    const newPages = [nextFirst, ...pages.slice(1)];
+    return {
+      next: {
+        ...o,
+        pages: newPages,
+        pageParams: alignInfinitePageParams(o.pageParams, newPages.length),
+      },
+      branch: "prepend-bare-array-page",
+      changed: true,
+    };
+  }
+
+  if (first && typeof first === "object") {
+    const fp = first as FeedPage;
+    const rawItems = fp.items;
+    const safeItems = Array.isArray(rawItems) ? rawItems : [];
+    const nextFirst: FeedPage = {
+      ...fp,
+      items: [fullPost, ...safeItems],
+    };
+    const newPages = [nextFirst, ...pages.slice(1)];
+    return {
+      next: {
+        ...o,
+        pages: newPages,
+        pageParams: alignInfinitePageParams(o.pageParams, newPages.length),
+      },
+      branch: "prepend-feed-page-items",
+      changed: true,
+    };
+  }
+
+  return { next: old, branch: "unknown-first-page-unchanged", changed: false };
+}
+
 export default function Home() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
@@ -782,7 +905,7 @@ export default function Home() {
   } = postsQuery;
   const posts = useMemo(() => {
     const pages = pagedPosts?.pages ?? [];
-    const merged = pages.flatMap((page) => page.items ?? []);
+    const merged = flattenInfiniteQueryFeedPages(pages, { queryKey: postsQuery.queryKey });
     const seen = new Set<string>();
     const deduped: PostWithUser[] = [];
     for (const post of merged) {
@@ -791,7 +914,7 @@ export default function Home() {
       deduped.push(post);
     }
     return deduped;
-  }, [pagedPosts]);
+  }, [pagedPosts, postsQuery.queryKey]);
 
   /**
    * Full-screen "Loading posts" only when we have nothing to render yet.
@@ -2061,7 +2184,6 @@ export default function Home() {
       !mergeAttemptedForPostId.current.has(postId) &&
       uiPosts.every((p) => p.id !== postId)
     ) {
-      mergeAttemptedForPostId.current.add(postId);
       void (async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -2074,6 +2196,14 @@ export default function Home() {
             credentials: 'include',
           });
           if (!res.ok) {
+            mergeAttemptedForPostId.current.delete(postId);
+            console.log("[NOTIF_POST_NAV_AUDIT]", {
+              postId,
+              oldCacheShape: "n/a-fetch-failed",
+              mergeBranch: "fetch-not-ok",
+              success: false,
+              status: res.status,
+            });
             if (deepLinkTerminalHandledRef.current !== postId) {
               deepLinkTerminalHandledRef.current = postId;
               clearDeepLinkWatchdog();
@@ -2087,29 +2217,52 @@ export default function Home() {
             return;
           }
           const fullPost = (await res.json()) as PostWithUser;
-          queryClient.setQueriesData(
-            { queryKey: ["/api/posts"], exact: false },
-            (old: InfiniteData<FeedPage> | undefined) => {
-              if (!old || old.pages.length === 0) {
-                return {
-                  pages: [{ items: [fullPost], hasMore: false, nextCursor: null }],
-                  pageParams: [null],
-                };
-              }
-              const alreadyExists = old.pages.some((page) => page.items.some((p) => p.id === fullPost.id));
-              if (alreadyExists) return old;
-              const firstPage = old.pages[0];
-              const nextFirstPage: FeedPage = {
-                ...firstPage,
-                items: [fullPost, ...firstPage.items],
-              };
-              return {
-                ...old,
-                pages: [nextFirstPage, ...old.pages.slice(1)],
-              };
-            },
-          );
-        } catch {
+          let mergeApplied = false;
+          queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old) => {
+            const oldShape = describeDeepLinkCacheShape(old);
+            const outcome = mergeFullPostIntoPostsCache(old, fullPost);
+            const success = outcome.changed || outcome.branch === "already-present-noop";
+            if (outcome.changed || outcome.branch === "already-present-noop") {
+              mergeApplied = true;
+            }
+            console.log("[NOTIF_POST_NAV_AUDIT]", {
+              postId,
+              oldCacheShape: oldShape,
+              mergeBranch: outcome.branch,
+              success,
+            });
+            return outcome.next;
+          });
+          if (mergeApplied) {
+            mergeAttemptedForPostId.current.add(postId);
+          } else {
+            mergeAttemptedForPostId.current.add(postId);
+            console.log("[NOTIF_POST_NAV_AUDIT]", {
+              postId,
+              oldCacheShape: "aggregate",
+              mergeBranch: "no-matching-cache-updated",
+              success: false,
+            });
+            if (deepLinkTerminalHandledRef.current !== postId) {
+              deepLinkTerminalHandledRef.current = postId;
+              clearDeepLinkWatchdog();
+              toast({
+                title: "Couldn't open this post",
+                description: "Something went wrong updating the feed. Try Home again.",
+                variant: "destructive",
+              });
+              navigate("/", { replace: true });
+            }
+          }
+        } catch (err) {
+          mergeAttemptedForPostId.current.delete(postId);
+          console.log("[NOTIF_POST_NAV_AUDIT]", {
+            postId,
+            oldCacheShape: "n/a-exception",
+            mergeBranch: "merge-or-fetch-exception",
+            success: false,
+            message: err instanceof Error ? err.message : String(err),
+          });
           if (deepLinkTerminalHandledRef.current !== postId) {
             deepLinkTerminalHandledRef.current = postId;
             clearDeepLinkWatchdog();

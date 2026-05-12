@@ -265,6 +265,25 @@ function ProfilePostThumbnail({
 /** Burst window for duplicate notifications (same actor, e.g. legacy DB trigger + API row within seconds). */
 const POST_COMMENT_NOTIFICATION_BURST_MS = 2 * 60 * 1000;
 
+/**
+ * Notification API responses must never flow into `[...x]` / `push(...x)` as non-arrays (Safari:
+ * "Spread syntax requires …iterable"). Comment-heavy grouped loads exercise this path most.
+ */
+function ensureNotificationArray(raw: unknown): NotificationWithUser[] {
+  if (Array.isArray(raw)) {
+    return raw as NotificationWithUser[];
+  }
+  if (raw != null) {
+    console.log("[POSTS_SHAPE_AUDIT]", {
+      queryKey: "/api/user/:id/notifications",
+      pageIndex: -1,
+      pageShape: typeof raw,
+      branch: "notifications-not-array",
+    });
+  }
+  return [];
+}
+
 function getNotificationBurstActorKey(n: NotificationWithUser): string {
   const raw =
     (n as { triggeredBy?: string }).triggeredBy ??
@@ -510,11 +529,9 @@ export default function UserProfile() {
     const res = await apiRequest("GET", `/api/user/${currentUser.id}/notifications?${q.toString()}`);
     const raw = await res.json();
     // Backwards-compatible parsing: support both legacy array and paged object payloads.
-    const notifications = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.notifications)
-        ? raw.notifications
-        : [];
+    const notifications = ensureNotificationArray(
+      Array.isArray(raw) ? raw : Array.isArray(raw?.notifications) ? raw.notifications : [],
+    );
     const filteredNotifications =
       userType === "moderator"
         ? notifications.filter((n: NotificationWithUser) => !isModeratorQueueNotificationMessage(n.message))
@@ -1019,7 +1036,7 @@ export default function UserProfile() {
     }
 
     const output: GroupedNotification[] = Array.from(groups.values()).map((items) => {
-      const sorted = [...items].sort(
+      const sorted = [...ensureNotificationArray(items)].sort(
         (a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime(),
       );
       const kindBucket = getNotificationKind(sorted[0]);
@@ -1191,18 +1208,19 @@ export default function UserProfile() {
         // Initial path: fetch one page, render immediately, then finish loading state.
         const firstPage = await fetchNotificationsPage({ limit: NOTIFICATIONS_PAGE_SIZE });
         if (cancelled) return;
-        setNotifications(firstPage.notifications);
+        const firstList = ensureNotificationArray(firstPage.notifications);
+        setNotifications(firstList);
         setHasMoreOlderNotifications(firstPage.hasMore);
         setHasLoadedNotifications(true);
         loadedNotificationsForUserRef.current = currentUser.id;
 
         // Optional non-blocking top-up: improve grouped-page density without blocking first render.
-        if (firstPage.hasMore && countGrouped(firstPage.notifications) < NOTIFICATIONS_PAGE_SIZE) {
+        if (firstPage.hasMore && countGrouped(firstList) < NOTIFICATIONS_PAGE_SIZE) {
           void (async () => {
             let pageCount = 1;
             let hasMore = firstPage.hasMore;
-            let cursor = firstPage.notifications[firstPage.notifications.length - 1];
-            const aggregate = [...firstPage.notifications];
+            let cursor = firstList[firstList.length - 1];
+            const aggregate = [...firstList];
             while (!cancelled && hasMore && cursor && countGrouped(aggregate) < NOTIFICATIONS_PAGE_SIZE && pageCount < MAX_INITIAL_PAGES) {
               const page = await fetchNotificationsPage({
                 limit: NOTIFICATIONS_PAGE_SIZE,
@@ -1210,13 +1228,14 @@ export default function UserProfile() {
                 beforeId: cursor.id,
               });
               pageCount += 1;
-              if (page.notifications.length === 0) {
+              const pageList = ensureNotificationArray(page.notifications);
+              if (pageList.length === 0) {
                 hasMore = false;
                 break;
               }
-              aggregate.push(...page.notifications);
+              aggregate.push(...pageList);
               hasMore = page.hasMore;
-              cursor = page.notifications[page.notifications.length - 1];
+              cursor = pageList[pageList.length - 1];
               if (!cancelled) {
                 setNotifications((prev) => {
                   const byId = new Map<string, NotificationWithUser>();
@@ -1266,7 +1285,7 @@ export default function UserProfile() {
     if (!newest) {
       try {
         const page = await fetchNotificationsPage({ limit: NOTIFICATIONS_PAGE_SIZE });
-        setNotifications(page.notifications);
+        setNotifications(ensureNotificationArray(page.notifications));
         setHasMoreOlderNotifications(page.hasMore);
         setHasLoadedNotifications(true);
       } finally {
@@ -1286,8 +1305,9 @@ export default function UserProfile() {
         after: new Date(newest.createdAt as any).toISOString(),
         afterId: newest.id,
       });
-      if (page.notifications.length > 0) {
-        mergeUniqueNotifications(page.notifications, "prepend");
+      const refreshed = ensureNotificationArray(page.notifications);
+      if (refreshed.length > 0) {
+        mergeUniqueNotifications(refreshed, "prepend");
         requestAnimationFrame(() => {
           const nextHeight = container?.scrollHeight ?? 0;
           if (container) container.scrollTop += Math.max(0, nextHeight - prevHeight);
@@ -1322,19 +1342,25 @@ export default function UserProfile() {
       let hasMore = true;
       let cursor = notifications[notifications.length - 1];
       const aggregate: NotificationWithUser[] = [];
-      while (hasMore && countGrouped([...notifications, ...aggregate]) - previousGroupedCount < NOTIFICATIONS_PAGE_SIZE && cursor) {
+      while (
+        hasMore &&
+        countGrouped([...ensureNotificationArray(notifications), ...aggregate]) - previousGroupedCount <
+          NOTIFICATIONS_PAGE_SIZE &&
+        cursor
+      ) {
         const page = await fetchNotificationsPage({
           limit: NOTIFICATIONS_PAGE_SIZE,
           before: new Date(cursor.createdAt as any).toISOString(),
           beforeId: cursor.id,
         });
-        if (page.notifications.length === 0) {
+        const pageList = ensureNotificationArray(page.notifications);
+        if (pageList.length === 0) {
           hasMore = false;
           break;
         }
-        aggregate.push(...page.notifications);
+        aggregate.push(...pageList);
         hasMore = page.hasMore;
-        cursor = page.notifications[page.notifications.length - 1];
+        cursor = pageList[pageList.length - 1];
       }
       mergeUniqueNotifications(aggregate, "append");
       setHasMoreOlderNotifications(hasMore);
