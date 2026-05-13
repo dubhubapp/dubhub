@@ -2301,7 +2301,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
-   * Public releases the artist can attach a post to (upcoming and already live).
+   * Public, attach-eligible releases for the post-identification "attach to release" modal.
+   * Only returns upcoming/coming-soon releases — past dated releases are excluded here
+   * (they remain attachable via the manual Releases tab edit flow).
    * Excludes releases that already include `excludePostId` when provided.
    */
   async getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]> {
@@ -2317,6 +2319,10 @@ export class DatabaseStorage implements IStorage {
         FROM releases r
         WHERE r.artist_id = ${artistId}
           AND r.is_public = true
+          AND (
+            (r.release_date IS NULL AND r.is_coming_soon = true)
+            OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
+          )
           ${excludePostId
             ? sql`AND NOT EXISTS (
                  SELECT 1 FROM release_posts rp
@@ -2325,9 +2331,16 @@ export class DatabaseStorage implements IStorage {
             : sql``}
         ORDER BY
           CASE WHEN r.release_date IS NULL THEN 1 ELSE 0 END,
-          r.release_date DESC NULLS LAST
+          r.release_date ASC NULLS LAST
       `);
-      return (result as any).rows || [];
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        release_date: row.release_date ?? null,
+        artwork_url: this.releaseArtworkPublicUrl(row.artwork_url) || row.artwork_url || null,
+        is_coming_soon: row.is_coming_soon ?? false,
+      }));
     } catch (error) {
       console.error("[getUpcomingReleasesForArtist] Error:", error);
       return [];

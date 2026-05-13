@@ -211,12 +211,18 @@ function ProfilePostThumbnail({
   videoSrc: string | null;
 }) {
   const [failed, setFailed] = useState(false);
+  /** Tracks first decoded frame / image load so we can keep a stable scrim until the real preview paints. */
+  const [mediaReady, setMediaReady] = useState(false);
   useEffect(() => {
     setFailed(false);
+    setMediaReady(false);
   }, [thumbnailSrc, videoSrc]);
   const shouldRenderImage = !!thumbnailSrc && !failed;
   const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed;
-  const showFallback = failed || (!thumbnailSrc && !videoSrc);
+  const hasAnySource = !!thumbnailSrc || !!videoSrc;
+  const showFallback = failed || !hasAnySource;
+  /** Keep a stable neutral scrim until the real source paints — avoids the iOS first-frame black flash in grids/lists. */
+  const showLoadingScrim = !showFallback && hasAnySource && !mediaReady;
 
   return (
     <div className="relative h-full w-full bg-surface">
@@ -224,15 +230,16 @@ function ProfilePostThumbnail({
         <img
           src={thumbnailSrc ?? undefined}
           alt=""
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover transition-opacity duration-150 ${mediaReady ? "opacity-100" : "opacity-0"}`}
           loading="lazy"
+          onLoad={() => setMediaReady(true)}
           onError={() => setFailed(true)}
         />
       ) : null}
       {shouldRenderVideo ? (
         <video
           src={videoSrc ?? undefined}
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover transition-opacity duration-150 ${mediaReady ? "opacity-100" : "opacity-0"}`}
           muted
           playsInline
           preload="auto"
@@ -246,9 +253,13 @@ function ProfilePostThumbnail({
             } catch {
               // no-op
             }
+            setMediaReady(true);
           }}
           onError={() => setFailed(true)}
         />
+      ) : null}
+      {showLoadingScrim ? (
+        <div className="absolute inset-0 animate-pulse bg-muted/40" aria-hidden />
       ) : null}
       {showFallback ? (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/70 text-muted-foreground">

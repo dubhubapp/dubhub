@@ -32,7 +32,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
   const [title, setTitle] = useState("");
   const [collaborators, setCollaborators] = useState("");
   const [attachOptions, setAttachOptions] = useState<
-    { id: string; title: string; release_date: string; artwork_url: string | null }[]
+    { id: string; title: string; release_date: string | null; artwork_url: string | null; is_coming_soon?: boolean }[]
   >([]);
   const [selectedReleaseId, setSelectedReleaseId] = useState<string>("");
   const initialFocusRef = useRef<HTMLDivElement | null>(null);
@@ -495,9 +495,13 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="truncate text-sm font-medium text-white">{rel.title}</p>
-                        <p className="mt-0.5 text-xs text-white/65">
-                          {formatDate(rel.release_date as any)}
-                        </p>
+                        {(rel.release_date || rel.is_coming_soon) && (
+                          <p className="mt-0.5 text-xs text-white/65">
+                            {rel.release_date
+                              ? formatDate(rel.release_date as any)
+                              : "Coming soon..."}
+                          </p>
+                        )}
                       </div>
                     </Label>
                   </div>
