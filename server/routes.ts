@@ -294,7 +294,7 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
           ) sub2
         )
       ) AS top_genre_key
-    FROM (SELECT ${userId} AS uid) AS ctx
+    FROM (SELECT ${userId}::uuid AS uid) AS ctx
     LEFT JOIN user_karma uk ON uk.user_id = ctx.uid
   `);
 
