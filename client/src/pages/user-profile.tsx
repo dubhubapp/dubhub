@@ -69,10 +69,10 @@ const PROFILE_HELP = {
     "Shows genres for tracks you correctly identified. Excludes your own tracks and IDs on your own posts.",
   totalIDs: "Total clips or tracks you’ve uploaded to the community.",
   confirmedOverview:
-    "Correct IDs you earned on others’ clips (moderator-kept community + full confirmations). Higher rep comes from stronger confirmations.",
+    "The number of tracks you've correctly identified on other people's posts.",
   tracksIdentifiedStat: "Tracks you correctly identified on other community members' posts.",
   accuracy:
-    "Approximate percentage of your ID attempts on others’ clips that counted as correct (includes community-kept IDs).",
+    "The percentage of your ID attempts that turned out to be correct.",
   likesOnPosts: "Total likes received across posts you uploaded.",
   commentsOnPosts: "Total comments received across posts you uploaded.",
   likesGiven: "Posts you’ve liked.",
