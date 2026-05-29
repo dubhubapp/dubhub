@@ -203,6 +203,31 @@ function GenreBreakdownSection({
   );
 }
 
+/** Shared placeholder for profile/notification post preview tiles (no stored thumbnail yet). */
+function ProfilePreviewPlaceholder({ mode }: { mode: "loading" | "unavailable" }) {
+  const isLoading = mode === "loading";
+  return (
+    <div
+      className="absolute inset-0 z-[1] flex items-center justify-center border border-white/[0.06] bg-gradient-to-b from-zinc-900/90 via-zinc-800/85 to-zinc-950/95 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+      aria-hidden
+    >
+      <div className="flex flex-col items-center gap-1.5">
+        {isLoading ? (
+          <>
+            <VinylLoader size="sm" inline className="scale-[0.65]" />
+            <span className="text-[10px] font-medium tracking-wide text-white/55">Loading preview</span>
+          </>
+        ) : (
+          <>
+            <ImageOff className="h-5 w-5 text-white/45" aria-hidden />
+            <span className="text-[10px] font-medium text-white/50">Preview unavailable</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProfilePostThumbnail({
   thumbnailSrc,
   videoSrc,
@@ -211,26 +236,39 @@ function ProfilePostThumbnail({
   videoSrc: string | null;
 }) {
   const [failed, setFailed] = useState(false);
-  /** Tracks first decoded frame / image load so we can keep a stable scrim until the real preview paints. */
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  /** Tracks first decoded frame / image load so placeholder stays until the real preview paints. */
   const [mediaReady, setMediaReady] = useState(false);
   useEffect(() => {
     setFailed(false);
+    setLoadTimedOut(false);
     setMediaReady(false);
   }, [thumbnailSrc, videoSrc]);
-  const shouldRenderImage = !!thumbnailSrc && !failed;
-  const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed;
+  const shouldRenderImage = !!thumbnailSrc && !failed && !loadTimedOut;
+  const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed && !loadTimedOut;
   const hasAnySource = !!thumbnailSrc || !!videoSrc;
-  const showFallback = failed || !hasAnySource;
-  /** Keep a stable neutral scrim until the real source paints — avoids the iOS first-frame black flash in grids/lists. */
-  const showLoadingScrim = !showFallback && hasAnySource && !mediaReady;
+  const showUnavailable = failed || !hasAnySource || loadTimedOut;
+  const showLoadingPlaceholder = !showUnavailable && hasAnySource && !mediaReady;
+
+  useEffect(() => {
+    if (!hasAnySource || mediaReady || showUnavailable) return;
+    const t = window.setTimeout(() => setLoadTimedOut(true), 12_000);
+    return () => window.clearTimeout(t);
+  }, [hasAnySource, mediaReady, showUnavailable, thumbnailSrc, videoSrc]);
+
+  const mediaClass = `absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${
+    mediaReady ? "z-[2] opacity-100" : "z-0 opacity-0 pointer-events-none"
+  }`;
 
   return (
-    <div className="relative h-full w-full bg-surface">
+    <div className="relative h-full w-full overflow-hidden bg-zinc-950">
+      {showLoadingPlaceholder ? <ProfilePreviewPlaceholder mode="loading" /> : null}
+      {showUnavailable ? <ProfilePreviewPlaceholder mode="unavailable" /> : null}
       {shouldRenderImage ? (
         <img
           src={thumbnailSrc ?? undefined}
           alt=""
-          className={`w-full h-full object-cover transition-opacity duration-150 ${mediaReady ? "opacity-100" : "opacity-0"}`}
+          className={mediaClass}
           loading="lazy"
           onLoad={() => setMediaReady(true)}
           onError={() => setFailed(true)}
@@ -239,7 +277,7 @@ function ProfilePostThumbnail({
       {shouldRenderVideo ? (
         <video
           src={videoSrc ?? undefined}
-          className={`w-full h-full object-cover transition-opacity duration-150 ${mediaReady ? "opacity-100" : "opacity-0"}`}
+          className={mediaClass}
           muted
           playsInline
           preload="auto"
@@ -257,17 +295,6 @@ function ProfilePostThumbnail({
           }}
           onError={() => setFailed(true)}
         />
-      ) : null}
-      {showLoadingScrim ? (
-        <div className="absolute inset-0 animate-pulse bg-muted/40" aria-hidden />
-      ) : null}
-      {showFallback ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/70 text-muted-foreground">
-          <div className="flex flex-col items-center gap-1">
-            <ImageOff className="h-5 w-5" aria-hidden />
-            <span className="text-[10px] font-medium">No preview</span>
-          </div>
-        </div>
       ) : null}
     </div>
   );
@@ -1943,7 +1970,7 @@ export default function UserProfile() {
                 data-testid="tab-profile"
                 className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
-                <User className="w-4 h-4 mr-1" />
+                <User className="w-4 h-4 shrink-0 mr-1" />
                 Profile
               </TabsTrigger>
               <TabsTrigger

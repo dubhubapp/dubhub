@@ -45,6 +45,10 @@ import {
   getHintGenreFilterSeenKey,
   getHintLikeReleaseSeenKey,
   getHintRandomSeenKey,
+  getOnboardingSeenKey,
+  getWelcomeBackSeenKey,
+  markWelcomeBackSeenForUser,
+  persistHintSeen,
 } from "@/lib/onboarding";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
@@ -589,11 +593,19 @@ export default function Home() {
   const genresKey = [...selectedGenres].sort().join(",");
 
   useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId) return;
     try {
-      const shouldShowWelcomeBack =
-        sessionStorage.getItem(WELCOME_BACK_FLAG_KEY) === "1";
-      if (!shouldShowWelcomeBack) return;
-      sessionStorage.removeItem(WELCOME_BACK_FLAG_KEY);
+      if (localStorage.getItem(getWelcomeBackSeenKey(userId)) === "1") return;
+      if (sessionStorage.getItem(ONBOARDING_ACTIVE_SESSION_KEY) === "1") return;
+      // Legacy: consume one-shot session flag from older builds without re-showing every login.
+      if (sessionStorage.getItem(WELCOME_BACK_FLAG_KEY) === "1") {
+        sessionStorage.removeItem(WELCOME_BACK_FLAG_KEY);
+        markWelcomeBackSeenForUser(userId);
+        return;
+      }
+      if (localStorage.getItem(getOnboardingSeenKey(userId)) !== "1") return;
+      markWelcomeBackSeenForUser(userId);
       const selectedMessage =
         WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
       toast({
@@ -605,7 +617,7 @@ export default function Home() {
     } catch {
       // Storage access may fail in constrained environments; skip toast safely.
     }
-  }, [toast]);
+  }, [currentUser?.id, toast]);
 
   useEffect(() => {
     const userId = currentUser?.id;
@@ -650,8 +662,16 @@ export default function Home() {
       }, 120);
     };
 
+    const dismissHintByType = (type: "genre" | "comments" | "like" | "random") => {
+      setActiveHint((prev) => {
+        if (prev?.type !== type) return prev;
+        persistHintSeen(prev.key);
+        return null;
+      });
+    };
+
     const onGenreClosed = () => {
-      setActiveHint((prev) => (prev?.type === "genre" ? null : prev));
+      dismissHintByType("genre");
     };
 
     const onCommentsOpened = () =>
@@ -668,7 +688,7 @@ export default function Home() {
       });
 
     const onCommentsClosed = () => {
-      setActiveHint((prev) => (prev?.type === "comments" ? null : prev));
+      dismissHintByType("comments");
     };
 
     const onLikedPost = () =>
@@ -715,9 +735,15 @@ export default function Home() {
 
   const handleHintGotIt = useCallback(() => {
     if (!activeHint) return;
-    localStorage.setItem(activeHint.key, "1");
+    persistHintSeen(activeHint.key);
     playInteractionLight();
     setActiveHint(null);
+  }, [activeHint]);
+
+  useEffect(() => {
+    return () => {
+      if (activeHint) persistHintSeen(activeHint.key);
+    };
   }, [activeHint]);
 
   const hintOverlay = activeHint ? (

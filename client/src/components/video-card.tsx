@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX, Calendar, Disc3 } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -2667,12 +2667,15 @@ function VideoCardInner({
                         ) : null}
                         {post.playedDate ? (
                           <span className="inline-flex min-w-0 items-center gap-1.5">
-                            <Calendar className={POST_META_ICON_CLASS} aria-hidden />
+                            <CalendarDays className={POST_META_ICON_CLASS} aria-hidden />
                             <span className="min-w-0 break-words">{formatPlayedDate(post.playedDate)}</span>
                           </span>
                         ) : (
-                          <span className="min-w-0 break-words">
-                            {post.createdAt ? formatTimeAgo(post.createdAt) : "Recently"}
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <Upload className={POST_META_ICON_CLASS} aria-hidden />
+                            <span className="min-w-0 break-words">
+                              {post.createdAt ? formatTimeAgo(post.createdAt) : "Recently"}
+                            </span>
                           </span>
                         )}
                         {post.location ? (
@@ -2793,12 +2796,15 @@ function VideoCardInner({
                   ) : null}
                   {post.playedDate ? (
                     <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <Calendar className={POST_META_ICON_CLASS} aria-hidden />
+                      <CalendarDays className={POST_META_ICON_CLASS} aria-hidden />
                       <span className="min-w-0 break-words">{formatPlayedDate(post.playedDate)}</span>
                     </span>
                   ) : (
-                    <span className="min-w-0 break-words">
-                      {post.createdAt ? formatTimeAgo(post.createdAt) : "Recently"}
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <Upload className={POST_META_ICON_CLASS} aria-hidden />
+                      <span className="min-w-0 break-words">
+                        {post.createdAt ? formatTimeAgo(post.createdAt) : "Recently"}
+                      </span>
                     </span>
                   )}
                   {post.location ? (

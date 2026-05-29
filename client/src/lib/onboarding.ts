@@ -51,3 +51,52 @@ export function clearPendingOnboardingForEmail(email: string | null | undefined)
   if (!normalized) return;
   localStorage.removeItem(`${ONBOARDING_PENDING_EMAIL_PREFIX}${normalized}`);
 }
+
+const WELCOME_BACK_SEEN_PREFIX = "dubhub_welcome_back_seen_";
+
+export function getWelcomeBackSeenKey(userId: string): string {
+  return `${WELCOME_BACK_SEEN_PREFIX}${userId}`;
+}
+
+export function markOnboardingSeenForUser(userId: string | null | undefined): void {
+  if (!userId) return;
+  try {
+    localStorage.setItem(getOnboardingSeenKey(userId), "1");
+  } catch {
+    // Storage may be unavailable in constrained environments.
+  }
+}
+
+export function markWelcomeBackSeenForUser(userId: string | null | undefined): void {
+  if (!userId) return;
+  try {
+    localStorage.setItem(getWelcomeBackSeenKey(userId), "1");
+  } catch {
+    // Storage may be unavailable in constrained environments.
+  }
+}
+
+/** Marks welcome modal seen and clears pending signup flags for all provided emails. */
+export function persistOnboardingDismissed(options: {
+  userId: string | null | undefined;
+  emails: (string | null | undefined)[];
+}): void {
+  markOnboardingSeenForUser(options.userId);
+  markWelcomeBackSeenForUser(options.userId);
+  const cleared = new Set<string>();
+  for (const email of options.emails) {
+    const normalized = normalizeEmail(email);
+    if (!normalized || cleared.has(normalized)) continue;
+    cleared.add(normalized);
+    clearPendingOnboardingForEmail(email);
+  }
+}
+
+export function persistHintSeen(key: string | null | undefined): void {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // Storage may be unavailable in constrained environments.
+  }
+}

@@ -42,6 +42,7 @@ import {
   ONBOARDING_ACTIVE_SESSION_KEY,
   getOnboardingSeenKey,
   hasPendingOnboardingForEmail,
+  persistOnboardingDismissed,
   WELCOME_BACK_FLAG_KEY,
 } from "@/lib/onboarding";
 import {
@@ -286,7 +287,10 @@ function App() {
       emailConfirmed: boolean;
     }) => {
       const seenKey = getOnboardingSeenKey(userId);
-      if (localStorage.getItem(seenKey) === "1") return;
+      if (localStorage.getItem(seenKey) === "1") {
+        clearPendingOnboardingForEmail(email);
+        return;
+      }
       if (!emailConfirmed) return;
       if (accountType === "artist" && !verifiedArtist) return;
       if (!hasPendingOnboardingForEmail(email)) return;
@@ -588,12 +592,19 @@ function App() {
   };
 
   const handleDismissFirstLoginOnboarding = () => {
-    const userId = firstLoginOnboarding.userId;
-    if (userId) {
-      localStorage.setItem(getOnboardingSeenKey(userId), "1");
-    }
-    clearPendingOnboardingForEmail(firstLoginOnboarding.email);
-    setFirstLoginOnboarding((prev) => ({ ...prev, open: false }));
+    void (async () => {
+      let userId = firstLoginOnboarding.userId;
+      const emails: (string | null | undefined)[] = [firstLoginOnboarding.email];
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        userId = userId ?? session?.user?.id ?? null;
+        emails.push(session?.user?.email);
+      } catch {
+        // Best effort: still persist with modal state.
+      }
+      persistOnboardingDismissed({ userId, emails });
+      setFirstLoginOnboarding((prev) => ({ ...prev, open: false }));
+    })();
   };
 
   if (isLoading) {

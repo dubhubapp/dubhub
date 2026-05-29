@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
-import { WELCOME_BACK_FLAG_KEY } from '@/lib/onboarding';
 import { Eye, EyeOff } from "lucide-react";
 
 const RECOVERY_INTENT_KEY = "dubhub:auth-recovery-intent";
@@ -108,12 +107,6 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
         // If user is a moderator, update role to include moderator status
         if (profileData.moderator) {
           userRole = 'moderator';
-        }
-
-        try {
-          sessionStorage.setItem(WELCOME_BACK_FLAG_KEY, "1");
-        } catch {
-          // Non-fatal: if storage is unavailable, login should still proceed.
         }
 
         onAuthSuccess(userRole);

@@ -86,7 +86,7 @@ export default function Leaderboard() {
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
   const [activeTab, setActiveTab] = useState<"users" | "artists">("users");
   const [isFlipAnimating, setIsFlipAnimating] = useState(false);
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("month");
   const leaderboardUsersFaceRef = useRef<HTMLDivElement | null>(null);
   const leaderboardArtistsFaceRef = useRef<HTMLDivElement | null>(null);
   /** Match Profile flip: shell height from both faces so 3D rotation stays in-band and doesn’t intrude under the sticky header. */

@@ -13,7 +13,10 @@ import { Eye, EyeOff } from "lucide-react";
 import { Filter } from 'bad-words';
 import { apiRequest } from '@/lib/queryClient';
 import { validateUsername, normalizeUsernameForStorage } from '@shared/usernameValidation';
-import { checkUsernameAvailability } from '@shared/usernameAvailability';
+import {
+  checkUsernameAvailability,
+  LEGACY_DECEASED_UNAVAILABLE_MESSAGE,
+} from '@shared/usernameAvailability';
 import {
   AUTH_EMAIL_RATE_LIMIT_MESSAGE,
   isAuthEmailRateLimitError,
@@ -184,7 +187,9 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
         checkUsernameAvailability(supabase, username, accountType as 'user' | 'artist')
           .then((result) => {
             if (!result.available) {
-              if (result.reason === 'artist_reserved' && accountType === 'user') {
+              if (result.reason === 'legacy_deceased') {
+                setUsernameError(LEGACY_DECEASED_UNAVAILABLE_MESSAGE);
+              } else if (result.reason === 'artist_reserved' && accountType === 'user') {
                 setUsernameError("Don't be silly, you're not that famous");
               } else {
                 setUsernameError('Username already taken, please choose another.');
@@ -268,7 +273,9 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           accountType,
           timestamp: new Date().toISOString(),
         });
-        if (availability.reason === 'artist_reserved' && accountType === 'user') {
+        if (availability.reason === 'legacy_deceased') {
+          setErrorMessage(LEGACY_DECEASED_UNAVAILABLE_MESSAGE);
+        } else if (availability.reason === 'artist_reserved' && accountType === 'user') {
           setErrorMessage("Don't be silly, you're not that famous");
         } else {
           setErrorMessage('Username already taken, please choose another.');

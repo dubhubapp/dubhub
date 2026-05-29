@@ -1467,6 +1467,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <button
                     key={artist.id}
                     type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                    }}
                     onClick={() => handleArtistSelect(artist.username)}
                     className="flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left hover:bg-gray-50 last:border-b-0 dark:border-border dark:hover:bg-muted"
                     data-testid={`artist-option-${artist.id}`}

@@ -120,7 +120,25 @@ export function validateUsername(username: string): UsernameValidationResult {
     };
   }
 
+  // dub hub impersonation (dub_hub, dub.hub, officialdubhub, etc.)
+  if (containsDubhubImpersonation(trimmed)) {
+    return {
+      valid: false,
+      error: 'This username is unavailable',
+      reason: 'reserved_word',
+    };
+  }
+
   return { valid: true };
+}
+
+/** Lowercase + strip . _ - so separator variants still match "dubhub". */
+export function normalizedUsernameForImpersonationCheck(username: string): string {
+  return username.trim().toLowerCase().replace(/[._-]/g, '');
+}
+
+export function containsDubhubImpersonation(username: string): boolean {
+  return normalizedUsernameForImpersonationCheck(username).includes('dubhub');
 }
 
 /**

@@ -20,10 +20,45 @@ export const HARD_RESERVED_USERNAMES = [
   'dubhubjosh',
 ] as const;
 
+// Legacy/deceased artist names — blocked for community and artist signups
+export const LEGACY_DECEASED_RESERVED_USERNAMES = [
+  'avicii',
+  'dominator',
+  'fawks',
+  'i_o',
+  'foreignbeggars',
+  'stormin',
+  'mcstormin',
+  'storminmc',
+  'timberg',
+  'timbergling',
+  'skibadee',
+  'mcskibadee',
+  'desimal',
+  'hedj',
+  'cookiemonsta',
+  'kemistry',
+  'conrad',
+  'mcconrad',
+  'djrandall',
+  'marcusintalex',
+  'steviehyperd',
+  'piercefulton',
+  'jackmaster',
+  'djderek',
+  'robertmiles',
+  'mcfats',
+  'frankieknuckles',
+  'sophie',
+] as const;
+
+export const LEGACY_DECEASED_UNAVAILABLE_MESSAGE =
+  'Username unavailable - some names are bigger than all of us.';
+
 export type UsernameAvailabilityResult = {
   available: boolean;
   error?: string;
-  reason?: 'hard_reserved' | 'artist_reserved' | 'taken' | 'format';
+  reason?: 'hard_reserved' | 'legacy_deceased' | 'artist_reserved' | 'taken' | 'format';
 };
 
 /**
@@ -54,6 +89,15 @@ export async function checkUsernameAvailability(
       available: false,
       error: 'Username already taken, please choose another.',
       reason: 'hard_reserved',
+    };
+  }
+
+  // Legacy/deceased artists — unavailable to everyone (before artist-reserved RPC)
+  if (LEGACY_DECEASED_RESERVED_USERNAMES.includes(normalized as any)) {
+    return {
+      available: false,
+      error: LEGACY_DECEASED_UNAVAILABLE_MESSAGE,
+      reason: 'legacy_deceased',
     };
   }
 
