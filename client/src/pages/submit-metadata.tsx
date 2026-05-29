@@ -1008,7 +1008,11 @@ export default function SubmitMetadata() {
           clearTimeout(simTimeout);
           clearSimulated();
           clearCreep();
-          reject(new Error('Network error during upload'));
+          reject(
+            new Error(
+              "Upload interrupted. Please keep dub hub open while uploading and try again.",
+            ),
+          );
         });
 
         xhr.addEventListener('abort', () => {
