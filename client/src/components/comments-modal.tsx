@@ -1103,18 +1103,33 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   : "";
               return (
                 <div key={comment.id} className={`flex space-x-2 ${highlightClass}`}>
-              <div className="relative flex-shrink-0">
-                <img
-                  src={comment.user.avatar_url || undefined}
-                  alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
-                  className={`avatar-media h-6 w-6 rounded-full border-2 sm:h-7 sm:w-7 ${isDefaultAvatarUrl(comment.user.avatar_url) ? "avatar-default-media" : ""} ${
-                    comment.user.account_type === "artist" && comment.user.verified_artist
-                      ? "border-[#FFD700] " + goldAvatarGlowShadowClass
-                      : "border-transparent"
-                  }`}
-                />
-              </div>
-              <div className="flex-1 min-w-0">
+                  <button
+                    type="button"
+                    className="relative flex-shrink-0 p-0"
+                    aria-label={
+                      comment.user.username
+                        ? `View profile ${formatUsernameDisplay(comment.user.username)}`
+                        : "View profile"
+                    }
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openByUsername(comment.user.username, {
+                        anchor: { x: e.clientX, y: e.clientY },
+                      });
+                    }}
+                  >
+                    <img
+                      src={comment.user.avatar_url || undefined}
+                      alt=""
+                      className={`avatar-media h-6 w-6 rounded-full border-2 sm:h-7 sm:w-7 ${isDefaultAvatarUrl(comment.user.avatar_url) ? "avatar-default-media" : ""} ${
+                        comment.user.account_type === "artist" && comment.user.verified_artist
+                          ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                          : "border-transparent"
+                      }`}
+                    />
+                  </button>
+                  <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <div className="flex items-center space-x-1">
                     <span 
@@ -1332,18 +1347,33 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       .slice(0, visibleReplyCountByParent[comment.id] ?? 0)
                       .map((reply) => (
                         <div key={reply.id} className="flex space-x-2">
-                        <div className="relative flex-shrink-0">
-                          <img
-                            src={reply.user.avatar_url || undefined}
-                            alt={formatUsernameDisplay(reply.user.username) || reply.user.username || ""}
-                            className={`avatar-media w-6 h-6 rounded-full border-2 ${isDefaultAvatarUrl(reply.user.avatar_url) ? "avatar-default-media" : ""} ${
-                              reply.user.account_type === "artist" && reply.user.verified_artist
-                                ? "border-[#FFD700] " + goldAvatarGlowShadowClass
-                                : "border-transparent"
-                            }`}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
+                          <button
+                            type="button"
+                            className="relative flex-shrink-0 p-0"
+                            aria-label={
+                              reply.user.username
+                                ? `View profile ${formatUsernameDisplay(reply.user.username)}`
+                                : "View profile"
+                            }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openByUsername(reply.user.username, {
+                                anchor: { x: e.clientX, y: e.clientY },
+                              });
+                            }}
+                          >
+                            <img
+                              src={reply.user.avatar_url || undefined}
+                              alt=""
+                              className={`avatar-media w-6 h-6 rounded-full border-2 ${isDefaultAvatarUrl(reply.user.avatar_url) ? "avatar-default-media" : ""} ${
+                                reply.user.account_type === "artist" && reply.user.verified_artist
+                                  ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                                  : "border-transparent"
+                              }`}
+                            />
+                          </button>
+                          <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-1.5">
                             <div className="flex items-center space-x-1">
                               <span 
