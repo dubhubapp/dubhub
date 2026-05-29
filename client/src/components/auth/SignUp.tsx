@@ -342,7 +342,8 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
 
         toast({
           title: "Account Created",
-          description: "Please check your email to verify your account.",
+          description:
+            "We've sent a verification email. Check your spam or junk folder if it doesn't arrive within a couple of minutes.",
         });
         markOnboardingPendingForEmail(trimmedEmail);
 
@@ -652,8 +653,9 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground text-center">
-              Please click the verification link in your email to activate your account. 
-              Once verified, you can return here and sign in.
+              Please click the verification link in your email to activate your account.
+              Once verified, you can return here and sign in. If it doesn't appear within a
+              couple of minutes, please check your spam or junk folder.
             </p>
             {accountType === "artist" && (
               <>
