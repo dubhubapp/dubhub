@@ -135,6 +135,9 @@ export function FirstLoginOnboardingModal({
         forceMount
         overlayClassName="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200"
         className="w-[calc(100%-2rem)] max-w-md rounded-2xl border-[#4ae9df]/35 bg-[#0f1324]/95 p-0 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.97, y: 8 }}
