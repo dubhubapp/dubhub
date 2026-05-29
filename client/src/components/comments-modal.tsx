@@ -1594,7 +1594,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
                         : shouldShowArtistSelfTagPlaceholder
                           ? "Tag yourself if this is your ID..."
-                          : "Who do you think this is?"
+                          : "What do you think?"
                     }
                     className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/20 dark:bg-white/10 dark:text-white dark:placeholder:text-white/45 dark:ring-offset-[color:var(--dark)]"
                     disabled={addCommentMutation.isPending}
