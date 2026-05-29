@@ -869,6 +869,13 @@ export default function Home() {
     randomPostRef.current = randomPost;
   }, [randomPost]);
 
+  // Show the Random rail-dice tip once the dice is on screen (menu entry does not press the rail dice).
+  useEffect(() => {
+    if (sortMode !== "random" || randomViewExiting) return;
+    if (!randomPost || randomLoading) return;
+    window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
+  }, [sortMode, randomViewExiting, randomPost?.id, randomLoading]);
+
   const postsQuery = useInfiniteQuery<FeedPage, Error, InfiniteData<FeedPage>, readonly [string, { genresKey: string; identification: "all" | "identified" | "unidentified"; sortMode: FeedSortMode }, string | undefined], string | null>({
     queryKey: ["/api/posts", { genresKey, identification: identificationFilter, sortMode }, currentUser?.id],
     placeholderData: (previousData) => previousData,
