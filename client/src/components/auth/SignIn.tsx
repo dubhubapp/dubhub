@@ -53,7 +53,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
         if (error.message.includes('Invalid login credentials')) {
           setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         } else if (error.message.includes('Email not confirmed')) {
-          setErrorMessage('Please check your email and confirm your account');
+          setErrorMessage('Please check your email and confirm your account. If it doesn\'t arrive within a couple of minutes, check your spam or junk folder.');
         } else if (error.message.includes('Too many requests')) {
           setErrorMessage('Too many sign in attempts. Please try again later');
         } else if (error.message.includes('User not found')) {
