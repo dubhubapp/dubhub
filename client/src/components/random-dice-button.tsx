@@ -60,7 +60,13 @@ export function DiceDiscoverIcon({
   }
 
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" className={cn("block size-full shrink-0", className)}>
+    <svg
+      viewBox="0 0 24 24"
+      overflow="visible"
+      aria-hidden="true"
+      focusable="false"
+      className={cn("block size-full shrink-0 overflow-visible", className)}
+    >
       <defs>
         {/* Wide outer bloom + tighter core; draw order below pips so glow never sits on top of spots. */}
         <filter id={railTraceGlowId} x="-90%" y="-90%" width="280%" height="280%" colorInterpolationFilters="sRGB">

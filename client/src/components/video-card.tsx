@@ -2306,7 +2306,7 @@ function VideoCardInner({
                     aria-label="Next random track"
                     className={cn(
                       railIconWrap,
-                      "!min-h-[44px] !min-w-[44px] border-0 bg-transparent p-0 shadow-none ring-0 sm:!min-h-12 sm:!min-w-12",
+                      "!min-h-[44px] !min-w-[44px] border-0 bg-transparent p-0 shadow-none ring-0 sm:!min-h-12 sm:!min-w-12 [&_svg]:drop-shadow-none",
                     )}
                     iconWrapClassName="!size-7 sm:!size-7"
                     iconClassName="!h-full !w-full !text-white"
