@@ -632,6 +632,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       }
       const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
       const data = await response.json();
+      if (!Array.isArray(data)) {
+        console.warn("[DubHub][CommentsModal] Non-array comments payload", data);
+      }
       if (debugComments) {
         console.log("[CommentsModal] fetched", {
           modalPostId: post.id,
@@ -639,11 +642,13 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           rootCount: Array.isArray(data) ? data.length : null,
         });
       }
-      return data as CommentWithUser[];
+      return Array.isArray(data) ? data : [];
     },
     enabled: isOpen,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
-  const comments = commentsData ?? [];
+  const comments = Array.isArray(commentsData) ? commentsData : [];
   const shouldShowCommentsLoadingState =
     isOpen && commentsData === undefined && (isLoadingComments || isFetchingComments);
 
@@ -754,7 +759,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             const attachReply = (items: CommentWithUser[]): CommentWithUser[] =>
               items.map((c) => {
                 if (c.id === variables.parentId) {
-                  const existingReplies = c.replies || [];
+                  const existingReplies = Array.isArray(c.replies) ? c.replies : [];
                   return { ...c, replies: [...existingReplies, newCommentWithUser] };
                 }
                 if (c.replies && c.replies.length > 0) {
@@ -850,8 +855,9 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   };
 
   const sortedRepliesChronological = (replies: CommentWithUser[] | undefined) => {
-    if (!replies || replies.length === 0) return [];
-    return [...replies].sort((a, b) => {
+    const safeReplies = Array.isArray(replies) ? replies : [];
+    if (safeReplies.length === 0) return [];
+    return [...safeReplies].sort((a, b) => {
       const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return dateA - dateB; // oldest -> newest
