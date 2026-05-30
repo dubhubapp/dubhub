@@ -538,6 +538,7 @@ export default function Home() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
   const [sortMode, setSortMode] = useState<FeedSortMode>("hottest");
+  const [genreMenuOpen, setGenreMenuOpen] = useState(false);
   /** True while the rail dice plays exit before leaving Random mode. */
   const [randomViewExiting, setRandomViewExiting] = useState(false);
   /** Bumps when Random mode is entered so the rail dice can play its intro motion. */
@@ -712,7 +713,7 @@ export default function Home() {
         style: {
           position: "fixed",
           right: "max(0.75rem, env(safe-area-inset-right,0px))",
-          bottom: "max(13.5rem, calc(env(safe-area-inset-bottom,0px) + 12rem))",
+          bottom: "max(15rem, calc(env(safe-area-inset-bottom,0px) + 13.5rem))",
         },
       });
 
@@ -873,8 +874,9 @@ export default function Home() {
   useEffect(() => {
     if (sortMode !== "random" || randomViewExiting) return;
     if (!randomPost || randomLoading) return;
+    if (genreMenuOpen) return;
     window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
-  }, [sortMode, randomViewExiting, randomPost?.id, randomLoading]);
+  }, [sortMode, randomViewExiting, randomPost?.id, randomLoading, genreMenuOpen]);
 
   const postsQuery = useInfiniteQuery<FeedPage, Error, InfiniteData<FeedPage>, readonly [string, { genresKey: string; identification: "all" | "identified" | "unidentified"; sortMode: FeedSortMode }, string | undefined], string | null>({
     queryKey: ["/api/posts", { genresKey, identification: identificationFilter, sortMode }, currentUser?.id],
@@ -2446,6 +2448,7 @@ export default function Home() {
           onSortChange={handleGenreMenuSortChange}
           onStatusSafeAreaTap={scrollFeedToFirstPost}
           onGenreFilterOpenChange={(open) => {
+            setGenreMenuOpen(open);
             window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
           }}
         />
@@ -2558,6 +2561,7 @@ export default function Home() {
           onSortChange={handleGenreMenuSortChange}
           onStatusSafeAreaTap={scrollFeedToFirstPost}
           onGenreFilterOpenChange={(open) => {
+            setGenreMenuOpen(open);
             window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
           }}
         />
@@ -2597,6 +2601,7 @@ export default function Home() {
         onSortChange={handleGenreMenuSortChange}
         onStatusSafeAreaTap={scrollFeedToFirstPost}
         onGenreFilterOpenChange={(open) => {
+          setGenreMenuOpen(open);
           window.dispatchEvent(new CustomEvent(open ? HINT_GENRE_OPENED_EVENT : HINT_GENRE_CLOSED_EVENT));
         }}
       />
