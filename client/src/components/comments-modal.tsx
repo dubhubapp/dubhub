@@ -1445,23 +1445,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       );
                     }
 
-                    if (visibleCount < totalReplies) {
-                      return (
-                        <button
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                          onClick={() =>
-                            setVisibleReplyCountByParent((prev) => ({
-                              ...prev,
-                              [comment.id]: Math.min(totalReplies, visibleCount + REPLY_BATCH_SIZE),
-                            }))
-                          }
-                          data-testid={`show-more-replies-${comment.id}`}
-                        >
-                          Show more replies
-                        </button>
-                      );
-                    }
-
                     return (
                       <button
                         className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
@@ -1490,7 +1473,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         const replyIsDeleted = isDeletedCommentBody(reply.body);
                         const isOwnReply = !!contextUser?.id && reply.userId === contextUser.id;
                         return (
-                        <div key={reply.id} className="flex space-x-2">
+                        <div key={reply.id} className="flex items-start space-x-2">
                           <button
                             type="button"
                             className="relative flex-shrink-0 p-0"
@@ -1651,6 +1634,25 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       </div>
                         );
                       })}
+                    {(visibleReplyCountByParent[comment.id] ?? 0) <
+                      comment.replies.length && (
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        onClick={() =>
+                          setVisibleReplyCountByParent((prev) => ({
+                            ...prev,
+                            [comment.id]: Math.min(
+                              comment.replies!.length,
+                              (prev[comment.id] ?? 0) + REPLY_BATCH_SIZE,
+                            ),
+                          }))
+                        }
+                        data-testid={`show-more-replies-${comment.id}`}
+                      >
+                        Show more replies
+                      </button>
+                    )}
                   </div>
                 )}
                 </div>
