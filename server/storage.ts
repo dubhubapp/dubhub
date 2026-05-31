@@ -1,6 +1,6 @@
 import { type Notification, type InsertNotification, type NotificationWithUser, type UserPushToken, userPushTokens } from "@shared/schema";
 import { db, pool } from "./db";
-import { eq, desc, asc, and, or, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
@@ -1497,6 +1497,8 @@ export class DatabaseStorage implements IStorage {
         .where(eq(userPushTokens.token, token))
         .limit(1);
 
+      let currentRow: UserPushToken;
+
       if (existing.length > 0) {
         const [row] = existing;
         const updated = await db
@@ -1515,19 +1517,38 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(userPushTokens.id, row.id))
           .returning();
-        return updated[0] as UserPushToken;
+        currentRow = updated[0] as UserPushToken;
+      } else {
+        const inserted = await db
+          .insert(userPushTokens)
+          .values({
+            userId,
+            platform,
+            token,
+            environment,
+          })
+          .returning();
+        currentRow = inserted[0] as UserPushToken;
       }
 
-      const inserted = await db
-        .insert(userPushTokens)
-        .values({
-          userId,
-          platform,
-          token,
-          environment,
+      await db
+        .update(userPushTokens)
+        .set({
+          isActive: false,
+          deactivatedAt: sql`NOW()`,
+          deactivatedReason: "replaced_by_new_token",
+          updatedAt: sql`NOW()`,
         })
-        .returning();
-      return inserted[0] as UserPushToken;
+        .where(
+          and(
+            eq(userPushTokens.userId, userId),
+            eq(userPushTokens.platform, platform),
+            eq(userPushTokens.isActive, true),
+            ne(userPushTokens.token, token),
+          ),
+        );
+
+      return currentRow;
     } catch (error) {
       console.error("[upsertUserPushToken] Error:", error);
       throw error;
