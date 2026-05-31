@@ -309,7 +309,11 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     !user.profileLoadPending &&
     missingProfileGenreKey;
 
-  const { data: identifiedGenresData, isFetching: isFetchingIdentifiedGenres } = useQuery<any>({
+  const {
+    data: identifiedGenresData,
+    isFetching: isFetchingIdentifiedGenres,
+    isPending: isPendingIdentifiedGenres,
+  } = useQuery<any>({
     queryKey: ["/api/user", userId, "identified-posts-genres"],
     // Only when profile payload did not include a top genre (e.g. stale cache / partial user).
     enabled: identifiedGenresEnabled,
@@ -340,19 +344,24 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const topGenreKeyResolved =
     legacyTopGenreKey ?? surfaceGenreHintNormalized ?? derivedTopGenreKey ?? null;
   const hasTopGenreDisplay = topGenreKeyResolved !== null;
-  /** Until fav genre is known, avoid defaulting card chrome to grey genre “other”. */
-  const genreChromePending =
+  /** Card chrome only when fav genre is genuinely resolved (including explicit Other). */
+  const useGenreChrome = hasTopGenreDisplay;
+  /** Pill skeleton while profile or secondary genre lookup is still in flight. */
+  const genreResolutionPending =
     !hasTopGenreDisplay &&
-    (!!user?.profileLoadPending || (identifiedGenresEnabled && isFetchingIdentifiedGenres));
+    (!!user?.profileLoadPending ||
+      (identifiedGenresEnabled &&
+        (isFetchingIdentifiedGenres ||
+          isPendingIdentifiedGenres ||
+          identifiedGenresData === undefined)));
 
-  const resolvedAccentChip = getGenreChipStyle(topGenreKeyResolved ?? "other");
+  const resolvedAccentChip = useGenreChrome ? getGenreChipStyle(topGenreKeyResolved) : null;
   const pillLabelChip = hasTopGenreDisplay ? getGenreChipStyle(topGenreKeyResolved) : null;
 
-  const tintRgb = useMemo(
-    () => boostChromaForPopup(hexToRgb(resolvedAccentChip.bgColor)),
-    [resolvedAccentChip.bgColor],
-  );
-  const { r, g, b } = tintRgb;
+  const tintRgb = useMemo(() => {
+    if (!resolvedAccentChip) return null;
+    return boostChromaForPopup(hexToRgb(resolvedAccentChip.bgColor));
+  }, [resolvedAccentChip?.bgColor]);
 
   const inferredAccountType = user?.account_type ?? (user?.verified_artist ? "artist" : "user");
   const avatarSrc = user
@@ -369,17 +378,17 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     return getGenreGlowPillStyle(pillLabelChip.bgColor, pillLabelChip.textClass);
   }, [pillLabelChip]);
 
-  const cardRgb = useMemo(
-    () =>
-      mixToward(
-        tintRgb,
-        relativeLuminance(tintRgb) > 0.52 ? { r: 248, g: 249, b: 252 } : { r: 17, g: 20, b: 28 },
-        POPUP_SURFACE_NEUTRAL_BLEND,
-      ),
-    [tintRgb],
-  );
-  /** Genre-unresolved shell: always dark/neutral chrome (readable with white ring trim). */
-  const isLightSurface = genreChromePending ? false : relativeLuminance(cardRgb) > 0.52;
+  const cardRgb = useMemo(() => {
+    if (!tintRgb) return null;
+    return mixToward(
+      tintRgb,
+      relativeLuminance(tintRgb) > 0.52 ? { r: 248, g: 249, b: 252 } : { r: 17, g: 20, b: 28 },
+      POPUP_SURFACE_NEUTRAL_BLEND,
+    );
+  }, [tintRgb]);
+  /** Loading, pending, or absent fav genre: always dark/neutral chrome (readable with white ring trim). */
+  const isLightSurface =
+    useGenreChrome && cardRgb != null ? relativeLuminance(cardRgb) > 0.52 : false;
 
   const primaryTextColor = isLightSurface ? "#0F172A" : "#F8FAFC";
   const secondaryTextColor = isLightSurface ? "#334155" : "#E2E8F0";
@@ -387,35 +396,39 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
 
   const joinedDateLine = formatJoinedDateLine((user as any)?.created_at ?? (user as any)?.memberSince);
 
-  const topWashRgb = useMemo(
-    () => mixToward(cardRgb, tintRgb, POPUP_TOP_WASH_GENRE_BLEND),
-    [cardRgb, tintRgb],
-  );
-  const topWash = rgbToHex(topWashRgb.r, topWashRgb.g, topWashRgb.b);
-  const cardHex = rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b);
+  const topWashRgb = useMemo(() => {
+    if (!cardRgb || !tintRgb) return null;
+    return mixToward(cardRgb, tintRgb, POPUP_TOP_WASH_GENRE_BLEND);
+  }, [cardRgb, tintRgb]);
 
-  const cardSurfaceStyle: CSSProperties = genreChromePending
-    ? {
-        borderColor: "rgba(148,163,184,0.28)",
-        background:
-          "linear-gradient(180deg, rgba(30,41,59,0.88) 0%, rgba(15,23,42,0.94) 50%, rgba(2,6,23,0.96) 100%)",
-        boxShadow: [
-          `0 0 0 1px rgba(${LOADING_SHELL_TRIM_RGBA},0.42)`,
-          "inset 0 1px 0 rgba(255,255,255,0.06)",
-          "0 16px 40px -18px rgba(0,0,0,0.65)",
-        ].join(", "),
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-      }
-    : {
-        borderColor: isLightSurface ? "rgba(15,23,42,0.2)" : "rgba(248,250,252,0.22)",
-        background: `linear-gradient(180deg, ${topWash} 0%, ${cardHex} 100%)`,
-        boxShadow: [
-          `0 0 0 1px rgba(${r},${g},${b},0.4)`,
-          `0 12px 36px -24px rgba(${r},${g},${b},0.55)`,
-          `0 0 36px -10px rgba(${r},${g},${b},0.38)`,
-        ].join(", "),
-      };
+  const neutralShellStyle: CSSProperties = {
+    borderColor: "rgba(148,163,184,0.34)",
+    background: [
+      "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 32%)",
+      "linear-gradient(180deg, rgba(28,36,48,0.96) 0%, rgba(15,23,42,0.98) 48%, rgba(2,6,23,0.99) 100%)",
+    ].join(", "),
+    boxShadow: [
+      `0 0 0 1px rgba(${LOADING_SHELL_TRIM_RGBA},0.38)`,
+      "inset 0 1px 0 rgba(255,255,255,0.1)",
+      "inset 0 -1px 0 rgba(0,0,0,0.22)",
+      "0 20px 44px -16px rgba(0,0,0,0.72)",
+    ].join(", "),
+    backdropFilter: "blur(24px) saturate(160%)",
+    WebkitBackdropFilter: "blur(24px) saturate(160%)",
+  };
+
+  const cardSurfaceStyle: CSSProperties =
+    useGenreChrome && tintRgb && cardRgb && topWashRgb
+      ? {
+          borderColor: isLightSurface ? "rgba(15,23,42,0.2)" : "rgba(248,250,252,0.22)",
+          background: `linear-gradient(180deg, ${rgbToHex(topWashRgb.r, topWashRgb.g, topWashRgb.b)} 0%, ${rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b)} 100%)`,
+          boxShadow: [
+            `0 0 0 1px rgba(${tintRgb.r},${tintRgb.g},${tintRgb.b},0.4)`,
+            `0 12px 36px -24px rgba(${tintRgb.r},${tintRgb.g},${tintRgb.b},0.55)`,
+            `0 0 36px -10px rgba(${tintRgb.r},${tintRgb.g},${tintRgb.b},0.38)`,
+          ].join(", "),
+        }
+      : neutralShellStyle;
 
   const safeNumToString = (value: unknown) => {
     if (value === null || value === undefined) return null;
@@ -768,7 +781,7 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                     >
                       <span className="truncate">{pillLabelChip?.label}</span>
                     </span>
-                  ) : genreChromePending ? (
+                  ) : genreResolutionPending ? (
                     <span
                       className={`${POPUP_GENRE_PILL_CLASS} ring-white/10`}
                       aria-hidden
