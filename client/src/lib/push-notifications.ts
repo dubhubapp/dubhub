@@ -78,10 +78,15 @@ function resolvePushTapRoute(payload: Record<string, unknown>): string {
     return `/releases/${encodeURIComponent(releaseId)}`;
   }
   if (
-    (type === "comment_on_post" || type === "artist_identified_post") &&
+    (type === "comment_on_post" ||
+      type === "reply_to_comment" ||
+      type === "artist_tag_comment") &&
     postId &&
     postId.length > 0
   ) {
+    return `/?post=${encodeURIComponent(postId)}&openComments=1`;
+  }
+  if (type === "artist_identified_post" && postId && postId.length > 0) {
     return `/?post=${encodeURIComponent(postId)}`;
   }
   if (type === "moderator_community_verification_pending") {

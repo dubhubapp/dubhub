@@ -1668,13 +1668,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
         try {
-          await storage.createNotification({
+          const notif = await storage.createNotification({
             artistId,
             triggeredBy: userId,
             postId: postId,
             message: `@${commenterUsername} tagged you in a comment. Open the post and tap "ID Track" to confirm or deny if it's your track.`,
           });
           notified.add(artistId);
+          void sendPushToUser(artistId, {
+            type: "artist_tag_comment",
+            notificationId: notif.id,
+            postId: postId,
+            actorUserId: userId,
+            actorUsername: commenterUsername,
+          });
         } catch (notifErr) {
           console.error("[Comment] Failed to create tag notification for artist", artistId, notifErr);
         }
@@ -1699,13 +1706,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (parentRows.length > 0) {
             const parentAuthorId = parentRows[0].user_id as string;
             if (parentAuthorId && parentAuthorId !== userId && !notified.has(parentAuthorId)) {
-              await storage.createNotification({
+              const notif = await storage.createNotification({
                 artistId: parentAuthorId,
                 triggeredBy: userId,
                 postId: postId,
                 message: `@${commenterUsername} replied to your comment.`,
               });
               notified.add(parentAuthorId);
+              void sendPushToUser(parentAuthorId, {
+                type: "reply_to_comment",
+                notificationId: notif.id,
+                postId: postId,
+                actorUserId: userId,
+                actorUsername: commenterUsername,
+              });
             }
           }
         } catch (parentErr) {

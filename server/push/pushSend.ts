@@ -3,6 +3,8 @@ import { storage } from "../storage";
 
 type PushEventName =
   | "comment_on_post"
+  | "reply_to_comment"
+  | "artist_tag_comment"
   | "artist_identified_post"
   | "release_attached_to_liked_or_uploaded_post"
   | "release_day_out_today"
@@ -17,6 +19,22 @@ interface CommentOnPostPayload extends BaseEventPayload {
   type: "comment_on_post";
   notificationId: string;
   postId: string | null;
+  actorUserId: string;
+  actorUsername: string;
+}
+
+interface ReplyToCommentPayload extends BaseEventPayload {
+  type: "reply_to_comment";
+  notificationId: string;
+  postId: string;
+  actorUserId: string;
+  actorUsername: string;
+}
+
+interface ArtistTagCommentPayload extends BaseEventPayload {
+  type: "artist_tag_comment";
+  notificationId: string;
+  postId: string;
   actorUserId: string;
   actorUsername: string;
 }
@@ -64,6 +82,8 @@ interface ModeratorReportOpenedPayload extends BaseEventPayload {
 
 type EventPayload =
   | CommentOnPostPayload
+  | ReplyToCommentPayload
+  | ArtistTagCommentPayload
   | ArtistIdentifiedPayload
   | ReleaseAttachedPayload
   | ReleaseDayOutPayload
@@ -76,6 +96,16 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       return {
         title: "New comment 💬",
         body: `@${payload.actorUsername} commented on your post.`,
+      };
+    case "reply_to_comment":
+      return {
+        title: "New reply 💬",
+        body: `@${payload.actorUsername} replied to your comment.`,
+      };
+    case "artist_tag_comment":
+      return {
+        title: "Artist tag 🎵",
+        body: `@${payload.actorUsername} tagged you in a comment.`,
       };
     case "artist_identified_post":
       return {
