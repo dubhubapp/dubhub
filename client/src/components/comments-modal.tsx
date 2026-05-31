@@ -1108,7 +1108,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   ? "rounded-lg border border-amber-300 bg-amber-50/30 p-2 dark:border-amber-500/45 dark:bg-amber-500/[0.09]"
                   : "";
               return (
-                <div key={comment.id} className={`flex space-x-2 ${highlightClass}`}>
+                <div key={comment.id} className={`flex items-start space-x-2 ${highlightClass}`}>
                   <button
                     type="button"
                     className="relative flex-shrink-0 p-0"
