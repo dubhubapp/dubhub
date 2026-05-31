@@ -1042,6 +1042,15 @@ export default function UserProfile() {
     return "single";
   };
 
+  const shouldOpenCommentsForNotification = (notification: NotificationWithUser) => {
+    const kind = getNotificationKind(notification);
+    return (
+      kind === "post_comment_reply" ||
+      kind === "post_owner_comment" ||
+      kind === "artist_tag_comment"
+    );
+  };
+
   const getNotificationGroupKey = (n: NotificationWithUser) => {
     const kind = getNotificationKind(n);
     const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id ?? null;
@@ -1555,7 +1564,11 @@ export default function UserProfile() {
         if (!res.ok) {
           throw new Error(`POST_LOOKUP_${res.status}`);
         }
-        navigate(`/?post=${notification.postId}`);
+        const openComments = shouldOpenCommentsForNotification(notification);
+        const postRoute = openComments
+          ? `/?post=${encodeURIComponent(notification.postId)}&openComments=1`
+          : `/?post=${encodeURIComponent(notification.postId)}`;
+        navigate(postRoute);
       } catch {
         navigate("/");
         toast({

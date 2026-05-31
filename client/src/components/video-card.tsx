@@ -230,6 +230,9 @@ interface VideoCardProps {
   onCommentsOpened?: () => void;
   onCommentsClosed?: () => void;
   onPostLiked?: () => void;
+  /** Home deep-link: open comments drawer once this card is active. */
+  requestOpenComments?: boolean;
+  onOpenCommentsRequestHandled?: () => void;
   moderatorPreview?: boolean;
 }
 
@@ -264,6 +267,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.onCommentsOpened === next.onCommentsOpened &&
     prev.onCommentsClosed === next.onCommentsClosed &&
     prev.onPostLiked === next.onPostLiked &&
+    prev.requestOpenComments === next.requestOpenComments &&
+    prev.onOpenCommentsRequestHandled === next.onOpenCommentsRequestHandled &&
     prev.moderatorPreview === next.moderatorPreview
   );
 }
@@ -288,6 +293,8 @@ function VideoCardInner({
   onCommentsOpened,
   onCommentsClosed,
   onPostLiked,
+  requestOpenComments = false,
+  onOpenCommentsRequestHandled,
   moderatorPreview = false,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
@@ -350,6 +357,50 @@ function VideoCardInner({
   }, [isActive]);
   const isPlayingRef = useRef(true);
   const activationRunRef = useRef(0);
+
+  const openCommentsDrawer = useCallback(() => {
+    if (showComments) return;
+    if (debugComments) {
+      console.log("[CommentsOpen] open", {
+        feedPostId: post.id,
+        handlerPostId: post.id,
+        showCommentsBefore: showComments,
+        queryKey: ["/api/posts", post.id, "comments"],
+      });
+    }
+    void queryClient
+      .prefetchQuery({
+        queryKey: ["/api/posts", post.id, "comments"],
+        queryFn: async () => {
+          const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
+          return response.json();
+        },
+      })
+      .then(() => {
+        if (!debugComments) return;
+        console.log("[CommentsOpen] prefetch success", { postId: post.id });
+      })
+      .catch((error: unknown) => {
+        if (!debugComments) return;
+        const message = error instanceof Error ? error.message : String(error);
+        console.log("[CommentsOpen] prefetch error", { postId: post.id, message });
+      });
+    setCommentsPost(post);
+    setShowComments(true);
+    onCommentsOpened?.();
+  }, [debugComments, onCommentsOpened, post, queryClient, showComments]);
+
+  useEffect(() => {
+    if (!requestOpenComments || !isActive || showComments) return;
+    openCommentsDrawer();
+    onOpenCommentsRequestHandled?.();
+  }, [
+    requestOpenComments,
+    isActive,
+    showComments,
+    openCommentsDrawer,
+    onOpenCommentsRequestHandled,
+  ]);
 
   /**
    * Pause + drop media source. Used on VideoCard unmount and when ref(null) detaches the outgoing
@@ -2335,37 +2386,7 @@ function VideoCardInner({
                   type="button"
                   className={railBtn}
                   onClick={() => {
-                    if (debugComments) {
-                      console.log("[CommentsOpen] click", {
-                        feedPostId: post.id,
-                        handlerPostId: post.id,
-                        showCommentsBefore: showComments,
-                      });
-                      console.log("[CommentsOpen] prefetch start", {
-                        postId: post.id,
-                        queryKey: ["/api/posts", post.id, "comments"],
-                      });
-                    }
-                    void queryClient
-                      .prefetchQuery({
-                        queryKey: ["/api/posts", post.id, "comments"],
-                        queryFn: async () => {
-                          const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
-                          return response.json();
-                        },
-                      })
-                      .then(() => {
-                        if (!debugComments) return;
-                        console.log("[CommentsOpen] prefetch success", { postId: post.id });
-                      })
-                      .catch((error: unknown) => {
-                        if (!debugComments) return;
-                        const message = error instanceof Error ? error.message : String(error);
-                        console.log("[CommentsOpen] prefetch error", { postId: post.id, message });
-                      });
-                    setCommentsPost(post);
-                    setShowComments(true);
-                    onCommentsOpened?.();
+                    openCommentsDrawer();
                   }}
                 >
                   <div className={`${railIconWrap} relative`}>

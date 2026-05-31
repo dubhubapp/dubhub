@@ -574,6 +574,13 @@ export default function Home() {
   const deepLinkWatchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Post id the active watchdog was scheduled for (skip redundant timer resets). */
   const deepLinkWatchdogForPostRef = useRef<string | null>(null);
+  /** Comment-context deep link: open comments drawer once target post is active (survives URL cleanup). */
+  const pendingOpenCommentsPostIdRef = useRef<string | null>(null);
+  const [openCommentsTargetPostId, setOpenCommentsTargetPostId] = useState<string | null>(null);
+  const clearPendingOpenComments = useCallback(() => {
+    pendingOpenCommentsPostIdRef.current = null;
+    setOpenCommentsTargetPostId(null);
+  }, []);
   /** True from the moment sort/filter changes until real (non-placeholder) query data arrives. */
   const feedChromeResetPendingRef = useRef(false);
   const [feedChromeResetPending, setFeedChromeResetPending] = useState(false);
@@ -2108,6 +2115,7 @@ export default function Home() {
     const q = search.startsWith("?") ? search.slice(1) : search;
     const params = new URLSearchParams(q);
     const postId = params.get('post') || params.get('track'); // Support both for backward compatibility
+    const wantsOpenComments = params.get("openComments") === "1";
     const idParam = params.get("id");
     newest201Trace("deepLink/url-scan", {
       hasPostParam: !!params.get("post"),
@@ -2149,6 +2157,13 @@ export default function Home() {
       return;
     }
 
+    if (wantsOpenComments) {
+      pendingOpenCommentsPostIdRef.current = postId;
+      setOpenCommentsTargetPostId(postId);
+    } else {
+      clearPendingOpenComments();
+    }
+
     // Notification deep-links cannot be handled while Random is active — leave Random first, then rerun with ?post= still present.
     if (sortMode === "random") {
       if (deepLinkRandomExitForPostRef.current !== postId) {
@@ -2171,6 +2186,7 @@ export default function Home() {
     ) {
       deepLinkTerminalHandledRef.current = postId;
       clearDeepLinkWatchdog();
+      clearPendingOpenComments();
       toast({
         title: "Post hidden by current filters",
         description: "Adjust genre or ID filters in the menu, then try opening the notification again.",
@@ -2196,6 +2212,7 @@ export default function Home() {
         const still = p2.get("post") ?? p2.get("track");
         if (still === watchedId && deepLinkTerminalHandledRef.current !== watchedId) {
           deepLinkTerminalHandledRef.current = watchedId;
+          clearPendingOpenComments();
           toast({
             title: "Couldn't open this post",
             description: "Try again from Home or Notifications.",
@@ -2237,6 +2254,7 @@ export default function Home() {
             if (deepLinkTerminalHandledRef.current !== postId) {
               deepLinkTerminalHandledRef.current = postId;
               clearDeepLinkWatchdog();
+              clearPendingOpenComments();
               toast({
                 title: "Post unavailable",
                 description: "That link may point to a removed or private clip.",
@@ -2276,6 +2294,7 @@ export default function Home() {
             if (deepLinkTerminalHandledRef.current !== postId) {
               deepLinkTerminalHandledRef.current = postId;
               clearDeepLinkWatchdog();
+              clearPendingOpenComments();
               toast({
                 title: "Couldn't open this post",
                 description: "Something went wrong updating the feed. Try Home again.",
@@ -2296,6 +2315,7 @@ export default function Home() {
           if (deepLinkTerminalHandledRef.current !== postId) {
             deepLinkTerminalHandledRef.current = postId;
             clearDeepLinkWatchdog();
+            clearPendingOpenComments();
             toast({
               title: "Post unavailable",
               description: "Couldn\u2019t load that clip. Try again later.",
@@ -2364,6 +2384,7 @@ export default function Home() {
     sortMode,
     handleFeedSortChange,
     posts,
+    clearPendingOpenComments,
   ]);
 
   // Cleanup timeouts on unmount
@@ -2676,6 +2697,10 @@ export default function Home() {
               onPostLiked={() => {
                 window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
               }}
+              requestOpenComments={
+                openCommentsTargetPostId === post.id && activePostId === post.id
+              }
+              onOpenCommentsRequestHandled={clearPendingOpenComments}
             />
           );
         })}
