@@ -1864,10 +1864,11 @@ export class DatabaseStorage implements IStorage {
     timeFilter: "month" | "year" | "all" = "all",
   ): Promise<any[]> {
     try {
-      // Read-only ranking from `user_karma`. All score / correct_ids **writes** must go through `server/karmaService.ts`.
-      // Community trust leaderboard:
-      //  - primary: hardened `user_karma.score` as `reputation`
-      //  - secondary: `user_karma.correct_ids`
+      // Read-only leaderboard reads. All score / correct_ids **writes** must go through `server/karmaService.ts`.
+      // Response fields:
+      //  - `reputation`: lifetime trust (`user_karma.score`) — used for Rep tier / progress bar in UI
+      //  - `correct_ids`: period confirmed IDs when month/year filtered, else lifetime `user_karma.correct_ids`
+      // Ranking (ORDER BY): period event score + period confirmed IDs when filtered, else lifetime aggregates
       const accountType = userType === "user" ? "user" : "artist";
       const applyMonth = timeFilter === "month";
       const applyYear = timeFilter === "year";
@@ -1907,10 +1908,7 @@ export class DatabaseStorage implements IStorage {
           p.account_type,
           p.moderator,
           p.verified_artist,
-          CASE
-            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
-            ELSE COALESCE(uk.score, 0)
-          END AS reputation,
+          COALESCE(uk.score, 0) AS reputation,
           CASE
             WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
             ELSE COALESCE(uk.correct_ids, 0)
@@ -1975,6 +1973,8 @@ export class DatabaseStorage implements IStorage {
     timeFilter: "month" | "year" | "all" = "all",
   ): Promise<{ rank: number; entry: any | null }> {
     try {
+      // Same field semantics as getLeaderboard. `rank_score` is internal-only (excluded from final SELECT)
+      // so ROW_NUMBER ranks by period activity when filtered while `reputation` stays lifetime for UI.
       const accountType = userType === "user" ? "user" : "artist";
       const applyMonth = timeFilter === "month";
       const applyYear = timeFilter === "year";
@@ -2016,14 +2016,15 @@ export class DatabaseStorage implements IStorage {
             p.account_type,
             p.moderator,
             p.verified_artist,
-            CASE
-              WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
-              ELSE COALESCE(uk.score, 0)
-            END AS reputation,
+            COALESCE(uk.score, 0) AS reputation,
             CASE
               WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
               ELSE COALESCE(uk.correct_ids, 0)
             END AS correct_ids,
+            CASE
+              WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
+              ELSE COALESCE(uk.score, 0)
+            END AS rank_score,
             p.created_at AS created_at,
             COALESCE(
               (
@@ -2062,11 +2063,22 @@ export class DatabaseStorage implements IStorage {
           SELECT
             *,
             ROW_NUMBER() OVER (
-              ORDER BY reputation DESC, correct_ids DESC, username ASC, user_id ASC
+              ORDER BY rank_score DESC, correct_ids DESC, username ASC, user_id ASC
             ) AS rank
           FROM scoped
         )
-        SELECT *
+        SELECT
+          user_id,
+          username,
+          avatar_url,
+          account_type,
+          moderator,
+          verified_artist,
+          reputation,
+          correct_ids,
+          created_at,
+          favorite_genre,
+          rank
         FROM ranked
         WHERE user_id = ${userId}
         LIMIT 1
