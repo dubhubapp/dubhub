@@ -23,6 +23,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
 import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
@@ -52,6 +62,10 @@ const COMMENTS_SHEET_REM_CAP = 33;
 const COMMENTS_SHEET_TOP_RESERVE_PX = 72;
 
 const COMMENTS_SHEET_MIN_PX = 160;
+
+/** Comment ⋯ menu (delete / report) — keep inset from screen edges on mobile. */
+const COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS =
+  "z-[70] min-w-[10rem] max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground";
 
 function getAppViewportHostEl(): HTMLElement | null {
   if (typeof document === "undefined") return null;
@@ -114,6 +128,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [currentMentionStart, setCurrentMentionStart] = useState(-1);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
+  const [deleteConfirmCommentId, setDeleteConfirmCommentId] = useState<string | null>(null);
   const [nativeKeyboardInsetPx, setNativeKeyboardInsetPx] = useState(0);
   const [nativeKeyboardLayoutActive, setNativeKeyboardLayoutActive] = useState(false);
   const { toast } = useToast();
@@ -868,9 +883,15 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     },
   });
 
-  const handleDeleteComment = (commentId: string) => {
+  const requestDeleteComment = (commentId: string) => {
     if (deleteCommentMutation.isPending) return;
-    if (!window.confirm("Delete this comment? Replies will stay visible.")) return;
+    setDeleteConfirmCommentId(commentId);
+  };
+
+  const confirmDeleteComment = () => {
+    if (!deleteConfirmCommentId || deleteCommentMutation.isPending) return;
+    const commentId = deleteConfirmCommentId;
+    setDeleteConfirmCommentId(null);
     deleteCommentMutation.mutate(commentId);
   };
 
@@ -961,8 +982,36 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     el.style.height = `${nextHeight}px`;
   }, [newComment, isOpen, replyingTo]);
 
+  useEffect(() => {
+    if (!isOpen) setDeleteConfirmCommentId(null);
+  }, [isOpen]);
+
   return (
     <>
+      <AlertDialog
+        open={deleteConfirmCommentId != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmCommentId(null);
+        }}
+      >
+        <AlertDialogContent className="z-[80] w-[calc(100vw-2rem)] max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete comment?</AlertDialogTitle>
+            <AlertDialogDescription>Any replies will stay visible.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="delete-comment-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteCommentMutation.isPending}
+              data-testid="delete-comment-confirm"
+              onClick={confirmDeleteComment}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <ReportModal
         isOpen={showReportModal}
         onClose={() => {
@@ -1343,13 +1392,15 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent
                             align="end"
-                            sideOffset={4}
-                            className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
+                            sideOffset={6}
+                            alignOffset={-4}
+                            collisionPadding={16}
+                            className={COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS}
                           >
                             {isOwnComment ? (
                               <DropdownMenuItem
                                 className="cursor-pointer text-sm text-red-700 focus:bg-red-50 focus:text-red-800 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-800 dark:text-red-400 dark:focus:bg-red-950/40 dark:focus:text-red-300 dark:data-[highlighted]:bg-red-950/40 dark:data-[highlighted]:text-red-300"
-                                onSelect={() => handleDeleteComment(comment.id)}
+                                onSelect={() => requestDeleteComment(comment.id)}
                                 data-testid={`delete-button-${comment.id}`}
                               >
                                 <Trash2 className="h-4 w-4 shrink-0" />
@@ -1564,13 +1615,15 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent
                                     align="end"
-                                    sideOffset={4}
-                                    className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
+                                    sideOffset={6}
+                                    alignOffset={-4}
+                                    collisionPadding={16}
+                                    className={COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS}
                                   >
                                     {isOwnReply ? (
                                       <DropdownMenuItem
                                         className="cursor-pointer text-sm text-red-700 focus:bg-red-50 focus:text-red-800 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-800 dark:text-red-400 dark:focus:bg-red-950/40 dark:data-[highlighted]:bg-red-950/40"
-                                        onSelect={() => handleDeleteComment(reply.id)}
+                                        onSelect={() => requestDeleteComment(reply.id)}
                                         data-testid={`delete-button-${reply.id}`}
                                       >
                                         <Trash2 className="h-4 w-4 shrink-0" />
