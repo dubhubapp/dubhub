@@ -3,6 +3,7 @@ import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey,
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { INPUT_LIMITS } from "./input-limits";
+import { DELETED_COMMENT_BODY } from "./deleted-comment";
 
 // Supabase auth profiles table - links auth.users to custom profile data
 export const profiles = pgTable("profiles", {
@@ -249,7 +250,12 @@ export const insertPostSchema = z.object({
 
 // Comments schema - updated to use body instead of content
 export const insertCommentSchema = z.object({
-  body: z.string().trim().min(1, "Comment cannot be empty").max(INPUT_LIMITS.commentBody),
+  body: z
+    .string()
+    .trim()
+    .min(1, "Comment cannot be empty")
+    .max(INPUT_LIMITS.commentBody)
+    .refine((value) => value !== DELETED_COMMENT_BODY, "Invalid comment"),
   artistTag: z.string().optional().nullable(), // UUID of artist_video_tags.id
   parentId: z.string().optional().nullable(),
 });

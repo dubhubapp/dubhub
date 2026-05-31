@@ -1,11 +1,17 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, MessageCircle } from "lucide-react";
+import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, MessageCircle, Trash2 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import {
+  DELETED_COMMENT_BODY,
+  DELETED_COMMENT_DISPLAY,
+  isDeletedCommentBody,
+} from "@shared/deleted-comment";
+import { ApiRequestError } from "@/lib/apiDiagnostics";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
@@ -816,6 +822,58 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     },
   });
 
+  const updateCommentBodyInTree = useCallback(
+    (commentId: string, body: string) => {
+      queryClient.setQueryData<CommentWithUser[]>(
+        ["/api/posts", post.id, "comments"],
+        (old) => {
+          if (!old) return old;
+          const patchTree = (items: CommentWithUser[]): CommentWithUser[] =>
+            items.map((c) => {
+              if (c.id === commentId) {
+                return { ...c, body, artistTag: null };
+              }
+              if (c.replies?.length) {
+                return { ...c, replies: patchTree(c.replies) };
+              }
+              return c;
+            });
+          return patchTree(old);
+        },
+      );
+    },
+    [post.id, queryClient],
+  );
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: string) => {
+      await apiRequest("DELETE", `/api/comments/${commentId}`);
+    },
+    onSuccess: (_data, commentId) => {
+      updateCommentBodyInTree(commentId, DELETED_COMMENT_BODY);
+    },
+    onError: (error: unknown) => {
+      let description = "Failed to delete comment";
+      if (error instanceof ApiRequestError && error.responseBody) {
+        try {
+          const parsed = JSON.parse(error.responseBody) as { message?: string };
+          if (typeof parsed.message === "string" && parsed.message.trim()) {
+            description = parsed.message;
+          }
+        } catch {
+          /* use default */
+        }
+      }
+      toast({ title: "Could not delete comment", description, variant: "destructive" });
+    },
+  });
+
+  const handleDeleteComment = (commentId: string) => {
+    if (deleteCommentMutation.isPending) return;
+    if (!window.confirm("Delete this comment? Replies will stay visible.")) return;
+    deleteCommentMutation.mutate(commentId);
+  };
+
   // Comment like toggle
   const handleToggleCommentLike = async (commentId: string) => {
     try {
@@ -1092,15 +1150,20 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
             }
 
             return filteredComments.map((comment) => {
+              const commentIsDeleted = isDeletedCommentBody(comment.body);
+              const isOwnComment = !!contextUser?.id && comment.userId === contextUser.id;
               const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment
               const isArtistConfirmationComment = !!artistConfirmationCommentId && comment.id === artistConfirmationCommentId; // system/artist confirmation comment
               // Only treat tagged comments specially before artist verification; once verified, rely solely on the selected + confirmation comments
               const isTaggedSuggestion =
+                !commentIsDeleted &&
                 !isArtistVerifiedPost &&
                 artistVerifiedBy &&
                 ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
 
-              const highlightClass = isArtistConfirmationComment
+              const highlightClass = commentIsDeleted
+                ? ""
+                : isArtistConfirmationComment
                 ? "rounded-lg border-2 border-[#FFD700] bg-amber-50/70 p-2 dark:bg-amber-500/[0.14] dark:shadow-[inset_0_0_0_1px_rgba(250,204,21,0.2)]"
                 : isVerifiedComment
                 ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-2 dark:border-green-500/75 dark:bg-green-500/[0.11]"
@@ -1164,7 +1227,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     />
                   </div>
                   {/* Artist identified badge: match post-level identified treatment */}
-                  {isArtistConfirmationComment && isArtistVerifiedPost && !isVerifiedComment && (
+                  {!commentIsDeleted && isArtistConfirmationComment && isArtistVerifiedPost && !isVerifiedComment && (
                     <span
                       className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
                       style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
@@ -1175,7 +1238,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     </span>
                   )}
                   {/* Tagged artist - user's comment that tagged the artist (secondary, no verified badge, only pre-artist verification) */}
-                  {isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
+                  {!commentIsDeleted && isTaggedSuggestion && !isVerifiedComment && !isArtistVerifiedPost && (
                     <div
                       className="flex items-center space-x-1 rounded-full bg-amber-100 px-1.5 py-0.5 dark:bg-amber-500/18 dark:ring-1 dark:ring-amber-400/25"
                       data-testid={`badge-tagged-artist-${comment.id}`}
@@ -1184,7 +1247,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     </div>
                   )}
                   {/* Community identified badge: keep community source icon, match post-level identified styling */}
-                  {(post.verificationStatus === "community" || post.verificationStatus === "community_approved") &&
+                  {!commentIsDeleted &&
+                    (post.verificationStatus === "community" || post.verificationStatus === "community_approved") &&
                     post.verifiedCommentId === comment.id &&
                     !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <span
@@ -1197,7 +1261,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     </span>
                   )}
                   {/* Moderator identified badge: match post-level identified treatment */}
-                  {isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                  {!commentIsDeleted && isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <span
                       className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
                       style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
@@ -1208,7 +1272,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     </span>
                   )}
                   {/* Artist-selected verified comment: same identified treatment as post-level artist state */}
-                  {isVerifiedComment && isArtistVerifiedPost && (
+                  {!commentIsDeleted && isVerifiedComment && isArtistVerifiedPost && (
                     <span
                       className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
                       style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
@@ -1228,66 +1292,86 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                     {formatTimeAgo(comment.createdAt)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white">
-                  {highlightArtistMentions(comment.body, comment.tagStatus)}
-                </p>
+                {commentIsDeleted ? (
+                  <p className="mt-0.5 text-[13px] italic leading-snug text-gray-400 sm:text-sm dark:text-white/45">
+                    {DELETED_COMMENT_DISPLAY}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white">
+                    {highlightArtistMentions(comment.body, comment.tagStatus)}
+                  </p>
+                )}
                 <div className="mt-0.5 flex items-center gap-2">
-                  {/* Comment likes (separate from post likes) */}
-                  <button
-                    className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs dark:hover:bg-muted ${
-                      comment.userVote === "upvote"
-                        ? "text-pink-600 bg-pink-50 dark:bg-pink-950/50 dark:text-pink-400"
-                        : "text-gray-500 dark:text-white/70"
-                    }`}
-                    onClick={() => handleToggleCommentLike(comment.id)}
-                    data-testid={`button-like-${comment.id}`}
-                  >
-                    <Heart
-                      className="w-3 h-3"
-                      fill={comment.userVote === "upvote" ? "currentColor" : "none"}
-                    />
-                    <span>{comment.voteScore ?? 0}</span>
-                  </button>
-                  <button 
-                    className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/70 dark:hover:text-white"
-                    onPointerDown={(e) => {
-                      // Keep textarea focus/keyboard active when switching reply target.
-                      e.preventDefault();
-                    }}
-                    onClick={() => activateReplyTarget(comment.id, comment.user.username)}
-                    data-testid={`reply-button-${comment.id}`}
-                  >
-                    Reply
-                  </button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                  {!commentIsDeleted ? (
+                    <>
+                      {/* Comment likes (separate from post likes) */}
                       <button
-                        type="button"
-                        className="inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)] sm:h-8 sm:w-8"
-                        aria-label="Comment actions"
-                        data-testid={`comment-actions-trigger-${comment.id}`}
+                        className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs dark:hover:bg-muted ${
+                          comment.userVote === "upvote"
+                            ? "text-pink-600 bg-pink-50 dark:bg-pink-950/50 dark:text-pink-400"
+                            : "text-gray-500 dark:text-white/70"
+                        }`}
+                        onClick={() => handleToggleCommentLike(comment.id)}
+                        data-testid={`button-like-${comment.id}`}
                       >
-                        <MoreHorizontal className="h-4 w-4" aria-hidden />
+                        <Heart
+                          className="w-3 h-3"
+                          fill={comment.userVote === "upvote" ? "currentColor" : "none"}
+                        />
+                        <span>{comment.voteScore ?? 0}</span>
                       </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      sideOffset={4}
-                      className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
-                    >
-                      <DropdownMenuItem
-                        className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
-                        onSelect={() => {
-                          setReportingComment({ id: comment.id, userId: comment.userId });
-                          setShowReportModal(true);
+                      <button
+                        className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/70 dark:hover:text-white"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
                         }}
-                        data-testid={`report-button-${comment.id}`}
+                        onClick={() => activateReplyTarget(comment.id, comment.user.username)}
+                        data-testid={`reply-button-${comment.id}`}
                       >
-                        <Flag className="h-4 w-4 shrink-0 text-red-600" />
-                        Report comment
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        Reply
+                      </button>
+                      <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)] sm:h-8 sm:w-8"
+                              aria-label="Comment actions"
+                              data-testid={`comment-actions-trigger-${comment.id}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" aria-hidden />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            sideOffset={4}
+                            className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
+                          >
+                            {isOwnComment ? (
+                              <DropdownMenuItem
+                                className="cursor-pointer text-sm text-red-700 focus:bg-red-50 focus:text-red-800 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-800 dark:text-red-400 dark:focus:bg-red-950/40 dark:focus:text-red-300 dark:data-[highlighted]:bg-red-950/40 dark:data-[highlighted]:text-red-300"
+                                onSelect={() => handleDeleteComment(comment.id)}
+                                data-testid={`delete-button-${comment.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 shrink-0" />
+                                Delete comment
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
+                                onSelect={() => {
+                                  setReportingComment({ id: comment.id, userId: comment.userId });
+                                  setShowReportModal(true);
+                                }}
+                                data-testid={`report-button-${comment.id}`}
+                              >
+                                <Flag className="h-4 w-4 shrink-0 text-red-600" />
+                                Report comment
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                    </>
+                  ) : null}
                   {/* Toggle replies button */}
                   {comment.replies && comment.replies.length > 0 && (() => {
                     const totalReplies = comment.replies.length;
@@ -1351,7 +1435,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   <div className="ml-7 mt-2 space-y-2.5 border-l-2 border-gray-100 pl-2.5 dark:border-border">
                     {sortedRepliesChronological(comment.replies)
                       .slice(0, visibleReplyCountByParent[comment.id] ?? 0)
-                      .map((reply) => (
+                      .map((reply) => {
+                        const replyIsDeleted = isDeletedCommentBody(reply.body);
+                        const isOwnReply = !!contextUser?.id && reply.userId === contextUser.id;
+                        return (
                         <div key={reply.id} className="flex space-x-2">
                           <button
                             type="button"
@@ -1425,41 +1512,92 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                               {formatTimeAgo(reply.createdAt)}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-xs text-gray-700 dark:text-white">
-                            {highlightArtistMentions(reply.body, reply.tagStatus)}
-                          </p>
+                          {replyIsDeleted ? (
+                            <p className="mt-0.5 text-xs italic text-gray-400 dark:text-white/45">
+                              {DELETED_COMMENT_DISPLAY}
+                            </p>
+                          ) : (
+                            <p className="mt-0.5 text-xs text-gray-700 dark:text-white">
+                              {highlightArtistMentions(reply.body, reply.tagStatus)}
+                            </p>
+                          )}
                           <div className="mt-1 flex items-center space-x-2.5">
-                            {/* Comment likes for replies */}
-                            <button
-                              className={`flex items-center space-x-1 rounded-full px-2 py-0.5 text-xs hover:bg-gray-100 dark:hover:bg-muted ${
-                                reply.userVote === "upvote"
-                                  ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
-                                  : "text-gray-500 dark:text-white/70"
-                              }`}
-                              onClick={() => handleToggleCommentLike(reply.id)}
-                              data-testid={`button-like-${reply.id}`}
-                            >
-                              <Heart
-                                className="w-3 h-3"
-                                fill={reply.userVote === "upvote" ? "currentColor" : "none"}
-                              />
-                              <span>{reply.voteScore ?? 0}</span>
-                            </button>
-                            <button 
-                              className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/70 dark:hover:text-white"
-                              onPointerDown={(e) => {
-                                // Keep textarea focus/keyboard active when switching reply target.
-                                e.preventDefault();
-                              }}
-                              onClick={() => activateReplyTarget(comment.id, reply.user.username)}
-                              data-testid={`reply-button-${reply.id}`}
-                            >
-                              Reply
-                            </button>
+                            {!replyIsDeleted ? (
+                              <>
+                                <button
+                                  className={`flex items-center space-x-1 rounded-full px-2 py-0.5 text-xs hover:bg-gray-100 dark:hover:bg-muted ${
+                                    reply.userVote === "upvote"
+                                      ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
+                                      : "text-gray-500 dark:text-white/70"
+                                  }`}
+                                  onClick={() => handleToggleCommentLike(reply.id)}
+                                  data-testid={`button-like-${reply.id}`}
+                                >
+                                  <Heart
+                                    className="w-3 h-3"
+                                    fill={reply.userVote === "upvote" ? "currentColor" : "none"}
+                                  />
+                                  <span>{reply.voteScore ?? 0}</span>
+                                </button>
+                                {!commentIsDeleted ? (
+                                  <button
+                                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/70 dark:hover:text-white"
+                                    onPointerDown={(e) => {
+                                      e.preventDefault();
+                                    }}
+                                    onClick={() => activateReplyTarget(comment.id, reply.user.username)}
+                                    data-testid={`reply-button-${reply.id}`}
+                                  >
+                                    Reply
+                                  </button>
+                                ) : null}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+                                      aria-label="Reply actions"
+                                      data-testid={`comment-actions-trigger-${reply.id}`}
+                                    >
+                                      <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    sideOffset={4}
+                                    className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
+                                  >
+                                    {isOwnReply ? (
+                                      <DropdownMenuItem
+                                        className="cursor-pointer text-sm text-red-700 focus:bg-red-50 focus:text-red-800 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-800 dark:text-red-400 dark:focus:bg-red-950/40 dark:data-[highlighted]:bg-red-950/40"
+                                        onSelect={() => handleDeleteComment(reply.id)}
+                                        data-testid={`delete-button-${reply.id}`}
+                                      >
+                                        <Trash2 className="h-4 w-4 shrink-0" />
+                                        Delete comment
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <DropdownMenuItem
+                                        className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:data-[highlighted]:bg-muted"
+                                        onSelect={() => {
+                                          setReportingComment({ id: reply.id, userId: reply.userId });
+                                          setShowReportModal(true);
+                                        }}
+                                        data-testid={`report-button-${reply.id}`}
+                                      >
+                                        <Flag className="h-4 w-4 shrink-0 text-red-600" />
+                                        Report comment
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </>
+                            ) : null}
                           </div>
                         </div>
                       </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
                 </div>

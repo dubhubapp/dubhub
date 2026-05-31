@@ -9,6 +9,13 @@ import {
   MAX_VIDEO_UPLOAD_BYTES,
 } from "@shared/video-upload";
 import { MODERATION_REASON_MAX_LENGTH } from "@shared/moderation-reasons";
+import {
+  COMMENT_ATTACHED_TO_IDENTIFICATION_MESSAGE,
+  COMMENT_DELETED_INTERACTION_MESSAGE,
+  DELETED_COMMENT_BODY,
+  isCommentDeletionBlockedByVerification,
+  isDeletedCommentBody,
+} from "@shared/deleted-comment";
 import { insertCommentSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { db } from "./db";
@@ -1539,6 +1546,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const comment = commentRows[0];
 
+      if (isDeletedCommentBody(comment.body)) {
+        return res.status(400).json({ message: COMMENT_DELETED_INTERACTION_MESSAGE });
+      }
+
       const commentIdPrefix = `COMMENT_ID:${commentId}`;
       const existingCommentReport = await db.execute(sql`
         SELECT id FROM reports
@@ -1609,6 +1620,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Soft-delete own comment (preserves row + thread; does not affect karma or votes)
+  app.delete("/api/comments/:id", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const commentId = req.params.id;
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const userId = req.dbUser.id;
+
+      const rowResult = await db.execute(sql`
+        SELECT
+          c.id,
+          c.user_id,
+          c.body,
+          p.verified_comment_id,
+          p.verification_status,
+          COALESCE(p.is_verified_artist, false) AS is_verified_artist
+        FROM comments c
+        INNER JOIN posts p ON p.id = c.post_id
+        WHERE c.id = ${commentId}
+        LIMIT 1
+      `);
+      const rows = (rowResult as any).rows || [];
+      if (rows.length === 0) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      const row = rows[0];
+
+      if (row.user_id !== userId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (isDeletedCommentBody(row.body)) {
+        return res.json({ message: "Comment deleted", id: commentId, alreadyDeleted: true });
+      }
+
+      if (
+        isCommentDeletionBlockedByVerification({
+          commentId,
+          verifiedCommentId: row.verified_comment_id,
+          verificationStatus: row.verification_status,
+          isVerifiedArtist: row.is_verified_artist === true,
+        })
+      ) {
+        return res.status(400).json({ message: COMMENT_ATTACHED_TO_IDENTIFICATION_MESSAGE });
+      }
+
+      await db.execute(sql`
+        UPDATE comments
+        SET body = ${DELETED_COMMENT_BODY},
+            artist_tag = NULL
+        WHERE id = ${commentId}
+      `);
+
+      res.json({ message: "Comment deleted", id: commentId });
+    } catch (error) {
+      console.error("[/api/comments/:id] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to delete comment" });
+    }
+  });
+
   // Get post comments
   app.get("/api/posts/:id/comments", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
@@ -1629,12 +1701,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
-      const { body, parentId } = req.body;
+      const { body } = req.body;
+      const rawParentId = req.body?.parentId;
 
       const parsedComment = insertCommentSchema.safeParse({
         body: body ?? "",
         artistTag: null,
-        parentId: parentId != null && parentId !== "" ? String(parentId) : null,
+        parentId: rawParentId != null && rawParentId !== "" ? String(rawParentId) : null,
       });
       if (!parsedComment.success) {
         const msg =
@@ -1644,6 +1717,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: msg });
       }
       const commentText = parsedComment.data.body;
+
+      const parentId = parsedComment.data.parentId ?? null;
+      if (parentId) {
+        const parentResult = await db.execute(sql`
+          SELECT body FROM comments WHERE id = ${parentId} AND post_id = ${postId} LIMIT 1
+        `);
+        const parentRows = (parentResult as any).rows || [];
+        if (parentRows.length === 0) {
+          return res.status(400).json({ message: "Parent comment not found" });
+        }
+        if (isDeletedCommentBody(parentRows[0].body)) {
+          return res.status(400).json({ message: COMMENT_DELETED_INTERACTION_MESSAGE });
+        }
+      }
 
       // Comment row: artist_tag is UUID (FK to artist_video_tags.id). We never store username here.
       // @mentions are handled in processArtistTags and create artist_video_tags rows.
@@ -1786,6 +1873,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Not authenticated" });
       }
       const userId = req.dbUser.id;
+
+      const commentRowResult = await db.execute(sql`
+        SELECT body FROM comments WHERE id = ${commentId} LIMIT 1
+      `);
+      const commentLikeRows = (commentRowResult as any).rows || [];
+      if (commentLikeRows.length === 0) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      if (isDeletedCommentBody(commentLikeRows[0].body)) {
+        return res.status(400).json({ message: COMMENT_DELETED_INTERACTION_MESSAGE });
+      }
 
       // Check if like exists
       const existing = await db.execute(sql`
