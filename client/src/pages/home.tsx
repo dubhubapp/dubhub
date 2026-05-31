@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type CSSProperties } from "react";
-import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { App as CapacitorApp } from "@capacitor/app";
 import type { PluginListenerHandle } from "@capacitor/core";
@@ -534,6 +534,33 @@ function mergeFullPostIntoPostsCache(old: unknown, fullPost: PostWithUser): Deep
   return { next: old, branch: "unknown-first-page-unchanged", changed: false };
 }
 
+/** Merge a deep-link post into every cached feed query; returns whether any cache entry updated. */
+function applyDeepLinkPostMergeToCache(
+  queryClient: QueryClient,
+  fullPost: PostWithUser,
+  postId: string,
+  mergePhase: "initial" | "remerge",
+): boolean {
+  let mergeApplied = false;
+  queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old) => {
+    const oldShape = describeDeepLinkCacheShape(old);
+    const outcome = mergeFullPostIntoPostsCache(old, fullPost);
+    const success = outcome.changed || outcome.branch === "already-present-noop";
+    if (outcome.changed || outcome.branch === "already-present-noop") {
+      mergeApplied = true;
+    }
+    console.log("[NOTIF_POST_NAV_AUDIT]", {
+      postId,
+      oldCacheShape: oldShape,
+      mergeBranch: outcome.branch,
+      mergePhase,
+      success,
+    });
+    return outcome.next;
+  });
+  return mergeApplied;
+}
+
 export default function Home() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
@@ -566,7 +593,9 @@ export default function Home() {
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocationRef = useRef<string>(location);
   const lastSearchRef = useRef<string>(search);
-  const mergeAttemptedForPostId = useRef<Set<string>>(new Set());
+  /** Fetched post body kept across feed refetches so deep-link merge can be re-applied after settle. */
+  const pendingDeepLinkPostRef = useRef<{ postId: string; fullPost: PostWithUser } | null>(null);
+  const deepLinkFetchInFlightRef = useRef<Set<string>>(new Set());
   /** Last `?post=` id we began exiting Random for (avoid spamming `handleFeedSortChange`). */
   const deepLinkRandomExitForPostRef = useRef<string | null>(null);
   /** One-shot guard for merge failure / filter-blocked / watchdog so we don’t toast or navigate twice. */
@@ -941,6 +970,7 @@ export default function Home() {
     isFetchingNextPage,
     fetchNextPage,
     isPlaceholderData,
+    isFetching: isPostsFeedFetching,
   } = postsQuery;
   const posts = useMemo(() => {
     const pages = pagedPosts?.pages ?? [];
@@ -2147,14 +2177,28 @@ export default function Home() {
       // Clear any existing timeouts from previous notification
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+
+      if (
+        searchChanged &&
+        pendingDeepLinkPostRef.current != null &&
+        pendingDeepLinkPostRef.current.postId !== postId
+      ) {
+        pendingDeepLinkPostRef.current = null;
+        deepLinkFetchInFlightRef.current.clear();
+      }
     }
 
     if (!postId) {
-      mergeAttemptedForPostId.current.clear();
+      pendingDeepLinkPostRef.current = null;
+      deepLinkFetchInFlightRef.current.clear();
       deepLinkRandomExitForPostRef.current = null;
       deepLinkTerminalHandledRef.current = null;
       clearDeepLinkWatchdog();
       return;
+    }
+
+    if (uiPosts.some((p) => p.id === postId) && pendingDeepLinkPostRef.current?.postId === postId) {
+      pendingDeepLinkPostRef.current = null;
     }
 
     if (wantsOpenComments) {
@@ -2185,6 +2229,7 @@ export default function Home() {
       deepLinkTerminalHandledRef.current !== postId
     ) {
       deepLinkTerminalHandledRef.current = postId;
+      pendingDeepLinkPostRef.current = null;
       clearDeepLinkWatchdog();
       clearPendingOpenComments();
       toast({
@@ -2224,13 +2269,27 @@ export default function Home() {
     };
     scheduleFallbackWatchdog();
 
-    // Post not in current feed slice (sort/limit/filters): fetch once and merge so scroll works without changing sort order
-    if (
-      postId &&
-      !isInitialFeedLoad &&
-      !mergeAttemptedForPostId.current.has(postId) &&
-      uiPosts.every((p) => p.id !== postId)
-    ) {
+    const postMissingFromUi = uiPosts.every((p) => p.id !== postId);
+    const feedSettledForDeepLink = !isInitialFeedLoad && !isPostsFeedFetching;
+
+    // Post not in current feed slice: fetch once, keep fullPost across refetches, re-merge after each settle.
+    if (postId && postMissingFromUi && deepLinkTerminalHandledRef.current !== postId) {
+      const pending = pendingDeepLinkPostRef.current;
+
+      if (feedSettledForDeepLink && pending?.postId === postId) {
+        applyDeepLinkPostMergeToCache(queryClient, pending.fullPost, postId, "remerge");
+        return;
+      }
+
+      if (!feedSettledForDeepLink) {
+        return;
+      }
+
+      if (pending?.postId === postId || deepLinkFetchInFlightRef.current.has(postId)) {
+        return;
+      }
+
+      deepLinkFetchInFlightRef.current.add(postId);
       void (async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -2243,16 +2302,18 @@ export default function Home() {
             credentials: 'include',
           });
           if (!res.ok) {
-            mergeAttemptedForPostId.current.delete(postId);
+            deepLinkFetchInFlightRef.current.delete(postId);
             console.log("[NOTIF_POST_NAV_AUDIT]", {
               postId,
               oldCacheShape: "n/a-fetch-failed",
               mergeBranch: "fetch-not-ok",
+              mergePhase: "initial",
               success: false,
               status: res.status,
             });
             if (deepLinkTerminalHandledRef.current !== postId) {
               deepLinkTerminalHandledRef.current = postId;
+              pendingDeepLinkPostRef.current = null;
               clearDeepLinkWatchdog();
               clearPendingOpenComments();
               toast({
@@ -2265,34 +2326,19 @@ export default function Home() {
             return;
           }
           const fullPost = (await res.json()) as PostWithUser;
-          let mergeApplied = false;
-          queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old) => {
-            const oldShape = describeDeepLinkCacheShape(old);
-            const outcome = mergeFullPostIntoPostsCache(old, fullPost);
-            const success = outcome.changed || outcome.branch === "already-present-noop";
-            if (outcome.changed || outcome.branch === "already-present-noop") {
-              mergeApplied = true;
-            }
-            console.log("[NOTIF_POST_NAV_AUDIT]", {
-              postId,
-              oldCacheShape: oldShape,
-              mergeBranch: outcome.branch,
-              success,
-            });
-            return outcome.next;
-          });
-          if (mergeApplied) {
-            mergeAttemptedForPostId.current.add(postId);
-          } else {
-            mergeAttemptedForPostId.current.add(postId);
+          pendingDeepLinkPostRef.current = { postId, fullPost };
+          const mergeApplied = applyDeepLinkPostMergeToCache(queryClient, fullPost, postId, "initial");
+          if (!mergeApplied) {
             console.log("[NOTIF_POST_NAV_AUDIT]", {
               postId,
               oldCacheShape: "aggregate",
               mergeBranch: "no-matching-cache-updated",
+              mergePhase: "initial",
               success: false,
             });
             if (deepLinkTerminalHandledRef.current !== postId) {
               deepLinkTerminalHandledRef.current = postId;
+              pendingDeepLinkPostRef.current = null;
               clearDeepLinkWatchdog();
               clearPendingOpenComments();
               toast({
@@ -2304,11 +2350,13 @@ export default function Home() {
             }
           }
         } catch (err) {
-          mergeAttemptedForPostId.current.delete(postId);
+          deepLinkFetchInFlightRef.current.delete(postId);
+          pendingDeepLinkPostRef.current = null;
           console.log("[NOTIF_POST_NAV_AUDIT]", {
             postId,
             oldCacheShape: "n/a-exception",
             mergeBranch: "merge-or-fetch-exception",
+            mergePhase: "initial",
             success: false,
             message: err instanceof Error ? err.message : String(err),
           });
@@ -2323,10 +2371,14 @@ export default function Home() {
             });
             navigate("/", { replace: true });
           }
+        } finally {
+          deepLinkFetchInFlightRef.current.delete(postId);
         }
       })();
       return;
     }
+
+    pendingDeepLinkPostRef.current = null;
 
     // Only process if we have a postId, it's different from the last one we scrolled to, and posts are loaded
     if (postId && postId !== lastScrolledPostId.current && uiPosts.length > 0 && videoFeedRef.current) {
@@ -2335,6 +2387,7 @@ export default function Home() {
       
       if (postIndex !== -1) {
         clearDeepLinkWatchdog();
+        pendingDeepLinkPostRef.current = null;
 
         // Mark that we've scrolled to this post
         lastScrolledPostId.current = postId;
@@ -2379,6 +2432,7 @@ export default function Home() {
     search,
     navigate,
     isInitialFeedLoad,
+    isPostsFeedFetching,
     queryClient,
     toast,
     sortMode,
