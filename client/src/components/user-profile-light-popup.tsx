@@ -30,6 +30,20 @@ const LOADING_SHELL_TRIM_RGBA = "45,200,190";
 /** Same footprint as video-card `post-genre-tag`; glow/colour via `getGenreGlowPillStyle` only — do not change feed. */
 const POPUP_GENRE_PILL_CLASS =
   "inline-flex min-h-[1.625rem] max-w-full shrink-0 items-center justify-center rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
+/** Fixed slot so skeleton, pill, and — share one layout footprint. */
+const POPUP_GENRE_SLOT_CLASS = `${POPUP_GENRE_PILL_CLASS} min-w-[3.625rem] justify-center`;
+
+/** Leaderboard SQL uses `other` when no genre rows exist — not a profile fav genre. */
+function surfaceGenreHintWhileLoading(
+  hint: string | null | undefined,
+  profileLoadPending: boolean,
+): string | null {
+  if (!profileLoadPending) return null;
+  if (hint == null || !String(hint).trim()) return null;
+  const trimmed = String(hint).trim();
+  if (trimmed.toLowerCase() === "other") return null;
+  return trimmed;
+}
 
 type LightPopupOptions = {
   /** When false, skips the verified-artists query (e.g. comments drawer closed). */
@@ -43,9 +57,8 @@ type OpenByUsernameOptions = {
    */
   anchor?: { x: number; y: number };
   /**
-   * The viewed user’s known favorite genre from tap context (e.g. leaderboard `favorite_genre`).
-   * Do not pass the post/track genre — that is not the profile fav genre and will mismatch the pill.
-   * Used for card chrome when `publicLight` has no top genre yet (avoids a grey “other” flash).
+   * Optional instant fav-genre hint while profile loads (e.g. leaderboard).
+   * Ignored after profile returns; `other` sentinel is never treated as a hint.
    */
   surfaceGenreHint?: string | null;
 };
@@ -62,40 +75,37 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: 126, g: 126, b: 126 };
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
-  const toHex = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
+/** Shared dark glass layers — genre cards stack low-alpha tints on top; neutral shell uses as-is. */
+const POPUP_DARK_GLASS_FROST_LAYER =
+  "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 32%)";
+const POPUP_DARK_GLASS_BASE_LAYER =
+  "linear-gradient(180deg, rgba(28,36,48,0.96) 0%, rgba(15,23,42,0.98) 48%, rgba(2,6,23,0.99) 100%)";
+const POPUP_GLASS_BACKDROP = "blur(24px) saturate(160%)";
+const POPUP_GLASS_DEPTH_SHADOW = [
+  "inset 0 1px 0 rgba(255,255,255,0.1)",
+  "inset 0 -1px 0 rgba(0,0,0,0.22)",
+  "0 20px 44px -16px rgba(0,0,0,0.72)",
+].join(", ");
 
-function mixToward(base: { r: number; g: number; b: number }, target: { r: number; g: number; b: number }, t: number) {
+function buildGenreGlassSurfaceStyle(accent: { r: number; g: number; b: number }): CSSProperties {
+  const { r, g, b } = accent;
   return {
-    r: base.r + (target.r - base.r) * t,
-    g: base.g + (target.g - base.g) * t,
-    b: base.b + (target.b - base.b) * t,
+    borderColor: `rgba(${r},${g},${b},0.32)`,
+    background: [
+      `linear-gradient(180deg, rgba(${r},${g},${b},0.15) 0%, rgba(${r},${g},${b},0.04) 36%, rgba(${r},${g},${b},0) 56%)`,
+      `linear-gradient(135deg, rgba(${r},${g},${b},0.09) 0%, transparent 54%)`,
+      POPUP_DARK_GLASS_FROST_LAYER,
+      POPUP_DARK_GLASS_BASE_LAYER,
+    ].join(", "),
+    boxShadow: [
+      `0 0 0 1px rgba(${r},${g},${b},0.26)`,
+      POPUP_GLASS_DEPTH_SHADOW,
+      `0 0 32px -10px rgba(${r},${g},${b},0.22)`,
+      `0 0 52px -18px rgba(${r},${g},${b},0.11)`,
+    ].join(", "),
+    backdropFilter: POPUP_GLASS_BACKDROP,
+    WebkitBackdropFilter: POPUP_GLASS_BACKDROP,
   };
-}
-
-/**
- * Popup-only: preserves luma but stretches chroma so genre hues survive neutral blending.
- * Does not affect the fav-genre pill (still uses raw `accentChip.bgColor`).
- */
-function boostChromaForPopup({ r, g, b }: { r: number; g: number; b: number }, factor = 1.16) {
-  const L = 0.299 * r + 0.587 * g + 0.114 * b;
-  const o = (c: number) => Math.max(0, Math.min(255, Math.round(L + (c - L) * factor)));
-  return { r: o(r), g: o(g), b: o(b) };
-}
-
-/** Blend toward light/dark neutral — lower = more genre colour in the card (was ~0.52, too grey). */
-const POPUP_SURFACE_NEUTRAL_BLEND = 0.37;
-/** Top gradient pulls stronger toward the genre hue (was 0.22). */
-const POPUP_TOP_WASH_GENRE_BLEND = 0.46;
-
-function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }) {
-  const lin = (c: number) => {
-    const v = c / 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
 type ProfilePopupUser = {
@@ -337,12 +347,13 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   // or when older endpoints are cached.
   const anyLight = light as any;
 
+  const profileLoadPending = user?.profileLoadPending === true;
+
   const legacyTopGenreKey = anyLight?.topGenreKey ?? anyLight?.accentGenreKey ?? null;
-  const surfaceGenreHintNormalized =
-    user?.surfaceGenreHint != null && String(user.surfaceGenreHint).trim() ? user.surfaceGenreHint : null;
-  /** Single chain for pill + card chrome: profile first, leaderboard fav hint, then identified-posts fallback (feed/comments). */
+  const surfaceGenreHintForResolve = surfaceGenreHintWhileLoading(user?.surfaceGenreHint, profileLoadPending);
+  /** Profile + identified-posts are authoritative; hint only while profile fetch is pending. */
   const topGenreKeyResolved =
-    legacyTopGenreKey ?? surfaceGenreHintNormalized ?? derivedTopGenreKey ?? null;
+    legacyTopGenreKey ?? derivedTopGenreKey ?? surfaceGenreHintForResolve ?? null;
   const hasTopGenreDisplay = topGenreKeyResolved !== null;
   /** Card chrome only when fav genre is genuinely resolved (including explicit Other). */
   const useGenreChrome = hasTopGenreDisplay;
@@ -358,9 +369,9 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
   const resolvedAccentChip = useGenreChrome ? getGenreChipStyle(topGenreKeyResolved) : null;
   const pillLabelChip = hasTopGenreDisplay ? getGenreChipStyle(topGenreKeyResolved) : null;
 
-  const tintRgb = useMemo(() => {
+  const accentRgb = useMemo(() => {
     if (!resolvedAccentChip) return null;
-    return boostChromaForPopup(hexToRgb(resolvedAccentChip.bgColor));
+    return hexToRgb(resolvedAccentChip.bgColor);
   }, [resolvedAccentChip?.bgColor]);
 
   const inferredAccountType = user?.account_type ?? (user?.verified_artist ? "artist" : "user");
@@ -378,17 +389,8 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
     return getGenreGlowPillStyle(pillLabelChip.bgColor, pillLabelChip.textClass);
   }, [pillLabelChip]);
 
-  const cardRgb = useMemo(() => {
-    if (!tintRgb) return null;
-    return mixToward(
-      tintRgb,
-      relativeLuminance(tintRgb) > 0.52 ? { r: 248, g: 249, b: 252 } : { r: 17, g: 20, b: 28 },
-      POPUP_SURFACE_NEUTRAL_BLEND,
-    );
-  }, [tintRgb]);
-  /** Loading, pending, or absent fav genre: always dark/neutral chrome (readable with white ring trim). */
-  const isLightSurface =
-    useGenreChrome && cardRgb != null ? relativeLuminance(cardRgb) > 0.52 : false;
+  /** Genre and neutral popup shells both use dark glass — always light text. */
+  const isLightSurface = false;
 
   const primaryTextColor = isLightSurface ? "#0F172A" : "#F8FAFC";
   const secondaryTextColor = isLightSurface ? "#334155" : "#E2E8F0";
@@ -396,47 +398,30 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
 
   const joinedDateLine = formatJoinedDateLine((user as any)?.created_at ?? (user as any)?.memberSince);
 
-  const topWashRgb = useMemo(() => {
-    if (!cardRgb || !tintRgb) return null;
-    return mixToward(cardRgb, tintRgb, POPUP_TOP_WASH_GENRE_BLEND);
-  }, [cardRgb, tintRgb]);
+  const genreGlassSurfaceStyle = useMemo(
+    () => (accentRgb ? buildGenreGlassSurfaceStyle(accentRgb) : null),
+    [accentRgb],
+  );
 
   const neutralShellStyle: CSSProperties = {
     borderColor: "rgba(148,163,184,0.34)",
-    background: [
-      "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 32%)",
-      "linear-gradient(180deg, rgba(28,36,48,0.96) 0%, rgba(15,23,42,0.98) 48%, rgba(2,6,23,0.99) 100%)",
-    ].join(", "),
+    background: [POPUP_DARK_GLASS_FROST_LAYER, POPUP_DARK_GLASS_BASE_LAYER].join(", "),
     boxShadow: [
       `0 0 0 1px rgba(${LOADING_SHELL_TRIM_RGBA},0.38)`,
-      "inset 0 1px 0 rgba(255,255,255,0.1)",
-      "inset 0 -1px 0 rgba(0,0,0,0.22)",
-      "0 20px 44px -16px rgba(0,0,0,0.72)",
+      POPUP_GLASS_DEPTH_SHADOW,
     ].join(", "),
-    backdropFilter: "blur(24px) saturate(160%)",
-    WebkitBackdropFilter: "blur(24px) saturate(160%)",
+    backdropFilter: POPUP_GLASS_BACKDROP,
+    WebkitBackdropFilter: POPUP_GLASS_BACKDROP,
   };
 
   const cardSurfaceStyle: CSSProperties =
-    useGenreChrome && tintRgb && cardRgb && topWashRgb
-      ? {
-          borderColor: isLightSurface ? "rgba(15,23,42,0.2)" : "rgba(248,250,252,0.22)",
-          background: `linear-gradient(180deg, ${rgbToHex(topWashRgb.r, topWashRgb.g, topWashRgb.b)} 0%, ${rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b)} 100%)`,
-          boxShadow: [
-            `0 0 0 1px rgba(${tintRgb.r},${tintRgb.g},${tintRgb.b},0.4)`,
-            `0 12px 36px -24px rgba(${tintRgb.r},${tintRgb.g},${tintRgb.b},0.55)`,
-            `0 0 36px -10px rgba(${tintRgb.r},${tintRgb.g},${tintRgb.b},0.38)`,
-          ].join(", "),
-        }
-      : neutralShellStyle;
+    useGenreChrome && genreGlassSurfaceStyle ? genreGlassSurfaceStyle : neutralShellStyle;
 
   const safeNumToString = (value: unknown) => {
     if (value === null || value === undefined) return null;
     const n = typeof value === "number" ? value : Number(value);
     return Number.isFinite(n) ? String(n) : null;
   };
-
-  const profileLoadPending = user?.profileLoadPending === true;
 
   const postsValue =
     safeNumToString(anyLight?.posts ?? anyLight?.uploads ?? derivedPosts) ?? "—";
@@ -452,14 +437,12 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
       : "—";
 
   const showPostsStatPulse =
-    !profileLoadPending && postsValue === "—" && !!userId && isFetchingStats;
+    profileLoadPending || (postsValue === "—" && !!userId && isFetchingStats);
   const showIdsStatPulse =
-    !profileLoadPending && idsValue === "—" && !!userId && isFetchingKarma;
+    profileLoadPending || (idsValue === "—" && !!userId && isFetchingKarma);
   const showRepStatPulse =
-    !profileLoadPending &&
-    reputationDisplayValue === "—" &&
-    !!userId &&
-    isFetchingKarma;
+    profileLoadPending ||
+    (reputationDisplayValue === "—" && !!userId && isFetchingKarma);
 
   useLayoutEffect(() => {
     if (open && user) {
@@ -772,82 +755,68 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                 <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: tileLabelColor }}>
                   Fav Genre
                 </div>
-                <div className="mt-0.5 flex flex-wrap justify-center">
+                <div className="mt-0.5 flex w-full min-w-[3.625rem] items-center justify-center">
                   {hasTopGenreDisplay && pillStyle ? (
                     <span
-                      className={POPUP_GENRE_PILL_CLASS}
+                      className={POPUP_GENRE_SLOT_CLASS}
                       style={pillStyle as any}
                       title={pillLabelChip?.label ?? ""}
                     >
                       <span className="truncate">{pillLabelChip?.label}</span>
                     </span>
                   ) : genreResolutionPending ? (
-                    <span
-                      className={`${POPUP_GENRE_PILL_CLASS} ring-white/10`}
-                      aria-hidden
-                    >
+                    <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`} aria-hidden>
                       <span className="h-2.5 w-14 max-w-full animate-pulse rounded-sm bg-white/[0.14]" />
                     </span>
                   ) : (
-                    <span className="text-[11px] font-semibold" style={{ color: primaryTextColor }}>
-                      —
+                    <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`}>
+                      <span className="text-[11px] font-semibold leading-none" style={{ color: primaryTextColor }}>
+                        —
+                      </span>
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            {profileLoadPending ? (
-              <div className="mt-2 border-t pt-2" style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}>
-                <div className="flex min-w-0 items-stretch gap-2" aria-hidden>
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={`profile-stat-skel-${i}`} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-                      <div className="h-2.5 w-12 animate-pulse rounded bg-black/[0.1] dark:bg-white/[0.12]" />
-                      <div className="h-3.5 w-9 animate-pulse rounded-md bg-black/[0.11] dark:bg-white/[0.14]" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
+            <div
+              className="mt-2 flex min-w-0 items-stretch gap-2 border-t pt-2"
+              style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}
+            >
+              <StatLine
+                Icon={Upload}
+                label="Posts"
+                value={postsValue}
+                labelStyle={{ color: tileLabelColor }}
+                valueStyle={{ color: primaryTextColor }}
+                pulse={showPostsStatPulse}
+              />
               <div
-                className="mt-2 flex min-w-0 items-stretch gap-2 border-t pt-2"
-                style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}
-              >
-                <StatLine
-                  Icon={Upload}
-                  label="Posts"
-                  value={postsValue}
-                  labelStyle={{ color: tileLabelColor }}
-                  valueStyle={{ color: primaryTextColor }}
-                  pulse={showPostsStatPulse}
-                />
-                <div
-                  className="mt-0.5 h-9 w-px shrink-0 self-center"
-                  style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
-                />
-                <StatLine
-                  Icon={Check}
-                  label="IDs"
-                  value={idsValue}
-                  labelStyle={{ color: tileLabelColor }}
-                  valueStyle={{ color: primaryTextColor }}
-                  pulse={showIdsStatPulse}
-                />
-                <div
-                  className="mt-0.5 h-9 w-px shrink-0 self-center"
-                  style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
-                />
-                <StatLine
-                  Icon={TrendingUp}
-                  label="Rep"
-                  value={reputationDisplayValue}
-                  labelStyle={{ color: tileLabelColor }}
-                  valueStyle={{ color: primaryTextColor }}
-                  valueTabular={false}
-                  pulse={showRepStatPulse}
-                />
-              </div>
-            )}
+                className="mt-0.5 h-9 w-px shrink-0 self-center"
+                style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
+              />
+              <StatLine
+                Icon={Check}
+                label="IDs"
+                value={idsValue}
+                labelStyle={{ color: tileLabelColor }}
+                valueStyle={{ color: primaryTextColor }}
+                pulse={showIdsStatPulse}
+              />
+              <div
+                className="mt-0.5 h-9 w-px shrink-0 self-center"
+                style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
+              />
+              <StatLine
+                Icon={TrendingUp}
+                label="Rep"
+                value={reputationDisplayValue}
+                labelStyle={{ color: tileLabelColor }}
+                valueStyle={{ color: primaryTextColor }}
+                valueTabular={false}
+                pulse={showRepStatPulse}
+              />
+            </div>
           </div>
         </div>
         </div>
