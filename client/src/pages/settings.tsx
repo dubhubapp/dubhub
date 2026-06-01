@@ -18,6 +18,7 @@ import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import {
   getPushReceivePermission,
+  openIosAppNotificationSettings,
   requestPushPermissionAndRegister,
   unregisterPushAndDeactivate,
 } from "@/lib/push-notifications";
@@ -47,6 +48,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const { userType } = useUser();
   const isModerator = userType === "moderator";
   const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState<boolean | null>(null);
+  const [pushOsPermissionDenied, setPushOsPermissionDenied] = useState(false);
   const [feedbackBody, setFeedbackBody] = useState("");
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategoryValue>("bug");
   const [feedbackStatus, setFeedbackStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -61,11 +63,25 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
       const receive = await getPushReceivePermission();
       if (!cancelled) {
         setPushDeviceAlertsEnabled(receive === "granted");
+        setPushOsPermissionDenied(receive === "denied");
       }
     })();
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const syncPushPermission = () => {
+      void (async () => {
+        const receive = await getPushReceivePermission();
+        setPushDeviceAlertsEnabled(receive === "granted");
+        setPushOsPermissionDenied(receive === "denied");
+      })();
+    };
+    document.addEventListener("visibilitychange", syncPushPermission);
+    return () => document.removeEventListener("visibilitychange", syncPushPermission);
   }, []);
 
   useEffect(() => {
@@ -96,13 +112,23 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
     if (!Capacitor.isNativePlatform()) return;
     if (pushDeviceAlertsEnabled === null) return;
     if (enabled) {
-      await requestPushPermissionAndRegister();
-      const receive = await getPushReceivePermission();
+      const before = await getPushReceivePermission();
+      if (before === "denied") {
+        setPushOsPermissionDenied(true);
+        setPushDeviceAlertsEnabled(false);
+        openIosAppNotificationSettings();
+        return;
+      }
+      const result = await requestPushPermissionAndRegister();
+      const receive = result === "granted" ? "granted" : await getPushReceivePermission();
       setPushDeviceAlertsEnabled(receive === "granted");
+      setPushOsPermissionDenied(receive === "denied");
       return;
     }
     await unregisterPushAndDeactivate();
     setPushDeviceAlertsEnabled(false);
+    const receive = await getPushReceivePermission();
+    setPushOsPermissionDenied(receive === "denied");
   };
 
   const runThemeTransition = () => {
@@ -260,7 +286,8 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   />
                 </div>
 
-                <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-4 select-none">
+                <div className="pt-3 border-t border-white/10 space-y-2 select-none">
+                <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">Device push alerts</p>
                     <p className="text-xs text-muted-foreground">
@@ -286,6 +313,25 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                       data-testid="switch-push-device-alerts"
                     />
                   )}
+                </div>
+                {pushOsPermissionDenied ? (
+                  <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 space-y-2">
+                    <p className="text-xs leading-relaxed text-amber-100/90">
+                      Notifications are turned off for dub hub in iOS Settings. Open Settings → Notifications → dub hub
+                      to allow alerts, then return here.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-amber-400/40 text-amber-50 hover:bg-amber-400/10"
+                      onClick={() => openIosAppNotificationSettings()}
+                      data-testid="button-push-open-ios-settings"
+                    >
+                      Open Settings
+                    </Button>
+                  </div>
+                ) : null}
                 </div>
               </div>
             </div>

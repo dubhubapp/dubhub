@@ -1,12 +1,16 @@
 import type { PluginListenerHandle } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
+
+export type PushReceivePermission = "prompt" | "denied" | "granted";
+
+export type PushPermissionRequestResult = PushReceivePermission;
 import { navigate } from "wouter/use-browser-location";
 import { apiRequest } from "./queryClient";
 
 let lastRegisteredToken: string | null = null;
 let listenersRegistered = false;
-let registerPushInFlight: Promise<void> | null = null;
+let registerPushInFlight: Promise<PushPermissionRequestResult> | null = null;
 
 const pushPluginListenerHandles: PluginListenerHandle[] = [];
 
@@ -170,30 +174,53 @@ export async function registerPushListeners(): Promise<void> {
   }
 }
 
-export async function requestPushPermissionAndRegister(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+export async function requestPushPermissionAndRegister(): Promise<PushPermissionRequestResult> {
+  if (!Capacitor.isNativePlatform()) return "denied";
   if (registerPushInFlight) {
-    await registerPushInFlight;
-    return;
+    return registerPushInFlight;
   }
-  registerPushInFlight = (async () => {
+  registerPushInFlight = (async (): Promise<PushPermissionRequestResult> => {
     try {
       const permStatus = await PushNotifications.checkPermissions();
+      if (permStatus.receive === "denied") {
+        return "denied";
+      }
       if (permStatus.receive === "granted") {
         await PushNotifications.register();
-        return;
+        return "granted";
       }
       const req = await PushNotifications.requestPermissions();
       if (req.receive === "granted") {
         await PushNotifications.register();
+        return "granted";
       }
+      if (req.receive === "denied") {
+        return "denied";
+      }
+      return "prompt";
     } catch (err) {
       console.error("[push] request permissions error", err);
+      return "denied";
     } finally {
       registerPushInFlight = null;
     }
   })();
-  await registerPushInFlight;
+  return registerPushInFlight;
+}
+
+/** Opens the dub hub page in iOS Settings (notifications are enabled there). */
+export function openIosAppNotificationSettings(): void {
+  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = "app-settings:";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  } catch (err) {
+    console.error("[push] openIosAppNotificationSettings error", err);
+  }
 }
 
 export async function unregisterPushAndDeactivate(): Promise<void> {
@@ -207,7 +234,7 @@ export async function unregisterPushAndDeactivate(): Promise<void> {
   }
 }
 
-export async function getPushReceivePermission(): Promise<"prompt" | "denied" | "granted"> {
+export async function getPushReceivePermission(): Promise<PushReceivePermission> {
   if (!Capacitor.isNativePlatform()) return "denied";
   const { receive } = await PushNotifications.checkPermissions();
   if (receive === "granted" || receive === "denied" || receive === "prompt") {

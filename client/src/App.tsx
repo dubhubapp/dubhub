@@ -36,6 +36,11 @@ import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/export-trimmed-video";
 import { FirstLoginOnboardingModal } from "@/components/first-login-onboarding-modal";
+import { PushPermissionPrompt } from "@/components/push-permission-prompt";
+import {
+  markPostOnboardingPushPromptHandled,
+  shouldOfferPostOnboardingPushPrompt,
+} from "@/lib/push-prompt";
 import {
   clearPendingOnboardingForEmail,
   HOME_FEED_READY_EVENT,
@@ -124,6 +129,10 @@ function App() {
     email: null,
   });
   const [isHomeFeedReady, setIsHomeFeedReady] = useState(false);
+  const [postOnboardingPushPrompt, setPostOnboardingPushPrompt] = useState<{
+    open: boolean;
+    userId: string | null;
+  }>({ open: false, userId: null });
   const [enforcementState, setEnforcementState] = useState<{ banned: boolean; suspendedUntil: string | null }>({
     banned: false,
     suspendedUntil: null,
@@ -604,6 +613,9 @@ function App() {
       }
       persistOnboardingDismissed({ userId, emails });
       setFirstLoginOnboarding((prev) => ({ ...prev, open: false }));
+      if (userId && (await shouldOfferPostOnboardingPushPrompt(userId))) {
+        setPostOnboardingPushPrompt({ open: true, userId });
+      }
     })();
   };
 
@@ -689,6 +701,14 @@ function App() {
             open={firstLoginOnboarding.open}
             audience={firstLoginOnboarding.audience}
             onDismiss={handleDismissFirstLoginOnboarding}
+          />
+          <PushPermissionPrompt
+            open={postOnboardingPushPrompt.open}
+            variant="post_onboarding"
+            onDismiss={() => {
+              markPostOnboardingPushPromptHandled(postOnboardingPushPrompt.userId);
+              setPostOnboardingPushPrompt({ open: false, userId: null });
+            }}
           />
           <Toaster />
           <div

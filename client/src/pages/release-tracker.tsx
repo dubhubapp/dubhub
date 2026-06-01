@@ -17,6 +17,12 @@ import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { PushPermissionPrompt } from "@/components/push-permission-prompt";
+import {
+  isPushPromptSessionActive,
+  markReleasesPushPromptHandled,
+  shouldOfferReleasesPushPrompt,
+} from "@/lib/push-prompt";
 
 export type ReleaseFeedItem = {
   id: string;
@@ -141,6 +147,37 @@ export default function ReleaseTracker() {
   const [feedView, setFeedViewState] = useState<FeedView>(() =>
     typeof window !== "undefined" ? getViewFromSearch(window.location.search, scope) : "upcoming"
   );
+  const [releasesPushPromptOpen, setReleasesPushPromptOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimeoutId: number | undefined;
+
+    const attemptOfferReleasesPushPrompt = async () => {
+      const userId = currentUser?.id;
+      if (!userId || cancelled) return;
+
+      if (isPushPromptSessionActive()) {
+        retryTimeoutId = window.setTimeout(() => {
+          void attemptOfferReleasesPushPrompt();
+        }, 600);
+        return;
+      }
+
+      if (!(await shouldOfferReleasesPushPrompt(userId))) return;
+      if (cancelled) return;
+      markReleasesPushPromptHandled(userId);
+      setReleasesPushPromptOpen(true);
+    };
+
+    void attemptOfferReleasesPushPrompt();
+    return () => {
+      cancelled = true;
+      if (retryTimeoutId !== undefined) {
+        window.clearTimeout(retryTimeoutId);
+      }
+    };
+  }, [currentUser?.id]);
 
   useEffect(() => {
     const onPop = () => {
@@ -359,7 +396,13 @@ export default function ReleaseTracker() {
   }
 
   return (
-    <div className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[var(--releases-feed-bottom-pad)]">
+    <>
+      <PushPermissionPrompt
+        open={releasesPushPromptOpen}
+        variant="releases"
+        onDismiss={() => setReleasesPushPromptOpen(false)}
+      />
+      <div className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[var(--releases-feed-bottom-pad)]">
       <div className="app-page-top-pad px-4 max-w-md mx-auto">
         {currentUser?.id && (
           <div className="space-y-3 mb-4">
@@ -604,6 +647,7 @@ export default function ReleaseTracker() {
         </>
       )}
     </div>
+    </>
   );
 }
 
