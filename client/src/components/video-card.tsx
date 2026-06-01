@@ -2137,7 +2137,8 @@ function VideoCardInner({
           ref={setVideoDomRef}
           data-debug-media-id={`home-feed-${post.id}`}
           className={cn(
-            "absolute inset-0 z-[11] h-full w-full cursor-pointer select-none transition-opacity duration-150 [-webkit-touch-callout:none] [-webkit-user-select:none]",
+            // Keep video reveal instant to avoid poster/video crossfade dim flash during feed swipes.
+            "absolute inset-0 z-[11] h-full w-full cursor-pointer select-none [-webkit-touch-callout:none] [-webkit-user-select:none]",
             feedForegroundFitClass,
             isVideoReady ? "opacity-100" : "opacity-0",
           )}
