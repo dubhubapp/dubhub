@@ -6,6 +6,7 @@ export const MODERATION_REPORT_REASONS = [
   "Sexual or graphic content",
   "Violent or disturbing content",
   "Non-music content",
+  "Incorrect genre",
   "Copyright / stolen content",
   "Spam / advertising",
   "Harassment / hate speech",

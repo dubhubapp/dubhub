@@ -26,18 +26,57 @@ import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
+import { CorrectGenreDialog } from "@/components/correct-genre-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
 import { ModeratorShieldIcon } from "@/components/moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
+import {
+  INCORRECT_GENRE_REPORT_REASON,
+  getCanonicalGenreLabel,
+  parseSuggestedGenreFromReportDescription,
+} from "@shared/report-genre";
 
 function formatModeratorReportTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
+}
+
+function isIncorrectGenrePostReport(report: {
+  is_user_report?: boolean;
+  reason?: string | null;
+}): boolean {
+  return !report.is_user_report && report.reason === INCORRECT_GENRE_REPORT_REASON;
+}
+
+/** Works with parsed API fields or raw SUGGESTED_GENRE:… in description (pre-deploy). */
+function resolveIncorrectGenreReportDisplay(report: {
+  description?: string | null;
+  suggested_genre_id?: string | null;
+  suggested_genre_label?: string | null;
+}): {
+  suggestedGenreId: string | null;
+  suggestedLabel: string | null;
+  userNotes: string | null;
+} {
+  const parsed = parseSuggestedGenreFromReportDescription(report.description);
+  const suggestedGenreId =
+    (typeof report.suggested_genre_id === "string" ? report.suggested_genre_id : null) ??
+    parsed.suggestedGenreId;
+  const suggestedLabel =
+    (typeof report.suggested_genre_label === "string" ? report.suggested_genre_label : null) ??
+    (suggestedGenreId ? getCanonicalGenreLabel(suggestedGenreId) : null);
+  const userNotes =
+    parsed.suggestedGenreId != null
+      ? parsed.userNotes
+      : suggestedGenreId
+        ? report.description?.trim() || null
+        : null;
+  return { suggestedGenreId, suggestedLabel, userNotes };
 }
 
 export default function ModeratorPage() {
@@ -59,6 +98,13 @@ export default function ModeratorPage() {
     username: string;
     contentTarget: "post" | "comment";
     defaultReportReason: string;
+  } | null>(null);
+  const [correctGenreDialog, setCorrectGenreDialog] = useState<{
+    reportId: string;
+    postId: string;
+    ownerUserId: string | undefined;
+    currentGenre: string | null | undefined;
+    suggestedGenreId: string | null;
   } | null>(null);
 
   // Route protection - redirect non-moderators
@@ -658,7 +704,16 @@ export default function ModeratorPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {reportedContent.map((report: any) => (
+                    {reportedContent.map((report: any) => {
+                      const incorrectGenrePost = isIncorrectGenrePostReport(report);
+                      const genreDisplay = incorrectGenrePost
+                        ? resolveIncorrectGenreReportDisplay(report)
+                        : null;
+                      const additionalDetails = incorrectGenrePost
+                        ? genreDisplay?.userNotes
+                        : report.description?.trim() || null;
+
+                      return (
                       <Card
                         key={report.id}
                         className="border-white/10 bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
@@ -810,12 +865,62 @@ export default function ModeratorPage() {
                               <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3">
                                 <p className="mb-1 text-xs font-medium text-red-300">Report Reason:</p>
                                 <p className="text-sm">{report.reason}</p>
-                                {report.description && (
-                                  <div className="mt-2 pt-2 border-t border-red-500/20">
-                                    <p className="text-xs font-medium text-red-400 mb-1">Additional Details:</p>
-                                    <p className="text-sm text-muted-foreground">{report.description}</p>
+                                {incorrectGenrePost && report.post ? (
+                                  <div className="mt-2 space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                                      <span className="text-xs text-muted-foreground">Current genre:</span>
+                                      {(() => {
+                                        const chip = getGenreChipStyle(report.post.genre);
+                                        return (
+                                          <Badge
+                                            className="text-xs"
+                                            style={getGenreGlowPillStyle(chip.bgColor, chip.textClass)}
+                                          >
+                                            {chip.label}
+                                          </Badge>
+                                        );
+                                      })()}
+                                    </div>
+                                    {genreDisplay?.suggestedGenreId ? (
+                                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                                        <span className="text-xs text-muted-foreground">Suggested genre:</span>
+                                        {(() => {
+                                          const chip = getGenreChipStyle(genreDisplay.suggestedGenreId);
+                                          return (
+                                            <Badge
+                                              className="text-xs"
+                                              style={getGenreGlowPillStyle(chip.bgColor, chip.textClass)}
+                                            >
+                                              {genreDisplay.suggestedLabel ?? chip.label}
+                                            </Badge>
+                                          );
+                                        })()}
+                                      </div>
+                                    ) : null}
                                   </div>
-                                )}
+                                ) : null}
+                                {additionalDetails ? (
+                                  <div className="mt-2 pt-2 border-t border-red-500/20">
+                                    <p className="text-xs font-medium text-red-400 mb-1">
+                                      {incorrectGenrePost ? "Additional details:" : "Additional Details:"}
+                                    </p>
+                                    <p
+                                      className={
+                                        incorrectGenrePost
+                                          ? "text-sm text-muted-foreground italic"
+                                          : "text-sm text-muted-foreground"
+                                      }
+                                    >
+                                      {incorrectGenrePost ? (
+                                        <>
+                                          &ldquo;{additionalDetails}&rdquo;
+                                        </>
+                                      ) : (
+                                        additionalDetails
+                                      )}
+                                    </p>
+                                  </div>
+                                ) : null}
                               </div>
 
                               {/* Action buttons */}
@@ -830,6 +935,25 @@ export default function ModeratorPage() {
                                   <CheckCircle className="w-4 h-4 mr-1" />
                                   Dismiss Report
                                 </Button>
+                                {incorrectGenrePost && report.post?.id ? (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      setCorrectGenreDialog({
+                                        reportId: report.id,
+                                        postId: report.post.id,
+                                        ownerUserId: report.post.user?.id,
+                                        currentGenre: report.post.genre,
+                                        suggestedGenreId: genreDisplay?.suggestedGenreId ?? null,
+                                      });
+                                    }}
+                                    data-testid={`button-correct-genre-${report.id}`}
+                                  >
+                                    Correct Genre
+                                  </Button>
+                                ) : null}
+                                {!incorrectGenrePost ? (
                                 <Button
                                   size="sm"
                                   variant="destructive"
@@ -867,12 +991,14 @@ export default function ModeratorPage() {
                                 >
                                   Remove &amp; Moderate
                                 </Button>
+                                ) : null}
                               </div>
                             </div>
                           </div>
                         </CardContent>
                       </Card>
-                    ))}
+                    );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -880,6 +1006,24 @@ export default function ModeratorPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {correctGenreDialog ? (
+        <CorrectGenreDialog
+          isOpen={!!correctGenreDialog}
+          onClose={() => setCorrectGenreDialog(null)}
+          reportId={correctGenreDialog.reportId}
+          postId={correctGenreDialog.postId}
+          ownerUserId={correctGenreDialog.ownerUserId}
+          currentGenre={correctGenreDialog.currentGenre}
+          suggestedGenreId={correctGenreDialog.suggestedGenreId}
+          onSuccess={() => {
+            queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) =>
+              old.filter((r: { id?: string }) => r.id !== correctGenreDialog.reportId),
+            );
+            void queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+          }}
+        />
+      ) : null}
 
       {/* Moderation Actions Dialog */}
       {selectedReportForModeration && (

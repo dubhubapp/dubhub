@@ -1,7 +1,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, MessageCircle, Trash2 } from "lucide-react";
+import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -133,7 +133,14 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [nativeKeyboardLayoutActive, setNativeKeyboardLayoutActive] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage: userProfileImage, username: contextUsername, currentUser: contextUser, verifiedArtist, userType } = useUser();
+  const {
+    profileImage: userProfileImage,
+    username: contextUsername,
+    currentUser: contextUser,
+    verifiedArtist,
+    userType,
+    isModerator,
+  } = useUser();
   const debugComments = commentsKeyboardDebugEnabled();
   const debugKeyboardTiming = commentsKeyboardDebugEnabled() || debugComments;
   const composerFieldId = useId();
@@ -420,6 +427,47 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
   const [replyingTo, setReplyingTo] = useState<{id: string, username: string} | null>(null);
   const [commentFilter, setCommentFilter] = useState<'all' | 'newest' | 'top'>('all');
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const commentsListRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToPostedComment = useCallback(
+    (commentId: string, opts: { isReply: boolean; parentId?: string }) => {
+      const run = () => {
+        const listEl = commentsListRef.current;
+        if (!listEl) return;
+
+        if (!opts.isReply) {
+          if (commentFilter === "top") {
+            const target = listEl.querySelector(`[data-comment-id="${commentId}"]`);
+            if (target instanceof HTMLElement) {
+              target.scrollIntoView({ block: "nearest" });
+            } else {
+              listEl.scrollTop = listEl.scrollHeight;
+            }
+          } else {
+            listEl.scrollTop = 0;
+          }
+          return;
+        }
+
+        const replyTarget = listEl.querySelector(`[data-comment-id="${commentId}"]`);
+        if (replyTarget instanceof HTMLElement) {
+          replyTarget.scrollIntoView({ block: "nearest" });
+          return;
+        }
+        if (opts.parentId) {
+          const parentTarget = listEl.querySelector(`[data-comment-id="${opts.parentId}"]`);
+          if (parentTarget instanceof HTMLElement) {
+            parentTarget.scrollIntoView({ block: "nearest" });
+          }
+        }
+      };
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(run);
+      });
+    },
+    [commentFilter],
+  );
   const [, bumpForVisualViewport] = useReducer((x: number) => x + 1, 0);
   const postArtistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
   const isArtistIdentifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && !!postArtistVerifiedBy;
@@ -767,11 +815,14 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         user: {
           id: contextUser?.id ?? data.user_id,
           username: contextUsername ?? "You",
-          avatarUrl: userProfileImage ?? null,
-        } as any,
+          avatar_url: userProfileImage ?? null,
+          account_type: currentUser?.userType === "artist" ? "artist" : "user",
+          verified_artist: verifiedArtist,
+          moderator: isModerator,
+        } as CommentWithUser["user"],
         replies: [],
       };
-      // If this is a reply, attach to parent comment; otherwise append as top-level
+      // If this is a reply, attach to parent comment; otherwise prepend as top-level (newest-first)
       if (variables.parentId) {
         queryClient.setQueryData<CommentWithUser[]>(
           ["/api/posts", post.id, "comments"],
@@ -812,11 +863,16 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           ...prev,
           [variables.parentId as string]: Math.max(prev[variables.parentId as string] ?? 0, total),
         }));
+        scrollToPostedComment(data.id, {
+          isReply: true,
+          parentId: variables.parentId as string,
+        });
       } else {
         queryClient.setQueryData<CommentWithUser[]>(
           ["/api/posts", post.id, "comments"],
-          (old) => (old ? [...old, newCommentWithUser] : [newCommentWithUser])
+          (old) => (old ? [newCommentWithUser, ...old] : [newCommentWithUser])
         );
+        scrollToPostedComment(data.id, { isReply: false });
       }
       const currentComments = Number((post as any).comments ?? post.comments ?? 0);
       queryClient.setQueriesData<PostWithUser[]>(
@@ -1062,10 +1118,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                 <button
                   type="button"
                   className="inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/80 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)]"
-                  aria-label="Comment filter options"
+                  aria-label="Sort comments"
                   data-testid="comments-filter-menu-trigger"
                 >
-                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  <ArrowUpDown className="h-4 w-4" aria-hidden />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -1108,7 +1164,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         </div>
 
         {/* Comments List */}
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 pb-2.5 pt-2 sm:px-4 sm:pb-3 sm:pt-2.5">
+        <div
+          ref={commentsListRef}
+          className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 pb-2.5 pt-2 sm:px-4 sm:pb-3 sm:pt-2.5"
+        >
           {(() => {
             let filteredComments = [...comments];
             
@@ -1220,7 +1279,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                   ? "rounded-lg border border-amber-300 bg-amber-50/30 p-2 dark:border-amber-500/45 dark:bg-amber-500/[0.09]"
                   : "";
               return (
-                <div key={comment.id} className={`flex items-start space-x-2 ${highlightClass}`}>
+                <div
+                  key={comment.id}
+                  data-comment-id={comment.id}
+                  className={`flex items-start space-x-2 ${highlightClass}`}
+                >
                   <button
                     type="button"
                     className="relative flex-shrink-0 p-0"
@@ -1473,7 +1536,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         const replyIsDeleted = isDeletedCommentBody(reply.body);
                         const isOwnReply = !!contextUser?.id && reply.userId === contextUser.id;
                         return (
-                        <div key={reply.id} className="flex items-start space-x-2">
+                        <div key={reply.id} data-comment-id={reply.id} className="flex items-start space-x-2">
                           <button
                             type="button"
                             className="relative flex-shrink-0 p-0"

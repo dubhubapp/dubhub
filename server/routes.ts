@@ -10,6 +10,13 @@ import {
 } from "@shared/video-upload";
 import { MODERATION_REASON_MAX_LENGTH } from "@shared/moderation-reasons";
 import {
+  INCORRECT_GENRE_REPORT_REASON,
+  buildReportDescriptionWithSuggestedGenre,
+  getCanonicalGenreLabel,
+  normalizeCanonicalGenreId,
+  parseSuggestedGenreFromReportDescription,
+} from "@shared/report-genre";
+import {
   COMMENT_ATTACHED_TO_IDENTIFICATION_MESSAGE,
   COMMENT_DELETED_INTERACTION_MESSAGE,
   DELETED_COMMENT_BODY,
@@ -1434,6 +1441,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Report reason is required" });
       }
 
+      const reasonTrim = reason.trim();
+      let reportDescription: string | null =
+        description != null && String(description).trim() ? String(description).trim() : null;
+
+      if (reasonTrim === INCORRECT_GENRE_REPORT_REASON) {
+        const parsed = parseSuggestedGenreFromReportDescription(reportDescription);
+        if (!parsed.suggestedGenreId) {
+          return res.status(400).json({
+            message: "A suggested genre is required for incorrect genre reports",
+            code: "SUGGESTED_GENRE_REQUIRED",
+          });
+        }
+        try {
+          reportDescription = buildReportDescriptionWithSuggestedGenre(
+            parsed.suggestedGenreId,
+            parsed.userNotes ?? undefined,
+          );
+        } catch {
+          return res.status(400).json({ message: "Invalid suggested genre", code: "INVALID_GENRE" });
+        }
+      }
+
       // Validate post exists
       const post = await storage.getPost(postId);
       if (!post) {
@@ -1470,7 +1499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create the report
       const postReportInsertResult = await db.execute(sql`
         INSERT INTO reports (reporter_id, reported_post_id, reported_user_id, reason, description, status, created_at)
-        VALUES (${userId}, ${postId}, NULL, ${reason.trim()}, ${description || null}, 'open', NOW())
+        VALUES (${userId}, ${postId}, NULL, ${reasonTrim}, ${reportDescription}, 'open', NOW())
         RETURNING id
       `);
       const newPostReportId = (postReportInsertResult as any).rows?.[0]?.id as string | undefined;
@@ -1482,7 +1511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           p.id,
           ${userId},
           ${postId},
-          'New post report: ' || ${reason.trim()},
+          'New post report: ' || ${reasonTrim},
           false,
           NOW()
         FROM profiles p
@@ -2954,6 +2983,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const parts = description.split('|');
           description = parts.length > 1 ? parts.slice(1).join('|') : null;
         }
+
+        const genreSuggestion = parseSuggestedGenreFromReportDescription(
+          report.description && String(report.description).startsWith("COMMENT_ID:")
+            ? null
+            : report.description,
+        );
+        const displayDescription = genreSuggestion.userNotes ?? (
+          genreSuggestion.suggestedGenreId ? null : description
+        );
         
         return {
           id: report.id,
@@ -2961,7 +2999,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reported_post_id: report.reported_post_id,
           reported_user_id: report.reported_user_id,
           reason: report.reason,
-          description: description,
+          description: displayDescription,
+          suggested_genre_id: genreSuggestion.suggestedGenreId,
+          suggested_genre_label: genreSuggestion.suggestedGenreId
+            ? getCanonicalGenreLabel(genreSuggestion.suggestedGenreId)
+            : null,
           status: report.status,
           assigned_moderator_id: report.assigned_moderator_id,
           resolution_action: report.resolution_action,
@@ -3870,6 +3912,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/moderator/reports/:reportId/remove-post] Error:", error);
       res.status(500).json({ message: "Failed to remove post" });
+    }
+  });
+
+  // Moderator: Correct post genre from report (non-punitive; no user notification)
+  app.post("/api/moderator/reports/:reportId/correct-genre", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = req.params.reportId;
+      if (!req.dbUser || !req.dbUser.moderator) {
+        return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+      const genreRaw = typeof req.body?.genre === "string" ? req.body.genre : "";
+      const canonicalGenre = normalizeCanonicalGenreId(genreRaw);
+      if (!canonicalGenre) {
+        return res.status(400).json({ message: "Invalid genre", code: "INVALID_GENRE" });
+      }
+
+      const reportResult = await db.execute(sql`
+        SELECT r.reported_post_id, r.reported_user_id, r.description
+        FROM reports r
+        WHERE r.id = ${reportId}
+        LIMIT 1
+      `);
+      const reportRows = (reportResult as any).rows || [];
+      if (reportRows.length === 0) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      const report = reportRows[0];
+      if (!report.reported_post_id) {
+        return res.status(400).json({ message: "This report does not have an associated post" });
+      }
+      if (report.reported_user_id) {
+        return res.status(400).json({
+          message: "Genre correction is only available for post reports",
+          code: "NOT_POST_REPORT",
+        });
+      }
+
+      const postResult = await db.execute(sql`
+        SELECT id, genre, user_id FROM posts WHERE id = ${report.reported_post_id} LIMIT 1
+      `);
+      const postRows = (postResult as any).rows || [];
+      if (postRows.length === 0) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      const post = postRows[0];
+      const oldGenreRaw = post.genre != null ? String(post.genre) : "";
+      const oldLabel = getCanonicalGenreLabel(oldGenreRaw) !== "Unknown"
+        ? getCanonicalGenreLabel(oldGenreRaw)
+        : oldGenreRaw.trim() || "Unknown";
+      const newLabel = getCanonicalGenreLabel(canonicalGenre);
+      const auditReason = `Genre corrected: ${oldLabel} → ${newLabel}`;
+
+      await db.execute(sql`
+        UPDATE posts SET genre = ${canonicalGenre} WHERE id = ${report.reported_post_id}
+      `);
+
+      await db.execute(sql`
+        INSERT INTO moderator_actions (post_id, moderator_id, action, reason, created_at)
+        VALUES (${report.reported_post_id}, ${moderatorId}, 'correct_genre', ${auditReason}, NOW())
+      `);
+
+      await db.execute(sql`
+        UPDATE reports
+        SET status = 'resolved',
+            resolution_action = 'genre_corrected',
+            resolved_at = NOW()
+        WHERE id = ${reportId}
+      `);
+
+      await db.execute(sql`
+        UPDATE notifications
+        SET read = true
+        WHERE post_id = ${report.reported_post_id}
+          AND message LIKE '%report%'
+          AND read = false
+      `);
+
+      res.json({
+        message: "Genre updated",
+        genre: canonicalGenre,
+        postId: report.reported_post_id,
+        ownerUserId: post.user_id ?? null,
+      });
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/correct-genre] Error:", error);
+      res.status(500).json({ message: "Failed to correct genre" });
     }
   });
 

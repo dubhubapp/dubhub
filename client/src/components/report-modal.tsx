@@ -7,7 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { GENRE_ENTRIES } from "@/lib/genre-styles";
 import { MODERATION_REPORT_REASONS } from "@shared/moderation-reasons";
+import {
+  INCORRECT_GENRE_REPORT_REASON,
+  buildReportDescriptionWithSuggestedGenre,
+} from "@shared/report-genre";
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -60,7 +65,11 @@ export function ReportModal({
 }: ReportModalProps) {
   const [reason, setReason] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+  const [suggestedGenreId, setSuggestedGenreId] = useState<string>("");
   const [isReasonSelectOpen, setIsReasonSelectOpen] = useState<boolean>(false);
+  const [isSuggestedGenreSelectOpen, setIsSuggestedGenreSelectOpen] = useState<boolean>(false);
+  const showSuggestedGenrePicker =
+    type === "post" && reason === INCORRECT_GENRE_REPORT_REASON;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -103,9 +112,17 @@ export function ReportModal({
         : `/api/comments/${commentId}/report`;
       
       try {
+        let reportDescription: string | null = description.trim() || null;
+        if (showSuggestedGenrePicker) {
+          reportDescription = buildReportDescriptionWithSuggestedGenre(
+            suggestedGenreId,
+            description.trim() || undefined,
+          );
+        }
+
         const response = await apiRequest("POST", endpoint, {
           reason,
-          description: description.trim() || null,
+          description: reportDescription,
           reported_user_id: type === "comment" ? reportedUserId : null,
         });
 
@@ -207,6 +224,14 @@ export function ReportModal({
       });
       return;
     }
+    if (showSuggestedGenrePicker && !suggestedGenreId) {
+      toast({
+        title: "Genre required",
+        description: "Select the genre you think this post should be.",
+        variant: "destructive",
+      });
+      return;
+    }
     reportMutation.mutate();
   };
 
@@ -220,6 +245,7 @@ export function ReportModal({
     } else {
       // Force close nested Select dropdown (prevents stuck portal overlay)
       setIsReasonSelectOpen(false);
+      setIsSuggestedGenreSelectOpen(false);
       
       // Clear any pending timeout when modal closes
       if (safetyTimeoutRef.current) {
@@ -230,6 +256,7 @@ export function ReportModal({
       // Reset form state synchronously (no setTimeout to avoid state thrash)
       setReason("");
       setDescription("");
+      setSuggestedGenreId("");
       
       // Diagnostic logging (dev only)
       if (process.env.NODE_ENV === 'development') {
@@ -297,7 +324,12 @@ export function ReportModal({
             <label className="text-sm font-medium mb-2 block">Reason *</label>
             <Select 
               value={reason} 
-              onValueChange={setReason}
+              onValueChange={(value) => {
+                setReason(value);
+                if (value !== INCORRECT_GENRE_REPORT_REASON) {
+                  setSuggestedGenreId("");
+                }
+              }}
               open={isReasonSelectOpen}
               onOpenChange={setIsReasonSelectOpen}
             >
@@ -322,8 +354,45 @@ export function ReportModal({
               </SelectContent>
             </Select>
           </div>
+          {showSuggestedGenrePicker ? (
+            <div>
+              <label className="text-sm font-medium mb-2 block">What genre should this be? *</label>
+              <Select
+                value={suggestedGenreId}
+                onValueChange={setSuggestedGenreId}
+                open={isSuggestedGenreSelectOpen}
+                onOpenChange={setIsSuggestedGenreSelectOpen}
+              >
+                <SelectTrigger
+                  className={cn(
+                    reportReasonSelectTriggerClass,
+                    suggestedGenreId && "bg-muted/25",
+                  )}
+                  data-testid="select-suggested-genre"
+                >
+                  <SelectValue placeholder="Select genre…" />
+                </SelectTrigger>
+                <SelectContent
+                  className={reportReasonSelectContentClass}
+                  viewportClassName={reportReasonSelectViewportClass}
+                  position="popper"
+                >
+                  {GENRE_ENTRIES.map((g) => (
+                    <SelectItem key={g.id} value={g.id} className={reportReasonSelectItemClass}>
+                      {g.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Your suggestion is sent to moderators only — it does not change this post.
+              </p>
+            </div>
+          ) : null}
           <div>
-            <label className="text-sm font-medium mb-2 block">Additional Details (Optional)</label>
+            <label className="text-sm font-medium mb-2 block">
+              {showSuggestedGenrePicker ? "Additional context (optional)" : "Additional Details (Optional)"}
+            </label>
             <Textarea
               value={description}
               onChange={(e) => {
