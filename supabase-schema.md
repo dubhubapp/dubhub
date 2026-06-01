@@ -173,11 +173,12 @@ NOT `user_id` or `from_user_id`.
 | user_id               | uuid        | YES      | –                 | FK → profiles.id                        |
 | title                 | text        | YES      | –                 | Title                                   |
 | video_url             | text        | NO       | –                 | Video source                            |
+| thumbnail_url         | text        | YES      | –                 | Persisted post thumbnail image URL used for feed posters, profile grids, release previews, and future share previews |
 | genre                 | text        | YES      | –                 | Genre                                   |
 | description           | text        | YES      | –                 | Description                             |
 | location              | text        | YES      | –                 | Filming location                        |
 | dj_name               | text        | YES      | –                 | DJ name                                 |
-| played_date          | date        | YES      | –                 | Played date (date only)               |
+| played_date           | date        | YES      | –                 | Played date (date only)                 |
 | created_at            | timestamptz | YES      | now()             | Created                                 |
 | is_verified_artist    | boolean     | YES      | false             | Artist verified                         |
 | is_verified_community | boolean     | YES      | false             | Community verified                      |
