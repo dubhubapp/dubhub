@@ -37,14 +37,21 @@ import { getPlatformTrendMetrics } from "./internalAnalytics";
 import { sendPushToUser } from "./push/pushSend";
 import {
   buildCompressOnlyArgs,
+  buildThumbnailExtractArgs,
   buildTrimCompressArgs,
   ensureFfprobeAvailable,
   isMp4LikeClientVideo,
   probeDurationSeconds,
   probePretrimmedCompressSkip,
   runFfmpeg,
+  thumbnailSeekSeconds,
   type PretrimmedCompressSkipReason,
 } from "./ffmpegVideo";
+import {
+  isAllowedPostThumbnailUrl,
+  normalizePostThumbnailUrlInput,
+  POST_THUMBNAILS_BUCKET,
+} from "./postThumbnailUrl";
 import {
   awardConfirmedIdKarma,
   awardCommentLikeKarma,
@@ -739,6 +746,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
+          const thumbFilename = `thumb_${timestamp}_${randomId}.jpg`;
+          const thumbPath = path.join(processedDir, thumbFilename);
+          let thumbnailPublicUrl: string | null = null;
+
+          try {
+            const seekSec = thumbnailSeekSeconds(clipDurationSec);
+            await runFfmpeg(buildThumbnailExtractArgs(pathToUpload, thumbPath, seekSec));
+            logUploadTiming("thumbnail_extract_complete", { seekSec, thumbPath });
+          } catch (thumbExtractErr) {
+            console.warn("[upload-video] thumbnail extract failed (continuing)", {
+              error:
+                thumbExtractErr instanceof Error
+                  ? thumbExtractErr.message
+                  : String(thumbExtractErr),
+            });
+            logUploadTiming("thumbnail_extract_failed", {
+              errorMessage:
+                thumbExtractErr instanceof Error
+                  ? thumbExtractErr.message
+                  : String(thumbExtractErr),
+            });
+          }
+
           const videoBuffer = fs.readFileSync(pathToUpload);
           try {
             fs.unlinkSync(pathToUpload);
@@ -797,9 +827,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
             data: { publicUrl },
           } = supabase.storage.from("videos").getPublicUrl(storagePath);
 
+          if (fs.existsSync(thumbPath)) {
+            try {
+              const thumbBuffer = fs.readFileSync(thumbPath);
+              const thumbStoragePath = `${userId}/${thumbFilename}`;
+              const { error: thumbUploadError } = await supabase.storage
+                .from(POST_THUMBNAILS_BUCKET)
+                .upload(thumbStoragePath, thumbBuffer, {
+                  contentType: "image/jpeg",
+                  cacheControl: "3600",
+                  upsert: false,
+                });
+              if (thumbUploadError) {
+                console.warn("[upload-video] thumbnail storage upload failed", thumbUploadError);
+                logUploadTiming("thumbnail_storage_upload_failed", {
+                  message: thumbUploadError.message,
+                });
+              } else {
+                const {
+                  data: { publicUrl: thumbPublicUrl },
+                } = supabase.storage.from(POST_THUMBNAILS_BUCKET).getPublicUrl(thumbStoragePath);
+                thumbnailPublicUrl = thumbPublicUrl;
+                logUploadTiming("thumbnail_storage_upload_complete", {
+                  thumbStoragePath,
+                });
+              }
+            } catch (thumbUploadErr) {
+              console.warn("[upload-video] thumbnail upload error (continuing)", thumbUploadErr);
+            } finally {
+              try {
+                if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+
           const result = {
             success: true,
             url: publicUrl,
+            thumbnailUrl: thumbnailPublicUrl,
             filename: outputFilename,
             start_time: preTrimmed ? 0 : startTime,
             end_time: preTrimmed ? clipDurationSec : endTime,
@@ -837,6 +904,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           try {
             if (fs.existsSync(compressedPath)) fs.unlinkSync(compressedPath);
+          } catch {
+            /* ignore */
+          }
+          try {
+            const thumbCleanup = path.join(
+              processedDir,
+              `thumb_${timestamp}_${randomId}.jpg`,
+            );
+            if (fs.existsSync(thumbCleanup)) fs.unlinkSync(thumbCleanup);
           } catch {
             /* ignore */
           }
@@ -1321,6 +1397,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!titleTrim || !video_url) {
         return res.status(400).json({ message: "Title and video_url are required" });
       }
+
+      const thumbnailInput = normalizePostThumbnailUrlInput(
+        req.body as Record<string, unknown>,
+      );
+      let thumbnail_url: string | null = null;
+      if (thumbnailInput) {
+        if (!isAllowedPostThumbnailUrl(thumbnailInput)) {
+          return res.status(400).json({ message: "Invalid thumbnail_url" });
+        }
+        thumbnail_url = thumbnailInput;
+      }
       if (!genreTrim) {
         return res.status(400).json({ message: "genre is required" });
       }
@@ -1361,6 +1448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         title: titleTrim,
         video_url,
+        thumbnail_url,
         genre: genreTrim,
         description: descStr.trim() || undefined,
         location: locStr.trim() || undefined,
@@ -2920,6 +3008,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           r.created_at,
           p.title AS post_title,
           p.video_url AS post_video_url,
+          p.thumbnail_url AS post_thumbnail_url,
           p.description AS post_description,
           p.genre AS post_genre,
           p.location AS post_location,
@@ -3016,6 +3105,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title: report.post_title,
           videoUrl: report.post_video_url,
           video_url: report.post_video_url,
+          thumbnailUrl: report.post_thumbnail_url ?? null,
+          thumbnail_url: report.post_thumbnail_url ?? null,
           description: report.post_description,
           genre: report.post_genre,
           location: report.post_location,

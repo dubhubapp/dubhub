@@ -461,3 +461,36 @@ export function buildTrimCompressArgs(
     outputPath,
   ];
 }
+
+/** Aligns with native trim poster sampling (500ms inset from clip edges). */
+export function thumbnailSeekSeconds(durationSec: number): number {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return 0.5;
+  const edgeSec = 0.5;
+  const mid = durationSec / 2;
+  if (durationSec <= 2 * edgeSec) return mid;
+  return Math.min(Math.max(mid, edgeSec), durationSec - edgeSec);
+}
+
+const THUMBNAIL_MAX_LONG_EDGE_PX = 720;
+
+export function buildThumbnailExtractArgs(
+  inputPath: string,
+  outputJpegPath: string,
+  seekSec: number,
+): string[] {
+  return [
+    "-y",
+    "-ss",
+    String(seekSec),
+    "-i",
+    inputPath,
+    "-vframes",
+    "1",
+    "-an",
+    "-vf",
+    `scale=w=min(iw\\,${THUMBNAIL_MAX_LONG_EDGE_PX}):h=min(ih\\,${THUMBNAIL_MAX_LONG_EDGE_PX}):force_original_aspect_ratio=decrease`,
+    "-q:v",
+    "3",
+    outputJpegPath,
+  ];
+}

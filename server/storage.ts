@@ -4,6 +4,7 @@ import { eq, desc, asc, and, or, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
+import { mapPostThumbnailUrl } from "./postThumbnailUrl";
 
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
@@ -72,7 +73,7 @@ export interface IStorage {
     }
   ): Promise<{ items: any[]; hasMore: boolean; nextCursor: { sortMode: "hottest" | "newest"; createdAt: string; id: string; hotScore?: number } | null }>;
   getPost(id: string): Promise<any | undefined>;
-  createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
+  createPost(data: { userId: string; title: string; video_url: string; thumbnail_url?: string | null; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
   deletePost(id: string): Promise<boolean>;
   getPostsByArtist(artistId: string): Promise<any[]>;
   getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<any[]>;
@@ -326,6 +327,7 @@ export class DatabaseStorage implements IStorage {
           p.user_id,
           p.title,
           p.video_url,
+          p.thumbnail_url,
           p.genre,
           p.description,
           p.location,
@@ -443,6 +445,7 @@ export class DatabaseStorage implements IStorage {
         userId: row.user_id,
         title: row.title,
         videoUrl: row.video_url,
+        thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
         description: row.description,
         location: row.location,
@@ -545,6 +548,7 @@ export class DatabaseStorage implements IStorage {
           p.user_id,
           p.title,
           p.video_url,
+          p.thumbnail_url,
           p.genre,
           p.description,
           p.location,
@@ -610,6 +614,7 @@ export class DatabaseStorage implements IStorage {
         userId: row.user_id,
         title: row.title,
         videoUrl: row.video_url,
+        thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
         description: row.description,
         location: row.location,
@@ -732,6 +737,7 @@ export class DatabaseStorage implements IStorage {
           p.user_id,
           p.title,
           p.video_url,
+          p.thumbnail_url,
           p.genre,
           p.description,
           p.location,
@@ -813,6 +819,7 @@ export class DatabaseStorage implements IStorage {
         userId: row.user_id,
         title: row.title,
         videoUrl: row.video_url,
+        thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
         description: row.description,
         location: row.location,
@@ -1073,14 +1080,25 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createPost(data: { userId: string; title: string; video_url: string; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any> {
+  async createPost(data: {
+    userId: string;
+    title: string;
+    video_url: string;
+    thumbnail_url?: string | null;
+    genre?: string;
+    description?: string;
+    location?: string;
+    dj_name?: string;
+    played_date?: string | null;
+  }): Promise<any> {
     try {
       const result = await db.execute(sql`
-        INSERT INTO posts (user_id, title, video_url, genre, description, location, dj_name, played_date, created_at)
+        INSERT INTO posts (user_id, title, video_url, thumbnail_url, genre, description, location, dj_name, played_date, created_at)
         VALUES (
           ${data.userId},
           ${data.title},
           ${data.video_url},
+          ${data.thumbnail_url ?? null},
           ${data.genre ?? null},
           ${data.description ?? null},
           ${data.location ?? null},
@@ -1140,6 +1158,7 @@ export class DatabaseStorage implements IStorage {
           p.user_id,
           p.title,
           p.video_url,
+          p.thumbnail_url,
           p.genre,
           p.description,
           p.location,
@@ -1197,6 +1216,7 @@ export class DatabaseStorage implements IStorage {
         userId: row.user_id,
         title: row.title,
         videoUrl: row.video_url,
+        thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
         description: row.description,
         location: row.location,
@@ -1240,6 +1260,7 @@ export class DatabaseStorage implements IStorage {
           p.user_id,
           p.title,
           p.video_url,
+          p.thumbnail_url,
           p.genre,
           p.description,
           p.location,
@@ -1320,6 +1341,7 @@ export class DatabaseStorage implements IStorage {
         userId: row.user_id,
         title: row.title,
         videoUrl: row.video_url,
+        thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
         description: row.description,
         location: row.location,
@@ -1691,6 +1713,7 @@ export class DatabaseStorage implements IStorage {
           p.avatar_url       AS triggered_by_avatar_url,
           po.title           AS post_title,
           po.video_url       AS post_video_url,
+          po.thumbnail_url   AS post_thumbnail_url,
           r.artwork_url      AS release_artwork_url
         FROM notifications n
         LEFT JOIN profiles p ON p.id = n.triggered_by
@@ -1742,7 +1765,12 @@ export class DatabaseStorage implements IStorage {
             avatarUrl: row.triggered_by_avatar_url,
           },
           post: hasJoinedPostPreview
-            ? { id: row.post_id, title: row.post_title, videoUrl: row.post_video_url } as any
+            ? {
+                id: row.post_id,
+                title: row.post_title,
+                videoUrl: row.post_video_url,
+                thumbnailUrl: mapPostThumbnailUrl({ thumbnail_url: row.post_thumbnail_url }),
+              } as any
             : fallbackPost as any,
           release: row.release_id
             ? { id: row.release_id, artworkUrl: this.releaseArtworkPublicUrl(row.release_artwork_url) }
@@ -2738,6 +2766,7 @@ export class DatabaseStorage implements IStorage {
             p.user_id,
             p.title,
             p.video_url,
+            p.thumbnail_url,
             p.dj_name,
             p.genre,
             p.description,
@@ -2764,6 +2793,7 @@ export class DatabaseStorage implements IStorage {
             p.user_id,
             p.title,
             p.video_url,
+            p.thumbnail_url,
             p.dj_name,
             p.genre,
             p.description,
@@ -2784,7 +2814,12 @@ export class DatabaseStorage implements IStorage {
             )
           ORDER BY p.created_at DESC
         `);
-    return (result as any).rows || [];
+    const rows = (result as any).rows || [];
+    return rows.map((row: any) => ({
+      ...row,
+      videoUrl: row.video_url,
+      thumbnailUrl: mapPostThumbnailUrl(row),
+    }));
   }
 
   async notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean> {

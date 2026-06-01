@@ -9,6 +9,11 @@ function isAbsoluteUrl(value: string): boolean {
  * - Absolute URLs are returned unchanged
  * - Relative paths are resolved against API origin on native
  */
+/** Post thumbnails and other raster preview URLs (not feed MP4). */
+export function isLikelyStaticImagePreviewUrl(url: string): boolean {
+  return /\.(jpe?g|png|webp)(\?|$)/i.test(url) || url.includes("/post-thumbnails/");
+}
+
 export function resolveMediaUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();

@@ -35,6 +35,7 @@ export const posts = pgTable("posts", {
   userId: varchar("user_id").notNull().references(() => profiles.id),
   title: text("title"),
   videoUrl: text("video_url").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
   description: text("description"),
   genre: text("genre"),
   djName: text("dj_name"),

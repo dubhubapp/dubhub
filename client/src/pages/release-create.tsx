@@ -12,19 +12,28 @@ import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
-import { resolveMediaUrl } from "@/lib/media-url";
+import { isLikelyStaticImagePreviewUrl, resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
-  const shouldShowVideo = !!src && !failed;
+  const useImage = !!src && isLikelyStaticImagePreviewUrl(src);
+  const shouldShowMedia = !!src && !failed;
   const showFallback = !src || failed;
 
   return (
     <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-muted relative">
-      {shouldShowVideo ? (
+      {shouldShowMedia && useImage ? (
+        <img
+          src={src ?? undefined}
+          alt=""
+          className="w-full h-full object-cover pointer-events-none"
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {shouldShowMedia && !useImage ? (
         <video
           src={src ?? undefined}
           muted
@@ -114,6 +123,9 @@ export default function ReleaseCreate() {
   type EligiblePost = {
     id: string;
     video_url?: string;
+    videoUrl?: string;
+    thumbnail_url?: string;
+    thumbnailUrl?: string;
     dj_name?: string;
     title?: string;
     verified_comment_body?: string;
@@ -121,7 +133,11 @@ export default function ReleaseCreate() {
   };
 
   const getEligiblePostPreviewUrl = (post: EligiblePost) => {
-    return resolveMediaUrl(post.video_url);
+    const thumb =
+      post.thumbnailUrl ??
+      post.thumbnail_url ??
+      null;
+    return resolveMediaUrl(thumb) ?? resolveMediaUrl(post.videoUrl ?? post.video_url);
   };
 
   const filteredEligiblePosts = useMemo(() => {
