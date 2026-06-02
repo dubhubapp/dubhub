@@ -215,7 +215,7 @@ function ProfilePreviewPlaceholder({ mode }: { mode: "loading" | "unavailable" }
         {isLoading ? (
           <>
             <VinylLoader size="sm" inline className="scale-[0.65]" />
-            <span className="text-[10px] font-medium tracking-wide text-white/55">Loading preview</span>
+            <span className="text-center text-[10px] font-medium tracking-wide text-white/55">Loading preview</span>
           </>
         ) : (
           <>
@@ -228,6 +228,10 @@ function ProfilePreviewPlaceholder({ mode }: { mode: "loading" | "unavailable" }
   );
 }
 
+function markCachedImageReady(img: HTMLImageElement | null): boolean {
+  return !!img?.complete && img.naturalWidth > 0;
+}
+
 function ProfilePostThumbnail({
   thumbnailSrc,
   videoSrc,
@@ -235,6 +239,7 @@ function ProfilePostThumbnail({
   thumbnailSrc: string | null;
   videoSrc: string | null;
 }) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   /** Tracks first decoded frame / image load so placeholder stays until the real preview paints. */
@@ -243,6 +248,9 @@ function ProfilePostThumbnail({
     setFailed(false);
     setLoadTimedOut(false);
     setMediaReady(false);
+    if (thumbnailSrc && markCachedImageReady(imgRef.current)) {
+      setMediaReady(true);
+    }
   }, [thumbnailSrc, videoSrc]);
   const shouldRenderImage = !!thumbnailSrc && !failed && !loadTimedOut;
   const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed && !loadTimedOut;
@@ -266,6 +274,12 @@ function ProfilePostThumbnail({
       {showUnavailable ? <ProfilePreviewPlaceholder mode="unavailable" /> : null}
       {shouldRenderImage ? (
         <img
+          ref={(el) => {
+            imgRef.current = el;
+            if (markCachedImageReady(el)) {
+              setMediaReady(true);
+            }
+          }}
           src={thumbnailSrc ?? undefined}
           alt=""
           className={mediaClass}

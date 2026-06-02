@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Calendar, Music, ExternalLink, Disc3, Plus } from "lucide-react";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
@@ -16,8 +16,12 @@ import { isReleaseDayToday } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
-import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
+import {
+  DubHubSkeletonBar,
+  dubhubSkeletonGlassShellClass,
+} from "@/components/ui/skeleton";
+import { prefetchReleaseDetail } from "@/lib/release-cache";
 import {
   isPushPromptSessionActive,
   markReleasesPushPromptHandled,
@@ -132,6 +136,26 @@ function isSavedReleaseOutTodayInList(
   return isReleaseDayToday(r.isComingSoon, r.releaseDate);
 }
 
+function ReleaseFeedContentLoader() {
+  return (
+    <div className="space-y-4 py-2" aria-busy="true" aria-label="Loading releases">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className={`flex gap-4 p-4 ${dubhubSkeletonGlassShellClass}`}
+        >
+          <DubHubSkeletonBar tone="teal" className="w-20 h-20 rounded-lg flex-shrink-0" />
+          <div className="flex-1 space-y-2 pt-1">
+            <DubHubSkeletonBar tone="default" className="h-3 w-2/3 max-w-[10rem]" />
+            <DubHubSkeletonBar tone="mid" className="h-4 w-full max-w-[14rem]" />
+            <DubHubSkeletonBar tone="faint" className="h-3 w-1/3 max-w-[6rem]" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Any release with release_date = today (for glow and Out today badge). */
 function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
   return isReleaseDayToday(r.isComingSoon, r.releaseDate);
@@ -139,6 +163,7 @@ function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
 
 export default function ReleaseTracker() {
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
   const isArtist = userType === "artist";
   const [scope, setScopeState] = useState<FeedScope>(() =>
@@ -223,7 +248,7 @@ export default function ReleaseTracker() {
   const releaseCardBaseClass =
     "ios-press w-full text-left rounded-xl p-4 transition-all border flex gap-4 bg-black/30 backdrop-blur-md border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] hover:bg-black/40 hover:border-white/20";
 
-  const { data: feed = [], isLoading } = useQuery<ReleaseFeedItem[]>({
+  const { data: feed } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -245,21 +270,35 @@ export default function ReleaseTracker() {
     refetchOnWindowFocus: true,
   });
 
+  const isFeedLoading = feed === undefined;
+  const feedItems = feed ?? [];
+
+  const openRelease = useCallback(
+    (r: ReleaseFeedItem) => {
+      prefetchReleaseDetail(queryClient, r.id);
+      const params = new URLSearchParams();
+      if (isArtist) params.set("scope", scope);
+      params.set("view", feedView);
+      navigate(`/releases/${r.id}?${params}`);
+    },
+    [queryClient, isArtist, scope, feedView, navigate]
+  );
+
   const myReleasesDueToday = useMemo(() => {
-    if (!isArtist || effectiveScope !== "my" || !currentUser?.id) return [];
-    return feed.filter(
+    if (isFeedLoading || !isArtist || effectiveScope !== "my" || !currentUser?.id) return [];
+    return feedItems.filter(
       (r) =>
         r.artistId === currentUser.id && isReleaseDayToday(r.isComingSoon, r.releaseDate)
     );
-  }, [feed, isArtist, effectiveScope, currentUser?.id]);
+  }, [feedItems, isFeedLoading, isArtist, effectiveScope, currentUser?.id]);
 
   const featuredReleaseIds = useMemo(
     () => new Set(myReleasesDueToday.map((r) => r.id)),
     [myReleasesDueToday]
   );
   const standardDatedFeed = useMemo(
-    () => feed.filter((r) => r.releaseDate && !r.isComingSoon && !featuredReleaseIds.has(r.id)),
-    [feed, featuredReleaseIds]
+    () => feedItems.filter((r) => r.releaseDate && !r.isComingSoon && !featuredReleaseIds.has(r.id)),
+    [feedItems, featuredReleaseIds]
   );
   const standardOutTodayFeed = useMemo(
     () => standardDatedFeed.filter((r) => isReleaseDayToday(r.isComingSoon, r.releaseDate)),
@@ -276,22 +315,16 @@ export default function ReleaseTracker() {
     const releaseDayHighlight = isReleaseDayHighlight(r);
     const isOwnerReleaseDay = r.artistId === currentUser?.id && releaseDayHighlight;
     const featured = !!opts?.featured;
-    const openRelease = () => {
-      const params = new URLSearchParams();
-      if (isArtist) params.set("scope", scope);
-      params.set("view", feedView);
-      navigate(`/releases/${r.id}?${params}`);
-    };
     return (
       <div
         key={r.id}
         role="button"
         tabIndex={0}
-        onClick={openRelease}
+        onClick={() => openRelease(r)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            openRelease();
+            openRelease(r);
           }
         }}
         className={cn(
@@ -387,14 +420,6 @@ export default function ReleaseTracker() {
     );
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex-1 bg-background flex items-center justify-center">
-        <VinylLoader label="Loading releases..." />
-      </div>
-    );
-  }
-
   return (
     <>
       <PushPermissionPrompt
@@ -442,7 +467,7 @@ export default function ReleaseTracker() {
           </div>
         )}
 
-        {currentUser?.id && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && (
+        {currentUser?.id && !isFeedLoading && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && (
           <div className="relative z-10 mb-7 rounded-xl border-2 border-amber-300/80 bg-gradient-to-br from-violet-500/16 via-background/86 to-amber-400/22 shadow-[0_0_34px_-8px_rgba(139,92,246,0.4),0_0_78px_-8px_rgba(245,158,11,0.95),0_14px_32px_-18px_rgba(245,158,11,0.6),inset_0_1px_0_rgba(255,255,255,0.14)] p-3 space-y-3">
             <ReleaseDayCelebration releaseId={myReleasesDueToday[0].id} variant="heading" />
             <div className="space-y-3">
@@ -456,7 +481,9 @@ export default function ReleaseTracker() {
             <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="mb-2">Sign in to see releases from artists you’ve liked.</p>
           </div>
-        ) : feed.length === 0 ? (
+        ) : isFeedLoading ? (
+          <ReleaseFeedContentLoader />
+        ) : feedItems.length === 0 ? (
           <div className="text-center text-muted-foreground py-12">
             <Disc3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="mb-2">
@@ -521,13 +548,13 @@ export default function ReleaseTracker() {
                 </div>
               </section>
             ))}
-            {feed.some((r) => r.isComingSoon) && (
+            {feedItems.some((r) => r.isComingSoon) && (
               <section>
                 <h2 className="text-sm font-semibold text-white/85 mb-3 mt-1">
                   Coming soon...
                 </h2>
                 <div className="space-y-4">
-                  {feed
+                  {feedItems
                     .filter((r) => r.isComingSoon)
                     .map((r) => {
                       const normalized = normalizeReleaseCardFields(r);
@@ -536,19 +563,11 @@ export default function ReleaseTracker() {
                         key={r.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => {
-                          const params = new URLSearchParams();
-                          if (isArtist) params.set("scope", scope);
-                          params.set("view", feedView);
-                          navigate(`/releases/${r.id}?${params}`);
-                        }}
+                        onClick={() => openRelease(r)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            const params = new URLSearchParams();
-                            if (isArtist) params.set("scope", scope);
-                            params.set("view", feedView);
-                            navigate(`/releases/${r.id}?${params}`);
+                            openRelease(r);
                           }
                         }}
                         className={`${releaseCardBaseClass} min-w-0 overflow-hidden`}

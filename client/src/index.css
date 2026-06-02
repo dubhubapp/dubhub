@@ -18,7 +18,7 @@
    * Releases page — fixed “Add Release” stack (release-tracker.tsx).
    * Keeps CTA clearly above the tab bar, aligns scroll end padding with fade + button occluder.
    */
-  --releases-cta-gap-above-nav: 0.1875rem;
+  --releases-cta-gap-above-nav: 0.5rem;
   /** Opaque band bleed beneath the fade so list content never shows through the tab bar. */
   --releases-cta-stack-bleed: 1.5rem;
   --releases-cta-button-block: 3.5rem;
@@ -115,7 +115,7 @@ html.theme-transitioning .bg-surface {
     --app-nav-pad-y: 0.1875rem;
     --app-nav-row-min-h: 2.5625rem;
     /* Slightly more air above the nav on taller iPhones; SE / short phones keep :root gap. */
-    --releases-cta-gap-above-nav: 0.4375rem;
+    --releases-cta-gap-above-nav: 0.625rem;
   }
 }
 

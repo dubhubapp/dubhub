@@ -16,8 +16,15 @@ import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
+import { DubHubSkeletonBar, dubhubSkeletonGlassShellClass } from "@/components/ui/skeleton";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import {
+  fetchReleaseById,
+  findReleaseInFeedCaches,
+  hasFullReleaseDetail,
+  type ReleaseDetailRecord,
+} from "@/lib/release-cache";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -88,6 +95,32 @@ function formatDurationBetween(start: string | null | undefined, end: string | n
   return `${safeDays} day${safeDays === 1 ? "" : "s"}`;
 }
 
+/** Reserves the same footprint as StatsCardSection (4 core cards) while stats load. */
+function ReleaseStatsSectionSkeleton() {
+  return (
+    <div
+      className={`p-4 ${dubhubSkeletonGlassShellClass}`}
+      aria-busy="true"
+      aria-label="Loading release stats"
+    >
+      <div className="mb-4 flex justify-center">
+        <DubHubSkeletonBar tone="teal" className="h-5 w-28" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-lg border-2 border-white/10 bg-black/20 p-3 flex flex-col items-center justify-center min-h-[5.5rem]"
+          >
+            <DubHubSkeletonBar tone="default" className="h-4 w-24 max-w-full mb-2" />
+            <DubHubSkeletonBar tone="mid" className="h-7 w-12" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ReleaseDetail() {
   const [, params] = useRoute("/releases/:id");
   const [, navigate] = useLocation();
@@ -97,25 +130,16 @@ export default function ReleaseDetail() {
   const id = params?.id;
   const isArtist = userType === "artist";
 
-  const { data: release, isLoading, error } = useQuery({
+  const { data: release, isPending, isFetching, isPlaceholderData, error } = useQuery<ReleaseDetailRecord>({
     queryKey: ["/api/releases", id],
-    queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: Record<string, string> = {};
-      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-      const res = await fetch(apiUrl(`/api/releases/${id}`), { credentials: "include", headers });
-      if (!res.ok) {
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[ReleaseDetail] Fetch failed for release", id, "status:", res.status);
-        }
-        throw new Error("Failed to fetch release");
-      }
-      return res.json();
-    },
+    queryFn: () => fetchReleaseById(id!),
+    placeholderData: () => (id ? findReleaseInFeedCaches(queryClient, id) : undefined),
     enabled: !!id && id !== "new",
   });
 
-  const { data: stats } = useQuery<ReleaseStats>({
+  const hasFullDetail = hasFullReleaseDetail(release, isPlaceholderData);
+
+  const { data: stats, isPending: isStatsPending, isFetching: isStatsFetching } = useQuery<ReleaseStats>({
     queryKey: ["/api/releases", id, "stats"],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -131,21 +155,29 @@ export default function ReleaseDetail() {
     retry: false,
   });
 
+  const isStatsLoading = !stats && (isStatsPending || isStatsFetching);
+
   const isOwner = release && currentUser?.id && release.artistId === currentUser.id;
-  const myCollab = release?.collaborators?.find((c: any) => c.artistId === currentUser?.id);
+  const myCollab = hasFullDetail
+    ? release?.collaborators?.find((c) => c.artistId === currentUser?.id)
+    : undefined;
   const isPendingCollab = myCollab?.status === "PENDING";
-  const isAcceptedCollab = myCollab?.status === "ACCEPTED";
-  const canManage = isOwner || isAcceptedCollab;
+  const isAcceptedCollab = hasFullDetail && myCollab?.status === "ACCEPTED";
+  const canManage =
+    isOwner ||
+    isAcceptedCollab ||
+    (release?.collaboratorStatus === "ACCEPTED" && !hasFullDetail);
 
   const hasToastedNotFound = useRef(false);
   useEffect(() => {
-    if (!isLoading && (error || !release) && id && id !== "new") {
+    if (isPending || isFetching) return;
+    if ((error || !release) && id && id !== "new") {
       if (!hasToastedNotFound.current) {
         hasToastedNotFound.current = true;
         toast({ title: "Release not found", variant: "destructive" });
       }
     }
-  }, [isLoading, error, release, id, toast]);
+  }, [isPending, isFetching, error, release, id, toast]);
 
   if (!id || id === "new") {
     navigate("/releases");
@@ -165,7 +197,7 @@ export default function ReleaseDetail() {
   })();
   const handleBack = () => navigate(releasesBackUrl);
 
-  if (isLoading) {
+  if (isPending && !release) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <VinylLoader />
@@ -173,7 +205,7 @@ export default function ReleaseDetail() {
     );
   }
 
-  if (error || !release) {
+  if (!isPending && !isFetching && (error || !release)) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4">
         <p className="text-muted-foreground">Release not found</p>
@@ -184,24 +216,34 @@ export default function ReleaseDetail() {
     );
   }
 
-  const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
+  if (!release) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <VinylLoader />
+      </div>
+    );
+  }
+
+  const releaseData = release;
+  const upcoming = isReleaseUpcoming(releaseData.isComingSoon, releaseData.releaseDate);
   const showOwnerReleaseDay =
     isArtist &&
     isOwner &&
-    isReleaseDayToday(release.isComingSoon, release.releaseDate);
+    isReleaseDayToday(releaseData.isComingSoon, releaseData.releaseDate);
   const showSavedReleaseDay =
+    hasFullDetail &&
     !isOwner &&
-    !!(release as { viewerSavedRelease?: boolean }).viewerSavedRelease &&
-    isReleaseDayToday(release.isComingSoon, release.releaseDate);
+    !!releaseData.viewerSavedRelease &&
+    isReleaseDayToday(releaseData.isComingSoon, releaseData.releaseDate);
   const firstClipLabel = formatMonthYear(stats?.firstClipAt ?? null);
   const latestClipLabel = formatMonthYear(stats?.latestClipAt ?? null);
   const announcedAfterLabel =
     stats?.daysToAnnouncement !== null && stats?.daysToAnnouncement !== undefined
-      ? formatDurationBetween(stats?.firstClipAt, release?.createdAt, stats.daysToAnnouncement)
+      ? formatDurationBetween(stats?.firstClipAt, releaseData?.createdAt, stats.daysToAnnouncement)
       : null;
   const releasedAfterLabel =
     stats?.daysToRelease !== null && stats?.daysToRelease !== undefined
-      ? formatDurationBetween(stats?.firstClipAt, release?.releaseDate, stats.daysToRelease)
+      ? formatDurationBetween(stats?.firstClipAt, releaseData?.releaseDate, stats.daysToRelease)
       : null;
   const releaseStatsCards: StatsCardItem[] = stats
     ? [
@@ -291,14 +333,20 @@ export default function ReleaseDetail() {
           Back
         </Button>
 
-        {showOwnerReleaseDay && (
-          <ReleaseDayCelebration releaseId={release.id} title={release.title} variant="full" />
-        )}
-        {showSavedReleaseDay && (
-          <SavedReleaseDayCelebration releaseId={release.id} title={release.title} variant="full" />
+        {isFetching && releaseData && (
+          <p className="text-xs text-muted-foreground mb-3" aria-live="polite">
+            Updating release…
+          </p>
         )}
 
-        {isOwner && !release.isPublic && (release.collaborators || []).length > 0 && (
+        {showOwnerReleaseDay && (
+          <ReleaseDayCelebration releaseId={releaseData.id} title={releaseData.title} variant="full" />
+        )}
+        {showSavedReleaseDay && (
+          <SavedReleaseDayCelebration releaseId={releaseData.id} title={releaseData.title} variant="full" />
+        )}
+
+        {isOwner && hasFullDetail && !releaseData.isPublic && (releaseData.collaborators || []).length > 0 && (
           <div className="mb-4 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-sm">
             Waiting for collaborators to accept before this release is public.
           </div>
@@ -306,8 +354,8 @@ export default function ReleaseDetail() {
 
         <div className="mb-6 flex min-w-0 gap-4 overflow-hidden">
           <div className="w-32 h-32 rounded-xl bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-            {release.artworkUrl ? (
-              <img src={release.artworkUrl} alt="" className="w-full h-full object-cover" />
+            {releaseData.artworkUrl ? (
+              <img src={releaseData.artworkUrl} alt="" className="w-full h-full object-cover" />
             ) : (
               <span className="text-4xl text-muted-foreground">🎵</span>
             )}
@@ -315,13 +363,13 @@ export default function ReleaseDetail() {
           <div className="flex-1 min-w-0 overflow-hidden">
             <h1 className="text-xl font-bold leading-tight break-all whitespace-normal">
               {formatReleaseTitleLine(
-                release.artistUsername,
-                sanitizeReleaseText(release.title),
-                release.collaborators
+                releaseData.artistUsername,
+                sanitizeReleaseText(releaseData.title),
+                releaseData.collaborators
               )}
             </h1>
             <p className="text-sm mt-1">
-              {release.isComingSoon ? "Coming soon..." : formatDate(release.releaseDate)}
+              {releaseData.isComingSoon ? "Coming soon..." : formatDate(releaseData.releaseDate)}
             </p>
             <span
               className={`inline-block mt-2 text-xs px-2 py-0.5 rounded ${
@@ -330,19 +378,19 @@ export default function ReleaseDetail() {
             >
               {upcoming ? "Upcoming" : "Released"}
             </span>
-            {getBannerFromLinks(release.links, upcoming) && (
+            {getBannerFromLinks(releaseData.links, upcoming) && (
               <p className="text-sm text-primary mt-2">
-                {getBannerFromLinks(release.links, upcoming)}
+                {getBannerFromLinks(releaseData.links, upcoming)}
               </p>
             )}
           </div>
         </div>
 
-        {release.links?.length > 0 && (
+        {releaseData.links && releaseData.links.length > 0 && (
           <div className="mb-6">
             <h2 className="text-sm font-medium text-muted-foreground mb-2">Links</h2>
             <div className="flex min-w-0 flex-wrap gap-2">
-              {sortLinksByPlatform((release.links as ReleaseLink[]) || []).map((link) => (
+              {sortLinksByPlatform((releaseData.links as ReleaseLink[]) || []).map((link) => (
                 <a
                   key={link.id}
                   href={link.url}
@@ -360,21 +408,24 @@ export default function ReleaseDetail() {
           </div>
         )}
 
-        {stats && (
-          <StatsCardSection
-            title="Release stats"
-            titleInfo={RELEASE_STATS_HELP.section}
-            items={releaseStatsCards}
-            className="mb-6"
-            helperText={
-              stats.postsFeaturingTrack === 0
-                ? "No clips featuring this track yet."
-                : undefined
-            }
-          />
-        )}
+        <div className="mb-6">
+          {stats ? (
+            <StatsCardSection
+              title="Release stats"
+              titleInfo={RELEASE_STATS_HELP.section}
+              items={releaseStatsCards}
+              helperText={
+                stats.postsFeaturingTrack === 0
+                  ? "No clips featuring this track yet."
+                  : undefined
+              }
+            />
+          ) : isStatsLoading ? (
+            <ReleaseStatsSectionSkeleton />
+          ) : null}
+        </div>
 
-        {isPendingCollab && isArtist && (
+        {isPendingCollab && isArtist && hasFullDetail && myCollab?.id && (
           <div className="mb-4 space-y-2">
             <p className="text-sm text-muted-foreground">You were invited as a collaborator. Accept or reject:</p>
             <div className="flex gap-2">

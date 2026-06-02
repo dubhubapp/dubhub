@@ -18,6 +18,7 @@ import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 import { SEARCH_INPUT_KEYBOARD_PROPS, preventEnterFormSubmit } from "@/lib/form-search-input";
+import { ReleaseStatusFields } from "@/components/release-status-fields";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -81,7 +82,6 @@ export default function ReleaseCreate() {
   const [uploading, setUploading] = useState(false);
   const [linkPlatform, setLinkPlatform] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
-  const [attachWarningAccepted, setAttachWarningAccepted] = useState(false);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [draftLinks, setDraftLinks] = useState<
@@ -231,7 +231,7 @@ export default function ReleaseCreate() {
       return;
     }
     if (!comingSoon && !releaseDate) {
-      toast({ title: "Release date is required unless Coming soon", variant: "destructive" });
+      toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -338,11 +338,11 @@ export default function ReleaseCreate() {
     <SwipeBackPage
       enabled={false}
       onBack={handleBack}
-      className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)]"
     >
       <div
         ref={scrollContainerRef}
-        className="min-h-full"
+        className="min-h-full min-w-0 max-w-full overflow-x-hidden"
         style={{
           WebkitOverflowScrolling: "touch",
           transition:
@@ -355,7 +355,7 @@ export default function ReleaseCreate() {
               : undefined,
         }}
       >
-      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
+      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto min-w-0 w-full">
         <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
@@ -377,28 +377,12 @@ export default function ReleaseCreate() {
                 {title.length} / {INPUT_LIMITS.releaseTitle}
               </p>
             </div>
-            <div>
-              <label className="text-sm font-medium block mb-1">Release date *</label>
-              <div className="flex items-center gap-2 mb-2">
-                <input
-                  id="coming-soon"
-                  type="checkbox"
-                  checked={comingSoon}
-                  onChange={(e) => setComingSoon(e.target.checked)}
-                />
-                <label htmlFor="coming-soon" className="text-sm">
-                  Coming soon (date TBC - you can update this later)
-                </label>
-              </div>
-              {!comingSoon && (
-                <Input
-                  type="date"
-                  value={releaseDate}
-                  onChange={(e) => setReleaseDate(e.target.value)}
-                  required
-                />
-              )}
-            </div>
+            <ReleaseStatusFields
+              comingSoon={comingSoon}
+              onComingSoonChange={setComingSoon}
+              releaseDate={releaseDate}
+              onReleaseDateChange={setReleaseDate}
+            />
             <div>
               <label className="text-sm font-medium block mb-1">Artwork</label>
               <input
@@ -587,14 +571,6 @@ export default function ReleaseCreate() {
             <p className="text-xs text-muted-foreground mb-2">
               Selected posts will be attached when you create this release.
             </p>
-            <label className="flex items-center gap-2 mb-3">
-              <input
-                type="checkbox"
-                checked={attachWarningAccepted}
-                onChange={(e) => setAttachWarningAccepted(e.target.checked)}
-              />
-              <span className="text-sm">I confirm these posts are my verified IDs</span>
-            </label>
 
             <div className="relative mb-3">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -615,7 +591,7 @@ export default function ReleaseCreate() {
                     selectedPostIds.includes(p.id)
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/50 bg-muted/30"
-                  } ${!attachWarningAccepted ? "opacity-60 pointer-events-none" : ""}`}
+                  }`}
                 >
                   <input
                     type="checkbox"
@@ -625,7 +601,6 @@ export default function ReleaseCreate() {
                       if (e.target.checked) setSelectedPostIds((s) => [...s, p.id]);
                       else setSelectedPostIds((s) => s.filter((id) => id !== p.id));
                     }}
-                    disabled={!attachWarningAccepted}
                     className="mt-1"
                   />
                   <div className="flex-1 min-w-0">

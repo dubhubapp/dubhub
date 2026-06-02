@@ -27,6 +27,7 @@ import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 import { SEARCH_INPUT_KEYBOARD_PROPS } from "@/lib/form-search-input";
+import { ReleaseStatusFields } from "@/components/release-status-fields";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -91,7 +92,6 @@ export default function ReleaseEdit() {
   const [uploading, setUploading] = useState(false);
   const [linkPlatform, setLinkPlatform] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
-  const [attachWarningAccepted, setAttachWarningAccepted] = useState(false);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [draftLinks, setDraftLinks] = useState<
@@ -284,7 +284,7 @@ export default function ReleaseEdit() {
         return;
       }
       if (!comingSoon && !releaseDate) {
-        toast({ title: "Release date is required unless Coming soon", variant: "destructive" });
+        toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
         return;
       }
     }
@@ -443,11 +443,11 @@ export default function ReleaseEdit() {
     <SwipeBackPage
       enabled={false}
       onBack={handleBack}
-      className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)]"
     >
       <div
         ref={scrollContainerRef}
-        className="min-h-full"
+        className="min-h-full min-w-0 max-w-full overflow-x-hidden"
         style={{
           WebkitOverflowScrolling: "touch",
           transition:
@@ -460,7 +460,7 @@ export default function ReleaseEdit() {
               : undefined,
         }}
       >
-      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
+      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto min-w-0 w-full">
         <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to Releases
@@ -485,29 +485,14 @@ export default function ReleaseEdit() {
                 {title.length} / {INPUT_LIMITS.releaseTitle}
               </p>
             </div>
-            <div>
-              <label className="text-sm font-medium block mb-1">Release date</label>
-              <div className="flex items-center gap-2 mb-2">
-                <input
-                  id="edit-coming-soon"
-                  type="checkbox"
-                  checked={comingSoon}
-                  onChange={(e) => setComingSoon(e.target.checked)}
-                  disabled={isReleaseLocked}
-                />
-                <label htmlFor="edit-coming-soon" className="text-sm">
-                  Coming soon (date TBC - you can update this later)
-                </label>
-              </div>
-              {!comingSoon && (
-                <Input
-                  type="date"
-                  value={releaseDate}
-                  onChange={(e) => setReleaseDate(e.target.value)}
-                  disabled={isReleaseLocked}
-                />
-              )}
-            </div>
+            <ReleaseStatusFields
+              comingSoon={comingSoon}
+              onComingSoonChange={setComingSoon}
+              releaseDate={releaseDate}
+              onReleaseDateChange={setReleaseDate}
+              statusDisabled={isReleaseLocked}
+              dateFieldDisabled={isReleaseLocked}
+            />
             <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleArtworkChange} />
             <div className="flex items-center gap-3">
               {(artworkPreviewUrl || artworkPath || release?.artworkUrl) && (
@@ -736,14 +721,6 @@ export default function ReleaseEdit() {
           <p className="text-xs text-muted-foreground mb-2">
             Selected posts will be attached when you save changes.
           </p>
-          <label className="flex items-center gap-2 mb-3">
-            <input
-              type="checkbox"
-              checked={attachWarningAccepted}
-              onChange={(e) => setAttachWarningAccepted(e.target.checked)}
-            />
-            <span className="text-sm">I confirm these posts are my verified IDs</span>
-          </label>
 
           <div className="relative mb-3">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -764,7 +741,7 @@ export default function ReleaseEdit() {
                   selectedPostIds.includes(p.id)
                     ? "border-primary bg-primary/5"
                     : "border-border hover:border-primary/50 bg-muted/30"
-                } ${!attachWarningAccepted ? "opacity-60 pointer-events-none" : ""}`}
+                }`}
               >
                 <input
                   type="checkbox"
@@ -774,7 +751,7 @@ export default function ReleaseEdit() {
                     if (e.target.checked) setSelectedPostIds((s) => [...s, p.id]);
                     else setSelectedPostIds((s) => s.filter((id) => id !== p.id));
                   }}
-                  disabled={!attachWarningAccepted || (isReleaseLocked && attachedSet.has(p.id))}
+                  disabled={isReleaseLocked && attachedSet.has(p.id)}
                   className="mt-1"
                 />
                 <div className="flex-1 min-w-0">
