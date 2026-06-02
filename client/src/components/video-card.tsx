@@ -1338,6 +1338,9 @@ function VideoCardInner({
     });
     const primedFastHandoff =
       primedAtStartRef.current && video.readyState >= 2;
+    // Reveal stored-thumbnail Home feed posts earlier to reduce static poster hold during activation.
+    const shouldUseOptimisticThumbnailReveal =
+      homeFeedPosterFallback && !!feedPosterUrl;
     // Hiding the `<video>` during the primed handoff caused a black flash: opacity-0 until `seeked`
     // fired (often async on WebKit). Cold activations still hide until playback is ready.
     if (!primedFastHandoff) {
@@ -1552,7 +1555,10 @@ function VideoCardInner({
 
     if (primedFastHandoff) {
       // Same pipeline as cold start: a feed poster covers the stage until `playAndReveal` fires.
-      seekToStartThen(playAndReveal);
+      // Reveal stored-thumbnail Home feed posts earlier to reduce static poster hold during activation.
+      seekToStartThen(playAndReveal, {
+        optimisticRevealWhileSeeking: shouldUseOptimisticThumbnailReveal,
+      });
       return finishCleanup;
     }
 
@@ -1562,7 +1568,10 @@ function VideoCardInner({
         readyState: video.readyState,
         readyStateLabel: getMediaReadyStateLabel(video.readyState),
       });
-      seekToStartThen(playAndReveal);
+      // Reveal stored-thumbnail Home feed posts earlier to reduce static poster hold during activation.
+      seekToStartThen(playAndReveal, {
+        optimisticRevealWhileSeeking: shouldUseOptimisticThumbnailReveal,
+      });
       return finishCleanup;
     }
 
@@ -1570,7 +1579,10 @@ function VideoCardInner({
       debugLog("event", "loadedmetadata (activation listener)", { runId });
       logActivationTiming("loadedmetadata");
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
-      seekToStartThen(playAndReveal);
+      // Reveal stored-thumbnail Home feed posts earlier to reduce static poster hold during activation.
+      seekToStartThen(playAndReveal, {
+        optimisticRevealWhileSeeking: shouldUseOptimisticThumbnailReveal,
+      });
     };
     video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
     const onCanPlay = () => {
@@ -1589,6 +1601,7 @@ function VideoCardInner({
     shouldLoadVideo,
     shouldLogActivationTiming,
     videoSrc,
+    feedPosterUrl,
     mediaEpoch,
     homeFeedPosterFallback,
     embeddedFeed,
