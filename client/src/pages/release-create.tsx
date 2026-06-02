@@ -16,6 +16,8 @@ import { isLikelyStaticImagePreviewUrl, resolveMediaUrl } from "@/lib/media-url"
 import { playSuccessNotification } from "@/lib/haptic";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
+import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
+import { SEARCH_INPUT_KEYBOARD_PROPS, preventEnterFormSubmit } from "@/lib/form-search-input";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -89,8 +91,13 @@ export default function ReleaseCreate() {
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
   const [collabSearch, setCollabSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const handleBack = () => navigate("/releases");
   useIosKeyboardResizeNone(true);
+  const { isNativeIos, keyboardHeight, prefersReducedMotion } = useIosKeyboardAwareScroll({
+    enabled: true,
+    scrollContainerRef,
+  });
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
@@ -333,6 +340,21 @@ export default function ReleaseCreate() {
       onBack={handleBack}
       className="flex-1 min-h-0 bg-background overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
     >
+      <div
+        ref={scrollContainerRef}
+        className="min-h-full"
+        style={{
+          WebkitOverflowScrolling: "touch",
+          transition:
+            isNativeIos && !prefersReducedMotion
+              ? "padding-bottom 300ms ease-in-out"
+              : undefined,
+          paddingBottom:
+            isNativeIos && keyboardHeight > 0
+              ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px) + 1rem)`
+              : undefined,
+        }}
+      >
       <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
         <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
@@ -428,6 +450,7 @@ export default function ReleaseCreate() {
                 value={collabSearch}
                 onChange={(e) => setCollabSearch(e.target.value)}
                 className="flex-1"
+                {...SEARCH_INPUT_KEYBOARD_PROPS}
               />
             </div>
             {collabSearch && (
@@ -535,6 +558,7 @@ export default function ReleaseCreate() {
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
                 className="flex-1"
+                onKeyDown={preventEnterFormSubmit}
               />
               <Button
                 size="sm"
@@ -579,6 +603,7 @@ export default function ReleaseCreate() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8"
+                {...SEARCH_INPUT_KEYBOARD_PROPS}
               />
             </div>
 
@@ -652,6 +677,7 @@ export default function ReleaseCreate() {
             </Button>
           </div>
         </form>
+      </div>
       </div>
     </SwipeBackPage>
   );

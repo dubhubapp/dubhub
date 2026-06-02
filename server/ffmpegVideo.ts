@@ -462,13 +462,18 @@ export function buildTrimCompressArgs(
   ];
 }
 
-/** Aligns with native trim poster sampling (500ms inset from clip edges). */
+/**
+ * Stored post thumbnails double as Home feed posters before playback at t=0.
+ * Use a near-start frame (not midpoint) to avoid a visible jump when video starts.
+ */
 export function thumbnailSeekSeconds(durationSec: number): number {
-  if (!Number.isFinite(durationSec) || durationSec <= 0) return 0.5;
-  const edgeSec = 0.5;
-  const mid = durationSec / 2;
-  if (durationSec <= 2 * edgeSec) return mid;
-  return Math.min(Math.max(mid, edgeSec), durationSec - edgeSec);
+  const nearStartSec = 0.25;
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return nearStartSec;
+  const minEdgeSec = 0.05;
+  if (durationSec <= nearStartSec + minEdgeSec) {
+    return Math.min(Math.max(minEdgeSec, durationSec / 2), durationSec - minEdgeSec);
+  }
+  return nearStartSec;
 }
 
 const THUMBNAIL_MAX_LONG_EDGE_PX = 720;

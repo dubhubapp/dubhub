@@ -16,6 +16,8 @@ import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
+import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
+import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -36,6 +38,14 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
   >([]);
   const [selectedReleaseId, setSelectedReleaseId] = useState<string>("");
   const initialFocusRef = useRef<HTMLDivElement | null>(null);
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
+
+  useFeedModalKeyboardGuard(isOpen);
+  const { className: keyboardAwareClassName, style: keyboardAwareStyle } = useKeyboardAwareDialogContent(
+    isOpen,
+    dialogContentRef,
+    ID_MARKING_DIALOG_CONTENT_CLASS,
+  );
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
@@ -271,15 +281,22 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     });
   };
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open) handleClose();
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
+        ref={dialogContentRef}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           initialFocusRef.current?.focus();
         }}
+        onInteractOutside={(event) => event.preventDefault()}
         overlayClassName={ID_MARKING_DIALOG_OVERLAY_CLASS}
-        className={ID_MARKING_DIALOG_CONTENT_CLASS}
+        className={keyboardAwareClassName}
+        style={keyboardAwareStyle}
       >
         <div ref={initialFocusRef} tabIndex={-1} />
         {step === "verify" ? (

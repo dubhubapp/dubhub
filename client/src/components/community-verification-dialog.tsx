@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
+import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,14 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
   const { currentUser } = useUser();
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const initialFocusRef = useRef<HTMLDivElement | null>(null);
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
+
+  useFeedModalKeyboardGuard(isOpen);
+  const { className: keyboardAwareClassName, style: keyboardAwareStyle } = useKeyboardAwareDialogContent(
+    isOpen,
+    dialogContentRef,
+    `${ID_MARKING_DIALOG_CONTENT_CLASS} overflow-x-hidden`,
+  );
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
@@ -95,15 +105,22 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
     },
   });
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open) onClose();
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
+        ref={dialogContentRef}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           initialFocusRef.current?.focus();
         }}
+        onInteractOutside={(event) => event.preventDefault()}
         overlayClassName={ID_MARKING_DIALOG_OVERLAY_CLASS}
-        className={`${ID_MARKING_DIALOG_CONTENT_CLASS} overflow-x-hidden`}
+        className={keyboardAwareClassName}
+        style={keyboardAwareStyle}
       >
         <div ref={initialFocusRef} tabIndex={-1} />
         <DialogHeader className="space-y-1.5 text-center">
