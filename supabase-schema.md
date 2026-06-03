@@ -219,8 +219,9 @@ NOT `user_id` or `from_user_id`.
 | reported_user_id      | uuid        | YES      | –                 | FK → profiles.id           |
 | reason                | text        | NO       | –                 | Report reason              |
 | description           | text        | YES      | –                 | Optional description       |
-| status                | text        | NO       | 'open'            | open                       |
-| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id           |
+| status                | text        | NO       | 'open'            | open / under_review / dismissed / resolved |
+| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id (moderator queue claim) |
+| assigned_at           | timestamptz | YES      | –                 | When the report was claimed |
 | resolution_action     | text        | YES      | –                 | Optional resolution action |
 | resolved_at           | timestamptz | YES      | –                 | Resolved timestamp         |
 | created_at            | timestamptz | YES      | now()             | Created                    |

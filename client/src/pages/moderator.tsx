@@ -19,9 +19,10 @@ import {
   MessageSquare,
   Clock3,
   Handshake,
+  Lock,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import { serializeQueryError } from "@/lib/apiDiagnostics";
+import { ApiRequestError, serializeQueryError } from "@/lib/apiDiagnostics";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { VideoCard } from "@/components/video-card";
@@ -44,6 +45,35 @@ function formatModeratorReportTimestamp(value: string | null | undefined): strin
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
+}
+
+type ReportClaimState = "unclaimed" | "mine" | "other";
+
+function getReportClaimState(
+  report: { assigned_moderator_id?: string | null },
+  currentUserId: string | undefined,
+): ReportClaimState {
+  const assignee = report.assigned_moderator_id ?? null;
+  if (!assignee) return "unclaimed";
+  if (currentUserId && assignee === currentUserId) return "mine";
+  return "other";
+}
+
+function moderationErrorDescription(error: unknown, fallback: string): string {
+  if (error instanceof ApiRequestError && error.responseBody) {
+    try {
+      const body = JSON.parse(error.responseBody) as { message?: unknown };
+      if (typeof body.message === "string" && body.message.trim()) {
+        return body.message.trim();
+      }
+    } catch {
+      // ignore non-JSON bodies
+    }
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return fallback;
 }
 
 function isIncorrectGenrePostReport(report: {
@@ -366,6 +396,51 @@ export default function ModeratorPage() {
     },
   });
 
+  const refetchModeratorReportQueues = () => {
+    void queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+    void queryClient.refetchQueries({ queryKey: ["/api/moderator/reports"] });
+  };
+
+  const claimReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      return apiRequest("POST", `/api/moderator/reports/${reportId}/claim`);
+    },
+    onSuccess: () => {
+      refetchModeratorReportQueues();
+      toast({
+        title: "Report claimed",
+        description: "You can now take action on this report.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not claim report",
+        description: moderationErrorDescription(error, "Failed to claim report"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const releaseReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      return apiRequest("POST", `/api/moderator/reports/${reportId}/release`);
+    },
+    onSuccess: () => {
+      refetchModeratorReportQueues();
+      toast({
+        title: "Report released",
+        description: "Other moderators can claim this report again.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not release report",
+        description: moderationErrorDescription(error, "Failed to release report"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const dismissReportMutation = useMutation({
     mutationFn: async (reportId: string) => {
       return apiRequest("POST", `/api/moderator/reports/${reportId}/dismiss`);
@@ -380,7 +455,7 @@ export default function ModeratorPage() {
       return { previousReports };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+      refetchModeratorReportQueues();
       // Invalidate and refetch notification queries for instant updates
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
@@ -398,7 +473,7 @@ export default function ModeratorPage() {
       }
       toast({
         title: "Error",
-        description: "Failed to dismiss report",
+        description: moderationErrorDescription(error, "Failed to dismiss report"),
         variant: "destructive",
       });
     },
@@ -712,6 +787,10 @@ export default function ModeratorPage() {
                       const additionalDetails = incorrectGenrePost
                         ? genreDisplay?.userNotes
                         : report.description?.trim() || null;
+                      const claimState = getReportClaimState(report, currentUser?.id);
+                      const actionsLocked = claimState !== "mine";
+                      const claimBusy =
+                        claimReportMutation.isPending || releaseReportMutation.isPending;
 
                       return (
                       <Card
@@ -923,23 +1002,92 @@ export default function ModeratorPage() {
                                 ) : null}
                               </div>
 
-                              {/* Action buttons */}
+                              {claimState === "other" ? (
+                                <div
+                                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
+                                  data-testid={`report-claimed-by-other-${report.id}`}
+                                >
+                                  <p className="flex items-center gap-1.5 font-medium text-amber-200">
+                                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    Claimed by{" "}
+                                    {formatUsernameDisplay(
+                                      report.assigned_moderator_username ?? "another moderator",
+                                    )}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-muted-foreground">
+                                    Actions are locked while another moderator is handling this report.
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              {claimState === "unclaimed" ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Claim this report to unlock moderation actions.
+                                </p>
+                              ) : null}
+
+                              {/* Claim / release + action buttons */}
                               <div className="flex gap-2 pt-2 flex-wrap">
+                                {claimState === "unclaimed" ? (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => claimReportMutation.mutate(report.id)}
+                                    disabled={claimBusy}
+                                    data-testid={`button-claim-${report.id}`}
+                                  >
+                                    Claim
+                                  </Button>
+                                ) : null}
+                                {claimState === "mine" ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => releaseReportMutation.mutate(report.id)}
+                                    disabled={claimBusy || dismissReportMutation.isPending}
+                                    data-testid={`button-release-${report.id}`}
+                                  >
+                                    Release
+                                  </Button>
+                                ) : null}
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   onClick={() => dismissReportMutation.mutate(report.id)}
-                                  disabled={dismissReportMutation.isPending}
+                                  disabled={
+                                    actionsLocked ||
+                                    dismissReportMutation.isPending ||
+                                    claimBusy
+                                  }
+                                  title={
+                                    actionsLocked
+                                      ? claimState === "other"
+                                        ? "Claimed by another moderator"
+                                        : "Claim this report first"
+                                      : undefined
+                                  }
                                   data-testid={`button-dismiss-${report.id}`}
                                 >
-                                  <CheckCircle className="w-4 h-4 mr-1" />
+                                  {actionsLocked ? (
+                                    <Lock className="w-4 h-4 mr-1" aria-hidden />
+                                  ) : (
+                                    <CheckCircle className="w-4 h-4 mr-1" />
+                                  )}
                                   Dismiss Report
                                 </Button>
                                 {incorrectGenrePost && report.post?.id ? (
                                   <Button
                                     size="sm"
                                     variant="secondary"
+                                    disabled={actionsLocked || claimBusy}
+                                    title={
+                                      actionsLocked
+                                        ? claimState === "other"
+                                          ? "Claimed by another moderator"
+                                          : "Claim this report first"
+                                        : undefined
+                                    }
                                     onClick={() => {
+                                      if (actionsLocked) return;
                                       setCorrectGenreDialog({
                                         reportId: report.id,
                                         postId: report.post.id,
@@ -958,18 +1106,25 @@ export default function ModeratorPage() {
                                   size="sm"
                                   variant="destructive"
                                   disabled={
-                                    report.is_user_report
+                                    actionsLocked ||
+                                    claimBusy ||
+                                    (report.is_user_report
                                       ? !report.reported_user_id
-                                      : !report.post?.user?.id
+                                      : !report.post?.user?.id)
                                   }
                                   title={
-                                    report.is_user_report && !report.reported_user_id
+                                    actionsLocked
+                                      ? claimState === "other"
+                                        ? "Claimed by another moderator"
+                                        : "Claim this report first"
+                                      : report.is_user_report && !report.reported_user_id
                                       ? "Missing reported user for this comment report"
                                       : !report.is_user_report && !report.post?.user?.id
                                         ? "Missing post author for this report"
                                         : undefined
                                   }
                                   onClick={() => {
+                                    if (actionsLocked) return;
                                     const userId = report.is_user_report
                                       ? report.reported_user_id
                                       : report.post?.user?.id;
@@ -1020,7 +1175,7 @@ export default function ModeratorPage() {
             queryClient.setQueryData<any[]>(["/api/moderator/reports"], (old = []) =>
               old.filter((r: { id?: string }) => r.id !== correctGenreDialog.reportId),
             );
-            void queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+            refetchModeratorReportQueues();
           }}
         />
       ) : null}

@@ -99,6 +99,78 @@ function parseReportedCommentId(description: unknown): string | null {
   return m ? m[1] : null;
 }
 
+const MODERATOR_REPORT_OPEN_STATUSES = ["open", "under_review"] as const;
+
+type ModeratorReportClaimSnapshot = {
+  id: string;
+  status: string;
+  assigned_moderator_id: string | null;
+};
+
+async function loadModeratorReportClaimSnapshot(
+  reportId: string,
+): Promise<ModeratorReportClaimSnapshot | null> {
+  const result = await db.execute(sql`
+    SELECT id, status, assigned_moderator_id
+    FROM reports
+    WHERE id = ${reportId}
+    LIMIT 1
+  `);
+  const row = ((result as { rows?: unknown[] }).rows || [])[0] as
+    | {
+        id: string;
+        status: string;
+        assigned_moderator_id: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    status: String(row.status ?? ""),
+    assigned_moderator_id: row.assigned_moderator_id != null ? String(row.assigned_moderator_id) : null,
+  };
+}
+
+/** Ensures the report is open/under_review and claimed by the acting moderator. */
+async function assertModeratorOwnsReportClaim(
+  reportId: string,
+  moderatorId: string,
+): Promise<
+  | { ok: true; report: ModeratorReportClaimSnapshot }
+  | { ok: false; status: number; message: string; code: string }
+> {
+  const report = await loadModeratorReportClaimSnapshot(reportId);
+  if (!report) {
+    return { ok: false, status: 404, message: "Report not found", code: "REPORT_NOT_FOUND" };
+  }
+  const statusNorm = report.status.trim().toLowerCase();
+  if (!MODERATOR_REPORT_OPEN_STATUSES.includes(statusNorm as (typeof MODERATOR_REPORT_OPEN_STATUSES)[number])) {
+    return {
+      ok: false,
+      status: 409,
+      message: "This report is no longer open for moderation",
+      code: "REPORT_NOT_ACTIONABLE",
+    };
+  }
+  if (report.assigned_moderator_id == null) {
+    return {
+      ok: false,
+      status: 409,
+      message: "Claim this report before taking action",
+      code: "REPORT_NOT_CLAIMED",
+    };
+  }
+  if (report.assigned_moderator_id !== moderatorId) {
+    return {
+      ok: false,
+      status: 409,
+      message: "This report is claimed by another moderator",
+      code: "REPORT_CLAIMED_BY_OTHER",
+    };
+  }
+  return { ok: true, report };
+}
+
 function moderationReasonFromRequest(
   req: AuthenticatedRequest,
   reportReasonFallback: string | null | undefined
@@ -3005,9 +3077,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           r.description,
           r.status,
           r.assigned_moderator_id,
+          r.assigned_at,
           r.resolution_action,
           r.resolved_at,
           r.created_at,
+          pm.username AS assigned_moderator_username,
           p.title AS post_title,
           p.video_url AS post_video_url,
           p.thumbnail_url AS post_thumbnail_url,
@@ -3061,6 +3135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         LEFT JOIN profiles pr ON pr.id = r.reporter_id
         LEFT JOIN profiles pu ON pu.id = r.reported_user_id
         LEFT JOIN profiles pp ON pp.id = p.user_id
+        LEFT JOIN profiles pm ON pm.id = r.assigned_moderator_id
         ${whereClause}
         ORDER BY r.created_at ASC
       `);
@@ -3097,6 +3172,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : null,
           status: report.status,
           assigned_moderator_id: report.assigned_moderator_id,
+          assigned_moderator_username: report.assigned_moderator_username
+            ? String(report.assigned_moderator_username).trim() || null
+            : null,
+          assigned_at: report.assigned_at ?? null,
           resolution_action: report.resolution_action,
           resolved_at: report.resolved_at,
           created_at: report.created_at,
@@ -3277,8 +3356,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Moderator: Assign report
+  async function handleModeratorReportClaim(
+    req: AuthenticatedRequest,
+    res: import("express").Response,
+  ): Promise<void> {
+    const reportId = req.params.reportId;
+    if (!req.dbUser || !req.dbUser.moderator) {
+      res.status(403).json({ message: "Moderator access required" });
+      return;
+    }
+    const moderatorId = req.dbUser.id;
+
+    const claimResult = await db.execute(sql`
+      UPDATE reports
+      SET assigned_moderator_id = ${moderatorId},
+          assigned_at = NOW(),
+          status = 'under_review'
+      WHERE id = ${reportId}
+        AND status IN ('open', 'under_review')
+        AND (assigned_moderator_id IS NULL OR assigned_moderator_id = ${moderatorId})
+      RETURNING id, assigned_at
+    `);
+    const claimedRows = (claimResult as { rows?: unknown[] }).rows || [];
+    if (claimedRows.length > 0) {
+      res.json({ message: "Report claimed", code: "REPORT_CLAIMED" });
+      return;
+    }
+
+    const snapshot = await loadModeratorReportClaimSnapshot(reportId);
+    if (!snapshot) {
+      res.status(404).json({ message: "Report not found", code: "REPORT_NOT_FOUND" });
+      return;
+    }
+    const statusNorm = snapshot.status.trim().toLowerCase();
+    if (!MODERATOR_REPORT_OPEN_STATUSES.includes(statusNorm as (typeof MODERATOR_REPORT_OPEN_STATUSES)[number])) {
+      res.status(409).json({
+        message: "This report is no longer open for moderation",
+        code: "REPORT_NOT_CLAIMABLE",
+      });
+      return;
+    }
+    if (
+      snapshot.assigned_moderator_id != null &&
+      snapshot.assigned_moderator_id !== moderatorId
+    ) {
+      res.status(409).json({
+        message: "This report is claimed by another moderator",
+        code: "REPORT_CLAIMED_BY_OTHER",
+      });
+      return;
+    }
+    res.status(409).json({
+      message: "Could not claim this report",
+      code: "REPORT_NOT_CLAIMABLE",
+    });
+  }
+
+  // Moderator: Claim report (atomic ownership)
+  app.post("/api/moderator/reports/:reportId/claim", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      await handleModeratorReportClaim(req, res);
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/claim] Error:", error);
+      res.status(500).json({ message: "Failed to claim report" });
+    }
+  });
+
+  // Legacy alias — same behavior as claim
   app.post("/api/moderator/reports/:reportId/assign", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      await handleModeratorReportClaim(req, res);
+    } catch (error) {
+      console.error("[/api/moderator/reports/:reportId/assign] Error:", error);
+      res.status(500).json({ message: "Failed to claim report" });
+    }
+  });
+
+  // Moderator: Release report claim
+  app.post("/api/moderator/reports/:reportId/release", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const reportId = req.params.reportId;
       if (!req.dbUser || !req.dbUser.moderator) {
@@ -3286,32 +3441,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
-      await db.execute(sql`
+      const releaseResult = await db.execute(sql`
         UPDATE reports
-        SET assigned_moderator_id = ${moderatorId},
-            status = 'under_review'
+        SET assigned_moderator_id = NULL,
+            assigned_at = NULL,
+            status = CASE WHEN status = 'under_review' THEN 'open' ELSE status END
         WHERE id = ${reportId}
+          AND assigned_moderator_id = ${moderatorId}
+        RETURNING id
       `);
+      const releasedRows = (releaseResult as { rows?: unknown[] }).rows || [];
+      if (releasedRows.length === 0) {
+        const snapshot = await loadModeratorReportClaimSnapshot(reportId);
+        if (!snapshot) {
+          return res.status(404).json({ message: "Report not found", code: "REPORT_NOT_FOUND" });
+        }
+        if (snapshot.assigned_moderator_id == null) {
+          return res.status(409).json({
+            message: "This report is not claimed",
+            code: "REPORT_NOT_CLAIMED",
+          });
+        }
+        return res.status(409).json({
+          message: "Only the moderator who claimed this report can release it",
+          code: "REPORT_CLAIMED_BY_OTHER",
+        });
+      }
 
-      // Notify all moderators that report was assigned (for real-time updates)
-      // This helps other moderators see the report is being handled
-      await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
-        SELECT 
-          p.id,
-          ${moderatorId},
-          (SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1),
-          'Report assigned to moderator',
-          false,
-          NOW()
-        FROM profiles p
-        WHERE p.moderator = true AND p.id != ${moderatorId}
-      `);
-
-      res.json({ message: "Report assigned" });
+      res.json({ message: "Report released", code: "REPORT_RELEASED" });
     } catch (error) {
-      console.error("[/api/moderator/reports/:reportId/assign] Error:", error);
-      res.status(500).json({ message: "Failed to assign report" });
+      console.error("[/api/moderator/reports/:reportId/release] Error:", error);
+      res.status(500).json({ message: "Failed to release report" });
     }
   });
 
@@ -3329,13 +3489,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
-      await db.execute(sql`
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
+
+      const resolveResult = await db.execute(sql`
         UPDATE reports
         SET status = 'resolved',
             resolution_action = ${resolution_action},
             resolved_at = NOW()
         WHERE id = ${reportId}
+          AND assigned_moderator_id = ${moderatorId}
+          AND status IN ('open', 'under_review')
+        RETURNING id
       `);
+      if (((resolveResult as { rows?: unknown[] }).rows || []).length === 0) {
+        return res.status(409).json({
+          message: "This report could not be resolved in its current state",
+          code: "REPORT_NOT_ACTIONABLE",
+        });
+      }
 
       // Notify all moderators that report was resolved (for real-time updates)
       await db.execute(sql`
@@ -3368,6 +3542,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
+
       // Get the report's post_id to mark related notifications as read
       const reportResult = await db.execute(sql`
         SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1
@@ -3375,12 +3554,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reportRows = (reportResult as any).rows || [];
       const postId = reportRows[0]?.reported_post_id;
 
-      await db.execute(sql`
+      const dismissResult = await db.execute(sql`
         UPDATE reports
         SET status = 'dismissed',
             resolved_at = NOW()
         WHERE id = ${reportId}
+          AND assigned_moderator_id = ${moderatorId}
+          AND status IN ('open', 'under_review')
+        RETURNING id
       `);
+      if (((dismissResult as { rows?: unknown[] }).rows || []).length === 0) {
+        return res.status(409).json({
+          message: "This report could not be dismissed in its current state",
+          code: "REPORT_NOT_ACTIONABLE",
+        });
+      }
 
       // Mark related report notifications as read for all moderators
       if (postId) {
@@ -3407,6 +3595,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!req.dbUser || !req.dbUser.moderator) {
         return res.status(403).json({ message: "Moderator access required" });
+      }
+      const moderatorId = req.dbUser.id;
+
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
       }
 
       // Get the report to find the post ID
@@ -3453,6 +3647,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Moderator access required" });
       }
       const moderatorId = req.dbUser.id;
+
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
 
       // Get the report to find the comment ID, reason, and comment owner
       const reportResult = await db.execute(sql`
@@ -3542,6 +3741,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Moderator access required" });
       }
       const moderatorId = req.dbUser.id;
+
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
 
       // Get the report to find the user ID, reason, and check if it's a comment or post report
       const reportResult = await db.execute(sql`
@@ -3683,6 +3887,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
+
       // Get the report to find the user ID, reason, and check if it's a comment or post report
       const reportResult = await db.execute(sql`
         SELECT 
@@ -3801,9 +4010,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
+
       // Get the report to find the user ID, reason, and check if it's a comment or post report
       const reportResult = await db.execute(sql`
-        SELECT 
+        SELECT
           r.reported_user_id,
           r.reported_post_id,
           r.reason,
@@ -3929,9 +4143,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
 
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
+
       // Get the report to find the post ID, reason, and post owner
       const reportResult = await db.execute(sql`
-        SELECT 
+        SELECT
           r.reported_post_id,
           r.reason,
           p.user_id AS post_owner_id,
@@ -4016,6 +4235,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Moderator access required" });
       }
       const moderatorId = req.dbUser.id;
+
+      const ownership = await assertModeratorOwnsReportClaim(reportId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
+
       const genreRaw = typeof req.body?.genre === "string" ? req.body.genre : "";
       const canonicalGenre = normalizeCanonicalGenreId(genreRaw);
       if (!canonicalGenre) {
@@ -5026,6 +5251,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Log all registered moderator report routes for debugging
   console.log("[Routes] Registered moderator report endpoints:");
   const routes = [
+    "/api/moderator/reports/:reportId/claim",
+    "/api/moderator/reports/:reportId/release",
     "/api/moderator/reports/:reportId/assign",
     "/api/moderator/reports/:reportId/resolve",
     "/api/moderator/reports/:reportId/dismiss",

@@ -122,7 +122,8 @@ export function ModerationActionsDialog({
       return apiRequest("POST", `/api/moderator/reports/${reportId}/ban-user`, body);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/moderator/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       queryClient.refetchQueries({ queryKey: ["/api/posts"] });
       if (reportedUserId) {
