@@ -171,6 +171,87 @@ async function assertModeratorOwnsReportClaim(
   return { ok: true, report };
 }
 
+const PENDING_VERIFICATION_STATUS = "community" as const;
+
+type ModeratorPostClaimSnapshot = {
+  id: string;
+  verification_status: string;
+  assigned_moderator_id: string | null;
+};
+
+async function loadModeratorPostClaimSnapshot(
+  postId: string,
+): Promise<ModeratorPostClaimSnapshot | null> {
+  const result = await db.execute(sql`
+    SELECT id, verification_status, assigned_moderator_id
+    FROM posts
+    WHERE id = ${postId}
+    LIMIT 1
+  `);
+  const row = ((result as { rows?: unknown[] }).rows || [])[0] as
+    | {
+        id: string;
+        verification_status: string | null;
+        assigned_moderator_id: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    verification_status: row.verification_status != null ? String(row.verification_status).trim().toLowerCase() : "",
+    assigned_moderator_id:
+      row.assigned_moderator_id != null ? String(row.assigned_moderator_id) : null,
+  };
+}
+
+/** Pending community ID queue: post must be `community` and claimed by acting moderator. */
+async function assertModeratorOwnsPendingPostClaim(
+  postId: string,
+  moderatorId: string,
+): Promise<
+  | { ok: true; post: ModeratorPostClaimSnapshot }
+  | { ok: false; status: number; message: string; code: string }
+> {
+  const post = await loadModeratorPostClaimSnapshot(postId);
+  if (!post) {
+    return { ok: false, status: 404, message: "Post not found", code: "POST_NOT_FOUND" };
+  }
+  if (post.verification_status !== PENDING_VERIFICATION_STATUS) {
+    return {
+      ok: false,
+      status: 409,
+      message: "This post is not pending community moderator review",
+      code: "POST_NOT_ACTIONABLE",
+    };
+  }
+  if (post.assigned_moderator_id == null) {
+    return {
+      ok: false,
+      status: 409,
+      message: "Claim this verification before taking action",
+      code: "POST_NOT_CLAIMED",
+    };
+  }
+  if (post.assigned_moderator_id !== moderatorId) {
+    return {
+      ok: false,
+      status: 409,
+      message: "This verification is claimed by another moderator",
+      code: "POST_CLAIMED_BY_OTHER",
+    };
+  }
+  return { ok: true, post };
+}
+
+async function clearPostModeratorAssignment(postId: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE posts
+    SET assigned_moderator_id = NULL,
+        assigned_at = NULL
+    WHERE id = ${postId}
+  `);
+}
+
 function moderationReasonFromRequest(
   req: AuthenticatedRequest,
   reportReasonFallback: string | null | undefined
@@ -2716,9 +2797,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const result = await db.execute(sql`
-        SELECT * FROM posts
-        WHERE verification_status = 'community'
-        ORDER BY created_at DESC
+        SELECT
+          p.*,
+          pm.username AS assigned_moderator_username
+        FROM posts p
+        LEFT JOIN profiles pm ON pm.id = p.assigned_moderator_id
+        WHERE p.verification_status = 'community'
+        ORDER BY p.created_at DESC
       `);
       
       const rows = (result as any).rows || [];
@@ -2747,12 +2832,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
               };
             }
           }
+
+          const assignedModeratorId =
+            row.assigned_moderator_id != null ? String(row.assigned_moderator_id) : null;
+          const assignedUsername =
+            row.assigned_moderator_username != null
+              ? String(row.assigned_moderator_username).trim() || null
+              : null;
           
           return {
             ...basePost,
             // Keep a snake_case alias for any legacy front-end fallbacks
             verified_comment_id: basePost.verifiedCommentId,
             verifiedComment,
+            assigned_moderator_id: assignedModeratorId,
+            assigned_moderator_username: assignedUsername,
+            assigned_at: row.assigned_at ?? null,
           };
         })
       );
@@ -2763,6 +2858,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to get pending verifications" });
     }
   });
+
+  async function handleModeratorPendingVerificationClaim(
+    req: AuthenticatedRequest,
+    res: import("express").Response,
+  ): Promise<void> {
+    const postId = req.params.postId;
+    if (!req.dbUser || !req.dbUser.moderator) {
+      res.status(403).json({ message: "Moderator access required" });
+      return;
+    }
+    const moderatorId = req.dbUser.id;
+
+    const claimResult = await db.execute(sql`
+      UPDATE posts
+      SET assigned_moderator_id = ${moderatorId},
+          assigned_at = NOW()
+      WHERE id = ${postId}
+        AND verification_status = 'community'
+        AND (assigned_moderator_id IS NULL OR assigned_moderator_id = ${moderatorId})
+      RETURNING id
+    `);
+    const claimedRows = (claimResult as { rows?: unknown[] }).rows || [];
+    if (claimedRows.length > 0) {
+      res.json({ message: "Verification claimed", code: "POST_CLAIMED" });
+      return;
+    }
+
+    const snapshot = await loadModeratorPostClaimSnapshot(postId);
+    if (!snapshot) {
+      res.status(404).json({ message: "Post not found", code: "POST_NOT_FOUND" });
+      return;
+    }
+    if (snapshot.verification_status !== PENDING_VERIFICATION_STATUS) {
+      res.status(409).json({
+        message: "This post is not pending community moderator review",
+        code: "POST_NOT_CLAIMABLE",
+      });
+      return;
+    }
+    if (
+      snapshot.assigned_moderator_id != null &&
+      snapshot.assigned_moderator_id !== moderatorId
+    ) {
+      res.status(409).json({
+        message: "This verification is claimed by another moderator",
+        code: "POST_CLAIMED_BY_OTHER",
+      });
+      return;
+    }
+    res.status(409).json({
+      message: "Could not claim this verification",
+      code: "POST_NOT_CLAIMABLE",
+    });
+  }
+
+  app.post(
+    "/api/moderator/pending-verifications/:postId/claim",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        await handleModeratorPendingVerificationClaim(req, res);
+      } catch (error) {
+        console.error("[/api/moderator/pending-verifications/:postId/claim] Error:", error);
+        res.status(500).json({ message: "Failed to claim verification" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/moderator/pending-verifications/:postId/release",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const postId = req.params.postId;
+        if (!req.dbUser || !req.dbUser.moderator) {
+          return res.status(403).json({ message: "Moderator access required" });
+        }
+        const moderatorId = req.dbUser.id;
+
+        const releaseResult = await db.execute(sql`
+          UPDATE posts
+          SET assigned_moderator_id = NULL,
+              assigned_at = NULL
+          WHERE id = ${postId}
+            AND verification_status = 'community'
+            AND assigned_moderator_id = ${moderatorId}
+          RETURNING id
+        `);
+        const releasedRows = (releaseResult as { rows?: unknown[] }).rows || [];
+        if (releasedRows.length === 0) {
+          const snapshot = await loadModeratorPostClaimSnapshot(postId);
+          if (!snapshot) {
+            return res.status(404).json({ message: "Post not found", code: "POST_NOT_FOUND" });
+          }
+          if (snapshot.verification_status !== PENDING_VERIFICATION_STATUS) {
+            return res.status(409).json({
+              message: "This post is not pending community moderator review",
+              code: "POST_NOT_ACTIONABLE",
+            });
+          }
+          if (snapshot.assigned_moderator_id == null) {
+            return res.status(409).json({
+              message: "This verification is not claimed",
+              code: "POST_NOT_CLAIMED",
+            });
+          }
+          return res.status(409).json({
+            message: "Only the moderator who claimed this verification can release it",
+            code: "POST_CLAIMED_BY_OTHER",
+          });
+        }
+
+        res.json({ message: "Verification released", code: "POST_RELEASED" });
+      } catch (error) {
+        console.error("[/api/moderator/pending-verifications/:postId/release] Error:", error);
+        res.status(500).json({ message: "Failed to release verification" });
+      }
+    },
+  );
 
   /**
    * Internal platform trends endpoint.
@@ -2796,6 +3010,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const moderatorId = req.dbUser.id;
       const { commentId } = req.body; // Moderator can select a different comment
+
+      const ownership = await assertModeratorOwnsPendingPostClaim(postId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
       
       const post = await storage.getPost(postId);
       if (!post) {
@@ -2823,15 +3042,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const comment = commentRows[0];
       
-      // Update post to identified status with the selected comment
-      await db.execute(sql`
+      const confirmResult = await db.execute(sql`
         UPDATE posts
         SET verified_by_moderator = true,
             verification_status = 'identified',
             verified_comment_id = ${selectedCommentId},
-            verified_by = ${comment.user_id}
+            verified_by = ${comment.user_id},
+            assigned_moderator_id = NULL,
+            assigned_at = NULL
         WHERE id = ${postId}
+          AND verification_status = 'community'
+          AND assigned_moderator_id = ${moderatorId}
+        RETURNING id
       `);
+      if (((confirmResult as { rows?: unknown[] }).rows || []).length === 0) {
+        return res.status(409).json({
+          message: "This verification could not be confirmed in its current state",
+          code: "POST_NOT_ACTIONABLE",
+        });
+      }
       
       // Record moderator action (trigger will create notification)
       await db.execute(sql`
@@ -2905,6 +3134,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (eligiblePending) {
+        const ownership = await assertModeratorOwnsPendingPostClaim(postId, moderatorId);
+        if (!ownership.ok) {
+          return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+        }
+      }
+
       console.info("[moderator/community-approve] enter", {
         postId,
         moderatorId,
@@ -2968,6 +3204,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         VALUES (${postId}, ${moderatorId}, 'community_approved', NOW())
       `);
 
+      if (eligiblePending) {
+        await clearPostModeratorAssignment(postId);
+      }
+
       res.json({ message: "Post kept as Community Identified" });
     } catch (error) {
       const errAny = error as { message?: unknown; code?: unknown; constraint?: unknown; detail?: unknown };
@@ -2992,6 +3232,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Moderator access required" });
       }
       const moderatorId = req.dbUser.id;
+
+      const ownership = await assertModeratorOwnsPendingPostClaim(postId, moderatorId);
+      if (!ownership.ok) {
+        return res.status(ownership.status).json({ message: ownership.message, code: ownership.code });
+      }
       
       const post = await storage.getPost(postId);
       if (!post) {
@@ -3011,16 +3256,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Reset verification fields
-      await db.execute(sql`
+      const reopenResult = await db.execute(sql`
         UPDATE posts
         SET is_verified_community = false,
             verification_status = 'unverified',
             verified_comment_id = NULL,
             verified_by = NULL,
-            verified_by_moderator = false
+            verified_by_moderator = false,
+            assigned_moderator_id = NULL,
+            assigned_at = NULL
         WHERE id = ${postId}
+          AND verification_status = 'community'
+          AND assigned_moderator_id = ${moderatorId}
+        RETURNING id
       `);
+      if (((reopenResult as { rows?: unknown[] }).rows || []).length === 0) {
+        return res.status(409).json({
+          message: "This verification could not be reopened in its current state",
+          code: "POST_NOT_ACTIONABLE",
+        });
+      }
       
       // Record moderator action (trigger will create notification)
       await db.execute(sql`

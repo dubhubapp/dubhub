@@ -47,16 +47,30 @@ function formatModeratorReportTimestamp(value: string | null | undefined): strin
   return d.toLocaleString();
 }
 
-type ReportClaimState = "unclaimed" | "mine" | "other";
+type QueueClaimState = "unclaimed" | "mine" | "other";
 
-function getReportClaimState(
-  report: { assigned_moderator_id?: string | null },
+type PendingClaimFilter = "all" | "unclaimed" | "mine" | "others";
+
+function getQueueClaimState(
+  item: { assigned_moderator_id?: string | null },
   currentUserId: string | undefined,
-): ReportClaimState {
-  const assignee = report.assigned_moderator_id ?? null;
+): QueueClaimState {
+  const assignee = item.assigned_moderator_id ?? null;
   if (!assignee) return "unclaimed";
   if (currentUserId && assignee === currentUserId) return "mine";
   return "other";
+}
+
+function matchesPendingClaimFilter(
+  post: { assigned_moderator_id?: string | null },
+  filter: PendingClaimFilter,
+  currentUserId: string | undefined,
+): boolean {
+  if (filter === "all") return true;
+  const state = getQueueClaimState(post, currentUserId);
+  if (filter === "unclaimed") return state === "unclaimed";
+  if (filter === "mine") return state === "mine";
+  return state === "other";
 }
 
 function moderationErrorDescription(error: unknown, fallback: string): string {
@@ -129,6 +143,7 @@ export default function ModeratorPage() {
     contentTarget: "post" | "comment";
     defaultReportReason: string;
   } | null>(null);
+  const [pendingClaimFilter, setPendingClaimFilter] = useState<PendingClaimFilter>("all");
   const [correctGenreDialog, setCorrectGenreDialog] = useState<{
     reportId: string;
     postId: string;
@@ -288,7 +303,7 @@ export default function ModeratorPage() {
       });
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+      refetchModeratorPendingQueues();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       if (variables.ownerUserId) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", variables.ownerUserId, "posts"] });
@@ -307,10 +322,10 @@ export default function ModeratorPage() {
         description: "This post is now marked as Identified.",
       });
     },
-    onError: () => {
+    onError: (error) => {
       toast({
         title: "Error",
-        description: "Failed to confirm verification",
+        description: moderationErrorDescription(error, "Failed to confirm verification"),
         variant: "destructive",
       });
     },
@@ -321,7 +336,7 @@ export default function ModeratorPage() {
       return apiRequest("POST", `/api/moderator/reopen-verification/${postId}`);
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+      refetchModeratorPendingQueues();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       if (variables.ownerUserId) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", variables.ownerUserId, "posts"] });
@@ -338,10 +353,10 @@ export default function ModeratorPage() {
         description: "This post has been reopened as Unidentified.",
       });
     },
-    onError: () => {
+    onError: (error) => {
       toast({
         title: "Error",
-        description: "Failed to reopen post",
+        description: moderationErrorDescription(error, "Failed to reopen post"),
         variant: "destructive",
       });
     },
@@ -362,7 +377,7 @@ export default function ModeratorPage() {
       return apiRequest("POST", `/api/moderator/community-approve/${postId}`, body);
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+      refetchModeratorPendingQueues();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       if (variables.ownerUserId) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", variables.ownerUserId, "posts"] });
@@ -390,7 +405,7 @@ export default function ModeratorPage() {
       }
       toast({
         title: "Error",
-        description: "Failed to keep post as Community Identified",
+        description: moderationErrorDescription(error, "Failed to keep post as Community Identified"),
         variant: "destructive",
       });
     },
@@ -400,6 +415,51 @@ export default function ModeratorPage() {
     void queryClient.invalidateQueries({ queryKey: ["/api/moderator/reports"] });
     void queryClient.refetchQueries({ queryKey: ["/api/moderator/reports"] });
   };
+
+  const refetchModeratorPendingQueues = () => {
+    void queryClient.invalidateQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+    void queryClient.refetchQueries({ queryKey: ["/api/moderator/pending-verifications"] });
+  };
+
+  const claimPendingMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      return apiRequest("POST", `/api/moderator/pending-verifications/${postId}/claim`);
+    },
+    onSuccess: () => {
+      refetchModeratorPendingQueues();
+      toast({
+        title: "Verification claimed",
+        description: "You can now review this community identification.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not claim verification",
+        description: moderationErrorDescription(error, "Failed to claim verification"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const releasePendingMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      return apiRequest("POST", `/api/moderator/pending-verifications/${postId}/release`);
+    },
+    onSuccess: () => {
+      refetchModeratorPendingQueues();
+      toast({
+        title: "Verification released",
+        description: "Other moderators can claim this item again.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not release verification",
+        description: moderationErrorDescription(error, "Failed to release verification"),
+        variant: "destructive",
+      });
+    },
+  });
 
   const claimReportMutation = useMutation({
     mutationFn: async (reportId: string) => {
@@ -485,6 +545,11 @@ export default function ModeratorPage() {
   }
 
   const pendingVerificationCount = pendingVerifications.length;
+  const filteredPendingVerifications = pendingVerifications.filter((post: { assigned_moderator_id?: string | null }) =>
+    matchesPendingClaimFilter(post, pendingClaimFilter, currentUser?.id),
+  );
+  const pendingClaimBusy =
+    claimPendingMutation.isPending || releasePendingMutation.isPending;
   const unresolvedReportsCount = reportedContent.filter(
     (r: { status?: string }) => r.status === "open" || r.status === "under_review"
   ).length;
@@ -584,6 +649,33 @@ export default function ModeratorPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {!isPendingLoading && pendingVerifications.length > 0 ? (
+                  <div
+                    className="mb-4 flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Filter pending verifications"
+                  >
+                    {(
+                      [
+                        { id: "all" as const, label: "All" },
+                        { id: "unclaimed" as const, label: "Unclaimed" },
+                        { id: "mine" as const, label: "Claimed by Me" },
+                        { id: "others" as const, label: "Claimed by Others" },
+                      ] as const
+                    ).map((opt) => (
+                      <Button
+                        key={opt.id}
+                        type="button"
+                        size="sm"
+                        variant={pendingClaimFilter === opt.id ? "default" : "outline"}
+                        onClick={() => setPendingClaimFilter(opt.id)}
+                        data-testid={`pending-filter-${opt.id}`}
+                      >
+                        {opt.label}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
                 {isPendingLoading ? (
                   <div className="flex justify-center py-8">
                     <VinylLoader />
@@ -594,11 +686,18 @@ export default function ModeratorPage() {
                     <p className="text-sm font-medium text-foreground/90">No pending verifications</p>
                     <p className="mt-1 text-sm text-muted-foreground">All community verifications have been reviewed.</p>
                   </div>
+                ) : filteredPendingVerifications.length === 0 ? (
+                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
+                    <p className="text-sm font-medium text-foreground/90">No verifications match this filter</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Try another filter or claim an item from All.</p>
+                  </div>
                 ) : (
                   <div className="space-y-4">
-                    {pendingVerifications.map((post: any) => (
+                    {filteredPendingVerifications.map((post: any) => (
                       (() => {
                         const genreChip = getGenreChipStyle(post.genre);
+                        const claimState = getQueueClaimState(post, currentUser?.id);
+                        const actionsLocked = claimState !== "mine";
                         return (
                       <Card
                         key={post.id}
@@ -684,19 +783,82 @@ export default function ModeratorPage() {
                                 </div>
                               )}
 
+                              {claimState === "other" ? (
+                                <div
+                                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
+                                  data-testid={`pending-claimed-by-other-${post.id}`}
+                                >
+                                  <p className="flex items-center gap-1.5 font-medium text-amber-200">
+                                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    Claimed by{" "}
+                                    {formatUsernameDisplay(
+                                      post.assigned_moderator_username ?? "another moderator",
+                                    )}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-muted-foreground">
+                                    Actions are locked while another moderator is handling this verification.
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              {claimState === "unclaimed" ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Claim this verification to unlock review actions.
+                                </p>
+                              ) : null}
+
                               <div className="space-y-2 pt-2">
                                 <p className="text-[11px] leading-snug text-muted-foreground">
                                   Use Keep as Community Identified when the ID looks credible but can&apos;t be fully
                                   confirmed.
                                 </p>
                                 <div className="flex flex-wrap gap-2">
+                                  {claimState === "unclaimed" ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => claimPendingMutation.mutate(post.id)}
+                                      disabled={pendingClaimBusy}
+                                      data-testid={`button-claim-pending-${post.id}`}
+                                    >
+                                      Claim
+                                    </Button>
+                                  ) : null}
+                                  {claimState === "mine" ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => releasePendingMutation.mutate(post.id)}
+                                      disabled={
+                                        pendingClaimBusy ||
+                                        confirmVerificationMutation.isPending ||
+                                        communityApproveMutation.isPending ||
+                                        reopenVerificationMutation.isPending
+                                      }
+                                      data-testid={`button-release-pending-${post.id}`}
+                                    >
+                                      Release
+                                    </Button>
+                                  ) : null}
                                   <Button
                                     size="sm"
                                     className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                                     onClick={() => {
+                                      if (actionsLocked) return;
                                       setSelectedPost(post);
                                       setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
                                     }}
+                                    disabled={
+                                      actionsLocked ||
+                                      pendingClaimBusy ||
+                                      confirmVerificationMutation.isPending
+                                    }
+                                    title={
+                                      actionsLocked
+                                        ? claimState === "other"
+                                          ? "Claimed by another moderator"
+                                          : "Claim this verification first"
+                                        : undefined
+                                    }
                                     data-testid={`button-review-confirm-${post.id}`}
                                   >
                                     <Check className="w-4 h-4 mr-1" />
@@ -706,6 +868,7 @@ export default function ModeratorPage() {
                                     size="sm"
                                     variant="secondary"
                                     onClick={() => {
+                                      if (actionsLocked) return;
                                       communityApproveMutation.mutate({
                                         postId: post.id,
                                         commentId: post.verifiedCommentId || post.verified_comment_id,
@@ -713,8 +876,17 @@ export default function ModeratorPage() {
                                       });
                                     }}
                                     disabled={
+                                      actionsLocked ||
+                                      pendingClaimBusy ||
                                       !(post.verifiedCommentId || post.verified_comment_id) ||
                                       communityApproveMutation.isPending
+                                    }
+                                    title={
+                                      actionsLocked
+                                        ? claimState === "other"
+                                          ? "Claimed by another moderator"
+                                          : "Claim this verification first"
+                                        : undefined
                                     }
                                     data-testid={`button-keep-community-${post.id}`}
                                   >
@@ -725,13 +897,25 @@ export default function ModeratorPage() {
                                     size="sm"
                                     variant="destructive"
                                     className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-600 dark:hover:bg-red-700"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      if (actionsLocked) return;
                                       reopenVerificationMutation.mutate({
                                         postId: post.id,
                                         ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
-                                      })
+                                      });
+                                    }}
+                                    disabled={
+                                      actionsLocked ||
+                                      pendingClaimBusy ||
+                                      reopenVerificationMutation.isPending
                                     }
-                                    disabled={reopenVerificationMutation.isPending}
+                                    title={
+                                      actionsLocked
+                                        ? claimState === "other"
+                                          ? "Claimed by another moderator"
+                                          : "Claim this verification first"
+                                        : undefined
+                                    }
                                     data-testid={`button-reopen-${post.id}`}
                                   >
                                     <XCircle className="w-4 h-4 mr-1" />
@@ -787,7 +971,7 @@ export default function ModeratorPage() {
                       const additionalDetails = incorrectGenrePost
                         ? genreDisplay?.userNotes
                         : report.description?.trim() || null;
-                      const claimState = getReportClaimState(report, currentUser?.id);
+                      const claimState = getQueueClaimState(report, currentUser?.id);
                       const actionsLocked = claimState !== "mine";
                       const claimBusy =
                         claimReportMutation.isPending || releaseReportMutation.isPending;

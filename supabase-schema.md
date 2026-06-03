@@ -186,6 +186,8 @@ NOT `user_id` or `from_user_id`.
 | verified_by           | uuid        | YES      | –                 | Verifier (currently used by moderators) |
 | verified_comment_id   | uuid        | YES      | –                 | Comment used for verification           |
 | verification_status   | text        | YES      | 'unverified'      | Documented states: see `COMMENT ON COLUMN posts.verification_status` (unverified, community = pending mod review, community_approved = mod kept community, identified, under_review). |
+| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id (pending verification queue claim) |
+| assigned_at           | timestamptz | YES      | –                 | When post was claimed for moderator review |
 | denied_by_artist      | boolean     | YES      | false             | Denial flag                             |
 | denied_at             | timestamptz | YES      | –                 | Denial timestamp                        |
 | artist_verified_by    | uuid        | YES      | –                 | Artist who verified (FK → profiles.id)  |
