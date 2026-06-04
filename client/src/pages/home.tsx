@@ -564,7 +564,7 @@ function applyDeepLinkPostMergeToCache(
 export default function Home() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
-  const [sortMode, setSortMode] = useState<FeedSortMode>("hottest");
+  const [sortMode, setSortMode] = useState<FeedSortMode>("trending");
   const [genreMenuOpen, setGenreMenuOpen] = useState(false);
   /** True while the rail dice plays exit before leaving Random mode. */
   const [randomViewExiting, setRandomViewExiting] = useState(false);
@@ -843,7 +843,7 @@ export default function Home() {
         if (randomExitTimerRef.current) clearTimeout(randomExitTimerRef.current);
         randomExitTimerRef.current = setTimeout(() => {
           randomExitTimerRef.current = null;
-          if (mode === "hottest" || mode === "newest") {
+          if (mode === "trending" || mode === "hottest" || mode === "newest") {
             setIdentificationFilter("all");
             setSelectedGenres([]);
           }
@@ -872,7 +872,7 @@ export default function Home() {
     const q = search.startsWith("?") ? search.slice(1) : search;
     const params = new URLSearchParams(q);
     const sortParam = (params.get("sort") || "").toLowerCase();
-    if (sortParam !== "hottest" && sortParam !== "newest") return;
+    if (sortParam !== "trending" && sortParam !== "hottest" && sortParam !== "newest") return;
     if (sortMode === sortParam) return;
     handleFeedSortChange(sortParam);
   }, [search, sortMode, handleFeedSortChange]);
@@ -931,7 +931,8 @@ export default function Home() {
         params.append("genres", selectedGenres.join(","));
       }
       params.append("identification", identificationFilter);
-      const serverSortMode: "hottest" | "newest" = sortMode === "newest" ? "newest" : "hottest";
+      const serverSortMode: "trending" | "hottest" | "newest" =
+        sortMode === "newest" ? "newest" : sortMode === "hottest" ? "hottest" : "trending";
       params.append("sort", serverSortMode);
       params.append("limit", "10");
       if (pageParam) {
@@ -1019,6 +1020,17 @@ export default function Home() {
       return Number.isFinite(n) ? (n as number) : 0;
     };
 
+    const getComments = (post: PostWithUser) => {
+      const raw =
+        (post as any).comments ??
+        (post as any).comments_count ??
+        (post as any).commentsCount ??
+        (post as any).comment_count ??
+        0;
+      const n = typeof raw === "string" ? Number(raw) : raw;
+      return Number.isFinite(n) ? (n as number) : 0;
+    };
+
     const identificationWhere = (post: PostWithUser) => {
       if (identificationFilter === "identified") {
         return (
@@ -1058,7 +1070,16 @@ export default function Home() {
       return [...filtered].sort((a, b) => normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt));
     }
 
-    // Hottest: primary by likes, secondary by recency.
+    if (sortMode === "trending") {
+      const trendingScore = (post: PostWithUser) => getLikes(post) + getComments(post) * 2;
+      return [...filtered].sort((a, b) => {
+        const scoreDiff = trendingScore(b) - trendingScore(a);
+        if (scoreDiff !== 0) return scoreDiff;
+        return normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt);
+      });
+    }
+
+    // Hottest: primary by likes, secondary by recency (all-time).
     return [...filtered].sort((a, b) => {
       const likeDiff = getLikes(b) - getLikes(a);
       if (likeDiff !== 0) return likeDiff;
@@ -1375,7 +1396,7 @@ export default function Home() {
   ]);
 
   /**
-   * Hottest mode re-sorts client-side when like counts change; scrollTop stays fixed so the viewport
+   * Hottest/Trending modes re-sort client-side when engagement changes; scrollTop stays fixed so the viewport
    * can land on the wrong post. After any feed order change, snap back to the post the user was
    * viewing (activePostId) before paint.
    */
@@ -2212,7 +2233,7 @@ export default function Home() {
     if (sortMode === "random") {
       if (deepLinkRandomExitForPostRef.current !== postId) {
         deepLinkRandomExitForPostRef.current = postId;
-        handleFeedSortChange("hottest");
+        handleFeedSortChange("trending");
       }
       return;
     }

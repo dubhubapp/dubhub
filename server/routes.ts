@@ -345,7 +345,8 @@ function fanOutModeratorPushReport(params: {
 
 type FeedCursor =
   | { sortMode: "newest"; createdAt: string; id: string }
-  | { sortMode: "hottest"; hotScore: number; createdAt: string; id: string };
+  | { sortMode: "hottest"; hotScore: number; createdAt: string; id: string }
+  | { sortMode: "trending"; trendScore: number; createdAt: string; id: string };
 
 function encodeFeedCursor(cursor: FeedCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
@@ -368,8 +369,8 @@ function parseFeedCursor(rawCursor: unknown): FeedCursor {
   const sortMode = value.sortMode;
   const createdAt = value.createdAt;
   const id = value.id;
-  if (sortMode !== "newest" && sortMode !== "hottest") {
-    throw new Error("Cursor sortMode must be hottest or newest");
+  if (sortMode !== "newest" && sortMode !== "hottest" && sortMode !== "trending") {
+    throw new Error("Cursor sortMode must be hottest, newest, or trending");
   }
   if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
     throw new Error("Cursor createdAt is invalid");
@@ -379,6 +380,13 @@ function parseFeedCursor(rawCursor: unknown): FeedCursor {
   }
   if (sortMode === "newest") {
     return { sortMode, createdAt, id };
+  }
+  if (sortMode === "trending") {
+    const trendScore = value.trendScore;
+    if (typeof trendScore !== "number" || !Number.isFinite(trendScore)) {
+      throw new Error("Cursor trendScore is invalid");
+    }
+    return { sortMode, trendScore, createdAt, id };
   }
   const hotScore = value.hotScore;
   if (typeof hotScore !== "number" || !Number.isFinite(hotScore)) {
@@ -1422,9 +1430,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : "all";
 
       const sortMode =
-        req.query.sort === "newest" || req.query.sort === "hottest"
-          ? (req.query.sort as "newest" | "hottest")
-          : "hottest";
+        req.query.sort === "newest" || req.query.sort === "hottest" || req.query.sort === "trending"
+          ? (req.query.sort as "newest" | "hottest" | "trending")
+          : "trending";
       const rawCursor = req.query.cursor;
       let cursor: FeedCursor | null = null;
       if (typeof rawCursor === "string" && rawCursor.trim().length > 0) {

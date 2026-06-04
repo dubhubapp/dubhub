@@ -1,6 +1,6 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Flame, Clock } from "lucide-react";
+import { Flame, Clock, TrendingUp } from "lucide-react";
 import { GENRE_ENTRIES, getGenreLabel } from "@/lib/genre-styles";
 import { cn } from "@/lib/utils";
 import { RandomDiceButton } from "@/components/random-dice-button";
@@ -19,7 +19,7 @@ function FeedSortMenuIconButton({
   "aria-label": ariaLabel,
   children,
 }: {
-  variant: "flame" | "clock";
+  variant: "flame" | "clock" | "trending";
   active: boolean;
   onPress: () => void;
   "aria-label": string;
@@ -30,7 +30,7 @@ function FeedSortMenuIconButton({
 
   useEffect(() => {
     if (!pressPlaying) return;
-    const ms = variant === "flame" ? 400 : 280;
+    const ms = variant === "flame" ? 400 : variant === "clock" ? 280 : 300;
     const t = window.setTimeout(() => setPressPlaying(false), ms);
     return () => window.clearTimeout(t);
   }, [pressPlaying, burstKey, variant]);
@@ -57,8 +57,10 @@ function FeedSortMenuIconButton({
           "inline-flex size-[22px] transform-gpu items-center justify-center will-change-[transform,filter,color] text-inherit [&>svg]:size-[22px] [&>svg]:shrink-0 [&>svg]:stroke-current",
           pressPlaying && variant === "flame" && "animate-feed-flame-ignite",
           pressPlaying && variant === "clock" && "animate-feed-clock-sweep",
+          pressPlaying && variant === "trending" && "animate-feed-clock-sweep",
           !pressPlaying && active && variant === "flame" && "animate-feed-flame-active-pulse text-red-200",
           !pressPlaying && active && variant === "clock" && "animate-feed-clock-active-pulse text-cyan-100",
+          !pressPlaying && active && variant === "trending" && "animate-feed-clock-active-pulse text-amber-200",
           !pressPlaying && !active && "text-white/70",
         )}
       >
@@ -73,7 +75,7 @@ const VIEWPORT_GUTTER = 8;
 /** Keep aligned with `animation.dice-spin` in `tailwind.config.ts` (~0.42s) and `DICE_SPIN_ANIMATION_MS` in home.tsx */
 const MENU_RANDOM_DICE_SPIN_MS = 420;
 
-export type FeedSortMode = "hottest" | "newest" | "random";
+export type FeedSortMode = "trending" | "newest" | "hottest" | "random";
 
 interface GenreFilterProps {
   selectedGenres: string[];
@@ -83,7 +85,7 @@ interface GenreFilterProps {
   isCollapsed?: boolean;
   /** Home feed: hide green/red ID ring on the genre trigger — status lives in this menu only. */
   omitIdentificationRing?: boolean;
-  /** When set with `onSortChange`, collapsed menu includes Feed order (Hottest / Newest / Random). */
+  /** When set with `onSortChange`, collapsed menu includes Feed order (Trending / Newest / Hottest / Random). */
   sortMode?: FeedSortMode;
   onSortChange?: (mode: FeedSortMode) => void;
   onOpenChange?: (open: boolean) => void;
@@ -260,12 +262,12 @@ export function GenreFilter({
             <h3 className="mb-3 text-sm font-semibold text-white">Feed order</h3>
             <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5">
               <FeedSortMenuIconButton
-                variant="flame"
-                active={sortMode === "hottest"}
-                onPress={() => onSortChange("hottest")}
-                aria-label="Sort by hottest"
+                variant="trending"
+                active={sortMode === "trending"}
+                onPress={() => onSortChange("trending")}
+                aria-label="Sort by trending"
               >
-                <Flame className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
+                <TrendingUp className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
               </FeedSortMenuIconButton>
               <FeedSortMenuIconButton
                 variant="clock"
@@ -274,6 +276,14 @@ export function GenreFilter({
                 aria-label="Sort by newest"
               >
                 <Clock className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
+              </FeedSortMenuIconButton>
+              <FeedSortMenuIconButton
+                variant="flame"
+                active={sortMode === "hottest"}
+                onPress={() => onSortChange("hottest")}
+                aria-label="Sort by hottest"
+              >
+                <Flame className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
               </FeedSortMenuIconButton>
               <RandomDiceButton
                 active={sortMode === "random"}

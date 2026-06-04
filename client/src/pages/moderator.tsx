@@ -35,6 +35,16 @@ import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import {
+  loadModeratorQueueFilterState,
+  matchesModeratorGenresFilter,
+  QUEUE_CLAIM_FILTER_OPTIONS,
+  saveModeratorQueueFilterState,
+  type ModeratorGenreId,
+  type ModeratorQueueTab,
+  type QueueClaimFilter,
+} from "@/lib/moderator-queue-filters";
+import { ModeratorGenreFilter } from "@/components/moderator-genre-filter";
+import {
   INCORRECT_GENRE_REPORT_REASON,
   getCanonicalGenreLabel,
   parseSuggestedGenreFromReportDescription,
@@ -49,8 +59,6 @@ function formatModeratorReportTimestamp(value: string | null | undefined): strin
 
 type QueueClaimState = "unclaimed" | "mine" | "other";
 
-type PendingClaimFilter = "all" | "unclaimed" | "mine" | "others";
-
 function getQueueClaimState(
   item: { assigned_moderator_id?: string | null },
   currentUserId: string | undefined,
@@ -61,13 +69,13 @@ function getQueueClaimState(
   return "other";
 }
 
-function matchesPendingClaimFilter(
-  post: { assigned_moderator_id?: string | null },
-  filter: PendingClaimFilter,
+function matchesQueueClaimFilter(
+  item: { assigned_moderator_id?: string | null },
+  filter: QueueClaimFilter,
   currentUserId: string | undefined,
 ): boolean {
   if (filter === "all") return true;
-  const state = getQueueClaimState(post, currentUserId);
+  const state = getQueueClaimState(item, currentUserId);
   if (filter === "unclaimed") return state === "unclaimed";
   if (filter === "mine") return state === "mine";
   return state === "other";
@@ -124,7 +132,8 @@ function resolveIncorrectGenreReportDisplay(report: {
 }
 
 export default function ModeratorPage() {
-  const [activeTab, setActiveTab] = useState("pending");
+  const [initialQueueFilters] = useState(() => loadModeratorQueueFilterState());
+  const [activeTab, setActiveTab] = useState<ModeratorQueueTab>(initialQueueFilters.activeTab);
   const { userType } = useUser();
   const [, setLocation] = useLocation();
   const tabSearch = useSearch();
@@ -143,7 +152,12 @@ export default function ModeratorPage() {
     contentTarget: "post" | "comment";
     defaultReportReason: string;
   } | null>(null);
-  const [pendingClaimFilter, setPendingClaimFilter] = useState<PendingClaimFilter>("all");
+  const [queueClaimFilter, setQueueClaimFilter] = useState<QueueClaimFilter>(
+    initialQueueFilters.claimFilter,
+  );
+  const [selectedGenres, setSelectedGenres] = useState<ModeratorGenreId[]>(
+    initialQueueFilters.selectedGenres,
+  );
   const [correctGenreDialog, setCorrectGenreDialog] = useState<{
     reportId: string;
     postId: string;
@@ -168,6 +182,14 @@ export default function ModeratorPage() {
       setActiveTab(tab);
     }
   }, [tabSearch]);
+
+  useEffect(() => {
+    saveModeratorQueueFilterState({
+      activeTab,
+      claimFilter: queueClaimFilter,
+      selectedGenres,
+    });
+  }, [activeTab, queueClaimFilter, selectedGenres]);
 
   // Get current user for authenticated requests
   const { currentUser } = useUser();
@@ -225,7 +247,6 @@ export default function ModeratorPage() {
   const {
     data: pendingVerifications = [],
     isLoading: isPendingLoading,
-    isFetching: isPendingFetching,
   } = useQuery<PostWithUser[]>({
     queryKey: ["/api/moderator/pending-verifications"],
     ...moderatorQueueStaleOptions,
@@ -239,7 +260,6 @@ export default function ModeratorPage() {
   const {
     data: reportedContent = [],
     isLoading: isReportsLoading,
-    isFetching: isReportsFetching,
   } = useQuery<any[]>({
     queryKey: ["/api/moderator/reports"],
     ...moderatorQueueStaleOptions,
@@ -545,8 +565,15 @@ export default function ModeratorPage() {
   }
 
   const pendingVerificationCount = pendingVerifications.length;
-  const filteredPendingVerifications = pendingVerifications.filter((post: { assigned_moderator_id?: string | null }) =>
-    matchesPendingClaimFilter(post, pendingClaimFilter, currentUser?.id),
+  const filteredPendingVerifications = pendingVerifications.filter(
+    (post: { assigned_moderator_id?: string | null; genre?: string | null }) =>
+      matchesQueueClaimFilter(post, queueClaimFilter, currentUser?.id) &&
+      matchesModeratorGenresFilter(post.genre, selectedGenres),
+  );
+  const filteredReports = reportedContent.filter(
+    (report: { assigned_moderator_id?: string | null; post?: { genre?: string | null } | null }) =>
+      matchesQueueClaimFilter(report, queueClaimFilter, currentUser?.id) &&
+      matchesModeratorGenresFilter(report.post?.genre, selectedGenres),
   );
   const pendingClaimBusy =
     claimPendingMutation.isPending || releasePendingMutation.isPending;
@@ -634,48 +661,52 @@ export default function ModeratorPage() {
             </TabsTrigger>
           </TabsList>
 
+          <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Genre
+              </span>
+              <ModeratorGenreFilter
+                selectedGenres={selectedGenres}
+                onGenresChange={setSelectedGenres}
+              />
+            </div>
+            <div
+              className="flex flex-wrap gap-1.5"
+              role="group"
+              aria-label="Filter by claim status"
+            >
+              <span className="w-full text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:w-auto sm:mr-1 sm:self-center">
+                Claim
+              </span>
+              {QUEUE_CLAIM_FILTER_OPTIONS.map((opt) => (
+                <Button
+                  key={opt.id}
+                  type="button"
+                  size="sm"
+                  variant={queueClaimFilter === opt.id ? "default" : "outline"}
+                  className="h-8 px-2.5 text-xs"
+                  onClick={() => setQueueClaimFilter(opt.id)}
+                  data-testid={`moderator-claim-filter-${opt.id}`}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
           <TabsContent value="pending" className="mt-5 space-y-4">
             <Card className="border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
               <CardHeader>
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   Pending Verifications
                   <ModeratorQueueCountBadge count={pendingVerificationCount} />
-                  {isPendingFetching && !isPendingLoading ? (
-                    <span className="text-xs font-normal text-muted-foreground">Refreshing…</span>
-                  ) : null}
                 </CardTitle>
                 <CardDescription className="text-muted-foreground/90">
                   Community-verified posts awaiting moderator confirmation
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {!isPendingLoading && pendingVerifications.length > 0 ? (
-                  <div
-                    className="mb-4 flex flex-wrap gap-2"
-                    role="group"
-                    aria-label="Filter pending verifications"
-                  >
-                    {(
-                      [
-                        { id: "all" as const, label: "All" },
-                        { id: "unclaimed" as const, label: "Unclaimed" },
-                        { id: "mine" as const, label: "Claimed by Me" },
-                        { id: "others" as const, label: "Claimed by Others" },
-                      ] as const
-                    ).map((opt) => (
-                      <Button
-                        key={opt.id}
-                        type="button"
-                        size="sm"
-                        variant={pendingClaimFilter === opt.id ? "default" : "outline"}
-                        onClick={() => setPendingClaimFilter(opt.id)}
-                        data-testid={`pending-filter-${opt.id}`}
-                      >
-                        {opt.label}
-                      </Button>
-                    ))}
-                  </div>
-                ) : null}
                 {isPendingLoading ? (
                   <div className="flex justify-center py-8">
                     <VinylLoader />
@@ -688,8 +719,12 @@ export default function ModeratorPage() {
                   </div>
                 ) : filteredPendingVerifications.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
-                    <p className="text-sm font-medium text-foreground/90">No verifications match this filter</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Try another filter or claim an item from All.</p>
+                    <p className="text-sm font-medium text-foreground/90">
+                      No pending verifications match these filters.
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Try All Genres and All claims, or claim an item from the full queue.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -942,9 +977,6 @@ export default function ModeratorPage() {
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   Reports
                   <ModeratorQueueCountBadge count={unresolvedReportsCount} />
-                  {isReportsFetching && !isReportsLoading ? (
-                    <span className="text-xs font-normal text-muted-foreground">Refreshing…</span>
-                  ) : null}
                 </CardTitle>
                 <CardDescription className="text-muted-foreground/90">
                   Content flagged by users for review
@@ -961,9 +993,19 @@ export default function ModeratorPage() {
                     <p className="text-sm font-medium text-foreground/90">No reported content at this time</p>
                     <p className="mt-1 text-sm text-muted-foreground">All clear for now.</p>
                   </div>
+                ) : filteredReports.length === 0 ? (
+                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
+                    <AlertTriangle className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                    <p className="text-sm font-medium text-foreground/90">
+                      No reports match these filters.
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Try All Genres and All claims, or claim a report from the full queue.
+                    </p>
+                  </div>
                 ) : (
                   <div className="space-y-4">
-                    {reportedContent.map((report: any) => {
+                    {filteredReports.map((report: any) => {
                       const incorrectGenrePost = isIncorrectGenrePostReport(report);
                       const genreDisplay = incorrectGenrePost
                         ? resolveIncorrectGenreReportDisplay(report)

@@ -60,18 +60,29 @@ export interface IStorage {
   getPosts(
     limit?: number,
     cursor?: {
-      sortMode: "hottest" | "newest";
+      sortMode: "hottest" | "newest" | "trending";
       createdAt: string;
       id: string;
       hotScore?: number;
+      trendScore?: number;
     } | null,
     currentUserId?: string,
     options?: {
       genres?: string[];
       identification?: "all" | "identified" | "unidentified";
-      sortMode?: "hottest" | "newest";
+      sortMode?: "hottest" | "newest" | "trending";
     }
-  ): Promise<{ items: any[]; hasMore: boolean; nextCursor: { sortMode: "hottest" | "newest"; createdAt: string; id: string; hotScore?: number } | null }>;
+  ): Promise<{
+    items: any[];
+    hasMore: boolean;
+    nextCursor: {
+      sortMode: "hottest" | "newest" | "trending";
+      createdAt: string;
+      id: string;
+      hotScore?: number;
+      trendScore?: number;
+    } | null;
+  }>;
   getPost(id: string): Promise<any | undefined>;
   createPost(data: { userId: string; title: string; video_url: string; thumbnail_url?: string | null; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
   deletePost(id: string): Promise<boolean>;
@@ -246,22 +257,29 @@ export class DatabaseStorage implements IStorage {
     limit = 10,
     cursor:
       | {
-          sortMode: "hottest" | "newest";
+          sortMode: "hottest" | "newest" | "trending";
           createdAt: string;
           id: string;
           hotScore?: number;
+          trendScore?: number;
         }
       | null = null,
     currentUserId?: string,
     options?: {
       genres?: string[];
       identification?: "all" | "identified" | "unidentified";
-      sortMode?: "hottest" | "newest";
+      sortMode?: "hottest" | "newest" | "trending";
     }
   ): Promise<{
     items: any[];
     hasMore: boolean;
-    nextCursor: { sortMode: "hottest" | "newest"; createdAt: string; id: string; hotScore?: number } | null;
+    nextCursor: {
+      sortMode: "hottest" | "newest" | "trending";
+      createdAt: string;
+      id: string;
+      hotScore?: number;
+      trendScore?: number;
+    } | null;
   }> {
     console.log("[getPosts] called", { limit, cursor, currentUserId });
     try {
@@ -300,11 +318,19 @@ export class DatabaseStorage implements IStorage {
             ? unidentifiedWhere
             : sql`TRUE`;
 
+      const trendingWindowWhere =
+        sortMode === "trending" ? sql`AND p.created_at >= NOW() - INTERVAL '30 days'` : sql``;
+
+      const hotScoreExpr = sql`COALESCE(pl_counts.likes_count, 0)`;
+      const trendScoreExpr = sql`(COALESCE(pl_counts.likes_count, 0) + COALESCE(c_counts.comments_count, 0) * 2)`;
+
       const orderBy =
         sortMode === "newest"
           ? sql`ORDER BY p.created_at DESC, p.id DESC`
-          : sql`ORDER BY likes_count DESC, p.created_at DESC, p.id DESC`;
-      const hotScoreExpr = sql`COALESCE(pl_counts.likes_count, 0)`;
+          : sortMode === "trending"
+            ? sql`ORDER BY ${trendScoreExpr} DESC, p.created_at DESC, p.id DESC`
+            : sql`ORDER BY likes_count DESC, p.created_at DESC, p.id DESC`;
+
       const cursorWhere =
         sortMode === "newest"
           ? cursor
@@ -313,13 +339,21 @@ export class DatabaseStorage implements IStorage {
                 OR (p.created_at = ${cursor.createdAt}::timestamptz AND p.id < ${cursor.id})
               )`
             : sql``
-          : cursor
-            ? sql`AND (
-                ${hotScoreExpr} < ${cursor.hotScore ?? 0}
-                OR (${hotScoreExpr} = ${cursor.hotScore ?? 0} AND p.created_at < ${cursor.createdAt}::timestamptz)
-                OR (${hotScoreExpr} = ${cursor.hotScore ?? 0} AND p.created_at = ${cursor.createdAt}::timestamptz AND p.id < ${cursor.id})
-              )`
-            : sql``;
+          : sortMode === "trending"
+            ? cursor
+              ? sql`AND (
+                  ${trendScoreExpr} < ${cursor.trendScore ?? 0}
+                  OR (${trendScoreExpr} = ${cursor.trendScore ?? 0} AND p.created_at < ${cursor.createdAt}::timestamptz)
+                  OR (${trendScoreExpr} = ${cursor.trendScore ?? 0} AND p.created_at = ${cursor.createdAt}::timestamptz AND p.id < ${cursor.id})
+                )`
+              : sql``
+            : cursor
+              ? sql`AND (
+                  ${hotScoreExpr} < ${cursor.hotScore ?? 0}
+                  OR (${hotScoreExpr} = ${cursor.hotScore ?? 0} AND p.created_at < ${cursor.createdAt}::timestamptz)
+                  OR (${hotScoreExpr} = ${cursor.hotScore ?? 0} AND p.created_at = ${cursor.createdAt}::timestamptz AND p.id < ${cursor.id})
+                )`
+              : sql``;
 
       const result = await db.execute(sql`
         SELECT
@@ -417,6 +451,7 @@ export class DatabaseStorage implements IStorage {
         WHERE COALESCE(p.verification_status, 'unverified') != 'under_review'
           AND ${genreWhere}
           AND ${identificationWhere}
+          ${trendingWindowWhere}
           ${cursorWhere}
         ${orderBy}
         LIMIT ${pageLimit + 1}
@@ -497,12 +532,20 @@ export class DatabaseStorage implements IStorage {
                 createdAt: new Date(lastRow.created_at).toISOString(),
                 id: String(lastRow.id),
               }
-            : {
-                sortMode: "hottest" as const,
-                hotScore: Number(lastRow.likes_count ?? 0),
-                createdAt: new Date(lastRow.created_at).toISOString(),
-                id: String(lastRow.id),
-              }
+            : sortMode === "trending"
+              ? {
+                  sortMode: "trending" as const,
+                  trendScore:
+                    Number(lastRow.likes_count ?? 0) + Number(lastRow.comments_count ?? 0) * 2,
+                  createdAt: new Date(lastRow.created_at).toISOString(),
+                  id: String(lastRow.id),
+                }
+              : {
+                  sortMode: "hottest" as const,
+                  hotScore: Number(lastRow.likes_count ?? 0),
+                  createdAt: new Date(lastRow.created_at).toISOString(),
+                  id: String(lastRow.id),
+                }
           : null;
       console.log("[getPosts][pagination-debug][cursor]", {
         sortMode,
