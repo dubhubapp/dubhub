@@ -11,6 +11,8 @@ import { apiRequest } from "./queryClient";
 let lastRegisteredToken: string | null = null;
 let listenersRegistered = false;
 let registerPushInFlight: Promise<PushPermissionRequestResult> | null = null;
+/** Per app session: avoid repeated silent register() for the same authenticated user. */
+let silentPushRegisterAttemptedForUserId: string | null = null;
 
 const pushPluginListenerHandles: PluginListenerHandle[] = [];
 
@@ -143,11 +145,32 @@ export async function registerPushListeners(): Promise<void> {
         try {
           lastRegisteredToken = token.value;
           const env = getConfiguredApnsEnvironment();
-          await apiRequest("POST", "/api/push-tokens/register", {
+          console.log("[push][register] APNs device token received; posting to backend", {
+            environment: env,
+          });
+          const res = await apiRequest("POST", "/api/push-tokens/register", {
             token: token.value,
             platform: "ios",
             environment: env,
           });
+          if (res.ok) {
+            let tokenRowId: string | undefined;
+            try {
+              const body = (await res.json()) as { id?: string };
+              tokenRowId = body?.id;
+            } catch {
+              tokenRowId = undefined;
+            }
+            console.log("[push][register] backend token registration succeeded", {
+              environment: env,
+              ...(tokenRowId ? { tokenRowId } : {}),
+            });
+          } else {
+            console.error("[push][register] backend token registration failed", {
+              environment: env,
+              status: res.status,
+            });
+          }
         } catch (err) {
           console.error("[push] registration listener error", err);
         }
@@ -171,6 +194,51 @@ export async function registerPushListeners(): Promise<void> {
   } catch (err) {
     await Promise.all(pending.map((h) => h.remove().catch(() => undefined)));
     console.error("[push] registerPushListeners failed", err);
+  }
+}
+
+/** Clear silent-register session guard (e.g. on sign-out) so the next login can sync again. */
+export function resetSilentPushRegistrationSession(): void {
+  silentPushRegisterAttemptedForUserId = null;
+}
+
+/**
+ * When iOS notification permission is already granted, call register() so the device token
+ * reaches the backend without requiring Settings toggle or onboarding prompt.
+ * Does not request permission; no-op when denied or prompt.
+ */
+export async function syncPushTokenIfPermissionGranted(userId: string): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const trimmedUserId = userId.trim();
+  if (!trimmedUserId) return;
+  if (silentPushRegisterAttemptedForUserId === trimmedUserId) return;
+
+  try {
+    const permission = await getPushReceivePermission();
+    if (permission === "denied") {
+      silentPushRegisterAttemptedForUserId = trimmedUserId;
+      console.log("[push][sync] permission denied; skipping silent register", {
+        userId: trimmedUserId,
+      });
+      return;
+    }
+    if (permission !== "granted") {
+      console.log("[push][sync] permission not granted yet; skipping silent register", {
+        permission,
+        userId: trimmedUserId,
+      });
+      return;
+    }
+
+    silentPushRegisterAttemptedForUserId = trimmedUserId;
+    await registerPushListeners();
+    console.log("[push][sync] permission granted; calling PushNotifications.register()", {
+      userId: trimmedUserId,
+      apnsEnvironment: getConfiguredApnsEnvironment(),
+    });
+    await PushNotifications.register();
+  } catch (err) {
+    console.error("[push][sync] silent register failed", { userId: trimmedUserId, err });
   }
 }
 

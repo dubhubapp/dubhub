@@ -139,6 +139,33 @@ export const userPushTokens = pgTable("user_push_tokens", {
   lastError: text("last_error"),
 });
 
+/** Push-only notification preferences (one row per user). */
+export const userNotificationPreferences = pgTable("user_notification_preferences", {
+  userId: varchar("user_id").primaryKey().references(() => profiles.id),
+  commentsAndRepliesPush: boolean("comments_and_replies_push").notNull().default(true),
+  artistTagsPush: boolean("artist_tags_push").notNull().default(true),
+  releaseUpdatesPush: boolean("release_updates_push").notNull().default(true),
+  devicePushAlerts: boolean("device_push_alerts").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const DEFAULT_USER_NOTIFICATION_PREFERENCES = Object.freeze({
+  commentsAndRepliesPush: true,
+  artistTagsPush: true,
+  releaseUpdatesPush: true,
+  devicePushAlerts: true,
+});
+
+export const patchUserNotificationPreferencesSchema = z
+  .object({
+    commentsAndRepliesPush: z.boolean().optional(),
+    artistTagsPush: z.boolean().optional(),
+    releaseUpdatesPush: z.boolean().optional(),
+    devicePushAlerts: z.boolean().optional(),
+  })
+  .strict();
+
 // Notifications - actual database schema uses artist_id, triggered_by
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -330,6 +357,8 @@ export type Release = typeof releases.$inferSelect;
 export type ReleaseLink = typeof releaseLinks.$inferSelect;
 export type ReleasePost = typeof releasePosts.$inferSelect;
 export type UserPushToken = typeof userPushTokens.$inferSelect;
+export type UserNotificationPreferences = typeof userNotificationPreferences.$inferSelect;
+export type PatchUserNotificationPreferences = z.infer<typeof patchUserNotificationPreferencesSchema>;
 export type Interaction = typeof interactions.$inferSelect;
 export type Achievement = typeof achievements.$inferSelect;
 

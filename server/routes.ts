@@ -24,7 +24,7 @@ import {
   isCommentDeletionBlockedByVerification,
   isDeletedCommentBody,
 } from "@shared/deleted-comment";
-import { insertCommentSchema } from "@shared/schema";
+import { insertCommentSchema, patchUserNotificationPreferencesSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
@@ -4664,6 +4664,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to get unread count",
         error: errorMessage
       });
+    }
+  });
+
+  // Push notification preferences (server-backed; push gating in a later phase)
+  app.get("/api/user/notification-preferences", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const prefs = await storage.getUserNotificationPreferences(req.dbUser.id);
+      res.json(prefs);
+    } catch (error) {
+      console.error("[/api/user/notification-preferences] GET Error:", error);
+      res.status(500).json({ message: "Failed to get notification preferences" });
+    }
+  });
+
+  app.patch("/api/user/notification-preferences", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const parsed = patchUserNotificationPreferencesSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid notification preferences payload" });
+      }
+      if (Object.keys(parsed.data).length === 0) {
+        return res.status(400).json({ message: "At least one preference field is required" });
+      }
+      const prefs = await storage.upsertUserNotificationPreferences(req.dbUser.id, parsed.data);
+      res.json(prefs);
+    } catch (error) {
+      console.error("[/api/user/notification-preferences] PATCH Error:", error);
+      res.status(500).json({ message: "Failed to update notification preferences" });
     }
   });
 

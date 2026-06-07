@@ -1,4 +1,13 @@
-import { type Notification, type InsertNotification, type NotificationWithUser, type UserPushToken, userPushTokens } from "@shared/schema";
+import {
+  type Notification,
+  type InsertNotification,
+  type NotificationWithUser,
+  type UserPushToken,
+  type PatchUserNotificationPreferences,
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  userPushTokens,
+  userNotificationPreferences,
+} from "@shared/schema";
 import { db, pool } from "./db";
 import { eq, desc, asc, and, or, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -167,7 +176,24 @@ export interface IStorage {
   deactivateUserPushToken(userId: string, token: string, reason: string): Promise<void>;
   getActivePushTokensForUser(userId: string): Promise<UserPushToken[]>;
   deactivatePushTokenByValue(token: string, reason: string): Promise<void>;
+
+  // Push notification preferences (Phase A: storage only; no send gating yet)
+  getUserNotificationPreferences(userId: string): Promise<UserNotificationPreferencesPayload>;
+  upsertUserNotificationPreferences(
+    userId: string,
+    patch: PatchUserNotificationPreferences,
+  ): Promise<UserNotificationPreferencesPayload>;
 }
+
+/** API-facing push preference shape (defaults when no DB row). */
+export type UserNotificationPreferencesPayload = {
+  userId: string;
+  commentsAndRepliesPush: boolean;
+  artistTagsPush: boolean;
+  releaseUpdatesPush: boolean;
+  devicePushAlerts: boolean;
+  updatedAt: string | null;
+};
 
 export class DatabaseStorage implements IStorage {
   // Helper function to fetch avatar URLs from Supabase profiles
@@ -1663,6 +1689,100 @@ export class DatabaseStorage implements IStorage {
         .where(eq(userPushTokens.token, token));
     } catch (error) {
       console.error("[deactivatePushTokenByValue] Error:", error);
+    }
+  }
+
+  private mapUserNotificationPreferencesRow(
+    userId: string,
+    row: typeof userNotificationPreferences.$inferSelect,
+  ): UserNotificationPreferencesPayload {
+    return {
+      userId,
+      commentsAndRepliesPush: row.commentsAndRepliesPush,
+      artistTagsPush: row.artistTagsPush,
+      releaseUpdatesPush: row.releaseUpdatesPush,
+      devicePushAlerts: row.devicePushAlerts,
+      updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null,
+    };
+  }
+
+  async getUserNotificationPreferences(userId: string): Promise<UserNotificationPreferencesPayload> {
+    try {
+      const rows = await db
+        .select()
+        .from(userNotificationPreferences)
+        .where(eq(userNotificationPreferences.userId, userId))
+        .limit(1);
+
+      if (rows.length === 0) {
+        return {
+          userId,
+          ...DEFAULT_USER_NOTIFICATION_PREFERENCES,
+          updatedAt: null,
+        };
+      }
+
+      return this.mapUserNotificationPreferencesRow(userId, rows[0]);
+    } catch (error) {
+      console.error("[getUserNotificationPreferences] Error:", error);
+      return {
+        userId,
+        ...DEFAULT_USER_NOTIFICATION_PREFERENCES,
+        updatedAt: null,
+      };
+    }
+  }
+
+  async upsertUserNotificationPreferences(
+    userId: string,
+    patch: PatchUserNotificationPreferences,
+  ): Promise<UserNotificationPreferencesPayload> {
+    const current = await this.getUserNotificationPreferences(userId);
+    const merged = {
+      commentsAndRepliesPush:
+        patch.commentsAndRepliesPush !== undefined
+          ? patch.commentsAndRepliesPush
+          : current.commentsAndRepliesPush,
+      artistTagsPush:
+        patch.artistTagsPush !== undefined ? patch.artistTagsPush : current.artistTagsPush,
+      releaseUpdatesPush:
+        patch.releaseUpdatesPush !== undefined
+          ? patch.releaseUpdatesPush
+          : current.releaseUpdatesPush,
+      devicePushAlerts:
+        patch.devicePushAlerts !== undefined ? patch.devicePushAlerts : current.devicePushAlerts,
+    };
+
+    try {
+      const existing = await db
+        .select()
+        .from(userNotificationPreferences)
+        .where(eq(userNotificationPreferences.userId, userId))
+        .limit(1);
+
+      if (existing.length > 0) {
+        const [updated] = await db
+          .update(userNotificationPreferences)
+          .set({
+            ...merged,
+            updatedAt: sql`NOW()`,
+          })
+          .where(eq(userNotificationPreferences.userId, userId))
+          .returning();
+        return this.mapUserNotificationPreferencesRow(userId, updated);
+      }
+
+      const [inserted] = await db
+        .insert(userNotificationPreferences)
+        .values({
+          userId,
+          ...merged,
+        })
+        .returning();
+      return this.mapUserNotificationPreferencesRow(userId, inserted);
+    } catch (error) {
+      console.error("[upsertUserNotificationPreferences] Error:", error);
+      throw error;
     }
   }
 

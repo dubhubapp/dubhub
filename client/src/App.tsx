@@ -53,6 +53,7 @@ import {
 import {
   deactivateCurrentPushToken,
   registerPushListeners,
+  resetSilentPushRegistrationSession,
   unregisterPushListeners,
 } from "@/lib/push-notifications";
 import { storePendingNativeAuthCallbackUrl } from "@/lib/native-auth-callback-url";
@@ -516,6 +517,7 @@ function App() {
             }
           });
       } else if (event === 'SIGNED_OUT') {
+        resetSilentPushRegistrationSession();
         setIsAuthenticated(false);
         setUserRole('user');
         setIsHomeFeedReady(false);
@@ -577,6 +579,7 @@ function App() {
   const handleSignOut = async () => {
     // Best-effort: deactivate current push token for this user.
     void deactivateCurrentPushToken();
+    resetSilentPushRegistrationSession();
 
     // Sign out from Supabase
     await supabase.auth.signOut();

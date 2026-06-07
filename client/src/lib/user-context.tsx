@@ -5,6 +5,10 @@ import {
   isMismatchedDefaultAvatar,
 } from "@/lib/default-avatar";
 import type { User } from "@shared/schema";
+import {
+  resetSilentPushRegistrationSession,
+  syncPushTokenIfPermissionGranted,
+} from "@/lib/push-notifications";
 
 interface SupabaseProfile {
   id: string;
@@ -58,6 +62,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (!session?.user) {
+          resetSilentPushRegistrationSession();
           // No session - clear all profile data
           setProfileImage(null);
           setUsername(null);
@@ -163,6 +168,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Native iOS: if permission already granted, sync push token once per session after auth.
+  useEffect(() => {
+    if (isLoading || !isAuthenticated || !currentUser?.id) return;
+    void syncPushTokenIfPermissionGranted(currentUser.id);
+  }, [isLoading, isAuthenticated, currentUser?.id]);
 
   const updateProfileImage = (url: string) => {
     setProfileImage(url);
