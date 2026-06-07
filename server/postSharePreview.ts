@@ -70,9 +70,10 @@ type SharePreviewPost = {
   user?: { username?: string | null };
 };
 
+/** Share-preview only — two labels; in-app badges use separate logic. */
 function resolveShareStatusLabel(post: SharePreviewPost): string {
-  if (post.isVerifiedArtist === true) {
-    return "Artist verified";
+  if (post.isVerifiedArtist === true || post.verifiedByModerator === true) {
+    return "Identified";
   }
 
   const status =
@@ -80,18 +81,14 @@ function resolveShareStatusLabel(post: SharePreviewPost): string {
       ? post.verificationStatus.trim().toLowerCase()
       : "";
 
-  if (status === "under_review") {
-    return "Under review";
-  }
-  if (status === "identified" || post.verifiedByModerator === true) {
+  if (
+    status === "identified" ||
+    status === "community" ||
+    status === "community_approved"
+  ) {
     return "Identified";
   }
-  if (status === "community_approved") {
-    return "Community identified";
-  }
-  if (status === "community") {
-    return "Community ID pending";
-  }
+
   return "Unidentified";
 }
 
