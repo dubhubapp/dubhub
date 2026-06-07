@@ -28,6 +28,12 @@ import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
+import {
+  getEffectiveNotificationType,
+  getNotificationGroupKind,
+  isModeratorQueueNotification,
+  type NotificationGroupKind,
+} from "@shared/notification-types";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ARTIST_BETA_ARTIST_TOOLS_MESSAGE } from "@/lib/artist-beta-copy";
@@ -39,18 +45,13 @@ function isProfileTabId(v: string): v is ProfileTabId {
   return (PROFILE_TAB_IDS as readonly string[]).includes(v);
 }
 
-const MODERATOR_QUEUE_KEYWORDS = [
-  "community verification",
-  "pending verification",
-  "id confirmation",
-  "moderator review",
-  "report",
-];
-
-function isModeratorQueueNotificationMessage(message: unknown): boolean {
-  if (typeof message !== "string") return false;
-  const lower = message.toLowerCase();
-  return MODERATOR_QUEUE_KEYWORDS.some((keyword) => lower.includes(keyword));
+function notificationRowFields(n: NotificationWithUser) {
+  return {
+    message: n.message,
+    releaseId: (n as { releaseId?: string }).releaseId ?? (n as { release_id?: string }).release_id ?? n.release?.id,
+    postId: n.postId ?? (n as { post_id?: string }).post_id,
+    notificationType: n.notificationType ?? (n as { notification_type?: string }).notification_type,
+  };
 }
 
 /** Concise copy for profile stat sections and cards (popover help). */
@@ -526,14 +527,14 @@ export default function UserProfile() {
           n &&
           !n.read &&
           isNotificationVisibleByUserPreferences(n, notificationPrefs) &&
-          !(userType === "moderator" && isModeratorQueueNotificationMessage(n.message)),
+          !(userType === "moderator" && isModeratorQueueNotification(notificationRowFields(n))),
       ).length;
     } catch {
       return list.filter(
         (n) =>
           n &&
           !n.read &&
-          !(userType === "moderator" && isModeratorQueueNotificationMessage(n.message)),
+          !(userType === "moderator" && isModeratorQueueNotification(notificationRowFields(n))),
       ).length;
     }
   }, [notifications, navFeedNotifications, notificationPrefs, userType]);
@@ -588,7 +589,7 @@ export default function UserProfile() {
     );
     const filteredNotifications =
       userType === "moderator"
-        ? notifications.filter((n: NotificationWithUser) => !isModeratorQueueNotificationMessage(n.message))
+        ? notifications.filter((n: NotificationWithUser) => !isModeratorQueueNotification(notificationRowFields(n)))
         : notifications;
     const hasMore = Array.isArray(raw) ? notifications.length >= (params?.limit ?? NOTIFICATIONS_PAGE_SIZE) : Boolean(raw?.hasMore);
     if (notificationsDebugEnabled) {
@@ -995,35 +996,21 @@ export default function UserProfile() {
   });
 
   const isTagNotification = (n: NotificationWithUser) =>
-    n.message?.includes("tagged you in a comment");
+    getEffectiveNotificationType(notificationRowFields(n)) === "artist_tag_comment";
 
-  const isCollaboratorAcceptance = (n: NotificationWithUser) => {
-    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id;
-    return !!releaseId && (n.message?.includes("accepted your collaboration invite") ?? false);
-  };
+  const isCollaboratorAcceptance = (n: NotificationWithUser) =>
+    getEffectiveNotificationType(notificationRowFields(n)) === "collab_accept";
 
-  const isCollaboratorRejection = (n: NotificationWithUser) => {
-    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id;
-    return !!releaseId && (n.message?.includes("rejected your collaboration invite") ?? false);
-  };
+  const isCollaboratorRejection = (n: NotificationWithUser) =>
+    getEffectiveNotificationType(notificationRowFields(n)) === "collab_reject";
 
   const isCollaboratorResponse = (n: NotificationWithUser) => isCollaboratorAcceptance(n) || isCollaboratorRejection(n);
 
-  // Release-related (upcoming announcement + release-day) — exclude collab accept/reject
   const isReleaseNotification = (n: NotificationWithUser) => {
-    const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id;
-    return !!releaseId && !isCollaboratorResponse(n);
+    const type = getEffectiveNotificationType(notificationRowFields(n));
+    return type === "release_attached" || type === "release_day" || type === "release_announce";
   };
 
-  type NotificationGroupKind =
-    | "post_like"
-    | "post_owner_comment"
-    | "post_comment_reply"
-    | "artist_tag_comment"
-    | "release_event"
-    | "system_event"
-    | "moderator_event"
-    | "single";
   type GroupedNotification = {
     id: string;
     representative: NotificationWithUser;
@@ -1036,25 +1023,8 @@ export default function UserProfile() {
 
   const GROUP_WINDOW_MS = 1000 * 60 * 60 * 24; // 24 hours
 
-  const getNotificationKind = (n: NotificationWithUser): NotificationGroupKind => {
-    const lowerMessage = (n.message || "").toLowerCase();
-    if (
-      lowerMessage.includes("report") ||
-      lowerMessage.includes("moderator") ||
-      lowerMessage.includes("removed") ||
-      lowerMessage.includes("suspended") ||
-      lowerMessage.includes("banned")
-    ) {
-      return "moderator_event";
-    }
-    if (isReleaseNotification(n)) return "release_event";
-    if (lowerMessage.includes("liked your post")) return "post_like";
-    if (lowerMessage.includes("tagged you in a comment")) return "artist_tag_comment";
-    if (lowerMessage.includes("replied to your comment")) return "post_comment_reply";
-    if (lowerMessage.includes("commented on your post")) return "post_owner_comment";
-    if (!n.postId && !((n as any).releaseId ?? (n as any).release_id ?? n.release?.id)) return "system_event";
-    return "single";
-  };
+  const getNotificationKind = (n: NotificationWithUser): NotificationGroupKind =>
+    getNotificationGroupKind(notificationRowFields(n));
 
   const shouldOpenCommentsForNotification = (notification: NotificationWithUser) => {
     const kind = getNotificationKind(notification);

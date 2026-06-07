@@ -1757,12 +1757,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify all moderators about the new post report
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         SELECT 
           p.id,
           ${userId},
           ${postId},
           'New post report: ' || ${reasonTrim},
+          'moderator_post_report',
           false,
           NOW()
         FROM profiles p
@@ -1874,12 +1875,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify all moderators about the new user report (comment report)
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         SELECT 
           p.id,
           ${userId},
           ${comment.post_id},
           'New user report: ' || ${reason.trim()},
+          'moderator_comment_report',
           false,
           NOW()
         FROM profiles p
@@ -2040,6 +2042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             triggeredBy: userId,
             postId: postId,
             message: `@${commenterUsername} tagged you in a comment. Open the post and tap "ID Track" to confirm or deny if it's your track.`,
+            notificationType: "artist_tag_comment",
           });
           notified.add(artistId);
           void sendPushToUser(artistId, {
@@ -2078,6 +2081,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 triggeredBy: userId,
                 postId: postId,
                 message: `@${commenterUsername} replied to your comment.`,
+                notificationType: "reply_to_comment",
               });
               notified.add(parentAuthorId);
               void sendPushToUser(parentAuthorId, {
@@ -2102,6 +2106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             triggeredBy: userId,
             postId: postId,
             message: `@${commenterUsername} commented on your post.`,
+            notificationType: "comment_on_post",
           });
           notified.add(postOwnerId);
           console.log("[push][comment_on_post] post owner in-app notification created", {
@@ -2545,12 +2550,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify all moderators that a community verification now needs review
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         SELECT
           p.id,
           ${userId},
           ${postId},
           'New community verification requires review',
+          'moderator_community_verification',
           false,
           NOW()
         FROM profiles p
@@ -2700,6 +2706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             triggeredBy: artistId,
             postId,
             message: "An artist identified your track.",
+            notificationType: "artist_identified_post",
           });
           void sendPushToUser(postOwnerId, {
             type: "artist_identified_post",
@@ -3776,12 +3783,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify all moderators that report was resolved (for real-time updates)
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         SELECT 
           p.id,
           ${moderatorId},
           (SELECT reported_post_id FROM reports WHERE id = ${reportId} LIMIT 1),
           'Report resolved: ' || ${resolution_action},
+          'moderator_report_resolved',
           false,
           NOW()
         FROM profiles p
@@ -3839,8 +3847,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           UPDATE notifications
           SET read = true
           WHERE post_id = ${postId}
-            AND message LIKE '%report%'
             AND read = false
+            AND (
+              notification_type IN ('moderator_post_report', 'moderator_comment_report', 'moderator_report_resolved')
+              OR (notification_type IS NULL AND message LIKE '%report%')
+            )
         `);
       }
 
@@ -3967,12 +3978,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         VALUES (
           ${targetUserId},
           ${moderatorId},
           ${report.reported_post_id},
           ${notificationMessage},
+          'moderation_action',
           false,
           NOW()
         )
@@ -4091,12 +4103,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify the user about the warning
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         VALUES (
           ${targetUserId},
           ${moderatorId},
           ${notificationPostId},
           ${notificationMessageWithMedia},
+          'moderation_action',
           false,
           NOW()
         )
@@ -4232,12 +4245,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify the user about the suspension
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         VALUES (
           ${targetUserId},
           ${moderatorId},
           ${notificationPostId},
           ${notificationMessageWithMedia},
+          'moderation_action',
           false,
           NOW()
         )
@@ -4365,12 +4379,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Notify the user about the ban
       await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+        INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
         VALUES (
           ${targetUserId},
           ${moderatorId},
           ${notificationPostId},
           ${notificationMessageWithMedia},
+          'moderation_action',
           false,
           NOW()
         )
@@ -4452,12 +4467,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           videoUrl: report.post_video_url ?? null,
         });
         await db.execute(sql`
-          INSERT INTO notifications (artist_id, triggered_by, post_id, message, read, created_at)
+          INSERT INTO notifications (artist_id, triggered_by, post_id, message, notification_type, read, created_at)
           VALUES (
             ${report.post_owner_id},
             ${moderatorId},
             ${report.reported_post_id},
             ${notificationMessageWithMedia},
+            'moderation_action',
             false,
             NOW()
           )
@@ -4469,8 +4485,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE notifications
         SET read = true
         WHERE post_id = ${report.reported_post_id}
-          AND message LIKE '%report%'
           AND read = false
+          AND (
+            notification_type IN ('moderator_post_report', 'moderator_comment_report', 'moderator_report_resolved')
+            OR (notification_type IS NULL AND message LIKE '%report%')
+          )
       `);
 
       // Mark report as resolved
@@ -4567,8 +4586,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         UPDATE notifications
         SET read = true
         WHERE post_id = ${report.reported_post_id}
-          AND message LIKE '%report%'
           AND read = false
+          AND (
+            notification_type IN ('moderator_post_report', 'moderator_comment_report', 'moderator_report_resolved')
+            OR (notification_type IS NULL AND message LIKE '%report%')
+          )
       `);
 
       res.json({
@@ -4622,7 +4644,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM notifications
         WHERE artist_id = ${userId}
           AND read = false
-          AND (message NOT LIKE 'New post report:%' AND message NOT LIKE 'New user report:%')
+          AND NOT (
+            notification_type IN ('moderator_post_report', 'moderator_comment_report')
+            OR (
+              notification_type IS NULL
+              AND (message LIKE 'New post report:%' OR message LIKE 'New user report:%')
+            )
+          )
       `);
       const count = Number((result as any).rows?.[0]?.count ?? 0);
       res.json({ count });
@@ -4692,7 +4720,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM notifications
         WHERE artist_id = ${moderatorId}
           AND read = false
-          AND (message LIKE '%report%' OR message LIKE '%community verification%')
+          AND (
+            notification_type IN (
+              'moderator_post_report',
+              'moderator_comment_report',
+              'moderator_community_verification',
+              'moderator_report_resolved'
+            )
+            OR (
+              notification_type IS NULL
+              AND (message LIKE '%report%' OR message LIKE '%community verification%')
+            )
+          )
       `);
       const count = Number((result as any).rows?.[0]?.count ?? 0);
       res.json({ count });

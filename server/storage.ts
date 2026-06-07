@@ -1532,9 +1532,10 @@ export class DatabaseStorage implements IStorage {
     try {
       const postId = notification.postId ?? null;
       const releaseId = notification.releaseId ?? null;
+      const notificationType = notification.notificationType ?? null;
       const result = await db.execute(sql`
-        INSERT INTO notifications (artist_id, triggered_by, post_id, release_id, message, read, created_at)
-        VALUES (${notification.artistId}, ${notification.triggeredBy}, ${postId}, ${releaseId}, ${notification.message}, false, NOW())
+        INSERT INTO notifications (artist_id, triggered_by, post_id, release_id, message, notification_type, read, created_at)
+        VALUES (${notification.artistId}, ${notification.triggeredBy}, ${postId}, ${releaseId}, ${notification.message}, ${notificationType}, false, NOW())
         RETURNING *
       `);
 
@@ -1750,6 +1751,7 @@ export class DatabaseStorage implements IStorage {
           n.release_id,
           n.triggered_by,
           n.message,
+          n.notification_type,
           n.read,
           n.created_at,
           p.username         AS triggered_by_username,
@@ -1800,6 +1802,7 @@ export class DatabaseStorage implements IStorage {
           releaseId: row.release_id,
           triggeredBy: row.triggered_by,
           message: parsedMessage.message,
+          notificationType: row.notification_type ?? null,
           read: row.read,
           createdAt: row.created_at,
           triggeredByUser: {
@@ -2909,6 +2912,7 @@ export class DatabaseStorage implements IStorage {
           postId: firstPostId,
           releaseId,
           message,
+          notificationType: "release_announce",
         });
       }
       await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
@@ -2965,6 +2969,7 @@ export class DatabaseStorage implements IStorage {
           postId: firstPostId,
           releaseId,
           message,
+          notificationType: "release_attached",
         } as any);
         // Fire-and-forget push for release_attached_to_liked_or_uploaded_post.
         void import("./push/pushSend").then(({ sendPushToUser }) =>
@@ -3064,6 +3069,7 @@ export class DatabaseStorage implements IStorage {
             postId: firstPostId,
             releaseId: r.id,
             message,
+            notificationType: "release_day",
           });
           notificationsCreated++;
           const releaseTitle =
@@ -3220,6 +3226,7 @@ export class DatabaseStorage implements IStorage {
         triggeredBy: ownerId,
         releaseId,
         message: `@${ownerUsername} invited you as a collaborator on ${release.title}. Accept or reject.`,
+        notificationType: "collab_invite",
       } as any);
       return { ok: true };
     } catch (error) {
@@ -3253,6 +3260,7 @@ export class DatabaseStorage implements IStorage {
           triggeredBy: ownerId,
           releaseId,
           message: `@${ownerUsername} invited you as a collaborator on ${release.title}. Accept or reject.`,
+          notificationType: "collab_invite",
         } as any);
       }
       await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
@@ -3318,6 +3326,7 @@ export class DatabaseStorage implements IStorage {
           postId: null,
           releaseId,
           message: `@${collabUsername} accepted your collaboration invite for ${release.title}`,
+          notificationType: "collab_accept",
         } as any);
       }
       return true;
@@ -3348,6 +3357,7 @@ export class DatabaseStorage implements IStorage {
           postId: null,
           releaseId,
           message: `@${collabUsername} rejected your collaboration invite for ${release.title}`,
+          notificationType: "collab_reject",
         } as any);
       }
       return true;

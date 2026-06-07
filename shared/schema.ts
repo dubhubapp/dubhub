@@ -139,7 +139,7 @@ export const userPushTokens = pgTable("user_push_tokens", {
   lastError: text("last_error"),
 });
 
-// Notifications - actual database schema uses artist_id, triggered_by (NO type column)
+// Notifications - actual database schema uses artist_id, triggered_by
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   artistId: varchar("artist_id").notNull().references(() => profiles.id), // Who receives the notification
@@ -147,6 +147,7 @@ export const notifications = pgTable("notifications", {
   postId: varchar("post_id").references(() => posts.id), // Related post (nullable for release notifications)
   releaseId: varchar("release_id").references(() => releases.id), // Related release (nullable)
   message: text("message").notNull(),
+  notificationType: text("notification_type"), // nullable; see shared/notification-types.ts
   read: boolean("read").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -293,6 +294,7 @@ export const insertNotificationSchema = z.object({
   postId: z.string().optional().nullable(),
   releaseId: z.string().optional().nullable(),
   message: z.string(),
+  notificationType: z.string().optional().nullable(),
 });
 
 // Reports schema - updated to use postId

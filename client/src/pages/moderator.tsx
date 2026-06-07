@@ -22,6 +22,11 @@ import {
   Lock,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  getEffectiveNotificationType,
+  isCommunityVerificationNotificationType,
+  isReportNotificationType,
+} from "@shared/notification-types";
 import { ApiRequestError, serializeQueryError } from "@/lib/apiDiagnostics";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
@@ -213,9 +218,21 @@ export default function ModeratorPage() {
         const shouldMarkCommunityNotifications = activeTab === "pending";
 
         const notificationsToMark = notifications.filter((n: any) => {
-          if (!n.message || n.read) return false;
-          if (shouldMarkReportNotifications && n.message.includes("report")) return true;
-          if (shouldMarkCommunityNotifications && n.message.includes("community verification")) return true;
+          if (n.read) return false;
+          const type = getEffectiveNotificationType({
+            message: n.message,
+            notificationType: n.notificationType ?? n.notification_type,
+            postId: n.postId ?? n.post_id,
+            releaseId: n.releaseId ?? n.release_id,
+          });
+          if (shouldMarkReportNotifications) {
+            if (isReportNotificationType(type)) return true;
+            if (typeof n.message === "string" && n.message.includes("report")) return true;
+          }
+          if (shouldMarkCommunityNotifications) {
+            if (isCommunityVerificationNotificationType(type)) return true;
+            if (typeof n.message === "string" && n.message.includes("community verification")) return true;
+          }
           return false;
         });
         

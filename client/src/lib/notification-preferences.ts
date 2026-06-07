@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from "react";
 import type { NotificationWithUser } from "@shared/schema";
+import {
+  getToggleableNotificationKindFromFields,
+  type ToggleableNotificationKind,
+} from "@shared/notification-types";
 
 export const NOTIFICATION_PREFERENCES_STORAGE_KEY = "dubhub-notification-preferences";
 
@@ -19,8 +23,6 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = Object.
   commentNotifications: true,
   likeNotifications: true,
 });
-
-type ToggleableKind = "release" | "comment" | "like";
 
 const listeners = new Set<() => void>();
 
@@ -137,58 +139,22 @@ export function useNotificationPreferences(): NotificationPreferences {
   return useSyncExternalStore(subscribe, getSnapshot, () => DEFAULT_NOTIFICATION_PREFERENCES);
 }
 
-function collaboratorAcceptanceOrRejection(n: NotificationWithUser): boolean {
-  try {
-    const releaseId =
-      (n as { releaseId?: string }).releaseId ??
-      (n as { release_id?: string }).release_id ??
-      n.release?.id;
-    if (!releaseId) return false;
-    const msg = typeof n.message === "string" ? n.message : "";
-    return msg.includes("accepted your collaboration invite") || msg.includes("rejected your collaboration invite");
-  } catch {
-    return false;
-  }
-}
-
-function isReleaseNotification(n: NotificationWithUser): boolean {
-  try {
-    const releaseId =
-      (n as { releaseId?: string }).releaseId ??
-      (n as { release_id?: string }).release_id ??
-      n.release?.id;
-    return !!releaseId && !collaboratorAcceptanceOrRejection(n);
-  } catch {
-    return false;
-  }
+function notificationFields(n: NotificationWithUser) {
+  return {
+    message: n.message,
+    releaseId: n.releaseId ?? (n as { release_id?: string }).release_id ?? n.release?.id,
+    postId: n.postId ?? (n as { post_id?: string }).post_id,
+    notificationType: n.notificationType ?? (n as { notification_type?: string }).notification_type,
+  };
 }
 
 /**
  * Maps a notification to a user-toggleable category. Returns null when the row is not
  * controlled by Settings → Notifications (always shown), including moderation-style messages.
  */
-export function getToggleableNotificationKind(n: NotificationWithUser): ToggleableKind | null {
+export function getToggleableNotificationKind(n: NotificationWithUser): ToggleableNotificationKind | null {
   try {
-    const lowerMessage = String(n?.message ?? "").toLowerCase();
-    if (
-      lowerMessage.includes("report") ||
-      lowerMessage.includes("moderator") ||
-      lowerMessage.includes("removed") ||
-      lowerMessage.includes("suspended") ||
-      lowerMessage.includes("banned")
-    ) {
-      return null;
-    }
-    if (isReleaseNotification(n)) return "release";
-    if (lowerMessage.includes("liked your post")) return "like";
-    if (
-      lowerMessage.includes("commented on your post") ||
-      lowerMessage.includes("replied to your comment") ||
-      lowerMessage.includes("tagged you in a comment")
-    ) {
-      return "comment";
-    }
-    return null;
+    return getToggleableNotificationKindFromFields(notificationFields(n));
   } catch {
     return null;
   }

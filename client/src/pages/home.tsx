@@ -99,7 +99,7 @@ const RANDOM_DICE_RAIL_EXIT_MS = 175;
 const feedTopOverlayGradient =
   "pointer-events-none absolute inset-x-0 top-0 h-[max(7rem,calc(4.25rem+env(safe-area-inset-top,0px)))] bg-gradient-to-b from-black/28 via-black/10 to-transparent";
 
-/** Home-only: centered genre menu (identification + feed order live in the genre menu). */
+/** Home-only: centered Discover menu (feed mode, identification, genres). */
 function HomeFeedTopChrome({
   selectedGenres,
   onGenresChange,
@@ -159,7 +159,7 @@ function HomeFeedTopChrome({
       ) : null}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 pl-[max(0.625rem,env(safe-area-inset-left,0px))] pr-[max(0.625rem,env(safe-area-inset-right,0px))] pt-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem))] sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pt-[max(0.625rem,calc(env(safe-area-inset-top,0px)+0.5rem))]">
         <div className="pointer-events-auto flex w-full min-w-0 justify-center">
-          <div className="flex min-w-0 max-w-[min(100%,10.25rem)] justify-center sm:max-w-[min(46vw,12.25rem)]">
+          <div className="flex min-w-0 max-w-[min(100%,11.5rem)] justify-center sm:max-w-[min(46vw,12.75rem)]">
             <GenreFilter
               selectedGenres={selectedGenres}
               onGenresChange={onGenresChange}
@@ -676,7 +676,7 @@ export default function Home() {
     const onGenreOpened = () => {
       // Let dropdown mount before positioning hint below it.
       window.setTimeout(() => {
-        const menuEl = document.querySelector<HTMLElement>('[aria-label="Genre and status filters"]');
+        const menuEl = document.querySelector<HTMLElement>('[aria-label="Discover feed filters"]');
         const style: CSSProperties | undefined = menuEl
           ? {
               position: "fixed",
@@ -693,7 +693,7 @@ export default function Home() {
         tryShowHint({
           type: "genre",
           key: getHintGenreFilterSeenKey(userId),
-          message: "Use filters to narrow the feed by genre, ID status and order.",
+          message: "Open Discover to change feed mode, genre, or ID status.",
           style,
         });
       }, 120);

@@ -133,6 +133,55 @@ export default {
             filter: "drop-shadow(0 0 14px rgba(103, 232, 249, 0.82))",
           },
         },
+        "feed-trending-surge": {
+          "0%": {
+            transform: "translate(-3px, 3px) scale(0.92)",
+            filter: "drop-shadow(0 0 0 transparent)",
+            color: "rgb(229 231 235)",
+          },
+          "20%": {
+            transform: "translate(-1.5px, 1.5px) scale(0.97)",
+            filter: "drop-shadow(0 0 5px rgba(251, 191, 36, 0.4))",
+            color: "rgb(252 211 77)",
+          },
+          "46%": {
+            transform: "translate(3px, -4px) scale(1.06)",
+            filter: "drop-shadow(0 0 14px rgba(251, 191, 36, 0.88))",
+            color: "rgb(253 224 71)",
+          },
+          "56%": {
+            transform: "translate(5px, -6px) scale(1.1)",
+            filter: "drop-shadow(0 0 20px rgba(252, 211, 77, 0.95))",
+            color: "rgb(254 240 138)",
+          },
+          "62%": {
+            transform: "translate(3.5px, -5px) scale(1.06)",
+            filter: "drop-shadow(0 0 16px rgba(251, 191, 36, 0.8))",
+          },
+          "68%": {
+            transform: "translate(5.5px, -4px) scale(1.08)",
+            filter: "drop-shadow(0 0 18px rgba(252, 211, 77, 0.9))",
+          },
+          "78%": {
+            transform: "translate(1px, -1px) scale(1.02)",
+            filter: "drop-shadow(0 0 8px rgba(251, 191, 36, 0.45))",
+          },
+          "100%": {
+            transform: "translate(0, 0) scale(1)",
+            filter: "drop-shadow(0 0 0 transparent)",
+            color: "inherit",
+          },
+        },
+        "feed-trending-active-pulse": {
+          "0%, 100%": {
+            transform: "translateY(0)",
+            filter: "drop-shadow(0 0 6px rgba(251, 191, 36, 0.42))",
+          },
+          "50%": {
+            transform: "translateY(-1px)",
+            filter: "drop-shadow(0 0 12px rgba(252, 211, 77, 0.72))",
+          },
+        },
         "submit-edge-trace": {
           "0%": { transform: "rotate(0deg)" },
           "100%": { transform: "rotate(360deg)" },
@@ -170,6 +219,8 @@ export default {
         "feed-flame-active-pulse": "feed-flame-active-pulse 1.85s ease-in-out infinite",
         "feed-clock-sweep": "feed-clock-sweep 0.24s cubic-bezier(0.33, 1, 0.68, 1) both",
         "feed-clock-active-pulse": "feed-clock-active-pulse 1.75s ease-in-out infinite",
+        "feed-trending-surge": "feed-trending-surge 0.4s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "feed-trending-active-pulse": "feed-trending-active-pulse 1.8s ease-in-out infinite",
         "submit-edge-trace": "submit-edge-trace 18s linear infinite",
         "random-dice-rail-enter": "random-dice-rail-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both",
         "random-dice-rail-exit": "random-dice-rail-exit 0.175s cubic-bezier(0.33, 1, 0.68, 1) both",
