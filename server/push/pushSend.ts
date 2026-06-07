@@ -1,5 +1,11 @@
+import { evaluatePushPreferenceGate } from "@shared/push-notification-preferences";
 import { sendApnsNotification } from "./apns";
 import { storage } from "../storage";
+
+function isPushPrefGatingEnabled(): boolean {
+  const raw = String(process.env.PUSH_PREF_GATING_ENABLED ?? "").trim().toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
+}
 
 type PushEventName =
   | "comment_on_post"
@@ -164,6 +170,20 @@ export async function sendPushToUser(
   payload: EventPayload,
 ): Promise<void> {
   try {
+    if (isPushPrefGatingEnabled()) {
+      const prefs = await storage.getUserNotificationPreferences(recipientUserId);
+      const gate = evaluatePushPreferenceGate(payload.type, prefs);
+      if (!gate.allowed) {
+        console.log("[push] sendPushToUser skipping: preference disabled", {
+          recipientUserId,
+          eventType: payload.type,
+          preferenceKey: gate.preferenceKey,
+          reason: gate.reason,
+        });
+        return;
+      }
+    }
+
     const tokens = await storage.getActivePushTokensForUser(recipientUserId);
     const environmentsFound = tokens?.length
       ? [...new Set(tokens.map((t) => (t.environment === "production" ? "production" : "sandbox")))]
