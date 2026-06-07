@@ -10,6 +10,13 @@ import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 import { playThemeToggleHaptic } from "@/lib/haptic";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
+import {
+  createDefaultPushNotificationPreferences,
+  fetchPushNotificationPreferences,
+  patchPushNotificationPreferences,
+  type PushNotificationPreferences,
+  type PushNotificationPreferencesPatch,
+} from "@/lib/push-notification-preferences";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { apiRequest } from "@/lib/queryClient";
@@ -35,6 +42,59 @@ const FEEDBACK_CATEGORIES = [
   { label: "Other", value: "other" },
 ] as const;
 type FeedbackCategoryValue = (typeof FEEDBACK_CATEGORIES)[number]["value"];
+type PushPrefField = keyof PushNotificationPreferencesPatch;
+
+function PushPrefSwitchRow({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled = false,
+  inactive = false,
+  testId,
+  ariaLabel,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  disabled?: boolean;
+  /** Master push off — grey out row without changing saved preference values. */
+  inactive?: boolean;
+  testId: string;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-4${inactive ? " opacity-50" : ""}`}
+      aria-disabled={inactive || undefined}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled || inactive}
+        aria-label={ariaLabel}
+        data-testid={testId}
+      />
+    </div>
+  );
+}
+
+function PushPrefSkeletonRow() {
+  return (
+    <div className="flex items-center justify-between gap-4" aria-hidden>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="h-4 w-36 max-w-[70%] rounded bg-white/10 animate-pulse" />
+        <div className="h-3 w-52 max-w-full rounded bg-white/5 animate-pulse" />
+      </div>
+      <div className="h-6 w-11 shrink-0 rounded-full bg-input opacity-50" />
+    </div>
+  );
+}
 
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
@@ -45,8 +105,13 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
   const notificationPrefs = useNotificationPreferences();
-  const { userType } = useUser();
+  const { userType, isAuthenticated, verifiedArtist } = useUser();
   const isModerator = userType === "moderator";
+  const showArtistTagsPush = verifiedArtist;
+  const [pushPrefs, setPushPrefs] = useState<PushNotificationPreferences | null>(null);
+  const [pushPrefsLoadError, setPushPrefsLoadError] = useState<string | null>(null);
+  const [pushPrefsSaveError, setPushPrefsSaveError] = useState<string | null>(null);
+  const [savingPushPrefKey, setSavingPushPrefKey] = useState<PushPrefField | null>(null);
   const [pushDeviceAlertsEnabled, setPushDeviceAlertsEnabled] = useState<boolean | null>(null);
   const [pushOsPermissionDenied, setPushOsPermissionDenied] = useState(false);
   const [feedbackBody, setFeedbackBody] = useState("");
@@ -55,6 +120,31 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackAppVersion, setFeedbackAppVersion] = useState("unknown");
   useIosKeyboardResizeNone(true);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPushPrefs(null);
+      setPushPrefsLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setPushPrefs(null);
+    setPushPrefsLoadError(null);
+    void (async () => {
+      try {
+        const prefs = await fetchPushNotificationPreferences();
+        if (!cancelled) setPushPrefs(prefs);
+      } catch {
+        if (!cancelled) {
+          setPushPrefs(createDefaultPushNotificationPreferences());
+          setPushPrefsLoadError("Couldn't load push preferences.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,28 +198,73 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
     };
   }, []);
 
+  const applyPushPrefPatch = async (patch: PushNotificationPreferencesPatch): Promise<boolean> => {
+    const patchKey = Object.keys(patch)[0] as PushPrefField | undefined;
+    if (!patchKey || savingPushPrefKey === patchKey || !pushPrefs) return false;
+    const previous = pushPrefs;
+    setPushPrefs({ ...pushPrefs, ...patch });
+    setPushPrefsSaveError(null);
+    setSavingPushPrefKey(patchKey);
+    try {
+      const updated = await patchPushNotificationPreferences(patch);
+      setPushPrefs(updated);
+      return true;
+    } catch {
+      setPushPrefs(previous);
+      setPushPrefsSaveError("Couldn't save push preference. Try again.");
+      return false;
+    } finally {
+      setSavingPushPrefKey(null);
+    }
+  };
+
+  const handlePushCategoryToggle = (patch: PushNotificationPreferencesPatch) => {
+    void applyPushPrefPatch(patch);
+  };
+
   const handlePushDeviceToggle = async (enabled: boolean) => {
     if (!Capacitor.isNativePlatform()) return;
-    if (pushDeviceAlertsEnabled === null) return;
+    if (pushDeviceAlertsEnabled === null || !pushPrefs || savingPushPrefKey === "devicePushAlerts") {
+      return;
+    }
     if (enabled) {
       const before = await getPushReceivePermission();
       if (before === "denied") {
         setPushOsPermissionDenied(true);
         setPushDeviceAlertsEnabled(false);
         openIosAppNotificationSettings();
+        if (pushPrefs.devicePushAlerts) {
+          void applyPushPrefPatch({ devicePushAlerts: false });
+        }
         return;
       }
       const result = await requestPushPermissionAndRegister();
       const receive = result === "granted" ? "granted" : await getPushReceivePermission();
       setPushDeviceAlertsEnabled(receive === "granted");
       setPushOsPermissionDenied(receive === "denied");
+      if (receive === "granted") {
+        await applyPushPrefPatch({ devicePushAlerts: true });
+      }
+      return;
+    }
+    const previousDeviceEnabled = pushDeviceAlertsEnabled;
+    setPushDeviceAlertsEnabled(false);
+    const patchOk = await applyPushPrefPatch({ devicePushAlerts: false });
+    if (!patchOk) {
+      setPushDeviceAlertsEnabled(previousDeviceEnabled);
       return;
     }
     await unregisterPushAndDeactivate();
-    setPushDeviceAlertsEnabled(false);
     const receive = await getPushReceivePermission();
     setPushOsPermissionDenied(receive === "denied");
   };
+
+  const showPushPrefsLoading = isAuthenticated && pushPrefs === null;
+  const devicePushSwitchChecked =
+    Boolean(pushPrefs?.devicePushAlerts) && pushDeviceAlertsEnabled === true;
+  const devicePushPermissionLoading =
+    Capacitor.isNativePlatform() && pushDeviceAlertsEnabled === null;
+  const pushCategoriesInactive = pushPrefs !== null && !pushPrefs.devicePushAlerts;
 
   const runThemeTransition = () => {
     if (typeof document === "undefined") return;
@@ -237,28 +372,24 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-foreground">Notifications</p>
                   <p className="text-xs text-muted-foreground">
-                    Choose which activity appears in your profile notifications.
-                    {isModerator ? (
-                      <>
-                        {" "}
-                        Moderator queue items (pending verifications and reports) stay on the Moderate tab and cannot be turned off here.
-                      </>
-                    ) : null}
+                    In-app notifications control what appears in your notifications tab. Push alerts control alerts sent
+                    to your device.
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3 pt-1 border-t border-white/10">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">In-app notifications</p>
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Release notifications</p>
-                    <p className="text-xs text-muted-foreground">Announcements and updates for your releases.</p>
+                    <p className="text-sm font-medium text-foreground">Like notifications</p>
+                    <p className="text-xs text-muted-foreground">When someone likes your post.</p>
                   </div>
                   <Switch
-                    checked={notificationPrefs.releaseNotifications}
-                    onCheckedChange={(v) => setNotificationPreferences({ releaseNotifications: v })}
-                    aria-label="Release notifications"
-                    data-testid="switch-notifications-release"
+                    checked={notificationPrefs.likeNotifications}
+                    onCheckedChange={(v) => setNotificationPreferences({ likeNotifications: v })}
+                    aria-label="Like notifications"
+                    data-testid="switch-notifications-like"
                   />
                 </div>
                 <div className="flex items-center justify-between gap-4">
@@ -275,63 +406,121 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Like notifications</p>
-                    <p className="text-xs text-muted-foreground">When someone likes your post.</p>
+                    <p className="text-sm font-medium text-foreground">Release notifications</p>
+                    <p className="text-xs text-muted-foreground">Announcements and updates for your releases.</p>
                   </div>
                   <Switch
-                    checked={notificationPrefs.likeNotifications}
-                    onCheckedChange={(v) => setNotificationPreferences({ likeNotifications: v })}
-                    aria-label="Like notifications"
-                    data-testid="switch-notifications-like"
+                    checked={notificationPrefs.releaseNotifications}
+                    onCheckedChange={(v) => setNotificationPreferences({ releaseNotifications: v })}
+                    aria-label="Release notifications"
+                    data-testid="switch-notifications-release"
                   />
                 </div>
 
-                <div className="pt-3 border-t border-white/10 space-y-2 select-none">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Device push alerts</p>
-                    <p className="text-xs text-muted-foreground">
-                      Allow iOS notification permission so dub hub can alert this device when you&apos;re not in the app.
-                      In-app notification types above still apply.
-                    </p>
+                <div className="pt-3 border-t border-white/10 space-y-3 select-none">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Push alerts</p>
+                    <p className="text-xs text-muted-foreground">Choose which alerts can be sent to your device.</p>
+                    {isModerator ? (
+                      <p className="text-xs text-muted-foreground">
+                        Moderator queue alerts stay enabled while device push is on.
+                      </p>
+                    ) : null}
                   </div>
-                  {pushDeviceAlertsEnabled === null ? (
-                    <div
-                      className="inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent bg-input opacity-50"
-                      aria-hidden
-                    >
-                      <span className="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0" />
+                  {pushPrefsLoadError ? (
+                    <p className="text-xs text-amber-200/90" data-testid="push-prefs-load-error">
+                      {pushPrefsLoadError}
+                    </p>
+                  ) : null}
+                  {pushPrefsSaveError ? (
+                    <p className="text-xs text-red-300" data-testid="push-prefs-save-error">
+                      {pushPrefsSaveError}
+                    </p>
+                  ) : null}
+                  {showPushPrefsLoading ? (
+                    <div className="space-y-3" data-testid="push-prefs-loading">
+                      <p className="text-xs text-muted-foreground">Loading push preferences…</p>
+                      <PushPrefSkeletonRow />
+                      {showArtistTagsPush ? <PushPrefSkeletonRow /> : null}
+                      <PushPrefSkeletonRow />
+                      <div className="pt-3 border-t border-white/10 space-y-3">
+                        <PushPrefSkeletonRow />
+                      </div>
                     </div>
-                  ) : (
-                    <Switch
-                      checked={pushDeviceAlertsEnabled}
-                      onCheckedChange={(v) => {
-                        void handlePushDeviceToggle(v);
-                      }}
-                      disabled={!Capacitor.isNativePlatform()}
-                      aria-label="Device push alerts"
-                      data-testid="switch-push-device-alerts"
-                    />
-                  )}
-                </div>
-                {pushOsPermissionDenied ? (
-                  <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 space-y-2">
-                    <p className="text-xs leading-relaxed text-amber-100/90">
-                      Notifications are turned off for dub hub in iOS Settings. Open Settings → Notifications → dub hub
-                      to allow alerts, then return here.
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 border-amber-400/40 text-amber-50 hover:bg-amber-400/10"
-                      onClick={() => openIosAppNotificationSettings()}
-                      data-testid="button-push-open-ios-settings"
-                    >
-                      Open Settings
-                    </Button>
-                  </div>
-                ) : null}
+                  ) : pushPrefs ? (
+                    <>
+                      <PushPrefSwitchRow
+                        label="Comments & replies"
+                        description="Push when someone comments on your post or replies."
+                        checked={pushPrefs.commentsAndRepliesPush}
+                        onCheckedChange={(v) => handlePushCategoryToggle({ commentsAndRepliesPush: v })}
+                        disabled={savingPushPrefKey === "commentsAndRepliesPush"}
+                        inactive={pushCategoriesInactive}
+                        testId="switch-push-comments-replies"
+                        ariaLabel="Push alerts for comments and replies"
+                      />
+                      {showArtistTagsPush ? (
+                        <PushPrefSwitchRow
+                          label="Artist tags"
+                          description="Push when you are tagged as the artist in a comment."
+                          checked={pushPrefs.artistTagsPush}
+                          onCheckedChange={(v) => handlePushCategoryToggle({ artistTagsPush: v })}
+                          disabled={savingPushPrefKey === "artistTagsPush"}
+                          inactive={pushCategoriesInactive}
+                          testId="switch-push-artist-tags"
+                          ariaLabel="Push alerts for artist tags"
+                        />
+                      ) : null}
+                      <PushPrefSwitchRow
+                        label="Release updates"
+                        description="Push for release added and release day alerts."
+                        checked={pushPrefs.releaseUpdatesPush}
+                        onCheckedChange={(v) => handlePushCategoryToggle({ releaseUpdatesPush: v })}
+                        disabled={savingPushPrefKey === "releaseUpdatesPush"}
+                        inactive={pushCategoriesInactive}
+                        testId="switch-push-release-updates"
+                        ariaLabel="Push alerts for release updates"
+                      />
+
+                      <div className="pt-3 border-t border-white/10 space-y-3">
+                        {devicePushPermissionLoading ? (
+                          <PushPrefSkeletonRow />
+                        ) : (
+                          <PushPrefSwitchRow
+                            label="All push notifications"
+                            description="Turn this off to stop all push alerts on this device."
+                            checked={devicePushSwitchChecked}
+                            onCheckedChange={(v) => {
+                              void handlePushDeviceToggle(v);
+                            }}
+                            disabled={
+                              !Capacitor.isNativePlatform() || savingPushPrefKey === "devicePushAlerts"
+                            }
+                            testId="switch-push-device-alerts"
+                            ariaLabel="All push notifications"
+                          />
+                        )}
+                        {pushOsPermissionDenied ? (
+                          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 space-y-2">
+                            <p className="text-xs leading-relaxed text-amber-100/90">
+                              Notifications are turned off for dub hub in iOS Settings. Open Settings → Notifications →
+                              dub hub to allow alerts, then return here.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 border-amber-400/40 text-amber-50 hover:bg-amber-400/10"
+                              onClick={() => openIosAppNotificationSettings()}
+                              data-testid="button-push-open-ios-settings"
+                            >
+                              Open Settings
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </div>
