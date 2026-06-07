@@ -7,10 +7,13 @@ import { storage } from "./storage";
 export const DUBHUB_PUBLIC_SHARE_ORIGIN = "https://dubhub.uk";
 
 const SITE_NAME = "dub hub";
-const DEFAULT_TITLE = "Track ID on dub hub";
+const TITLE_SUFFIX = " | dub hub";
+const DEFAULT_PAGE_TITLE = `Track ID${TITLE_SUFFIX}`;
+const DEFAULT_IMAGE_ALT = "Track ID on dub hub";
 const DEFAULT_DESCRIPTION =
   "Discover and identify underground tracks on dub hub — the UK's music identification collective.";
 
+const OG_LOCALE = "en_GB";
 const OG_DESCRIPTION_MAX = 200;
 const OG_TITLE_MAX = 80;
 
@@ -56,26 +59,80 @@ function resolveDefaultOgImageUrl(req: Request): string | null {
   return `${DUBHUB_PUBLIC_SHARE_ORIGIN}/og-default.png`;
 }
 
-function buildPostDescription(post: {
+type SharePreviewPost = {
   genre?: string | null;
+  description?: string | null;
+  verificationStatus?: string | null;
+  isVerifiedArtist?: boolean | null;
+  verifiedByModerator?: boolean | null;
+  likes?: number | null;
+  comments?: number | null;
   user?: { username?: string | null };
-}): string {
+};
+
+function resolveShareStatusLabel(post: SharePreviewPost): string {
+  if (post.isVerifiedArtist === true) {
+    return "Artist verified";
+  }
+
+  const status =
+    typeof post.verificationStatus === "string"
+      ? post.verificationStatus.trim().toLowerCase()
+      : "";
+
+  if (status === "under_review") {
+    return "Under review";
+  }
+  if (status === "identified" || post.verifiedByModerator === true) {
+    return "Identified";
+  }
+  if (status === "community_approved") {
+    return "Community identified";
+  }
+  if (status === "community") {
+    return "Community ID pending";
+  }
+  return "Unidentified";
+}
+
+function buildPageTitle(rawTitle: string | null | undefined): string {
+  const base =
+    typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : "Track ID";
+  return truncate(`${base}${TITLE_SUFFIX}`, OG_TITLE_MAX);
+}
+
+function buildImageAlt(rawTitle: string | null | undefined): string {
+  const base =
+    typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : "Track ID";
+  return truncate(`${base} on dub hub`, OG_DESCRIPTION_MAX);
+}
+
+function buildPostDescription(post: SharePreviewPost): string {
+  const parts: string[] = [resolveShareStatusLabel(post)];
+
   const genreLabel = getCanonicalGenreLabel(post.genre);
+  if (genreLabel !== "Unknown") {
+    parts.push(genreLabel);
+  }
+
   const username =
     typeof post.user?.username === "string" && post.user.username.trim()
       ? post.user.username.trim()
       : null;
-
-  if (username && genreLabel !== "Unknown") {
-    return truncate(`${genreLabel} · @${username} on dub hub`, OG_DESCRIPTION_MAX);
-  }
   if (username) {
-    return truncate(`Track ID · @${username} on dub hub`, OG_DESCRIPTION_MAX);
+    parts.push(`@${username}`);
   }
-  if (genreLabel !== "Unknown") {
-    return truncate(`${genreLabel} on dub hub`, OG_DESCRIPTION_MAX);
+
+  const comments = Number(post.comments ?? 0);
+  const likes = Number(post.likes ?? 0);
+  if (comments > 0) {
+    parts.push(`${comments} comments`);
   }
-  return DEFAULT_DESCRIPTION;
+  if (likes > 0) {
+    parts.push(`${likes} likes`);
+  }
+
+  return truncate(parts.join(" · "), OG_DESCRIPTION_MAX);
 }
 
 type SharePreviewMeta = {
@@ -83,6 +140,7 @@ type SharePreviewMeta = {
   description: string;
   ogUrl: string;
   ogImage: string | null;
+  ogImageAlt: string;
 };
 
 export function buildSharePreviewHtml(meta: SharePreviewMeta): string {
@@ -90,9 +148,12 @@ export function buildSharePreviewHtml(meta: SharePreviewMeta): string {
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.ogUrl);
   const siteName = escapeHtml(SITE_NAME);
+  const locale = escapeHtml(OG_LOCALE);
+  const imageAlt = escapeHtml(meta.ogImageAlt);
   const imageLines =
     meta.ogImage != null && meta.ogImage.trim() !== ""
       ? `  <meta property="og:image" content="${escapeHtml(meta.ogImage.trim())}" />\n` +
+        `  <meta property="og:image:alt" content="${imageAlt}" />\n` +
         `  <meta name="twitter:image" content="${escapeHtml(meta.ogImage.trim())}" />\n`
       : "";
 
@@ -107,6 +168,7 @@ export function buildSharePreviewHtml(meta: SharePreviewMeta): string {
   <meta property="og:description" content="${desc}" />
   <meta property="og:url" content="${url}" />
   <meta property="og:site_name" content="${siteName}" />
+  <meta property="og:locale" content="${locale}" />
   <meta property="og:type" content="website" />
 ${imageLines}  <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${title}" />
@@ -141,10 +203,11 @@ async function sendSharePreviewForPostId(
         : `${DUBHUB_PUBLIC_SHARE_ORIGIN}/`;
 
   const genericMeta: SharePreviewMeta = {
-    pageTitle: DEFAULT_TITLE,
+    pageTitle: DEFAULT_PAGE_TITLE,
     description: DEFAULT_DESCRIPTION,
     ogUrl: fallbackUrl,
     ogImage: defaultImage,
+    ogImageAlt: DEFAULT_IMAGE_ALT,
   };
 
   if (postId == null) {
@@ -164,8 +227,9 @@ async function sendSharePreviewForPostId(
     }
 
     const rawTitle = typeof post.title === "string" ? post.title.trim() : "";
-    const pageTitle = truncate(rawTitle || DEFAULT_TITLE, OG_TITLE_MAX);
+    const pageTitle = buildPageTitle(rawTitle);
     const description = buildPostDescription(post);
+    const ogImageAlt = buildImageAlt(rawTitle);
     const thumbnail =
       typeof post.thumbnailUrl === "string" ? post.thumbnailUrl.trim() : "";
     const ogImage =
@@ -178,6 +242,7 @@ async function sendSharePreviewForPostId(
         description,
         ogUrl: buildCanonicalShareUrl(postId),
         ogImage,
+        ogImageAlt,
       }),
     );
   } catch (err) {
@@ -211,10 +276,11 @@ export function registerPostSharePreviewRoutes(app: Express): void {
       sendSharePreviewHtml(
         res,
         buildSharePreviewHtml({
-          pageTitle: DEFAULT_TITLE,
+          pageTitle: DEFAULT_PAGE_TITLE,
           description: DEFAULT_DESCRIPTION,
           ogUrl: DUBHUB_PUBLIC_SHARE_ORIGIN + "/",
           ogImage: resolveDefaultOgImageUrl(req),
+          ogImageAlt: DEFAULT_IMAGE_ALT,
         }),
       );
     });
