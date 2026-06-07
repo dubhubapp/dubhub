@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "SYWKN9QAQ2.uk.dubhub.app",
+        "paths": [
+          "NOT /auth-callback",
+          "NOT /auth-callback/*",
+          "/"
+        ]
+      }
+    ]
+  }
+}
