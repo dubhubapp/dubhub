@@ -2705,14 +2705,26 @@ export default function Home() {
       <div
         ref={videoFeedRef}
         data-home-video-feed
-        className="h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-none bg-black scrollbar-hide [overflow-anchor:auto] [overscroll-behavior-y:none]"
+        className={`h-full touch-pan-y snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-none bg-black scrollbar-hide [overscroll-behavior-y:none] ${
+          homePullPhase === "idle" ? "[overflow-anchor:auto]" : "[overflow-anchor:none]"
+        }`}
         {...homeFeedPullTouchHandlers}
       >
         {plainVideoDiagPost ? (
           <PlainVideoDiagnostic postId={plainVideoDiagPost.postId} videoUrl={plainVideoDiagPost.videoUrl} />
         ) : null}
         <div
-          className="flex w-full shrink-0 flex-col items-center justify-center overflow-hidden bg-background transition-[height] duration-500 ease-out motion-reduce:transition-none"
+          className={[
+            "flex w-full shrink-0 flex-col items-center justify-center overflow-hidden bg-background [overflow-anchor:none]",
+            homePullSpacerHeightPx > 0 || homePullPhase !== "idle"
+              ? "box-content pt-[max(0.5rem,env(safe-area-inset-top,0px))]"
+              : "",
+            homePullPhase === "completing"
+              ? "transition-[height] duration-300 ease-out motion-reduce:transition-none"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           style={{ height: homePullSpacerHeightPx }}
         >
           <VinylPullRefreshIndicator
