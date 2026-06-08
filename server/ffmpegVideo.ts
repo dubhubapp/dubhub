@@ -462,40 +462,131 @@ export function buildTrimCompressArgs(
   ];
 }
 
-/**
- * Stored post thumbnails double as Home feed posters before playback at t=0.
- * Use a near-start frame (not midpoint) to avoid a visible jump when video starts.
- */
-export function thumbnailSeekSeconds(durationSec: number): number {
-  const nearStartSec = 0.25;
-  if (!Number.isFinite(durationSec) || durationSec <= 0) return nearStartSec;
-  const minEdgeSec = 0.05;
-  if (durationSec <= nearStartSec + minEdgeSec) {
-    return Math.min(Math.max(minEdgeSec, durationSec / 2), durationSec - minEdgeSec);
+/** ~1 frame at 30fps — aligns stored posters with Home feed playback at t=0. */
+export const THUMBNAIL_PRIMARY_SEEK_SEC = 1 / 30;
+
+/** Legacy near-start sample when frame 0/near-0 is near-black (screen recordings, dark intros). */
+export const THUMBNAIL_FALLBACK_SEEK_SEC = 0.25;
+
+const THUMBNAIL_MIN_EDGE_SEC = 0.05;
+
+/** YAVG from ffmpeg signalstats below this ⇒ treat JPEG as unusable black. */
+const THUMBNAIL_NEAR_BLACK_YAVG_MAX = 20;
+
+function thumbnailSeekForDuration(
+  durationSec: number,
+  preferredSec: number,
+): number {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return preferredSec;
+  if (durationSec <= preferredSec + THUMBNAIL_MIN_EDGE_SEC) {
+    return Math.min(
+      Math.max(THUMBNAIL_MIN_EDGE_SEC, durationSec / 2),
+      durationSec - THUMBNAIL_MIN_EDGE_SEC,
+    );
   }
-  return nearStartSec;
+  return preferredSec;
+}
+
+/** Primary stored-thumbnail timestamp (frame 0 / ~one frame in). */
+export function thumbnailPrimarySeekSeconds(durationSec: number): number {
+  return thumbnailSeekForDuration(durationSec, THUMBNAIL_PRIMARY_SEEK_SEC);
+}
+
+/** Fallback timestamp when the primary frame is near-black. */
+export function thumbnailFallbackSeekSeconds(durationSec: number): number {
+  return thumbnailSeekForDuration(durationSec, THUMBNAIL_FALLBACK_SEEK_SEC);
+}
+
+/** @deprecated Use thumbnailPrimarySeekSeconds — kept for callers expecting a single seek value. */
+export function thumbnailSeekSeconds(durationSec: number): number {
+  return thumbnailPrimarySeekSeconds(durationSec);
 }
 
 const THUMBNAIL_MAX_LONG_EDGE_PX = 720;
+
+const THUMBNAIL_SCALE_VF = `scale=w=min(iw\\,${THUMBNAIL_MAX_LONG_EDGE_PX}):h=min(ih\\,${THUMBNAIL_MAX_LONG_EDGE_PX}):force_original_aspect_ratio=decrease`;
 
 export function buildThumbnailExtractArgs(
   inputPath: string,
   outputJpegPath: string,
   seekSec: number,
 ): string[] {
+  // Output seek after `-i` for frame-accurate near-start samples (playback aligns at t=0).
+  const frameSelect =
+    seekSec > 0 ? ["-ss", String(seekSec), "-vframes", "1"] : ["-vframes", "1"];
   return [
     "-y",
-    "-ss",
-    String(seekSec),
     "-i",
     inputPath,
-    "-vframes",
-    "1",
+    ...frameSelect,
     "-an",
     "-vf",
-    `scale=w=min(iw\\,${THUMBNAIL_MAX_LONG_EDGE_PX}):h=min(ih\\,${THUMBNAIL_MAX_LONG_EDGE_PX}):force_original_aspect_ratio=decrease`,
+    THUMBNAIL_SCALE_VF,
     "-q:v",
     "3",
     outputJpegPath,
   ];
+}
+
+function readJpegSignalStatsYavg(jpegPath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const proc = spawn("ffmpeg", [
+      "-hide_banner",
+      "-i",
+      jpegPath,
+      "-vf",
+      "signalstats",
+      "-f",
+      "null",
+      "-",
+    ]);
+    let stderr = "";
+    proc.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    proc.on("close", () => {
+      const match = stderr.match(/YAVG:([0-9.]+)/);
+      resolve(match ? Number.parseFloat(match[1]) : null);
+    });
+    proc.on("error", () => resolve(null));
+  });
+}
+
+/** True when the extracted JPEG is effectively black (screen capture / dark intro). */
+export async function isNearBlackThumbnail(jpegPath: string): Promise<boolean> {
+  if (!fs.existsSync(jpegPath)) return false;
+  const yavg = await readJpegSignalStatsYavg(jpegPath);
+  if (yavg == null || !Number.isFinite(yavg)) return false;
+  return yavg <= THUMBNAIL_NEAR_BLACK_YAVG_MAX;
+}
+
+export type PostThumbnailExtractResult = {
+  seekSec: number;
+  usedFallback: boolean;
+};
+
+/**
+ * Extract a stored post thumbnail aligned with playback at t=0.
+ * Falls back to THUMBNAIL_FALLBACK_SEEK_SEC when the near-start frame is near-black.
+ */
+export async function extractPostThumbnail(
+  inputPath: string,
+  outputJpegPath: string,
+  durationSec: number,
+): Promise<PostThumbnailExtractResult> {
+  const primarySeek = thumbnailPrimarySeekSeconds(durationSec);
+  const fallbackSeek = thumbnailFallbackSeekSeconds(durationSec);
+
+  await runFfmpeg(buildThumbnailExtractArgs(inputPath, outputJpegPath, primarySeek));
+
+  const shouldTryFallback =
+    Math.abs(primarySeek - fallbackSeek) > 0.001 &&
+    (await isNearBlackThumbnail(outputJpegPath));
+
+  if (shouldTryFallback) {
+    await runFfmpeg(buildThumbnailExtractArgs(inputPath, outputJpegPath, fallbackSeek));
+    return { seekSec: fallbackSeek, usedFallback: true };
+  }
+
+  return { seekSec: primarySeek, usedFallback: false };
 }

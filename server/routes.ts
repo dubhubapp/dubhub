@@ -38,14 +38,13 @@ import { getPlatformTrendMetrics } from "./internalAnalytics";
 import { sendPushToUser } from "./push/pushSend";
 import {
   buildCompressOnlyArgs,
-  buildThumbnailExtractArgs,
+  extractPostThumbnail,
   buildTrimCompressArgs,
   ensureFfprobeAvailable,
   isMp4LikeClientVideo,
   probeDurationSeconds,
   probePretrimmedCompressSkip,
   runFfmpeg,
-  thumbnailSeekSeconds,
   type PretrimmedCompressSkipReason,
 } from "./ffmpegVideo";
 import {
@@ -914,9 +913,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let thumbnailPublicUrl: string | null = null;
 
           try {
-            const seekSec = thumbnailSeekSeconds(clipDurationSec);
-            await runFfmpeg(buildThumbnailExtractArgs(pathToUpload, thumbPath, seekSec));
-            logUploadTiming("thumbnail_extract_complete", { seekSec, thumbPath });
+            const { seekSec, usedFallback } = await extractPostThumbnail(
+              pathToUpload,
+              thumbPath,
+              clipDurationSec,
+            );
+            logUploadTiming("thumbnail_extract_complete", {
+              seekSec,
+              usedFallback,
+              thumbPath,
+            });
           } catch (thumbExtractErr) {
             console.warn("[upload-video] thumbnail extract failed (continuing)", {
               error:
