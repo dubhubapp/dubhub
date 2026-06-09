@@ -13,6 +13,9 @@ import { useSubmitClip } from "@/lib/submit-clip-context";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 
+/** Beta: hide in-app camera capture; library upload remains the primary path. Set true to restore Take Video. */
+const SHOW_TAKE_VIDEO_OPTION = false;
+
 type NormalizedPickedAsset = {
   fileName: string;
   fileType: string;
@@ -258,13 +261,17 @@ export function SubmitClipDrawer() {
         >
           <DrawerTitle className="sr-only">Add your clip</DrawerTitle>
           <DrawerDescription className="sr-only">
-            Choose a video from your library or record with the camera.
+            {SHOW_TAKE_VIDEO_OPTION
+              ? "Choose a video from your library or record with the camera."
+              : "Choose a video from your library."}
           </DrawerDescription>
 
           <div className="border-b border-gray-800/90 px-4 pb-3 pt-2 text-left">
             <h3 className="text-base font-semibold text-white">Add your clip</h3>
             <p className="mt-1 text-sm text-gray-400">
-              Choose from your library or record with the camera.
+              {SHOW_TAKE_VIDEO_OPTION
+                ? "Choose from your library or record with the camera."
+                : "Choose a clip from your library."}
             </p>
           </div>
 
@@ -280,17 +287,19 @@ export function SubmitClipDrawer() {
               </span>
               <span className="text-base font-medium text-white">Choose Video</span>
             </button>
-            <button
-              type="button"
-              className="flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-colors bg-gray-900/60 hover:bg-gray-800/80 active:bg-gray-800 border border-gray-800/80"
-              onClick={triggerPickCamera}
-              data-testid="button-take-video"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                <Video className="h-5 w-5" aria-hidden />
-              </span>
-              <span className="text-base font-medium text-white">Take Video</span>
-            </button>
+            {SHOW_TAKE_VIDEO_OPTION ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-colors bg-gray-900/60 hover:bg-gray-800/80 active:bg-gray-800 border border-gray-800/80"
+                onClick={triggerPickCamera}
+                data-testid="button-take-video"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                  <Video className="h-5 w-5" aria-hidden />
+                </span>
+                <span className="text-base font-medium text-white">Take Video</span>
+              </button>
+            ) : null}
           </div>
         </DrawerContent>
       </Drawer>
