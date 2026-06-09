@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Calendar, Music, ExternalLink, Disc3, Plus } from "lucide-react";
+import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
@@ -311,6 +312,7 @@ export default function ReleaseTracker() {
 
   const renderReleaseCard = (r: ReleaseFeedItem, opts?: { featured?: boolean }) => {
     const normalized = normalizeReleaseCardFields(r);
+    const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
     const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
     const releaseDayHighlight = isReleaseDayHighlight(r);
     const isOwnerReleaseDay = r.artistId === currentUser?.id && releaseDayHighlight;
@@ -380,18 +382,8 @@ export default function ReleaseTracker() {
                 </span>
               );
             })()}
-            {r.collaboratorStatus && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded ${
-                  r.collaboratorStatus === "ACCEPTED"
-                    ? "bg-green-500/20 text-green-600 dark:text-green-400"
-                    : r.collaboratorStatus === "REJECTED"
-                    ? "bg-red-500/20 text-red-600 dark:text-red-400"
-                    : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                }`}
-              >
-                {r.collaboratorStatus}
-              </span>
+            {collabDisplay && (
+              <span className={collabDisplay.className}>{collabDisplay.label}</span>
             )}
           </div>
           {r.links && r.links.length > 0 && (
@@ -558,6 +550,7 @@ export default function ReleaseTracker() {
                     .filter((r) => r.isComingSoon)
                     .map((r) => {
                       const normalized = normalizeReleaseCardFields(r);
+                      const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
                       return (
                       <div
                         key={r.id}
@@ -598,18 +591,8 @@ export default function ReleaseTracker() {
                             <span className="inline-block text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400">
                               Upcoming
                             </span>
-                            {r.collaboratorStatus && (
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded ${
-                                  r.collaboratorStatus === "ACCEPTED"
-                                    ? "bg-green-500/20 text-green-600 dark:text-green-400"
-                                    : r.collaboratorStatus === "REJECTED"
-                                    ? "bg-red-500/20 text-red-600 dark:text-red-400"
-                                    : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                                }`}
-                              >
-                                {r.collaboratorStatus}
-                              </span>
+                            {collabDisplay && (
+                              <span className={collabDisplay.className}>{collabDisplay.label}</span>
                             )}
                           </div>
                           {r.links && r.links.length > 0 && (

@@ -80,6 +80,9 @@ const ARTIST_SELF_TAG_HINT_DISMISSED_EVENT = "dubhub:hint:artist-self-tag-dismis
 
 /** Lucide-aligned post metadata icons: same box, stroke 2 @ 24px, `currentColor`. */
 const POST_META_ICON_CLASS = "h-4 w-4 shrink-0 text-gray-300";
+/** Release-attached like save: music-note burst lifetime (matches tailwind animation). */
+const LIKE_SAVE_NOTE_BURST_MS = 1000;
+const DUB_HUB_ACCENT = "#4ae9df";
 
 function estimateCoverMaxCropFraction(
   vw: number,
@@ -234,6 +237,8 @@ interface VideoCardProps {
   requestOpenComments?: boolean;
   onOpenCommentsRequestHandled?: () => void;
   moderatorPreview?: boolean;
+  /** Home swipe decoder prewarm (v1): inactive buffer/decode only — no play(), feature-flagged in Home. */
+  decoderPrewarm?: boolean;
 }
 
 function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolean {
@@ -269,7 +274,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.onPostLiked === next.onPostLiked &&
     prev.requestOpenComments === next.requestOpenComments &&
     prev.onOpenCommentsRequestHandled === next.onOpenCommentsRequestHandled &&
-    prev.moderatorPreview === next.moderatorPreview
+    prev.moderatorPreview === next.moderatorPreview &&
+    prev.decoderPrewarm === next.decoderPrewarm
   );
 }
 
@@ -296,6 +302,7 @@ function VideoCardInner({
   requestOpenComments = false,
   onOpenCommentsRequestHandled,
   moderatorPreview = false,
+  decoderPrewarm = false,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -352,11 +359,16 @@ function VideoCardInner({
   /** Last committed `<video>` node; used so key-swap teardown targets the outgoing element (see `setVideoDomRef`). */
   const committedVideoElRef = useRef<HTMLVideoElement | null>(null);
   const isActiveRef = useRef(isActive);
+  const isPlayingRef = useRef(true);
+  const activationRunRef = useRef(0);
+  const decoderPrewarmRunRef = useRef(0);
+  const decoderPrewarmRef = useRef(decoderPrewarm);
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
-  const isPlayingRef = useRef(true);
-  const activationRunRef = useRef(0);
+  useEffect(() => {
+    decoderPrewarmRef.current = decoderPrewarm;
+  }, [decoderPrewarm]);
 
   const openCommentsDrawer = useCallback(() => {
     if (showComments) return;
@@ -457,6 +469,8 @@ function VideoCardInner({
   const lastConfirmedLikedRef = useRef(post.hasLiked || false);
   const lastConfirmedLikesRef = useRef(post.likes);
   const likeRequestInFlightRef = useRef(false);
+  const [likeSaveNoteBurstKey, setLikeSaveNoteBurstKey] = useState<number | null>(null);
+  const likeSaveNoteBurstTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const hasPlayedArtistSelfTagHintAppearRef = useRef(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
@@ -1150,44 +1164,6 @@ function VideoCardInner({
       ? "object-cover object-center"
       : "object-contain";
 
-  // Ensure looping remains seamless once a clip is actively playing.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Seamless loop: restart video before it actually ends to prevent buffering delay
-    const handleTimeUpdate = () => {
-      if (scrubbingRef.current) return;
-      if (isPlayingRef.current && !video.paused && video.duration > 0) {
-        // Restart 0.1 seconds before the end for seamless looping
-        if (video.currentTime >= video.duration - 0.1) {
-          video.currentTime = 0;
-        }
-      }
-    };
-
-    // Fallback for ended event (iOS Safari compatibility)
-    const handleEnded = () => {
-      if (scrubbingRef.current) return;
-      if (isPlayingRef.current && !video.paused) {
-        video.currentTime = 0;
-        video.play().catch((error) => {
-          console.log("Video loop restart prevented:", error);
-        });
-      }
-    };
-
-    // Add event listeners
-    video.addEventListener('timeupdate', handleTimeUpdate);
-    video.addEventListener('ended', handleEnded);
-
-    // Cleanup
-    return () => {
-      video.removeEventListener('timeupdate', handleTimeUpdate);
-      video.removeEventListener('ended', handleEnded);
-    };
-  }, [post.id, videoSrc]);
-
   // Smooth progress fill without per-frame React state (active post only).
   useEffect(() => {
     if (!isActive || !scrubBarReady || !shouldLoadVideo || !videoSrc) {
@@ -1296,6 +1272,69 @@ function VideoCardInner({
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
     };
   }, [isActive, shouldLoadVideo, post.id]);
+
+  // Home swipe decoder prewarm (v1): load/decode only — never play() or reveal.
+  useEffect(() => {
+    if (!decoderPrewarm || !shouldLoadVideo || isActive || !videoSrc) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const runId = decoderPrewarmRunRef.current + 1;
+    decoderPrewarmRunRef.current = runId;
+    const stillCurrent = () =>
+      decoderPrewarmRunRef.current === runId && decoderPrewarmRef.current;
+
+    const logPrewarm = (step: string, extra?: Record<string, unknown>) => {
+      dubhubVideoDebugLog("[DubHub][VideoCard][decoder-prewarm]", step, {
+        postId: post.id,
+        runId,
+        readyState: video.readyState,
+        readyStateLabel: getMediaReadyStateLabel(video.readyState),
+        currentTime: video.currentTime,
+        ...(extra || {}),
+      });
+    };
+
+    const warmDecoder = () => {
+      if (!stillCurrent()) return;
+      try {
+        if (video.readyState === HTMLMediaElement.HAVE_NOTHING) {
+          const srcAttr = video.getAttribute("src");
+          if ((!srcAttr || !srcAttr.length) && videoSrc) {
+            video.src = videoSrc;
+          }
+          logPrewarm("load-start");
+          video.load();
+        }
+        if (Math.abs(video.currentTime) > 0.02) {
+          video.currentTime = 0;
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const onLoadedData = () => {
+      if (!stillCurrent()) return;
+      logPrewarm("loadeddata");
+    };
+    const onCanPlay = () => {
+      if (!stillCurrent()) return;
+      logPrewarm("canplay");
+    };
+
+    warmDecoder();
+    video.addEventListener("loadeddata", onLoadedData);
+    video.addEventListener("canplay", onCanPlay);
+
+    return () => {
+      if (decoderPrewarmRunRef.current === runId) {
+        decoderPrewarmRunRef.current += 1;
+      }
+      video.removeEventListener("loadeddata", onLoadedData);
+      video.removeEventListener("canplay", onCanPlay);
+    };
+  }, [decoderPrewarm, shouldLoadVideo, isActive, videoSrc, post.id]);
 
   // Deterministic activation pipeline:
   // hide video -> loadedmetadata -> seek(0) -> play -> reveal on "playing".
@@ -1747,6 +1786,26 @@ function VideoCardInner({
     sendLikeToggleIfNeeded();
   };
 
+  const tryTriggerLikeSaveNoteBurst = useCallback(() => {
+    if (!releasePreview) return;
+    if (likeSaveNoteBurstTimerRef.current != null) return;
+    const key = Date.now();
+    setLikeSaveNoteBurstKey(key);
+    likeSaveNoteBurstTimerRef.current = setTimeout(() => {
+      setLikeSaveNoteBurstKey(null);
+      likeSaveNoteBurstTimerRef.current = null;
+    }, LIKE_SAVE_NOTE_BURST_MS);
+  }, [releasePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (likeSaveNoteBurstTimerRef.current != null) {
+        clearTimeout(likeSaveNoteBurstTimerRef.current);
+        likeSaveNoteBurstTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const likeMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/posts/${post.id}/like`),
     onSuccess: async (response) => {
@@ -2034,6 +2093,7 @@ function VideoCardInner({
       : (post.user.avatar_url || undefined);
 
   const genreChip = getGenreChipStyle(post.genre);
+  const likeSaveNoteColor = genreChip.bgColor || DUB_HUB_ACCENT;
   const statusBadgeEl = getStatusBadge();
   const overlayDensityControl = typeof onFeedOverlayCollapsedChange === "function";
   const overlayCollapsed = overlayDensityControl && feedOverlayCollapsed;
@@ -2379,21 +2439,53 @@ function VideoCardInner({
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                className={railBtn}
-                onClick={() => {
-                  playInteractionLight();
-                  applyOptimisticLikeIntent(!desiredLikedRef.current);
-                }}
-              >
-                <div className={railIconWrap}>
-                  <Heart className={`h-7 w-7 ${hasLiked ? "fill-red-500 text-red-500" : "text-white"}`} />
-                </div>
-                <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                  {formatCount(likes)}
-                </span>
-              </button>
+              <div className="relative w-full">
+                {likeSaveNoteBurstKey != null ? (
+                  <div
+                    key={likeSaveNoteBurstKey}
+                    className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[44px] overflow-visible motion-reduce:hidden sm:h-12"
+                    aria-hidden
+                  >
+                    <span
+                      className="absolute left-[38%] top-[42%] motion-safe:animate-like-save-note-rise-a [&_svg]:drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
+                      style={{ color: likeSaveNoteColor }}
+                    >
+                      <Music className="h-4 w-4" strokeWidth={2.5} />
+                    </span>
+                    <span
+                      className="absolute left-[48%] top-[38%] motion-safe:animate-like-save-note-rise-b [&_svg]:drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
+                      style={{ color: likeSaveNoteColor }}
+                    >
+                      <Music className="h-5 w-5" strokeWidth={2.5} />
+                    </span>
+                    <span
+                      className="absolute left-[56%] top-[44%] motion-safe:animate-like-save-note-rise-c [&_svg]:drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
+                      style={{ color: likeSaveNoteColor }}
+                    >
+                      <Music className="h-4 w-4" strokeWidth={2.5} />
+                    </span>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className={railBtn}
+                  onClick={() => {
+                    const nextLiked = !desiredLikedRef.current;
+                    playInteractionLight();
+                    if (nextLiked && releasePreview) {
+                      tryTriggerLikeSaveNoteBurst();
+                    }
+                    applyOptimisticLikeIntent(nextLiked);
+                  }}
+                >
+                  <div className={railIconWrap}>
+                    <Heart className={`h-7 w-7 ${hasLiked ? "fill-red-500 text-red-500" : "text-white"}`} />
+                  </div>
+                  <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                    {formatCount(likes)}
+                  </span>
+                </button>
+              </div>
 
               <div className="relative">
                 <button
@@ -2593,8 +2685,6 @@ function VideoCardInner({
                 <UserRoleInlineIcons
                   verifiedArtist={isVerifiedArtist}
                   moderator={isModeratorUser}
-                  tickClassName="h-4 w-4 shrink-0 -mt-0.5"
-                  shieldSizeClass="h-[1.125rem] w-[1.125rem]"
                   shieldTone="onDark"
                 />
               </button>

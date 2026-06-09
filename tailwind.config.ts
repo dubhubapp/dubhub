@@ -209,6 +209,25 @@ export default {
             boxShadow: "0 0 0 2px rgba(74, 233, 223, 0.42), 0 0 0 5px rgba(74, 233, 223, 0.07)",
           },
         },
+        /** Release-attached like save: music notes rise + fade (transform/opacity only). */
+        "like-save-note-rise-a": {
+          "0%": { opacity: "0.92", transform: "translate(0, 0) scale(0.9)" },
+          "8%": { opacity: "1", transform: "translate(0, 0) scale(1)" },
+          "48%": { opacity: "1", transform: "translate(-4px, -20px) scale(0.96)" },
+          "100%": { opacity: "0", transform: "translate(-9px, -46px) scale(0.72)" },
+        },
+        "like-save-note-rise-b": {
+          "0%": { opacity: "0.92", transform: "translate(0, 0) scale(0.9)" },
+          "8%": { opacity: "1", transform: "translate(0, 0) scale(1)" },
+          "48%": { opacity: "1", transform: "translate(2px, -22px) scale(0.96)" },
+          "100%": { opacity: "0", transform: "translate(5px, -50px) scale(0.68)" },
+        },
+        "like-save-note-rise-c": {
+          "0%": { opacity: "0.92", transform: "translate(0, 0) scale(0.9)" },
+          "8%": { opacity: "1", transform: "translate(0, 0) scale(1)" },
+          "48%": { opacity: "1", transform: "translate(6px, -16px) scale(0.96)" },
+          "100%": { opacity: "0", transform: "translate(12px, -40px) scale(0.65)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -226,6 +245,9 @@ export default {
         "random-dice-rail-exit": "random-dice-rail-exit 0.175s cubic-bezier(0.33, 1, 0.68, 1) both",
         "dice-rail-edge-trace": "dice-rail-edge-trace 1.65s linear infinite",
         "home-end-dice-ring-pulse": "home-end-dice-ring-pulse 2.4s ease-in-out infinite",
+        "like-save-note-rise-a": "like-save-note-rise-a 0.92s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "like-save-note-rise-b": "like-save-note-rise-b 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both",
+        "like-save-note-rise-c": "like-save-note-rise-c 0.98s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both",
       },
     },
   },

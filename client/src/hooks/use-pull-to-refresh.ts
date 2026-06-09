@@ -83,6 +83,14 @@ function canArmPullAtFirstPost(el: HTMLElement): boolean {
   return Math.abs(el.scrollTop - first.offsetTop) <= TOP_SCROLL_EPSILON;
 }
 
+/** Keep in sync with Home feed snap `isInteractiveTarget` (home.tsx). */
+function isPullInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(
+    "button, a, input, textarea, select, label, [role='button'], [data-video-action-rail], [data-feed-2x-hold-zone], [data-radix-popper-content-wrapper]",
+  );
+}
+
 /**
  * Touch pull-to-refresh for a scroll container (Home feed).
  *
@@ -152,6 +160,7 @@ export function usePullToRefresh({
     (e: TouchEvent<HTMLElement>) => {
       if (!enabled || isRefreshing || isCompleting || refreshInFlightRef.current) return;
       if (isHomeFeedPullSuppressed()) return;
+      if (isPullInteractiveTarget(e.target)) return;
       const el = scrollRef.current;
       if (!el || !canArmPullAtFirstPost(el)) return;
       pullStartYRef.current = e.touches[0]?.clientY ?? null;

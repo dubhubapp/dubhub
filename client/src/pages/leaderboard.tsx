@@ -310,9 +310,6 @@ export default function Leaderboard() {
               <UserRoleInlineIcons
                 verifiedArtist={isVerifiedArtist}
                 moderator={entry.moderator}
-                tickClassName="h-4 w-4 shrink-0"
-                shieldClassName="mt-0"
-                shieldSizeClass="h-4 w-4"
               />
             </button>
             {highlightAsCurrent && (

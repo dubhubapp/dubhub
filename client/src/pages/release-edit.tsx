@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useUser } from "@/lib/user-context";
+import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -668,21 +668,15 @@ export default function ReleaseEdit() {
             </>
           )}
           <div className="space-y-2">
-            {(release.collaborators || []).map((c: any) => (
+            {(release.collaborators || []).map((c: any) => {
+              const collabDisplay = getCollaborationStatusDisplay(c.status);
+              return (
               <div key={c.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{formatUsernameDisplay(c.username)}</span>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded ${
-                      c.status === "ACCEPTED"
-                        ? "bg-green-500/20 text-green-600"
-                        : c.status === "REJECTED"
-                        ? "bg-red-500/20 text-red-600"
-                        : "bg-amber-500/20 text-amber-600"
-                    }`}
-                  >
-                    {c.status}
-                  </span>
+                  {collabDisplay && (
+                    <span className={collabDisplay.className}>{collabDisplay.label}</span>
+                  )}
                 </div>
                 {release.artistId === currentUser?.id && (c.status === "PENDING" || c.status === "REJECTED") && (
                   <Button
@@ -703,7 +697,8 @@ export default function ReleaseEdit() {
                   </Button>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
         </section>
         )}

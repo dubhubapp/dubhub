@@ -12,6 +12,7 @@ import { runConfetti } from "@/lib/confetti";
 import { playReleaseDayHaptic } from "@/lib/haptic";
 import { apiUrl } from "@/lib/apiBase";
 import { HOME_FEED_READY_EVENT } from "@/lib/onboarding";
+import { setReleaseDropDayBannerState } from "@/lib/in-app-notification-suppression";
 
 const SESSION_DISMISS_KEY = "dubhub-release-drop-day-banner-dismissed";
 const SESSION_PRESENTED_KEY = "dubhub-release-drop-day-banner-presented";
@@ -402,6 +403,15 @@ export function ReleaseDropDayBanner() {
     setIsPresented(false);
     setShouldPresent(false);
   }, [dismissSessionKey, presentedSessionKey, celebrationSessionKey, logPersist]);
+
+  useEffect(() => {
+    const visible = isPresented && !dismissed;
+    setReleaseDropDayBannerState(
+      visible,
+      visible ? releases.map((r) => r.id).filter(Boolean) : [],
+    );
+    return () => setReleaseDropDayBannerState(false, []);
+  }, [isPresented, dismissed, releases]);
 
   if (!isPresented || dismissed) return null;
 

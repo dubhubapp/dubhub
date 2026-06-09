@@ -7,6 +7,8 @@ export const VERIFIED_ARTIST_PILL_BG = "#D4AF37";
 // Shared gold treatment used for verified-artist identity UI.
 export const goldTextClass = "text-[#FFD700]";
 export const goldGlowDropShadowClass = "drop-shadow-[0_0_10px_rgba(255,215,0,0.6)]";
+/** Softer glow for inline username-row ticks — matches moderator shield halo weight. */
+export const goldGlowInlineClass = "drop-shadow-[0_0_6px_rgba(255,215,0,0.35)]";
 export const goldAvatarGlowShadowClass = "shadow-[0_0_18px_rgba(255,215,0,0.45)]";
 export const goldPillGlowShadowClass = "shadow-[0_0_14px_rgba(255,215,0,0.35)]";
 
@@ -15,17 +17,20 @@ export function GoldVerifiedTick({
   className,
   withBackground = false,
   backgroundClassName = "bg-black rounded-full",
+  glow = "default",
 }: {
   title?: string;
   className?: string;
   withBackground?: boolean;
   backgroundClassName?: string;
+  glow?: "default" | "inline";
 }) {
+  const glowClass = glow === "inline" ? goldGlowInlineClass : goldGlowDropShadowClass;
   return (
     <span title={title} className="inline-flex">
       <CheckCircle
         className={cn(
-          "text-[#FFD700] " + goldGlowDropShadowClass,
+          "text-[#FFD700] " + glowClass,
           withBackground ? backgroundClassName : "",
           className
         )}

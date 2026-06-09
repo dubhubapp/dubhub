@@ -1,6 +1,6 @@
 /**
  * Keeps the web/runtime bridge on the dark app surface during handoff.
- * Native LaunchScreen remains blue; runtime bridge should not re-flash blue.
+ * Native LaunchScreen uses brand gradient (#001df8→#0581ff); runtime bridge should not re-flash it.
  */
 html[data-dubhub-launch-bg] body,
 html[data-dubhub-launch-bg] #root {

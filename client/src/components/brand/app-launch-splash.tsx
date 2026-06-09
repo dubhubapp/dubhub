@@ -1,4 +1,4 @@
-/** Brand blue: used by native LaunchScreen + launch bridge attribute phase. */
+/** Legacy solid bridge tint (light-theme session loading). Native LaunchScreen uses #001df8→#0581ff gradient. */
 export const DUB_HUB_LAUNCH_BLUE = "#1e38f9";
 const DUB_HUB_RUNTIME_DARK = "#0f1324";
 const THEME_STORAGE_KEY = "dubhub-theme";

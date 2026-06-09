@@ -41,7 +41,10 @@ import {
 import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
-import { blurActiveElementAfterIosSoftKeyboardHideIfNeeded } from "@/lib/ios-soft-keyboard-hide-blur";
+import {
+  blurActiveElementAfterIosSoftKeyboardHideIfNeeded,
+  isIosNativePopoverInputElement,
+} from "@/lib/ios-soft-keyboard-hide-blur";
 import {
   clampSubmitMetadataScrollRoot,
   flushSubmitMetadataIosDocumentWindowScroll,
@@ -281,6 +284,9 @@ export default function SubmitMetadata() {
   /** iOS diagnostics: true while IME is up (from willShow / didShow until didHide). */
   const submitMetadataKeyboardOpenRef = useRef(false);
   const lastIosKeyboardCapHeightPxRef = useRef(0);
+  const runKeyboardHideLayoutResetRef = useRef<
+    ((reason: string, force?: boolean) => void) | null
+  >(null);
   const submitClickTsRef = useRef<number>(0);
   const submitSuccessRef = useRef(false);
   /** Deferred until after navigate/unmount — avoids flashing an empty metadata form during cache fetch. */
@@ -347,7 +353,22 @@ export default function SubmitMetadata() {
     const runKeyboardHideLayoutReset = (
       reason: string,
       labels?: { before: string; after: string },
+      force = false,
     ) => {
+      if (
+        !force &&
+        typeof document !== "undefined" &&
+        isIosNativePopoverInputElement(document.activeElement)
+      ) {
+        if (isSubmitMetadataKbdMetricsDebugEnabled()) {
+          logSubmitMetadataKbdDeep(
+            `keyboardHideReset:skipped(native-popover):${reason}`,
+            pageScrollRef.current,
+          );
+        }
+        return;
+      }
+
       const el = pageScrollRef.current;
       el?.style.removeProperty("padding-bottom");
 
@@ -367,6 +388,10 @@ export default function SubmitMetadata() {
       if (isSubmitMetadataKbdMetricsDebugEnabled()) {
         logSubmitMetadataKbdDeep(afterLabel, pageScrollRef.current);
       }
+    };
+
+    runKeyboardHideLayoutResetRef.current = (reason, force) => {
+      runKeyboardHideLayoutReset(reason, undefined, force);
     };
 
     const applyRouteResizeMode = async () => {
@@ -494,6 +519,7 @@ export default function SubmitMetadata() {
 
     return () => {
       cancelled = true;
+      runKeyboardHideLayoutResetRef.current = null;
       submitMetadataKeyboardOpenRef.current = false;
       lastIosKeyboardCapHeightPxRef.current = 0;
       pageScrollRef.current?.style.removeProperty("padding-bottom");
@@ -514,6 +540,16 @@ export default function SubmitMetadata() {
       }
       clampSubmitMetadataScrollRoot(pageScrollRef.current, "route-unmount");
     };
+  }, []);
+
+  /** After native date picker closes, run hide reset once focus has left the popover input. */
+  const scheduleSubmitMetadataPopoverDismissLayoutReset = useCallback(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+    queueMicrotask(() => {
+      requestAnimationFrame(() => {
+        runKeyboardHideLayoutResetRef.current?.("playedDate:onBlur", true);
+      });
+    });
   }, []);
 
   /** When the page scroll root exists, reclaim lawful scrollTop after WKWebKit relayout (keyboard dismissal). */
@@ -1834,6 +1870,7 @@ export default function SubmitMetadata() {
                                 ...c,
                                 playedDate: isPlayedDateComplete(v),
                               }));
+                              scheduleSubmitMetadataPopoverDismissLayoutReset();
                             }}
                             onChange={(e) => {
                               const max = getTodayInputValue();

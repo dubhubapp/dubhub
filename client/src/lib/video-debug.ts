@@ -1,4 +1,14 @@
 export const DUBHUB_VIDEO_DEBUG_FLAG = "dubhub_video_debug";
+export const DUBHUB_FEED_SWIPE_PREWARM_FLAG = "dubhub_feed_swipe_prewarm";
+
+export function dubhubFeedSwipePrewarmEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(DUBHUB_FEED_SWIPE_PREWARM_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function dubhubVideoDebugEnabled(): boolean {
   if (typeof window === "undefined") return false;

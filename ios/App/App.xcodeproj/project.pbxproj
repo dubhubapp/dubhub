@@ -18,6 +18,9 @@
 		7A8E9F141FED79650016852C /* DubHubLaunchLogo.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */; };
 		7A8E9F151FED79650016852C /* DubHubLaunchLogo@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */; };
 		7A8E9F161FED79650016852C /* DubHubLaunchLogo@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */; };
+		7A8E9F1A1FED79650016852C /* DubHubLaunchGradient.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */; };
+		7A8E9F1B1FED79650016852C /* DubHubLaunchGradient@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */; };
+		7A8E9F1C1FED79650016852C /* DubHubLaunchGradient@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */; };
 		A1B2C3D4E5F60718293A4B5C /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -34,6 +37,9 @@
 		7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubLaunchLogo.png; sourceTree = "<group>"; };
 		7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchLogo@2x.png"; sourceTree = "<group>"; };
 		7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchLogo@3x.png"; sourceTree = "<group>"; };
+		7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubLaunchGradient.png; sourceTree = "<group>"; };
+		7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchGradient@2x.png"; sourceTree = "<group>"; };
+		7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchGradient@3x.png"; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		F5B88A062FAA70BF005C500C /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -89,6 +95,9 @@
 		7A8E9F131FED79650016852C /* LaunchLogo */ = {
 			isa = PBXGroup;
 			children = (
+				7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */,
+				7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */,
+				7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */,
 				7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */,
 				7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */,
 				7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */,
@@ -162,6 +171,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
+				7A8E9F1A1FED79650016852C /* DubHubLaunchGradient.png in Resources */,
+				7A8E9F1B1FED79650016852C /* DubHubLaunchGradient@2x.png in Resources */,
+				7A8E9F1C1FED79650016852C /* DubHubLaunchGradient@3x.png in Resources */,
 				7A8E9F141FED79650016852C /* DubHubLaunchLogo.png in Resources */,
 				7A8E9F151FED79650016852C /* DubHubLaunchLogo@2x.png in Resources */,
 				7A8E9F161FED79650016852C /* DubHubLaunchLogo@3x.png in Resources */,

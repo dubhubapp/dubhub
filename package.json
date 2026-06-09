@@ -23,6 +23,7 @@
     "@capacitor/ios": "^8.3.0",
     "@capacitor/keyboard": "^8.0.3",
     "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/status-bar": "^8.0.2",
     "@ffmpeg/core": "^0.12.6",
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",

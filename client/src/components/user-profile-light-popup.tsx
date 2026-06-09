@@ -728,8 +728,6 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
                     <UserRoleInlineIcons
                       verifiedArtist={isVerifiedArtist}
                       moderator={user.moderator === true}
-                      tickClassName="h-3.5 w-3.5 shrink-0"
-                      shieldSizeClass="h-4 w-4"
                     />
                   )}
                 </div>

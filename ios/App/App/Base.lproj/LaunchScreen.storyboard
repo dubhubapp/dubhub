@@ -15,13 +15,20 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubLaunchGradient" translatesAutoresizingMaskIntoConstraints="NO" id="dh-bg-iv">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
                             <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubLaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="dh-logo-iv">
                                 <rect key="frame" x="54.5" y="376" width="284" height="100"/>
                             </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="BVo-6i-8nQ"/>
-                        <color key="backgroundColor" red="0.11764705882352941" green="0.2196078431372549" blue="0.9764705882352941" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="0.0" green="0.11372549019607843" blue="0.9725490196078431" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
+                            <constraint firstItem="dh-bg-iv" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="bg-top"/>
+                            <constraint firstItem="dh-bg-iv" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="bg-bottom"/>
+                            <constraint firstItem="dh-bg-iv" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="bg-leading"/>
+                            <constraint firstItem="dh-bg-iv" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="bg-trailing"/>
                             <constraint firstItem="dh-logo-iv" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="cX-logo"/>
                             <constraint firstItem="dh-logo-iv" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="cY-logo"/>
                             <constraint firstItem="dh-logo-iv" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.72" id="w-logo"/>
@@ -35,6 +42,7 @@
         </scene>
     </scenes>
     <resources>
+        <image name="DubHubLaunchGradient" width="1" height="256"/>
         <image name="DubHubLaunchLogo" width="1260" height="916"/>
     </resources>
 </document>

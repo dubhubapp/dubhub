@@ -43,6 +43,7 @@ import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
+import { setOpenCommentsPostId } from "@/lib/in-app-notification-suppression";
 
 interface CommentsModalProps {
   post: PostWithUser;
@@ -156,6 +157,14 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     closeCommittedRef.current = false;
     playInteractionLight();
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setOpenCommentsPostId(post.id);
+      return () => setOpenCommentsPostId(null);
+    }
+    setOpenCommentsPostId(null);
+  }, [isOpen, post.id]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1092,7 +1101,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       <DrawerContent
         ref={drawerContentRef}
         overlayClassName="z-[60] bg-transparent"
-        className="bottom-0 z-[60] mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm dark:border dark:border-border/55 dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md"
+        className="bottom-0 z-[60] mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md"
         style={
           commentsSheetMaxPx != null
             ? {
@@ -1334,8 +1343,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                         comment.user.account_type === "artist" && comment.user.verified_artist === true
                       }
                       moderator={!!comment.user.moderator}
-                      tickClassName="h-3 w-3 -mt-0.5"
-                      shieldSizeClass="h-4 w-4"
                     />
                   </div>
                   {/* Artist identified badge: match post-level identified treatment */}
@@ -1587,8 +1594,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                                   reply.user.account_type === "artist" && reply.user.verified_artist === true
                                 }
                                 moderator={!!reply.user.moderator}
-                                tickClassName="h-3 w-3 -mt-0.5"
-                                shieldSizeClass="h-4 w-4"
                               />
                             </div>
                             {/* Verified by Artist Badge for Reply */}

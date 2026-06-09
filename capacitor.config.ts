@@ -14,6 +14,12 @@ const config: CapacitorConfig = {
   ios: {
     backgroundColor: DUB_HUB_RUNTIME_BG,
   },
+  plugins: {
+    StatusBar: {
+      /** Draw web content under the status bar; status-bar taps emit `statusTap` (not web touches). */
+      overlaysWebView: true,
+    },
+  },
 };
 
 export default config;

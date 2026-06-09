@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, typ
 import { useInfiniteQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { App as CapacitorApp } from "@capacitor/app";
-import type { PluginListenerHandle } from "@capacitor/core";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { VideoCard } from "@/components/video-card";
 import { GenreFilter, type FeedSortMode } from "@/components/genre-filter";
 import { VinylPullRefreshIndicator } from "@/components/vinyl-pull-refresh-indicator";
@@ -21,12 +21,17 @@ import {
   TOP_SCROLL_EPSILON,
   isHomeFeedSnappedToFirstPost,
   usePullToRefresh,
+  type PullToRefreshPhase,
 } from "@/hooks/use-pull-to-refresh";
 import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
-import { dubhubVideoDebugLog, dubhubVideoDebugEnabled } from "@/lib/video-debug";
+import {
+  dubhubFeedSwipePrewarmEnabled,
+  dubhubVideoDebugLog,
+  dubhubVideoDebugEnabled,
+} from "@/lib/video-debug";
 import { feedPageRowItems, flattenInfiniteQueryFeedPages } from "@/lib/feed-infinite-pages";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
@@ -98,6 +103,54 @@ const RANDOM_DICE_RAIL_EXIT_MS = 175;
 /** Taller under large safe-top so controls stay on a readable scrim (Dynamic Island / notch). */
 const feedTopOverlayGradient =
   "pointer-events-none absolute inset-x-0 top-0 h-[max(7rem,calc(4.25rem+env(safe-area-inset-top,0px)))] bg-gradient-to-b from-black/28 via-black/10 to-transparent";
+/** Full-width tap band from physical top through chrome padding (superset of mobile + sm `pt`; floor when safe-area env is 0). */
+const homeFeedTopTapBandClass =
+  "h-[max(2.75rem,max(0.625rem,calc(env(safe-area-inset-top,0px)+0.5rem)))]";
+
+/** Temporary tap-to-top probe — enable with `sessionStorage.setItem("dubhub_tap_top_diag", "1")` then reload Home. */
+const TAP_TOP_DIAG_FLAG = "dubhub_tap_top_diag";
+const TAP_TOP_DIAG_TAG = "[DubHub][Home][tap-top-diag]";
+
+function homeTapTopDiagEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(TAP_TOP_DIAG_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function homeTapTopDiagLog(message: string, payload?: Record<string, unknown>): void {
+  if (!homeTapTopDiagEnabled()) return;
+  if (payload) {
+    console.log(TAP_TOP_DIAG_TAG, message, payload);
+    return;
+  }
+  console.log(TAP_TOP_DIAG_TAG, message);
+}
+
+function readHomeTapTopLayoutSnapshot(): Record<string, unknown> {
+  if (typeof window === "undefined" || typeof document === "undefined") return {};
+  const docEl = document.documentElement;
+  const docStyle = getComputedStyle(docEl);
+  const vv = window.visualViewport;
+  const tapBand = document.querySelector<HTMLElement>('[aria-label="Scroll feed to top"]');
+  const tapBandRect = tapBand?.getBoundingClientRect();
+  return {
+    nativeShell: apiDiagIsNativeShell(),
+    platform: Capacitor.getPlatform(),
+    innerHeight: window.innerHeight,
+    screenHeight: window.screen.height,
+    visualViewportHeight: vv?.height ?? null,
+    visualViewportOffsetTop: vv?.offsetTop ?? null,
+    docClientTop: docEl.getBoundingClientRect().top,
+    safeTopCss: docStyle.getPropertyValue("--safe-area-inset-top") || null,
+    safeTopEnv: getComputedStyle(docEl).paddingTop,
+    tapBandTop: tapBandRect?.top ?? null,
+    tapBandHeight: tapBandRect?.height ?? null,
+    tapBandBottom: tapBandRect?.bottom ?? null,
+  };
+}
 
 /** Home-only: centered Discover menu (feed mode, identification, genres). */
 function HomeFeedTopChrome({
@@ -124,38 +177,56 @@ function HomeFeedTopChrome({
     <>
       <div className={feedTopOverlayGradient} aria-hidden />
       {onStatusSafeAreaTap ? (
-        <div
-          className="pointer-events-none fixed inset-x-0 top-0 z-[35] h-[max(7rem,calc(4.25rem+env(safe-area-inset-top,0px)))] pr-[env(safe-area-inset-right,0px)]"
-          aria-hidden
-        >
+        <>
           {/*
-            Full-width strip: from physical top down to the genre row’s padding edge (same as chrome `pt`),
-            but never shorter than the safe-area inset so the notch / status strip stays fully tappable.
+            Viewport-anchored band from y=0 through safe-area / top chrome padding (above Discover pill).
           */}
           <button
             type="button"
             aria-label="Scroll feed to top"
-            className="pointer-events-auto absolute inset-x-0 top-0 h-[max(env(safe-area-inset-top,0px),max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem)))] w-full cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]"
+            className={`pointer-events-auto fixed left-0 right-0 top-0 z-[36] ${homeFeedTopTapBandClass} w-full cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]`}
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              homeTapTopDiagLog("top-band touchstart", {
+                clientY: t?.clientY ?? null,
+                target: (e.target as Element | null)?.tagName ?? null,
+              });
+            }}
             onClick={(e) => {
               e.stopPropagation();
+              homeTapTopDiagLog("top-band click → scrollFeedToFirstPost");
               onStatusSafeAreaTap();
             }}
           />
+          <div
+            className="pointer-events-none fixed inset-x-0 top-0 z-[35] h-[max(7rem,calc(4.25rem+env(safe-area-inset-top,0px)))] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]"
+            aria-hidden
+          >
           {/*
-            Top-right column: anchored to the screen’s right edge (respecting safe-area on the wrapper),
-            beside the centered genre pill (max 10.25rem → half + 5.125rem from center).
+            Top-left / top-right columns beside the centered genre pill (max 10.25rem → half + 5.125rem from center).
           */}
           <button
             type="button"
             tabIndex={-1}
             aria-hidden
-            className="pointer-events-auto absolute bottom-0 right-0 top-0 w-[max(2.75rem,calc(50%-5.125rem))] cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]"
+            className="pointer-events-auto absolute bottom-0 left-0 top-0 w-[max(3rem,calc(50%-5.125rem))] cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]"
             onClick={(e) => {
               e.stopPropagation();
               onStatusSafeAreaTap();
             }}
           />
-        </div>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+            className="pointer-events-auto absolute bottom-0 right-0 top-0 w-[max(3rem,calc(50%-5.125rem))] cursor-default touch-manipulation border-0 bg-transparent p-0 [-webkit-tap-highlight-color:transparent]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onStatusSafeAreaTap();
+            }}
+          />
+          </div>
+        </>
       ) : null}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 pl-[max(0.625rem,env(safe-area-inset-left,0px))] pr-[max(0.625rem,env(safe-area-inset-right,0px))] pt-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem))] sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pt-[max(0.625rem,calc(env(safe-area-inset-top,0px)+0.5rem))]">
         <div className="pointer-events-auto flex w-full min-w-0 justify-center">
@@ -576,13 +647,37 @@ export default function Home() {
   /** Persists while scrolling the home feed (and between Random / sorted feeds). */
   const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
   const [activePostId, setActivePostId] = useState<string | null>(null);
+  /** Swipe decoder prewarm target (feature-flagged; not the same as `activePostId`). */
+  const [prewarmPostId, setPrewarmPostId] = useState<string | null>(null);
+  const prewarmPostIdRef = useRef<string | null>(null);
+  const clearPrewarmPostId = useCallback(() => {
+    if (!prewarmPostIdRef.current) return;
+    prewarmPostIdRef.current = null;
+    setPrewarmPostId(null);
+  }, []);
+  const setPrewarmTargetPostId = useCallback((postId: string | null) => {
+    if (!dubhubFeedSwipePrewarmEnabled()) return;
+    if (!postId) {
+      clearPrewarmPostId();
+      return;
+    }
+    if (prewarmPostIdRef.current === postId) return;
+    prewarmPostIdRef.current = postId;
+    setPrewarmPostId(postId);
+    dubhubVideoDebugLog("[DubHub][Home][decoder-prewarm]", "target-set", { postId });
+  }, [clearPrewarmPostId]);
   /** Latest `activePostId` for trace logs inside callbacks whose closures may lag one render. */
   const newest201ActivePostIdRef = useRef<string | null>(null);
   newest201ActivePostIdRef.current = activePostId;
+  const clearPrewarmPostIdRef = useRef(clearPrewarmPostId);
+  clearPrewarmPostIdRef.current = clearPrewarmPostId;
+  const setPrewarmTargetPostIdRef = useRef(setPrewarmTargetPostId);
+  setPrewarmTargetPostIdRef.current = setPrewarmTargetPostId;
   const newest201SortModeRef = useRef<FeedSortMode>(sortMode);
   newest201SortModeRef.current = sortMode;
   const [isAppForegroundActive, setIsAppForegroundActive] = useState(true);
   const videoFeedRef = useRef<HTMLDivElement>(null);
+  const prevHomePullPhaseRef = useRef<PullToRefreshPhase>("idle");
   const [location, navigate] = useLocation();
   /** Same as `window.location.search` but subscribed via wouter (pathname-only `location` misses query updates). */
   const search = useSearch();
@@ -1211,6 +1306,34 @@ export default function Home() {
       setActivePostId(nearest);
     }
   }, [sortMode, uiPosts, activePostId, isAppForegroundActive, isPlaceholderData, suppressPlaceholderFeedRows]);
+
+  useEffect(() => {
+    if (!dubhubFeedSwipePrewarmEnabled()) return;
+    if (
+      !isAppForegroundActive ||
+      suppressPlaceholderFeedRows ||
+      isPlaceholderData ||
+      sortMode === "random" ||
+      openCommentsTargetPostId
+    ) {
+      clearPrewarmPostId();
+    }
+  }, [
+    isAppForegroundActive,
+    suppressPlaceholderFeedRows,
+    isPlaceholderData,
+    sortMode,
+    openCommentsTargetPostId,
+    clearPrewarmPostId,
+  ]);
+
+  useEffect(() => {
+    if (!dubhubFeedSwipePrewarmEnabled()) return;
+    if (activePostId && prewarmPostId && activePostId === prewarmPostId) {
+      clearPrewarmPostId();
+    }
+  }, [activePostId, prewarmPostId, clearPrewarmPostId]);
+
   const plainVideoDiagEnabled =
     typeof window !== "undefined" && sessionStorage.getItem("dubhub_plain_video_diag") === "1";
   const plainVideoDiagPost = useMemo(() => {
@@ -1527,6 +1650,37 @@ export default function Home() {
     onPullThresholdCrossed: onHomePullThresholdCrossed,
   });
 
+  /** Re-snap after pull refresh collapse when order-restore does not run (same feed order). */
+  useLayoutEffect(() => {
+    const prevPhase = prevHomePullPhaseRef.current;
+    prevHomePullPhaseRef.current = homePullPhase;
+
+    if (sortMode === "random") return;
+    if (isPlaceholderData || suppressPlaceholderFeedRows) return;
+    if (prevPhase !== "completing" || homePullPhase !== "idle") return;
+    if (!activePostId) return;
+
+    const el = videoFeedRef.current;
+    if (!el) return;
+
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(activePostId)
+        : activePostId;
+    const node = el.querySelector<HTMLElement>(`[data-post-id="${escaped}"]`);
+    if (!node) return;
+
+    const targetTop = node.offsetTop;
+    if (Math.abs(el.scrollTop - targetTop) <= 2) return;
+    el.scrollTo({ top: targetTop, behavior: "auto" });
+  }, [
+    homePullPhase,
+    activePostId,
+    sortMode,
+    isPlaceholderData,
+    suppressPlaceholderFeedRows,
+  ]);
+
   const scrollFeedToFirstPost = useCallback(() => {
     const el = videoFeedRef.current;
     const u = uiPostsNewest201TraceRef.current;
@@ -1574,6 +1728,62 @@ export default function Home() {
       });
     }
   }, [sortMode]);
+
+  /** iOS status-bar / Dynamic Island taps are native `statusTap` events — not web pointer hits. */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+    if (isInitialFeedLoad || isError) return;
+
+    const onStatusTap = () => {
+      homeTapTopDiagLog("native statusTap → scrollFeedToFirstPost");
+      scrollFeedToFirstPost();
+    };
+
+    window.addEventListener("statusTap", onStatusTap);
+    return () => window.removeEventListener("statusTap", onStatusTap);
+  }, [isInitialFeedLoad, isError, scrollFeedToFirstPost]);
+
+  /** Temporary probe: proves whether top-of-screen touches reach the web layer (sessionStorage flag). */
+  useEffect(() => {
+    if (!homeTapTopDiagEnabled()) return;
+
+    homeTapTopDiagLog("layout snapshot", readHomeTapTopLayoutSnapshot());
+
+    const logTopGesture = (type: string, e: Event) => {
+      const t =
+        "touches" in e && e.touches.length > 0
+          ? e.touches[0]
+          : "clientY" in e
+            ? (e as MouseEvent)
+            : null;
+      const clientY = t?.clientY;
+      if (clientY == null || clientY > 96) return;
+      homeTapTopDiagLog(`top-gesture ${type}`, {
+        clientY,
+        target:
+          e.target instanceof Element
+            ? `${e.target.tagName}${e.target.getAttribute("aria-label") ? `[${e.target.getAttribute("aria-label")}]` : ""}`
+            : null,
+      });
+    };
+
+    const onStatusTapDiag = () => homeTapTopDiagLog("native statusTap (diag listener)");
+    const onTouchStart = (e: Event) => logTopGesture("touchstart", e);
+    const onPointerDown = (e: Event) => logTopGesture("pointerdown", e);
+    const onClick = (e: Event) => logTopGesture("click", e);
+
+    window.addEventListener("statusTap", onStatusTapDiag);
+    window.addEventListener("touchstart", onTouchStart, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("click", onClick, true);
+
+    return () => {
+      window.removeEventListener("statusTap", onStatusTapDiag);
+      window.removeEventListener("touchstart", onTouchStart, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("click", onClick, true);
+    };
+  }, [isInitialFeedLoad, isError]);
 
   useEffect(() => {
     if (isInitialFeedLoad || isError) {
@@ -1754,6 +1964,8 @@ export default function Home() {
       if (event.touches.length !== 1) return;
       if (isInteractiveTarget(event.target)) return;
 
+      clearPrewarmPostIdRef.current();
+
       const nodes = getSnapNodes();
       if (nodes.length === 0) return;
 
@@ -1830,6 +2042,9 @@ export default function Home() {
         if (Math.abs(targetTop - endTop) < 4) return;
         const u = uiPostsNewest201TraceRef.current;
         const targetPostId = nodes[targetIndex]?.dataset.postId ?? null;
+        if (targetPostId && targetIndex !== i0) {
+          setPrewarmTargetPostIdRef.current(targetPostId);
+        }
         newest201Trace("scroll/touch-snap-nudge-touchend", {
           targetTop,
           targetPostId,
@@ -1921,6 +2136,9 @@ export default function Home() {
           }
           return next;
         });
+        if (committed) {
+          clearPrewarmPostIdRef.current();
+        }
       }
     };
 
@@ -2716,7 +2934,7 @@ export default function Home() {
         <div
           className={[
             "flex w-full shrink-0 flex-col items-center justify-center overflow-hidden bg-background [overflow-anchor:none]",
-            homePullSpacerHeightPx > 0 || homePullPhase !== "idle"
+            homePullSpacerHeightPx > 0
               ? "box-content pt-[max(0.5rem,env(safe-area-inset-top,0px))]"
               : "",
             homePullPhase === "completing"
@@ -2770,12 +2988,18 @@ export default function Home() {
               isActive={isAppForegroundActive && activePostId === post.id}
               shouldLoadVideo={shouldLoadVideo}
               videoPreload={videoPreload}
+              decoderPrewarm={
+                dubhubFeedSwipePrewarmEnabled() &&
+                prewarmPostId === post.id &&
+                activePostId !== post.id
+              }
               homeFeedPosterFallback
               onToggleMute={toggleFeedMute}
               feedOverlayCollapsed={isFeedOverlayCollapsed}
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
               mediaEpoch={homeMediaEpoch}
               onCommentsOpened={() => {
+                clearPrewarmPostId();
                 window.dispatchEvent(new CustomEvent(HINT_COMMENTS_OPENED_EVENT));
               }}
               onCommentsClosed={() => {

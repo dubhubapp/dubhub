@@ -10,6 +10,7 @@ import { SubmitClipProvider } from "@/lib/submit-clip-context";
 import { SubmitClipDrawer } from "@/components/submit-clip-drawer";
 import { ConditionalBottomNavigation } from "@/components/conditional-bottom-navigation";
 import { ReleaseDropDayBanner } from "@/components/release-drop-day-banner";
+import { InAppNotificationBannerHost } from "@/components/in-app-notification-banner";
 import { PasswordRecoveryRedirect } from "@/components/auth/PasswordRecoveryRedirect";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -739,6 +740,10 @@ function App() {
             </AuthenticatedMainShell>
             <SubmitClipDrawer />
             <ConditionalBottomNavigation />
+            <InAppNotificationBannerHost
+              suppressOnboardingModal={firstLoginOnboarding.open}
+              suppressPushPrompt={postOnboardingPushPrompt.open}
+            />
             <ReleaseDropDayBanner />
           </div>
           </div>

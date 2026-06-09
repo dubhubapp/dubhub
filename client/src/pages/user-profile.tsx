@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,6 +36,11 @@ import {
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ARTIST_BETA_ARTIST_TOOLS_MESSAGE } from "@/lib/artist-beta-copy";
+import {
+  consumeProfileNotificationsTabIntent,
+  PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT,
+  setProfileNotificationsTabOpen,
+} from "@/lib/in-app-notification-suppression";
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -119,6 +123,25 @@ function repProgressGradientFromGenreBg(bgHex: string): string {
 
 function whiteRepProgressGradient(): string {
   return "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,1) 50%, rgba(241,245,249,0.95) 100%)";
+}
+
+/** Base fill colour under the rep gradient — aligned with leaderboard progress bars. */
+function repProgressBarBaseColor(hexColor: string | null | undefined): string {
+  const h = (hexColor ?? "").replace("#", "").trim();
+  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) return "#ffffff";
+  return `#${h}`;
+}
+
+/** Soft genre-tinted glow on the rep fill — aligned with leaderboard progress bars. */
+function repGenreGlowShadow(hexColor: string | null | undefined): string {
+  const h = (hexColor ?? "").replace("#", "").trim();
+  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) {
+    return "0 0 10px rgba(255,255,255,0.35)";
+  }
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `0 0 12px rgba(${r}, ${g}, ${b}, 0.45)`;
 }
 
 function getGenreChipColors(genre: string) {
@@ -382,6 +405,25 @@ export default function UserProfile() {
   const queryClient = useQueryClient();
   const { profileImage, username, updateProfileImage, currentUser, verifiedArtist, isModerator, userType } = useUser();
   const [activeTab, setActiveTab] = useState("profile");
+
+  useEffect(() => {
+    const applyNotificationsTabIntent = () => {
+      if (consumeProfileNotificationsTabIntent()) {
+        setActiveTab("notifications");
+      }
+    };
+
+    applyNotificationsTabIntent();
+
+    const onOpenNotificationsTab = () => applyNotificationsTabIntent();
+    window.addEventListener(PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT, onOpenNotificationsTab);
+    return () => window.removeEventListener(PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT, onOpenNotificationsTab);
+  }, []);
+
+  useEffect(() => {
+    setProfileNotificationsTabOpen(activeTab === "notifications");
+    return () => setProfileNotificationsTabOpen(false);
+  }, [activeTab]);
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
   /** Shell height for the Artist/User 3D flip so tall faces don’t overlap Rep; updated from face measurements. */
   const [artistUserFlipShellPx, setArtistUserFlipShellPx] = useState(430);
@@ -681,6 +723,16 @@ export default function UserProfile() {
       repBarGenreChip != null
         ? repProgressGradientFromGenreBg(repBarGenreChip.bgColor)
         : whiteRepProgressGradient(),
+    [repBarGenreChip],
+  );
+
+  const repProgressBarBase = useMemo(
+    () => repProgressBarBaseColor(repBarGenreChip?.bgColor ?? null),
+    [repBarGenreChip],
+  );
+
+  const repProgressBarGlow = useMemo(
+    () => repGenreGlowShadow(repBarGenreChip?.bgColor ?? null),
     [repBarGenreChip],
   );
 
@@ -1944,14 +1996,11 @@ export default function UserProfile() {
                   <UserRoleInlineIcons
                     verifiedArtist={verifiedArtist}
                     moderator={isModerator}
-                    tickClassName="h-4 w-4 shrink-0"
-                    shieldClassName="mt-0"
-                    shieldSizeClass="h-4 w-4"
                   />
                 )}
               </div>
             </div>
-            <p className="text-xs mt-3 mb-3 inline-flex items-center rounded-full px-3 py-0.5 border text-white border-white/70 shadow-[0_0_12px_rgba(255,255,255,0.7)]">
+            <p className="text-xs font-medium mt-3 mb-3 inline-flex items-center rounded-full px-3 py-0.5 border border-white/20 bg-white/10 backdrop-blur-lg text-white/70">
               {userData.joinedDateLine}
             </p>
           </div>
@@ -2126,13 +2175,17 @@ export default function UserProfile() {
                   {repTrustForProfile.displayName}
                 </span>
               </div>
-              <div className="w-full rounded-full h-2 overflow-hidden bg-gray-700/90">
+              <div className="w-full rounded-full h-2 overflow-hidden bg-black/55">
                 <div
                   className="h-2 rounded-full transition-[width] duration-700 ease-out"
                   style={{
                     width: `${repTrustForProfile.isTopTier ? 100 : repProgressPctClamped}%`,
                     minWidth: (repTrustForProfile.isTopTier ? 100 : repProgressPctClamped) > 0 ? 3 : 0,
-                    background: repProgressFillCss,
+                    backgroundImage: repProgressFillCss,
+                    backgroundColor: repProgressBarBase,
+                    filter: "saturate(1.32) contrast(1.05)",
+                    opacity: 1,
+                    boxShadow: repProgressBarGlow,
                   }}
                   data-testid="reputation-bar"
                 />

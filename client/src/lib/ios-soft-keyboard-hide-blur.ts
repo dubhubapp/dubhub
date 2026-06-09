@@ -13,6 +13,11 @@ const IOS_NATIVE_POPOVER_INPUT_TYPES = new Set([
   "time",
 ]);
 
+/** Native iOS wheel/calendar inputs — soft-keyboard hide must not blur or strip keyboard slack while active. */
+export function isIosNativePopoverInputElement(el: Element | null | undefined): el is HTMLInputElement {
+  return el instanceof HTMLInputElement && IOS_NATIVE_POPOVER_INPUT_TYPES.has(el.type);
+}
+
 function isKeyboardAssociatedEditable(el: HTMLElement): boolean {
   if (el instanceof HTMLTextAreaElement) return true;
   if (el instanceof HTMLSelectElement) return true;
@@ -20,7 +25,7 @@ function isKeyboardAssociatedEditable(el: HTMLElement): boolean {
   if (el.getAttribute("role") === "combobox") return true;
 
   if (el instanceof HTMLInputElement) {
-    if (IOS_NATIVE_POPOVER_INPUT_TYPES.has(el.type)) return false;
+    if (isIosNativePopoverInputElement(el)) return false;
     return true;
   }
 
