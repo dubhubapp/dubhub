@@ -1395,6 +1395,54 @@ export default function Home() {
       setIsAppForegroundActive(true);
     };
 
+    /** Native overlays (e.g. iOS file picker) blur/hide the WebView without appStateChange — resume when visible again. */
+    const tryMarkActiveFromForegroundResume = (source: string) => {
+      if (cancelled) return;
+      if (document.hidden) {
+        dubhubVideoDebugLog("[DubHub][Home][lifecycle]", "foreground resume skipped: document hidden", {
+          source,
+          documentHidden: document.hidden,
+        });
+        return;
+      }
+
+      void CapacitorApp.getState()
+        .then((state) => {
+          if (cancelled) return;
+          if (state.isActive) {
+            dubhubVideoDebugLog("[DubHub][Home][lifecycle]", "foreground resume markActive", {
+              source,
+              documentHidden: document.hidden,
+              capacitorIsActive: state.isActive,
+            });
+            markActive();
+            return;
+          }
+          dubhubVideoDebugLog("[DubHub][Home][lifecycle]", "foreground resume skipped: Capacitor inactive", {
+            source,
+            documentHidden: document.hidden,
+            capacitorIsActive: state.isActive,
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (document.hidden) {
+            dubhubVideoDebugLog(
+              "[DubHub][Home][lifecycle]",
+              "foreground resume skipped: getState failed and document hidden",
+              { source, documentHidden: document.hidden },
+            );
+            return;
+          }
+          dubhubVideoDebugLog("[DubHub][Home][lifecycle]", "foreground resume markActive (getState fallback)", {
+            source,
+            documentHidden: document.hidden,
+            capacitorIsActive: null,
+          });
+          markActive();
+        });
+    };
+
     void CapacitorApp.getState()
       .then((state) => {
         if (cancelled) return;
@@ -1423,20 +1471,34 @@ export default function Home() {
       });
 
     const onVisibilityChange = () => {
-      if (document.hidden) markInactive();
+      if (document.hidden) {
+        markInactive();
+        return;
+      }
+      tryMarkActiveFromForegroundResume("visibilitychange-visible");
     };
     const onPageHide = () => markInactive();
     const onBlur = () => markInactive();
+    const onPageShow = () => {
+      tryMarkActiveFromForegroundResume("pageshow");
+    };
+    const onFocus = () => {
+      tryMarkActiveFromForegroundResume("focus");
+    };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", onFocus);
 
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", onFocus);
       void appStateHandle?.remove();
     };
   }, [pauseFeedPlaybackForBackground]);

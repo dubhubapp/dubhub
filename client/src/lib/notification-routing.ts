@@ -52,6 +52,13 @@ export function getNotificationTapRoute(notification: NotificationWithUser): str
     return "/releases";
   }
 
+  if (
+    (type === "collab_invite" || type === "collab_accept" || type === "collab_reject") &&
+    releaseId
+  ) {
+    return `/releases/${encodeURIComponent(releaseId)}`;
+  }
+
   if (postId) {
     return `/?post=${encodeURIComponent(postId)}`;
   }

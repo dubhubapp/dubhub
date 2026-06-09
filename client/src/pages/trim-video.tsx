@@ -63,7 +63,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 /** Dub hub brand blue (matches launch surface). */
-const TRIM_SELECTION_BLUE = "rgba(30, 56, 249, 0.5)";
+const TRIM_SELECTION_BLUE = "rgba(30, 56, 249, 0.62)";
 interface TrimVideoState {
   fileName: string;
   fileType: string;
@@ -173,8 +173,9 @@ function applyTrimRegionChrome(region: Region, opts?: { delayedRepaint?: boolean
   const paint = () => {
     const root = region.element;
     if (!root) return;
-    root.style.boxShadow = "inset 0 0 0 2px rgba(255,255,255,0.45)";
-    root.style.borderRadius = "6px";
+    root.style.boxShadow =
+      "inset 0 0 0 1px rgba(255,255,255,0.38), inset 0 1px 14px rgba(255,255,255,0.07)";
+    root.style.borderRadius = "8px";
   };
 
   requestAnimationFrame(paint);
@@ -200,8 +201,6 @@ export default function TrimVideo() {
   /** WaveSurfer canvas failed to paint — use matched light-DOM bars + playhead. */
   const [trimWavePaintFallback, setTrimWavePaintFallback] = useState(false);
   const [fallbackBarPeaks, setFallbackBarPeaks] = useState<number[]>([]);
-  /** No WaveSurfer region (media-probe trim path) — enable dragging the whole blue selection band. */
-  const [trimLightDomWholeRangeDrag, setTrimLightDomWholeRangeDrag] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   /** Intrinsic size for wide-landscape blurred backdrop (foreground stays object-contain). */
   const [trimVideoIntrinsic, setTrimVideoIntrinsic] = useState<{ w: number; h: number } | null>(
@@ -339,7 +338,6 @@ export default function TrimVideo() {
   useEffect(() => {
     setTrimWavePaintFallback(false);
     setFallbackBarPeaks([]);
-    setTrimLightDomWholeRangeDrag(false);
   }, [state?.videoUrl]);
 
   /** When canvas paint fallback is on, drive `currentTime` from the video element (reliable on iOS). */
@@ -584,6 +582,75 @@ export default function TrimVideo() {
       const originEdgeTime = edge === "start" ? anchorStart : anchorEnd;
       const rectWidth = rect.width;
 
+      let previewRafId = 0;
+      let pendingPreviewSec: number | null = null;
+
+      /** Plain seek + playhead repaint — no kickVideoFrameToScreen micro-play. */
+      const flushPreviewSeek = (previewSec: number) => {
+        const videoEl = videoRef.current;
+        const ws = wavesurferRef.current;
+        if (!videoEl) return;
+        try {
+          videoEl.currentTime = previewSec;
+        } catch {
+          /* ignore */
+        }
+        try {
+          ws?.setTime(previewSec);
+        } catch {
+          /* ignore */
+        }
+        if (ws) {
+          wavesurferRepaintPlayhead(ws, previewSec);
+        }
+        setCurrentTime(previewSec);
+        const bg = trimBackdropVideoRef.current;
+        if (bg) {
+          try {
+            bg.currentTime = previewSec;
+          } catch {
+            /* ignore */
+          }
+        }
+      };
+
+      const schedulePreviewSeek = (previewSec: number) => {
+        pendingPreviewSec = previewSec;
+        if (previewRafId !== 0) return;
+        previewRafId = requestAnimationFrame(() => {
+          previewRafId = 0;
+          const t = pendingPreviewSec;
+          pendingPreviewSec = null;
+          if (t == null) return;
+          flushPreviewSeek(t);
+        });
+      };
+
+      const videoEl = videoRef.current;
+      if (videoEl && !videoEl.paused) {
+        try {
+          wavesurferRef.current?.pause();
+        } catch {
+          /* ignore */
+        }
+        videoEl.pause();
+      }
+
+      const flushPendingPreviewSeek = () => {
+        if (previewRafId !== 0) {
+          cancelAnimationFrame(previewRafId);
+          previewRafId = 0;
+        }
+        if (pendingPreviewSec != null) {
+          flushPreviewSeek(pendingPreviewSec);
+          pendingPreviewSec = null;
+        }
+      };
+
+      /** Matches skip/play inset — keeps preview inside trim range for loop/clamp logic. */
+      const endPreviewSec = (startSec: number, endSec: number) =>
+        Math.max(startSec, endSec - 0.05);
+
       const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== e.pointerId) return;
         ev.preventDefault();
@@ -598,6 +665,7 @@ export default function TrimVideo() {
           endTimeRef.current = ne;
           setStartTime(ns);
           setEndTime(ne);
+          schedulePreviewSeek(ns);
         } else {
           const nextEnd = originEdgeTime + dt;
           const { start: ns, end: ne } = clampSelection(anchorStart, nextEnd, dur, b.minLen, b.maxLen);
@@ -606,16 +674,32 @@ export default function TrimVideo() {
           endTimeRef.current = ne;
           setStartTime(ns);
           setEndTime(ne);
+          schedulePreviewSeek(endPreviewSec(ns, ne));
         }
       };
 
       const onUp = (ev: PointerEvent) => {
         if (ev.pointerId !== e.pointerId) return;
+        if (edge === "start" || edge === "end") {
+          flushPendingPreviewSeek();
+        }
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
         persistSelection(startTimeRef.current, endTimeRef.current);
-        clampPlaybackToTrimRef.current();
+        if (edge === "start") {
+          clampPlaybackToTrimRef.current();
+        } else {
+          /** Generic clamp snaps to start when t >= end; skip that after end-handle preview settle. */
+          const v = videoRef.current;
+          const ws = wavesurferRef.current;
+          const s = startTimeRef.current;
+          let t = ws?.getCurrentTime() ?? v?.currentTime ?? 0;
+          if (!Number.isFinite(t) && v) t = v.currentTime;
+          if (t < s) {
+            clampPlaybackToTrimRef.current();
+          }
+        }
       };
 
       window.addEventListener("pointermove", onMove, { passive: false });
@@ -625,13 +709,12 @@ export default function TrimVideo() {
   }, [trimTimelineSeconds]);
 
   /**
-   * Drag entire selection (fixed length) — WaveSurfer region provides this when present;
-   * probe-only / iPhone path has no region, so the blue band must receive pointers.
+   * Drag entire selection (fixed length) via the visible light-DOM blue band.
+   * Syncs WaveSurfer region when present; probe-only path has no region.
    */
   const handleTrimWholeSelectionPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (activeTrimRegionRef.current) return;
 
     const waveEl = waveformRef.current;
     if (!waveEl) return;
@@ -668,6 +751,7 @@ export default function TrimVideo() {
         ns = Math.max(0, dur - span);
       }
       const { start: cs, end: ce } = clampSelection(ns, ne, dur, b.minLen, b.maxLen);
+      activeTrimRegionRef.current?.setOptions({ start: cs, end: ce });
       startTimeRef.current = cs;
       endTimeRef.current = ce;
       setStartTime(cs);
@@ -716,9 +800,10 @@ export default function TrimVideo() {
 
     const ws = WaveSurfer.create({
       container: waveformRef.current,
-      waveColor: "rgba(255,255,255,0.28)",
-      progressColor: "rgba(255,255,255,0.92)",
-      cursorColor: "rgba(255,255,255,0.65)",
+      waveColor: "rgba(255,255,255,0.38)",
+      progressColor: "rgba(255,255,255,0.95)",
+      cursorWidth: 0,
+      cursorColor: "transparent",
       barWidth: 2,
       barGap: 1,
       barRadius: 2,
@@ -934,7 +1019,6 @@ export default function TrimVideo() {
         }
         activeTrimRegionRef.current = null;
         applyInitialTrimStateAfterSetup();
-        setTrimLightDomWholeRangeDrag(true);
         dubhubVideoDebugLog("[DubHub][Trim]", "waveform-duration-invalid-using-media-probe", {
           probedSeconds: probed,
           wsGetDuration: dWs,
@@ -956,8 +1040,9 @@ export default function TrimVideo() {
       const region = wsRegions.addRegion({
         start: clamped.start,
         end: clamped.end,
-        color: TRIM_SELECTION_BLUE,
-        drag: true,
+        color: "transparent",
+        /** Whole-range drag uses the light-DOM blue band; region is visual/sync only. */
+        drag: false,
         /** Native shadow-DOM grips are unreliable to style; visible handles are light-DOM overlays. */
         resize: false,
         minLength: minLen > 0 ? minLen : 0.1,
@@ -967,7 +1052,6 @@ export default function TrimVideo() {
       activeTrimRegionRef.current = region;
       applyTrimRegionChrome(region, { delayedRepaint: true });
       applyInitialTrimStateAfterSetup();
-      setTrimLightDomWholeRangeDrag(false);
 
       region.on("update", () => {
         applyTrimRegionChrome(region);
@@ -1678,10 +1762,23 @@ export default function TrimVideo() {
   const clipSpan = Math.max(0, endTime - startTime);
   /** Denominator for handles + light-DOM trim strip; must not be WaveSurfer-only. */
   const effectiveTrimUiSec = Math.max(0, duration, trimTimelineSeconds);
+  const trimStartPct =
+    effectiveTrimUiSec > 0
+      ? Math.max(0, Math.min(100, (startTime / effectiveTrimUiSec) * 100))
+      : 0;
+  const trimEndPct =
+    effectiveTrimUiSec > 0
+      ? Math.max(0, Math.min(100, (endTime / effectiveTrimUiSec) * 100))
+      : 0;
+  const trimWidthPct = Math.max(0.45, Math.min(100, trimEndPct - trimStartPct));
+  const playheadPct =
+    effectiveTrimUiSec > 0
+      ? Math.max(0, Math.min(100, (currentTime / effectiveTrimUiSec) * 100))
+      : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black pt-[env(safe-area-inset-top,0px)]">
-      <div className="relative z-30 flex items-center justify-between border-b border-white/10 bg-zinc-950/90 px-4 py-3 backdrop-blur-md pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black pt-[env(safe-area-inset-top,0px)]">
+      <div className="relative z-50 isolate pointer-events-auto flex items-center justify-between border-b border-white/10 bg-zinc-950/90 px-4 py-3 backdrop-blur-md pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={handleBack} data-testid="button-back">
             <ArrowLeft className="w-5 h-5" />
@@ -1877,29 +1974,37 @@ export default function TrimVideo() {
         </div>
 
         {/* Shorter fade (less pt) + softer mid-stop so gradient does not veil the lower half of letterboxed landscape video. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/95 via-black/45 to-transparent pb-[calc(1rem+var(--app-bottom-nav-block))] pt-10">
-          <div className="pointer-events-auto space-y-3 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
-            <p className="text-center text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
-              Drag handles or blue range · {MIN_CLIP_DURATION_SECONDS}–{MAX_CLIP_DURATION_SECONDS}{" "}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/45 to-transparent pb-[calc(0.5rem+var(--app-bottom-nav-block))] pt-10">
+          <div className="pointer-events-none space-y-2 px-4 pb-0">
+            <p className="trim-editor-no-select pointer-events-none text-center text-[12px] text-white/55">
+              Drag handles or range to trim · {MIN_CLIP_DURATION_SECONDS}–{MAX_CLIP_DURATION_SECONDS}{" "}
               seconds
             </p>
-            <div className="flex items-center justify-between gap-2 text-xs text-white/90">
-              <span className="font-mono tabular-nums shrink-0" data-testid="text-current-time">
+            <div className="trim-editor-no-select pointer-events-none flex items-center justify-between gap-2 text-xs">
+              <span
+                className="shrink-0 font-mono tabular-nums text-white/90"
+                data-testid="text-current-time"
+              >
                 {formatTime(currentTime)}
               </span>
-              <span className="min-w-0 text-center font-medium">
-                <span className="text-white">{formatTime(startTime)}</span>
-                <span className="mx-1 text-white/35">·</span>
-                <span className="text-white">{formatTime(endTime)}</span>
-                <span className="ml-2 tabular-nums text-white/55">({clipSpan.toFixed(1)}s)</span>
+              <span className="flex min-w-0 items-center justify-center gap-1.5">
+                <span className="font-mono tabular-nums text-white/90">{formatTime(startTime)}</span>
+                <span className="text-white/35">→</span>
+                <span className="font-mono tabular-nums text-white/90">{formatTime(endTime)}</span>
+                <span className="inline-flex items-center rounded-full bg-[rgba(30,56,249,0.55)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white ring-1 ring-[rgba(255,255,255,0.12)]">
+                  {clipSpan.toFixed(1)}s
+                </span>
               </span>
-              <span className="font-mono tabular-nums shrink-0 text-white/60" data-testid="text-total-duration">
+              <span
+                className="shrink-0 font-mono tabular-nums text-white/90"
+                data-testid="text-total-duration"
+              >
                 {formatTime(effectiveTrimUiSec)}
               </span>
             </div>
 
-            <div className="relative mb-1 w-full min-h-[112px] select-none [-webkit-touch-callout:none]">
-              <div className="relative h-[112px] overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/90 shadow-inner backdrop-blur-sm">
+            <div className="trim-editor-no-select trim-editor-touch-none pointer-events-auto relative mb-0 w-full min-h-[112px] overflow-visible">
+              <div className="relative isolate h-[112px] overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_6px_28px_rgba(0,0,0,0.55)] ring-1 ring-white/[0.05]">
                 <div
                   ref={waveformRef}
                   className={cn(
@@ -1915,82 +2020,92 @@ export default function TrimVideo() {
                     peaks={fallbackBarPeaks}
                     durationSec={effectiveTrimUiSec}
                     currentTimeSec={currentTime}
+                    selectionStartPct={trimStartPct}
+                    selectionWidthPct={trimWidthPct}
                   />
                 ) : null}
                 {effectiveTrimUiSec > 0 ? (
-                  <div
-                    className="pointer-events-none absolute inset-0 z-[15]"
-                    data-testid="trim-visual-overlay"
-                    aria-hidden
-                  >
-                    <div className="absolute inset-x-1 inset-y-2 rounded-md bg-white/[0.08]" />
+                  <div className="pointer-events-none absolute inset-0 z-[10] overflow-hidden rounded-2xl">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-black/32"
+                      style={{ width: `${trimStartPct}%` }}
+                      aria-hidden
+                    />
+                    <div
+                      className="absolute inset-y-0 bg-black/32"
+                      style={{ left: `${trimEndPct}%`, right: 0 }}
+                      aria-hidden
+                    />
                     <div
                       role="presentation"
                       data-testid="trim-range-body"
                       className={cn(
-                        "absolute inset-y-2 rounded-md bg-[rgba(30,56,249,0.5)] ring-1 ring-white/30 [-webkit-touch-callout:none]",
-                        trimLightDomWholeRangeDrag
-                          ? "pointer-events-auto cursor-grab touch-none active:cursor-grabbing"
-                          : "pointer-events-none",
+                        "pointer-events-auto absolute inset-y-0 cursor-grab touch-none bg-[rgba(30,56,249,0.5)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.32),inset_0_1px_20px_rgba(255,255,255,0.1)] active:cursor-grabbing [-webkit-touch-callout:none]",
+                        "rounded-l-[10px] rounded-r-[10px]",
+                        trimStartPct < 0.5 && "rounded-l-2xl",
+                        trimEndPct > 99.5 && "rounded-r-2xl",
                       )}
                       style={{
-                        left: `${Math.max(0, Math.min(100, (startTime / effectiveTrimUiSec) * 100))}%`,
-                        width: `${Math.max(
-                          0.45,
-                          Math.min(
-                            100,
-                            ((endTime - startTime) / effectiveTrimUiSec) * 100,
-                          ),
-                        )}%`,
+                        left: `${trimStartPct}%`,
+                        width: `${trimWidthPct}%`,
                       }}
-                      onPointerDown={
-                        trimLightDomWholeRangeDrag
-                          ? handleTrimWholeSelectionPointerDown
-                          : undefined
-                      }
+                      onPointerDown={handleTrimWholeSelectionPointerDown}
+                    />
+                    <div
+                      className="pointer-events-none absolute inset-y-0 mix-blend-screen opacity-50"
+                      style={{
+                        left: `${trimStartPct}%`,
+                        width: `${trimWidthPct}%`,
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, transparent 45%, rgba(255,255,255,0.06) 100%)",
+                      }}
+                      aria-hidden
                     />
                   </div>
                 ) : null}
+                {effectiveTrimUiSec > 0 ? (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 z-[55] w-[2px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.9),0_0_12px_rgba(30,56,249,0.35)]"
+                    style={{
+                      left: `clamp(1px, ${playheadPct}%, calc(100% - 1px))`,
+                    }}
+                    aria-hidden
+                  />
+                ) : null}
               </div>
               {effectiveTrimUiSec > 0 ? (
-                <>
+                <div className="pointer-events-none absolute inset-0 z-[40] overflow-visible">
                   <div
                     role="slider"
                     aria-label="Trim clip start"
                     data-testid="trim-handle-start"
-                    className="pointer-events-auto absolute top-0 z-[60] flex h-[112px] w-11 -translate-x-1/2 touch-none cursor-ew-resize items-center justify-center"
-                    style={{
-                      left: `${Math.max(0, Math.min(100, (startTime / effectiveTrimUiSec) * 100))}%`,
-                    }}
+                    className="pointer-events-auto absolute inset-y-0 flex w-11 -translate-x-1/2 touch-none cursor-ew-resize items-center justify-center"
+                    style={{ left: `${trimStartPct}%` }}
                     onPointerDown={handleTrimEdgePointerDown("start")}
                   >
                     <div
-                      className="h-[98px] w-5 shrink-0 rounded-md border-2 border-white/90 bg-white/95"
-                      style={{
-                        boxShadow: `0 0 0 2px ${TRIM_HANDLE_BLUE}, 0 3px 14px rgba(0,0,0,0.48)`,
-                      }}
+                      className="relative h-[76px] w-[11px] shrink-0 rounded-md bg-white shadow-[inset_0_0_0_1px_rgba(30,56,249,0.6),0_0_12px_rgba(30,56,249,0.4)]"
                       aria-hidden
-                    />
+                    >
+                      <div className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 bg-zinc-400/80" />
+                    </div>
                   </div>
                   <div
                     role="slider"
                     aria-label="Trim clip end"
                     data-testid="trim-handle-end"
-                    className="pointer-events-auto absolute top-0 z-[60] flex h-[112px] w-11 -translate-x-1/2 touch-none cursor-ew-resize items-center justify-center"
-                    style={{
-                      left: `${Math.max(0, Math.min(100, (endTime / effectiveTrimUiSec) * 100))}%`,
-                    }}
+                    className="pointer-events-auto absolute inset-y-0 flex w-11 -translate-x-1/2 touch-none cursor-ew-resize items-center justify-center"
+                    style={{ left: `${trimEndPct}%` }}
                     onPointerDown={handleTrimEdgePointerDown("end")}
                   >
                     <div
-                      className="h-[98px] w-5 shrink-0 rounded-md border-2 border-white/90 bg-white/95"
-                      style={{
-                        boxShadow: `0 0 0 2px ${TRIM_HANDLE_BLUE}, 0 3px 14px rgba(0,0,0,0.48)`,
-                      }}
+                      className="relative h-[76px] w-[11px] shrink-0 rounded-md bg-white shadow-[inset_0_0_0_1px_rgba(30,56,249,0.6),0_0_12px_rgba(30,56,249,0.4)]"
                       aria-hidden
-                    />
+                    >
+                      <div className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 bg-zinc-400/80" />
+                    </div>
                   </div>
-                </>
+                </div>
               ) : null}
             </div>
           </div>
@@ -2000,7 +2115,7 @@ export default function TrimVideo() {
       <TrimNativePassthroughToggle />
 
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent overlayClassName="z-[70]" className="z-[70]">
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel posting?</AlertDialogTitle>
             <AlertDialogDescription>

@@ -54,6 +54,7 @@ export function evaluatePushPreferenceGate(
       break;
     case "release_attached_to_liked_or_uploaded_post":
     case "release_day_out_today":
+    case "release_announce":
       if (!prefs.releaseUpdatesPush) {
         return {
           allowed: false,
@@ -63,6 +64,9 @@ export function evaluatePushPreferenceGate(
       }
       break;
     case "artist_identified_post":
+    case "collab_invite":
+    case "collab_accept":
+    case "collab_reject":
     case "moderator_community_verification_pending":
     case "moderator_report_opened":
       break;

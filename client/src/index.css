@@ -297,4 +297,16 @@ html.theme-transitioning .bg-surface {
     margin-right: auto;
     text-align: start;
   }
+
+  /** Trim editor — prevent iOS text selection / callout during handle & range gestures. */
+  .trim-editor-no-select,
+  .trim-editor-no-select * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .trim-editor-touch-none {
+    touch-action: none;
+  }
 }

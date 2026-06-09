@@ -3026,7 +3026,7 @@ export class DatabaseStorage implements IStorage {
       for (const row of recipientRows) {
         const recipientId = row.user_id;
         if (!recipientId) continue;
-        await this.createNotification({
+        const notif = await this.createNotification({
           artistId: recipientId,
           triggeredBy: artistId,
           postId: firstPostId,
@@ -3034,6 +3034,17 @@ export class DatabaseStorage implements IStorage {
           message,
           notificationType: "release_announce",
         });
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(recipientId, {
+            type: "release_announce",
+            notificationId: notif.id,
+            releaseId,
+            artistId,
+            artistUsername,
+            releaseTitle,
+            postId: firstPostId,
+          }),
+        );
       }
       await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
       return true;
@@ -3341,13 +3352,26 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
       const ownerProfile = await this.getUser(ownerId);
       const ownerUsername = ownerProfile?.username ?? "Artist";
-      await this.createNotification({
+      const releaseTitle = release.title ?? "Release";
+      const notif = await this.createNotification({
         artistId,
         triggeredBy: ownerId,
         releaseId,
-        message: `@${ownerUsername} invited you as a collaborator on ${release.title}. Accept or reject.`,
+        message: `@${ownerUsername} invited you as a collaborator on ${releaseTitle}. Accept or reject.`,
         notificationType: "collab_invite",
       } as any);
+      if (artistId !== ownerId) {
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(artistId, {
+            type: "collab_invite",
+            notificationId: notif.id,
+            releaseId,
+            actorUserId: ownerId,
+            actorUsername: ownerUsername,
+            releaseTitle,
+          }),
+        );
+      }
       return { ok: true };
     } catch (error) {
       console.error("[inviteCollaborator] Error:", error);
@@ -3367,6 +3391,7 @@ export class DatabaseStorage implements IStorage {
       if (uniqueIds.length > 4) return { ok: false, error: "Maximum 4 collaborators per release", code: "MAX_COLLABORATORS" };
       const ownerProfile = await this.getUser(ownerId);
       const ownerUsername = ownerProfile?.username ?? "Artist";
+      const releaseTitle = release.title ?? "Release";
       for (const artistId of uniqueIds) {
         const artist = await this.getUser(artistId);
         if (!artist || artist.account_type !== "artist" || !artist.verified_artist) continue;
@@ -3375,13 +3400,23 @@ export class DatabaseStorage implements IStorage {
           INSERT INTO release_collaborators (release_id, artist_id, status, invited_by, invited_at)
           VALUES (${releaseId}, ${artistId}, 'PENDING', ${ownerId}, NOW())
         `);
-        await this.createNotification({
+        const notif = await this.createNotification({
           artistId,
           triggeredBy: ownerId,
           releaseId,
-          message: `@${ownerUsername} invited you as a collaborator on ${release.title}. Accept or reject.`,
+          message: `@${ownerUsername} invited you as a collaborator on ${releaseTitle}. Accept or reject.`,
           notificationType: "collab_invite",
         } as any);
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(artistId, {
+            type: "collab_invite",
+            notificationId: notif.id,
+            releaseId,
+            actorUserId: ownerId,
+            actorUsername: ownerUsername,
+            releaseTitle,
+          }),
+        );
       }
       await db.execute(sql`UPDATE releases SET is_public = false WHERE id = ${releaseId}`);
       return { ok: true };
@@ -3440,14 +3475,25 @@ export class DatabaseStorage implements IStorage {
       const release = await this.getRelease(releaseId);
       if (release?.artistId && release.artistId !== artistId) {
         const collabUsername = artist.username ?? "Artist";
-        await this.createNotification({
+        const releaseTitle = release.title ?? "Release";
+        const notif = await this.createNotification({
           artistId: release.artistId,
           triggeredBy: artistId,
           postId: null,
           releaseId,
-          message: `@${collabUsername} accepted your collaboration invite for ${release.title}`,
+          message: `@${collabUsername} accepted your collaboration invite for ${releaseTitle}`,
           notificationType: "collab_accept",
         } as any);
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(release.artistId, {
+            type: "collab_accept",
+            notificationId: notif.id,
+            releaseId,
+            actorUserId: artistId,
+            actorUsername: collabUsername,
+            releaseTitle,
+          }),
+        );
       }
       return true;
     } catch (error) {
@@ -3471,14 +3517,25 @@ export class DatabaseStorage implements IStorage {
       const release = await this.getRelease(releaseId);
       if (release?.artistId && release.artistId !== artistId) {
         const collabUsername = artist.username ?? "Artist";
-        await this.createNotification({
+        const releaseTitle = release.title ?? "Release";
+        const notif = await this.createNotification({
           artistId: release.artistId,
           triggeredBy: artistId,
           postId: null,
           releaseId,
-          message: `@${collabUsername} rejected your collaboration invite for ${release.title}`,
+          message: `@${collabUsername} rejected your collaboration invite for ${releaseTitle}`,
           notificationType: "collab_reject",
         } as any);
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(release.artistId, {
+            type: "collab_reject",
+            notificationId: notif.id,
+            releaseId,
+            actorUserId: artistId,
+            actorUsername: collabUsername,
+            releaseTitle,
+          }),
+        );
       }
       return true;
     } catch (error) {

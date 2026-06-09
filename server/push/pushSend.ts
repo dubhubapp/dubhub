@@ -14,6 +14,10 @@ type PushEventName =
   | "artist_identified_post"
   | "release_attached_to_liked_or_uploaded_post"
   | "release_day_out_today"
+  | "release_announce"
+  | "collab_invite"
+  | "collab_accept"
+  | "collab_reject"
   | "moderator_community_verification_pending"
   | "moderator_report_opened";
 
@@ -72,6 +76,25 @@ interface ReleaseDayOutPayload extends BaseEventPayload {
   collaboratorUsernames?: string[];
 }
 
+interface CollabWorkflowPayload extends BaseEventPayload {
+  type: "collab_invite" | "collab_accept" | "collab_reject";
+  notificationId: string;
+  releaseId: string;
+  actorUserId: string;
+  actorUsername: string;
+  releaseTitle: string;
+}
+
+interface ReleaseAnnouncePayload extends BaseEventPayload {
+  type: "release_announce";
+  notificationId: string;
+  releaseId: string;
+  artistId: string;
+  artistUsername: string;
+  releaseTitle: string;
+  postId?: string | null;
+}
+
 interface ModeratorCommunityVerificationPayload extends BaseEventPayload {
   type: "moderator_community_verification_pending";
   postId: string;
@@ -93,6 +116,8 @@ type EventPayload =
   | ArtistIdentifiedPayload
   | ReleaseAttachedPayload
   | ReleaseDayOutPayload
+  | ReleaseAnnouncePayload
+  | CollabWorkflowPayload
   | ModeratorCommunityVerificationPayload
   | ModeratorReportOpenedPayload;
 
@@ -144,6 +169,38 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       return {
         title: "Out today 🎧",
         body,
+      };
+    }
+    case "release_announce": {
+      const artist = toMention(payload.artistUsername) ?? "Artist";
+      const title = payload.releaseTitle.trim() || "Release";
+      return {
+        title: "Release announced 📣",
+        body: `${artist} announced ${title}.`,
+      };
+    }
+    case "collab_invite": {
+      const actor = toMention(payload.actorUsername) ?? "Someone";
+      const title = payload.releaseTitle.trim() || "a release";
+      return {
+        title: "Collaboration invite 🤝",
+        body: `${actor} invited you to collaborate on ${title}.`,
+      };
+    }
+    case "collab_accept": {
+      const actor = toMention(payload.actorUsername) ?? "Someone";
+      const title = payload.releaseTitle.trim() || "your release";
+      return {
+        title: "Collaboration accepted ✅",
+        body: `${actor} accepted your collaboration invite for ${title}.`,
+      };
+    }
+    case "collab_reject": {
+      const actor = toMention(payload.actorUsername) ?? "Someone";
+      const title = payload.releaseTitle.trim() || "your release";
+      return {
+        title: "Collaboration declined",
+        body: `${actor} declined your collaboration invite for ${title}.`,
       };
     }
     case "moderator_community_verification_pending":
