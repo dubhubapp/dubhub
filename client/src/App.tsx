@@ -13,6 +13,7 @@ import { ReleaseDropDayBanner } from "@/components/release-drop-day-banner";
 import { InAppNotificationBannerHost } from "@/components/in-app-notification-banner";
 import { PasswordRecoveryRedirect } from "@/components/auth/PasswordRecoveryRedirect";
 import { supabase } from "@/lib/supabaseClient";
+import { clearRecentMentionUsersForUser } from "@/lib/comment-mention-recent";
 
 import Home from "@/pages/home";
 import Submit from "@/pages/submit";
@@ -582,6 +583,11 @@ function App() {
     void deactivateCurrentPushToken();
     resetSilentPushRegistrationSession();
 
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const signingOutUserId = session?.user?.id ?? null;
+
     // Sign out from Supabase
     await supabase.auth.signOut();
     queryClient.clear();
@@ -593,6 +599,7 @@ function App() {
     localStorage.removeItem('dubhub-display-name');
     localStorage.removeItem('userRole');
     localStorage.removeItem('dubhub-signup-role');
+    clearRecentMentionUsersForUser(signingOutUserId);
 
     // Keep device-level preferences (e.g. theme) intact across logout/login.
     sessionStorage.clear();

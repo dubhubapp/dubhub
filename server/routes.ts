@@ -5,6 +5,7 @@ import { registerPostSharePreviewRoutes } from "./postSharePreview";
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { extractMentionUsernames } from "@shared/mentionParsing";
 import {
   MAX_CLIP_DURATION_SECONDS,
   MAX_VIDEO_UPLOAD_BYTES,
@@ -491,15 +492,7 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
 
 // Helper function to detect artist mentions in comment text
 function detectArtistMentions(text: string): string[] {
-  const mentionRegex = /@([a-zA-Z0-9_]+)/g;
-  const mentions: string[] = [];
-  let match;
-  
-  while ((match = mentionRegex.exec(text)) !== null) {
-    mentions.push(match[1]); // Get the name without @
-  }
-  
-  return mentions;
+  return extractMentionUsernames(text);
 }
 
   // Helper: process @mentions, create artist_video_tags, return list of tagged artist ids for notifications

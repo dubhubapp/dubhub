@@ -13,6 +13,7 @@ import { useUser } from "@/lib/user-context";
 import { formatDate } from "@/pages/release-tracker";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { commentMentionsUsername } from "@shared/mentionParsing";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
@@ -241,8 +242,6 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
   const oldestCommentId = sortedComments[0]?.id ?? null;
   const reviewingArtistId = currentUser?.id ?? null;
   const reviewingArtistUsername = currentUser?.username ?? null;
-  const escapeRegExp = (value: string) =>
-    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const getTaggedArtistIdFromComment = (comment: CommentWithUser) => {
     const taggedArtistId = (comment as any)?.taggedArtist?.id as string | undefined;
     const artistTagId = (comment as any)?.artistTag as string | undefined;
@@ -257,8 +256,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     // Fallback: detect @username in the comment body.
     // This keeps "First Tag" robust even if the backend doesn't populate tagged-artist objects.
     if (reviewingArtistUsername && typeof comment.body === "string") {
-      const re = new RegExp(`@${escapeRegExp(reviewingArtistUsername)}\\b`, "i");
-      return re.test(comment.body);
+      return commentMentionsUsername(comment.body, reviewingArtistUsername);
     }
 
     return false;
