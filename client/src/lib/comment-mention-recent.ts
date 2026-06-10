@@ -54,7 +54,7 @@ export function writeRecentMentionUser(
   try {
     const normalized: RecentMentionUser = {
       userId: user.userId,
-      username: user.username.trim().toLowerCase(),
+      username: user.username.trim(),
       avatar_url: user.avatar_url ?? null,
       verified_artist: user.verified_artist === true,
       lastUsedAt: Date.now(),
