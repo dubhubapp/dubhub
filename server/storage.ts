@@ -656,7 +656,41 @@ export class DatabaseStorage implements IStorage {
                    WHERE avt.post_id = p.id AND avt.artist_id = ${currentUserId}
                  )`
               : sql`false`
-          } AS current_user_tagged_as_artist
+          } AS current_user_tagged_as_artist,
+          (SELECT r.id FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_id,
+          (SELECT r.title FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_title,
+          (SELECT r.artwork_url FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_artwork_url,
+          (SELECT r.release_date FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_release_date,
+          (SELECT pr2.username FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           JOIN profiles pr2 ON pr2.id = r.artist_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_owner_username,
+          (SELECT r.artist_id FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_owner_artist_id,
+          (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
+           FROM release_collaborators rc2
+           JOIN profiles pc ON pc.id = rc2.artist_id
+           WHERE rc2.release_id = (SELECT rp.release_id FROM release_posts rp JOIN releases r ON r.id = rp.release_id WHERE rp.post_id = p.id AND r.is_public = true LIMIT 1)
+           AND rc2.status = 'ACCEPTED') AS rel_collaborators,
+          (SELECT r.is_coming_soon FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true
+           LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -711,6 +745,20 @@ export class DatabaseStorage implements IStorage {
           verified_artist: row.profile_verified_artist,
           moderator: row.profile_moderator,
         },
+        releasePreview: row.rel_id
+          ? {
+              id: row.rel_id,
+              title: row.rel_title,
+              artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
+              releaseDate: row.rel_release_date ?? null,
+              isComingSoon: row.rel_is_coming_soon ?? false,
+              ownerUsername: row.rel_owner_username,
+              ownerArtistId: row.rel_owner_artist_id ?? null,
+              collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
+                .filter((c: any) => c && c.username)
+                .map((c: any) => ({ username: c.username, status: c.status || "ACCEPTED" })),
+            }
+          : null,
       };
     } catch (error) {
       console.error("[getPost] Error:", error);

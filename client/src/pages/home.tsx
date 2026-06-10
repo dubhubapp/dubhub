@@ -513,6 +513,62 @@ type DeepLinkMergeOutcome = {
   changed: boolean;
 };
 
+type PostReleasePreview = NonNullable<PostWithUser["releasePreview"]>;
+
+/** Keep a cached releasePreview when the deep-link fetch omits it. */
+function mergeDeepLinkPostPreservingReleasePreview(
+  fullPost: PostWithUser,
+  pages: unknown[],
+): PostWithUser {
+  const cached = pages
+    .flatMap((page) => feedPageRowItems(page))
+    .find((p) => p.id === fullPost.id);
+  const cachedPreview = cached?.releasePreview;
+  if (cachedPreview && !fullPost.releasePreview) {
+    return { ...fullPost, releasePreview: cachedPreview };
+  }
+  return fullPost;
+}
+
+function patchReleasePreviewOnCachedPost(
+  post: PostWithUser,
+  postId: string,
+  incomingPreview: PostReleasePreview | null | undefined,
+): PostWithUser {
+  if (post.id !== postId || !incomingPreview || post.releasePreview) return post;
+  return { ...post, releasePreview: incomingPreview };
+}
+
+function patchReleasePreviewInPage(
+  page: unknown,
+  postId: string,
+  incomingPreview: PostReleasePreview | null | undefined,
+): { page: unknown; changed: boolean } {
+  if (Array.isArray(page)) {
+    const arr = feedPageRowItems(page);
+    let changed = false;
+    const nextArr = arr.map((p) => {
+      const next = patchReleasePreviewOnCachedPost(p, postId, incomingPreview);
+      if (next !== p) changed = true;
+      return next;
+    });
+    return { page: changed ? nextArr : page, changed };
+  }
+  if (page && typeof page === "object") {
+    const fp = page as FeedPage;
+    const items = Array.isArray(fp.items) ? fp.items : [];
+    let changed = false;
+    const nextItems = items.map((p) => {
+      const next = patchReleasePreviewOnCachedPost(p, postId, incomingPreview);
+      if (next !== p) changed = true;
+      return next;
+    });
+    if (!changed) return { page, changed: false };
+    return { page: { ...fp, items: nextItems }, changed: true };
+  }
+  return { page, changed: false };
+}
+
 /**
  * Merge a single post into TanStack infinite-query cache safely. Handles mixed page shapes and
  * avoids spreading non-iterables (fixes Safari "Spread syntax requires ...iterable" crashes).
@@ -545,11 +601,37 @@ function mergeFullPostIntoPostsCache(old: unknown, fullPost: PostWithUser): Deep
     feedPageRowItems(page).some((p) => p.id === fullPost.id),
   );
   if (alreadyInPages) {
+    const incomingPreview = fullPost.releasePreview;
+    if (!incomingPreview) {
+      return { next: old, branch: "already-present-noop", changed: false };
+    }
+    let previewPatched = false;
+    const newPages = pages.map((page) => {
+      const { page: nextPage, changed } = patchReleasePreviewInPage(
+        page,
+        fullPost.id,
+        incomingPreview,
+      );
+      if (changed) previewPatched = true;
+      return nextPage;
+    });
+    if (previewPatched) {
+      return {
+        next: {
+          ...o,
+          pages: newPages,
+        },
+        branch: "already-present-release-preview-patch",
+        changed: true,
+      };
+    }
     return { next: old, branch: "already-present-noop", changed: false };
   }
 
+  const mergedPost = mergeDeepLinkPostPreservingReleasePreview(fullPost, pages);
+
   if (pages.length === 0) {
-    const newPages: FeedPage[] = [{ items: [fullPost], hasMore: false, nextCursor: null }];
+    const newPages: FeedPage[] = [{ items: [mergedPost], hasMore: false, nextCursor: null }];
     return {
       next: {
         ...o,
@@ -566,7 +648,7 @@ function mergeFullPostIntoPostsCache(old: unknown, fullPost: PostWithUser): Deep
   if (Array.isArray(first)) {
     const arr = feedPageRowItems(first);
     const nextFirst: FeedPage = {
-      items: [fullPost, ...arr],
+      items: [mergedPost, ...arr],
       hasMore: false,
       nextCursor: null,
     };
@@ -588,7 +670,7 @@ function mergeFullPostIntoPostsCache(old: unknown, fullPost: PostWithUser): Deep
     const safeItems = Array.isArray(rawItems) ? rawItems : [];
     const nextFirst: FeedPage = {
       ...fp,
-      items: [fullPost, ...safeItems],
+      items: [mergedPost, ...safeItems],
     };
     const newPages = [nextFirst, ...pages.slice(1)];
     return {
