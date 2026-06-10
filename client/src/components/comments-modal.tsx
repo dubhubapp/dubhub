@@ -6,7 +6,8 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
-import { parseCommentMentionSegments } from "@shared/mentionParsing";
+import { commentMentionsUsername } from "@shared/mentionParsing";
+import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
 import {
   DELETED_COMMENT_BODY,
   DELETED_COMMENT_DISPLAY,
@@ -394,47 +395,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     return `${Math.floor(diffInMinutes / 1440)}d ago`;
   };
 
-  // Function to highlight artist mentions in comment text
-  const highlightArtistMentions = (text: string, tagStatus?: "pending" | "confirmed" | "denied") => {
-    return parseCommentMentionSegments(text).map((segment, index) => {
-      if (segment.type === "text") {
-        return segment.value;
-      }
-
-      const username = segment.username;
-      const isVerifiedArtist = verifiedArtists.some(
-        (artist: any) => artist.username?.toLowerCase() === username.toLowerCase(),
-      );
-
-      let className = isVerifiedArtist
-        ? "text-yellow-500 font-medium cursor-pointer hover:underline" // Gold for verified artists
-        : "text-[#4ae9df] font-medium cursor-pointer hover:underline"; // Blue for regular users
-
-      if (tagStatus === "confirmed") {
-        className =
-          "text-green-600 font-medium bg-green-50 px-1 rounded cursor-pointer hover:underline dark:bg-green-950/55 dark:text-green-400";
-      } else if (tagStatus === "denied") {
-        className = "text-gray-400 font-medium line-through dark:text-white/45";
-      }
-
-      return (
-        <span
-          key={index}
-          className={className}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openByUsername(username, {
-              anchor: { x: e.clientX, y: e.clientY },
-            });
-          }}
-        >
-          {segment.display}
-        </span>
-      );
-    });
-  };
-
   const REPLY_BATCH_SIZE = 3;
   // Per-parent-thread visible reply count (0 = collapsed)
   const [visibleReplyCountByParent, setVisibleReplyCountByParent] = useState<Record<string, number>>({});
@@ -741,6 +701,86 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     enabled: isOpen,
   });
 
+  const { data: apiCurrentUser } = useQuery({
+    queryKey: ["/api/user/current"],
+    enabled: isOpen,
+  });
+
+  const isViewerVerifiedArtist = useMemo(
+    () =>
+      verifiedArtist ||
+      (contextUser?.account_type === "artist" && contextUser?.verified_artist === true) ||
+      (apiCurrentUser as { verified_artist?: boolean } | null | undefined)?.verified_artist === true,
+    [verifiedArtist, contextUser?.account_type, contextUser?.verified_artist, apiCurrentUser],
+  );
+
+  const selfUsernameCandidates = useMemo(() => {
+    const candidates = [
+      contextUsername,
+      contextUser?.username,
+      (apiCurrentUser as { username?: string } | null | undefined)?.username,
+    ];
+    const normalized = new Set<string>();
+    for (const candidate of candidates) {
+      const value = candidate?.trim().toLowerCase();
+      if (value) normalized.add(value);
+    }
+    return normalized;
+  }, [contextUsername, contextUser?.username, apiCurrentUser]);
+
+  const selfVerifiedArtistUsername = useMemo(() => {
+    if (!isViewerVerifiedArtist || selfUsernameCandidates.size === 0) return null;
+    return selfUsernameCandidates.values().next().value ?? null;
+  }, [isViewerVerifiedArtist, selfUsernameCandidates]);
+
+  const verifiedArtistUsernameSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const artist of verifiedArtists) {
+      const normalized = artist.username?.trim().toLowerCase();
+      if (normalized) set.add(normalized);
+    }
+    if (selfVerifiedArtistUsername) {
+      set.add(selfVerifiedArtistUsername);
+    }
+    const addVerifiedParticipant = (user: CommentWithUser["user"] | PostWithUser["user"] | undefined) => {
+      if (user?.verified_artist && user.username?.trim()) {
+        set.add(user.username.trim().toLowerCase());
+      }
+    };
+    addVerifiedParticipant(post.user);
+    const walkComments = (items: CommentWithUser[]) => {
+      for (const comment of items) {
+        addVerifiedParticipant(comment.user);
+        if (comment.replies?.length) walkComments(comment.replies);
+      }
+    };
+    walkComments(comments);
+    return set;
+  }, [verifiedArtists, selfVerifiedArtistUsername, post.user, comments]);
+
+  const isVerifiedArtistUsername = useCallback(
+    (username: string) => {
+      const normalized = username.trim().toLowerCase();
+      if (!normalized) return false;
+      if (isViewerVerifiedArtist && selfUsernameCandidates.has(normalized)) return true;
+      return verifiedArtistUsernameSet.has(normalized);
+    },
+    [isViewerVerifiedArtist, selfUsernameCandidates, verifiedArtistUsernameSet],
+  );
+
+  const highlightArtistMentions = useCallback(
+    (text: string, tagStatus?: "pending" | "confirmed" | "denied") =>
+      renderCommentMentionNodes(text, isVerifiedArtistUsername, {
+        tagStatus,
+        onMentionClick: (username, e) => {
+          openByUsername(username, {
+            anchor: { x: e.clientX, y: e.clientY },
+          });
+        },
+      }),
+    [isVerifiedArtistUsername, openByUsername],
+  );
+
   // Note: karma display has been removed from the comments UI to avoid stray numeric artifacts near names.
 
   // Handle comment input changes and @mention detection
@@ -777,8 +817,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     const mentionStart = currentMentionStart;
     const mentionEnd = mentionQueryEndRef.current;
     if (mentionStart !== -1) {
-      const canonicalUsername = suggestion.username.trim().toLowerCase();
-      const insertion = `@${canonicalUsername} `;
+      const insertion = `@${suggestion.username.trim()} `;
       const beforeMention = newComment.substring(0, mentionStart);
       const afterMention = newComment.substring(mentionEnd);
       const newValue = `${beforeMention}${insertion}${afterMention}`;
@@ -810,12 +849,6 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     setCurrentMentionStart(-1);
   };
 
-  // Get current user for profile picture
-  const { data: currentUser } = useQuery({
-    queryKey: ["/api/user/current"],
-    enabled: isOpen,
-  });
-
   const shouldPinCurrentArtistInMentions = userType === "artist" && verifiedArtist && !!contextUsername;
   const normalizedContextUsername = (contextUsername ?? "").toLowerCase();
 
@@ -846,6 +879,45 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     return Array.from(byId.values());
   }, [post.user, comments]);
 
+  const [debouncedMentionQuery, setDebouncedMentionQuery] = useState("");
+
+  useEffect(() => {
+    if (!showArtistDropdown) {
+      setDebouncedMentionQuery("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDebouncedMentionQuery(artistSearchTerm);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [artistSearchTerm, showArtistDropdown]);
+
+  const trimmedDebouncedMentionQuery = debouncedMentionQuery.trim();
+  const shouldFetchGlobalMentionSearch =
+    isOpen &&
+    showArtistDropdown &&
+    trimmedDebouncedMentionQuery.length >= 2 &&
+    isValidMentionQuery(trimmedDebouncedMentionQuery);
+
+  const { data: globalMentionSearchUsers = [] } = useQuery<
+    {
+      id: string;
+      username: string;
+      avatar_url?: string | null;
+      verified_artist?: boolean;
+    }[]
+  >({
+    queryKey: ["/api/users/search", trimmedDebouncedMentionQuery],
+    queryFn: async () => {
+      const q = encodeURIComponent(trimmedDebouncedMentionQuery);
+      const res = await apiRequest("GET", `/api/users/search?q=${q}&limit=10`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: shouldFetchGlobalMentionSearch,
+    staleTime: 30_000,
+  });
+
   const mentionSuggestions = useMemo(() => {
     if (!showArtistDropdown) return [];
     return buildMentionSuggestions({
@@ -853,6 +925,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       verifiedArtists,
       recentMentionUsers: readRecentMentionUsers(contextUser?.id),
       threadParticipants,
+      globalSearchResults: shouldFetchGlobalMentionSearch ? globalMentionSearchUsers : [],
       currentUserId: contextUser?.id,
       pinSelfArtist: shouldPinCurrentArtistInMentions,
       selfUsername: contextUsername,
@@ -862,6 +935,8 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     artistSearchTerm,
     verifiedArtists,
     threadParticipants,
+    shouldFetchGlobalMentionSearch,
+    globalMentionSearchUsers,
     contextUser?.id,
     shouldPinCurrentArtistInMentions,
     contextUsername,
@@ -891,7 +966,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           id: contextUser?.id ?? data.user_id,
           username: contextUsername ?? "You",
           avatar_url: userProfileImage ?? null,
-          account_type: currentUser?.userType === "artist" ? "artist" : "user",
+          account_type: userType === "artist" ? "artist" : "user",
           verified_artist: verifiedArtist,
           moderator: isModerator,
         } as CommentWithUser["user"],
@@ -950,14 +1025,30 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         scrollToPostedComment(data.id, { isReply: false });
       }
       const nextComments = Number((post as any).comments ?? post.comments ?? 0) + 1;
+      const isVerifiedArtistSelfTag =
+        verifiedArtist &&
+        !!contextUsername &&
+        commentMentionsUsername(variables.content, contextUsername);
+
+      const patchFeedPost = (p: PostWithUser): PostWithUser => {
+        if (p.id !== post.id) return p;
+        const next: PostWithUser & { current_user_tagged_as_artist?: boolean } = {
+          ...p,
+          comments: nextComments,
+        };
+        if (isVerifiedArtistSelfTag) {
+          next.currentUserTaggedAsArtist = true;
+          next.current_user_tagged_as_artist = true;
+        }
+        return next;
+      };
+
       queryClient.setQueriesData(
         { queryKey: ["/api/posts"], exact: false },
         (old: unknown) => {
           if (!old) return old;
           if (Array.isArray(old)) {
-            return (old as PostWithUser[]).map((p) =>
-              p.id === post.id ? { ...p, comments: nextComments } : p,
-            );
+            return (old as PostWithUser[]).map(patchFeedPost);
           }
           if (typeof old === "object" && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
             const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
@@ -966,9 +1057,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
               pages: paged.pages.map((page) => ({
                 ...page,
                 items: Array.isArray(page.items)
-                  ? page.items.map((p) =>
-                      p.id === post.id ? { ...p, comments: nextComments } : p,
-                    )
+                  ? page.items.map(patchFeedPost)
                   : page.items,
               })),
             };
@@ -1852,7 +1941,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       e.preventDefault();
                     }}
                     onClick={() => handleMentionSelect(suggestion)}
-                    className="flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left hover:bg-gray-50 last:border-b-0 dark:border-border dark:hover:bg-muted"
+                    className={`flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left last:border-b-0 dark:border-border ${
+                      isPinnedCurrentArtist
+                        ? "border-l-2 border-l-[#FFD700]/70 bg-amber-50/90 hover:bg-amber-100/90 dark:border-l-[#FFD700]/60 dark:bg-amber-950/40 dark:hover:bg-amber-950/55"
+                        : "hover:bg-gray-50 dark:hover:bg-muted"
+                    }`}
                     data-testid={`mention-option-${suggestion.userId}`}
                   >
                     <img
@@ -1860,26 +1953,35 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
                       alt={formatUsernameDisplay(suggestion.username) || suggestion.username || ""}
                       className={`avatar-media w-8 h-8 rounded-full ${isDefaultAvatarUrl(avatarSrc) ? "avatar-default-media" : ""}`}
                     />
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2">
                         <span
                           className={`text-sm font-medium ${
                             isVerifiedArtistSuggestion
-                              ? "text-yellow-600"
-                              : "text-[#4ae9df]"
+                              ? "text-yellow-600 dark:text-yellow-500"
+                              : "text-gray-900 dark:text-white"
                           }`}
                         >
                           {formatUsernameDisplay(suggestion.username)}
                         </span>
                         {isVerifiedArtistSuggestion ? (
-                          <CheckCircle className="w-3 h-3 text-yellow-400" />
+                          <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
                         ) : null}
                       </div>
-                      <span className="text-xs text-gray-500 dark:text-muted-foreground">
-                        {isPinnedCurrentArtist
-                          ? "Tag yourself if this is your ID"
-                          : formatUsernameDisplay(suggestion.username)}
-                      </span>
+                      {isPinnedCurrentArtist ? (
+                        <div className="mt-0.5 space-y-0.5">
+                          <span className="block text-xs text-gray-600 dark:text-white/75">
+                            Tag yourself if this is your ID
+                          </span>
+                          <span className="block text-[10px] font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-400/80">
+                            Artist ID tag
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-500 dark:text-muted-foreground">
+                          {formatUsernameDisplay(suggestion.username)}
+                        </span>
+                      )}
                     </div>
                   </button>
                   );

@@ -1,6 +1,6 @@
 import type { RecentMentionUser } from "@/lib/comment-mention-recent";
 
-export type MentionSuggestionSource = "pinned" | "artist" | "recent" | "thread";
+export type MentionSuggestionSource = "pinned" | "artist" | "recent" | "thread" | "search";
 
 export type MentionSuggestion = {
   userId: string;
@@ -19,11 +19,19 @@ type VerifiedArtistRow = {
   verified_artist?: boolean;
 };
 
+type GlobalSearchUserRow = {
+  id: string;
+  username: string;
+  avatar_url?: string | null;
+  verified_artist?: boolean;
+};
+
 export type BuildMentionSuggestionsInput = {
   query: string;
   verifiedArtists: VerifiedArtistRow[];
   recentMentionUsers: RecentMentionUser[];
   threadParticipants: MentionSuggestion[];
+  globalSearchResults?: GlobalSearchUserRow[];
   currentUserId?: string | null;
   pinSelfArtist?: boolean;
   selfUsername?: string | null;
@@ -59,6 +67,42 @@ function toSuggestion(
     verified_artist: user.verified_artist === true,
     source,
     ...extra,
+  };
+}
+
+/** Prefer verified-artist list for canonical username and verified flag (case-insensitive). */
+function resolveUserFromVerifiedArtists(
+  user: {
+    userId: string;
+    username: string;
+    avatar_url?: string | null;
+    verified_artist?: boolean;
+  },
+  verifiedArtists: VerifiedArtistRow[],
+): {
+  userId: string;
+  username: string;
+  avatar_url?: string | null;
+  verified_artist: boolean;
+} {
+  const match = verifiedArtists.find(
+    (artist) =>
+      artist.id === user.userId ||
+      artist.username?.toLowerCase() === user.username.toLowerCase(),
+  );
+  if (match) {
+    return {
+      userId: match.id,
+      username: match.username,
+      avatar_url: match.avatar_url ?? match.profileImage ?? user.avatar_url ?? null,
+      verified_artist: true,
+    };
+  }
+  return {
+    userId: user.userId,
+    username: user.username,
+    avatar_url: user.avatar_url ?? null,
+    verified_artist: user.verified_artist === true,
   };
 }
 
@@ -120,31 +164,42 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
   }
 
   for (const recent of input.recentMentionUsers) {
-    tryAdd(
-      toSuggestion(
-        {
-          userId: recent.userId,
-          username: recent.username,
-          avatar_url: recent.avatar_url ?? null,
-          verified_artist: recent.verified_artist,
-        },
-        "recent",
-      ),
+    const resolved = resolveUserFromVerifiedArtists(
+      {
+        userId: recent.userId,
+        username: recent.username,
+        avatar_url: recent.avatar_url ?? null,
+        verified_artist: recent.verified_artist,
+      },
+      input.verifiedArtists,
     );
+    tryAdd(toSuggestion(resolved, "recent"));
   }
 
   for (const participant of input.threadParticipants) {
-    tryAdd(
-      toSuggestion(
-        {
-          userId: participant.userId,
-          username: participant.username,
-          avatar_url: participant.avatar_url ?? null,
-          verified_artist: participant.verified_artist,
-        },
-        participant.source ?? "thread",
-      ),
+    const resolved = resolveUserFromVerifiedArtists(
+      {
+        userId: participant.userId,
+        username: participant.username,
+        avatar_url: participant.avatar_url ?? null,
+        verified_artist: participant.verified_artist,
+      },
+      input.verifiedArtists,
     );
+    tryAdd(toSuggestion(resolved, participant.source ?? "thread"));
+  }
+
+  for (const searchUser of input.globalSearchResults ?? []) {
+    const resolved = resolveUserFromVerifiedArtists(
+      {
+        userId: searchUser.id,
+        username: searchUser.username,
+        avatar_url: searchUser.avatar_url ?? null,
+        verified_artist: searchUser.verified_artist,
+      },
+      input.verifiedArtists,
+    );
+    tryAdd(toSuggestion(resolved, "search"));
   }
 
   return results;

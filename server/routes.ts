@@ -1346,6 +1346,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Global username search for @mention autocomplete (authenticated, debounced on client).
+  app.get("/api/users/search", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const requesterId = req.dbUser.id;
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+      if (q.length < 2) {
+        return res.status(400).json({ message: "Query must be at least 2 characters" });
+      }
+      if (q.length > 20) {
+        return res.status(400).json({ message: "Query must be at most 20 characters" });
+      }
+      if (!/^[a-zA-Z0-9._]*$/.test(q)) {
+        return res.status(400).json({ message: "Invalid search query" });
+      }
+
+      let limit = 10;
+      if (typeof req.query.limit === "string") {
+        const parsed = Number.parseInt(req.query.limit, 10);
+        if (!Number.isNaN(parsed)) {
+          limit = Math.min(10, Math.max(1, parsed));
+        }
+      }
+
+      // TODO: Add per-user rate limiting once a shared in-memory pattern exists.
+      // Report endpoints use DB-backed limits; keep this authenticated + short query + client debounce for now.
+
+      const normalizedQ = q.toLowerCase();
+      const fetchLimit = Math.min(50, limit * 5);
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url, account_type, verified_artist, moderator, banned, suspended_until")
+        .ilike("username", `%${normalizedQ}%`)
+        .neq("id", requesterId)
+        .limit(fetchLimit);
+
+      if (error) {
+        console.error("[/api/users/search] Supabase error:", error);
+        return res.status(500).json({ message: "Failed to search users" });
+      }
+
+      const now = Date.now();
+      const eligible = (data ?? []).filter((row) => {
+        if (!row?.id || !row.username?.trim()) return false;
+        if (row.banned === true) return false;
+        if (row.suspended_until) {
+          const suspendedUntil = new Date(row.suspended_until).getTime();
+          if (!Number.isNaN(suspendedUntil) && suspendedUntil > now) return false;
+        }
+        return row.username.toLowerCase().includes(normalizedQ);
+      });
+
+      const sorted = eligible
+        .sort((a, b) => {
+          const aName = a.username.toLowerCase();
+          const bName = b.username.toLowerCase();
+          const aPrefix = aName.startsWith(normalizedQ) ? 0 : 1;
+          const bPrefix = bName.startsWith(normalizedQ) ? 0 : 1;
+          if (aPrefix !== bPrefix) return aPrefix - bPrefix;
+          return aName.localeCompare(bName);
+        })
+        .slice(0, limit);
+
+      res.json(
+        sorted.map((row) => ({
+          id: row.id,
+          username: row.username,
+          avatar_url: row.avatar_url ?? null,
+          account_type: row.account_type ?? "user",
+          verified_artist: row.account_type === "artist" && row.verified_artist === true,
+          ...(row.moderator === true ? { moderator: true } : {}),
+        })),
+      );
+    } catch (error) {
+      console.error("[/api/users/search] Error:", error);
+      res.status(500).json({ message: "Failed to search users" });
+    }
+  });
+
   // Get current user (authenticated via Supabase)
   app.get("/api/user/current", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
