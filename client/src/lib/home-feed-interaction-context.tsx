@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { getFeedStartWithSound } from "@/lib/feed-sound-preferences";
 
 type HomeWhileOnHomeHandler = (() => void) | null;
 
@@ -22,7 +23,7 @@ const HomeFeedInteractionContext = createContext<HomeFeedInteractionContextValue
 
 export function HomeFeedInteractionProvider({ children }: { children: ReactNode }) {
   const handlerRef = useRef<HomeWhileOnHomeHandler>(null);
-  const [isFeedMuted, setIsFeedMuted] = useState(true);
+  const [isFeedMuted, setIsFeedMuted] = useState(() => !getFeedStartWithSound());
 
   const registerHomeWhileOnHomeHandler = useCallback((handler: HomeWhileOnHomeHandler) => {
     handlerRef.current = handler;

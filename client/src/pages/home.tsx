@@ -1180,33 +1180,9 @@ export default function Home() {
     window.dispatchEvent(new CustomEvent(HOME_FEED_READY_EVENT));
   }, [isInitialFeedLoad, isError]);
 
-  // Client-side fallback: ensures UI toggles (sort + filters) update immediately,
-  // even if the backend response/order hasn't caught up yet.
+  // Newest re-sorts client-side; Trending/Hottest preserve server merge order until explicit refresh.
   const uiPosts = useMemo(() => {
     if (sortMode === "random") return [];
-
-    const getLikes = (post: PostWithUser) => {
-      const raw =
-        (post as any).likes ??
-        (post as any).likes_count ??
-        (post as any).likesCount ??
-        (post as any).likeCount ??
-        (post as any).like_count ??
-        0;
-      const n = typeof raw === "string" ? Number(raw) : raw;
-      return Number.isFinite(n) ? (n as number) : 0;
-    };
-
-    const getComments = (post: PostWithUser) => {
-      const raw =
-        (post as any).comments ??
-        (post as any).comments_count ??
-        (post as any).commentsCount ??
-        (post as any).comment_count ??
-        0;
-      const n = typeof raw === "string" ? Number(raw) : raw;
-      return Number.isFinite(n) ? (n as number) : 0;
-    };
 
     const identificationWhere = (post: PostWithUser) => {
       if (identificationFilter === "identified") {
@@ -1247,21 +1223,8 @@ export default function Home() {
       return [...filtered].sort((a, b) => normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt));
     }
 
-    if (sortMode === "trending") {
-      const trendingScore = (post: PostWithUser) => getLikes(post) + getComments(post) * 2;
-      return [...filtered].sort((a, b) => {
-        const scoreDiff = trendingScore(b) - trendingScore(a);
-        if (scoreDiff !== 0) return scoreDiff;
-        return normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt);
-      });
-    }
-
-    // Hottest: primary by likes, secondary by recency (all-time).
-    return [...filtered].sort((a, b) => {
-      const likeDiff = getLikes(b) - getLikes(a);
-      if (likeDiff !== 0) return likeDiff;
-      return normalizeCreatedAt(b.createdAt) - normalizeCreatedAt(a.createdAt);
-    });
+    // Trending/Hottest: server order frozen for the session; engagement updates counts only.
+    return filtered;
   }, [posts, identificationFilter, selectedGenres, sortMode]);
 
   const uiPostsNewest201TraceRef = useRef(uiPosts);

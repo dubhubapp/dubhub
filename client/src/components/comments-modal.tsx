@@ -1,6 +1,6 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -883,18 +883,33 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         );
         scrollToPostedComment(data.id, { isReply: false });
       }
-      const currentComments = Number((post as any).comments ?? post.comments ?? 0);
-      queryClient.setQueriesData<PostWithUser[]>(
+      const nextComments = Number((post as any).comments ?? post.comments ?? 0) + 1;
+      queryClient.setQueriesData(
         { queryKey: ["/api/posts"], exact: false },
-        (old) => {
-          if (!old || !Array.isArray(old)) return old;
-          return old.map((p) => {
-            if (p.id !== post.id) return p;
-            return { ...p, comments: currentComments + 1 };
-          });
-        }
+        (old: unknown) => {
+          if (!old) return old;
+          if (Array.isArray(old)) {
+            return (old as PostWithUser[]).map((p) =>
+              p.id === post.id ? { ...p, comments: nextComments } : p,
+            );
+          }
+          if (typeof old === "object" && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+            const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+            return {
+              ...paged,
+              pages: paged.pages.map((page) => ({
+                ...page,
+                items: Array.isArray(page.items)
+                  ? page.items.map((p) =>
+                      p.id === post.id ? { ...p, comments: nextComments } : p,
+                    )
+                  : page.items,
+              })),
+            };
+          }
+          return old;
+        },
       );
-      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({ title: "Comment added successfully!" });
     },
     onError: () => {

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, MessageSquare, Moon, Settings as SettingsIcon } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, MessageSquare, Moon, Settings as SettingsIcon, Volume2 } from "lucide-react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
+import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
 import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 import { playThemeToggleHaptic } from "@/lib/haptic";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
@@ -104,6 +105,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [, navigate] = useLocation();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
+  const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
   const notificationPrefs = useNotificationPreferences();
   const { userType, isAuthenticated, verifiedArtist } = useUser();
   const isModerator = userType === "moderator";
@@ -281,6 +283,11 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
     runThemeTransition();
     applyTheme(next);
     setThemeMode(next);
+  };
+
+  const handleFeedStartWithSoundToggle = (enabled: boolean) => {
+    setFeedStartWithSound(enabled);
+    setFeedStartWithSoundState(enabled);
   };
 
   const handleBack = () => {
@@ -608,6 +615,24 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 onCheckedChange={handleThemeToggle}
                 aria-label="Light mode"
                 data-testid="switch-light-mode"
+              />
+            </div>
+
+            <div className="w-full rounded-xl border border-white/10 bg-black/30 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md flex items-center justify-between gap-4">
+              <div className="flex items-center space-x-3 min-w-0">
+                <Volume2 className="w-5 h-5 text-muted-foreground shrink-0" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">Start feed with sound</p>
+                  <p className="text-xs text-muted-foreground">
+                    Automatically unmute videos when you open dub hub.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={feedStartWithSound}
+                onCheckedChange={handleFeedStartWithSoundToggle}
+                aria-label="Start feed with sound"
+                data-testid="switch-feed-start-with-sound"
               />
             </div>
 

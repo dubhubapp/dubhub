@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Trophy, Medal, Award } from "lucide-react";
+import { Trophy, Medal, Award, Ticket, Calendar, Mic, Headphones } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
@@ -36,11 +36,46 @@ type LeaderboardRankResponse = {
 
 // Editable monthly rewards - update these each month
 const MONTHLY_REWARDS = {
-  users: "2 x VIP Festival Tickets",
-  artists: "4 hours studio time at Pirate Studios"
+  users: "2 x VIP Music Festival Tickets",
+  artists: "4 hours studio time",
 };
 
+const PRIZE_CARD_THEMES = {
+  users: {
+    glowShadow: "shadow-[0_0_24px_-6px_rgba(251,191,36,0.35)]",
+    card: "border-amber-500/30 bg-black/35",
+    pill: "border-amber-400/35 bg-amber-400/15 text-amber-200 shadow-[0_0_12px_-2px_rgba(251,191,36,0.4)]",
+    title: "text-amber-50",
+    countdown: "border-amber-400/30 text-amber-300/80",
+    gradient: "bg-[radial-gradient(ellipse_at_top,rgba(251,191,36,0.1)_0%,transparent_55%)]",
+    sponsor: "Presented by Music Festival",
+    rankLine: "Top ranked community member this month",
+  },
+  artists: {
+    glowShadow: "shadow-[0_0_24px_-6px_rgba(168,85,247,0.35)]",
+    card: "border-purple-500/30 bg-black/35",
+    pill: "border-purple-400/35 bg-purple-400/15 text-purple-200 shadow-[0_0_12px_-2px_rgba(168,85,247,0.4)]",
+    title: "text-purple-50",
+    countdown: "border-purple-400/30 text-purple-300/80",
+    gradient: "bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.1)_0%,transparent_55%)]",
+    sponsor: "Presented by Industry Partner",
+    rankLine: "Top ranked artist this month",
+  },
+} as const;
+
 const getCurrentMonth = () => new Date().toLocaleString('default', { month: 'long' });
+
+function getDaysRemainingInMonth(): number {
+  const now = new Date();
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return Math.max(0, lastDayOfMonth - now.getDate());
+}
+
+function formatDaysRemaining(days: number): string {
+  if (days === 0) return "Last day to win";
+  if (days === 1) return "1 day remaining";
+  return `${days} days remaining`;
+}
 const TOP_LIMIT = 100;
 const LEADERBOARD_FLIP_SHELL_MIN_PX = 520;
 
@@ -350,22 +385,67 @@ export default function Leaderboard() {
   };
 
   const RewardsBanner = ({ tab }: { tab: "users" | "artists" }) => {
-    const reward = tab === "users" ? MONTHLY_REWARDS.users : MONTHLY_REWARDS.artists;
+    const theme = PRIZE_CARD_THEMES[tab];
+    const reward = MONTHLY_REWARDS[tab];
+    const monthUpper = getCurrentMonth().toUpperCase();
+    const daysRemaining = formatDaysRemaining(getDaysRemainingInMonth());
 
     return (
-      <div
-        className="relative mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30 px-4 py-3 backdrop-blur-md"
-        data-testid="rewards-banner"
-      >
-        <div className="flex flex-col items-center justify-center gap-2 text-center">
-          <Trophy className="h-7 w-7 shrink-0 text-primary" />
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">
-              {getCurrentMonth()} Reward - {reward}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Top ranked {tab === "users" ? "community member" : "artist"} this month
-            </p>
+      <div className="relative mb-4 px-4">
+        <div className="relative" data-testid="rewards-banner">
+          <div
+            className={`pointer-events-none absolute inset-0 rounded-xl ${theme.glowShadow}`}
+            aria-hidden
+          />
+          <div
+            className={`relative overflow-hidden rounded-xl border px-4 py-3.5 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${theme.card}`}
+          >
+            <div
+              className={`pointer-events-none absolute inset-0 ${theme.gradient}`}
+              aria-hidden
+            />
+            <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+              {tab === "users" ? (
+                <>
+                  <Ticket className="absolute -right-1 top-1 h-14 w-14 rotate-[18deg] text-amber-400/[0.07]" />
+                  <Ticket className="absolute -left-2 bottom-0 h-12 w-12 -rotate-[14deg] text-amber-400/[0.06]" />
+                  <Ticket className="absolute right-[18%] bottom-1 h-9 w-9 rotate-[-8deg] text-yellow-500/[0.05]" />
+                  <div className="absolute left-[12%] top-[38%] h-7 w-7 rounded-full border-2 border-amber-400/[0.06]" />
+                  <div className="absolute right-[28%] top-[22%] h-5 w-5 rounded-full border-2 border-yellow-500/[0.05]" />
+                </>
+              ) : (
+                <>
+                  <Mic className="absolute -right-1 top-1 h-14 w-14 rotate-[12deg] text-purple-400/[0.07]" />
+                  <Headphones className="absolute -left-2 bottom-0 h-12 w-12 -rotate-[10deg] text-purple-400/[0.06]" />
+                  <Mic className="absolute right-[20%] bottom-1 h-9 w-9 rotate-[-6deg] text-purple-500/[0.05]" />
+                  <div className="absolute left-[14%] top-[36%] h-7 w-7 rounded-full border-2 border-purple-400/[0.06]" />
+                  <div className="absolute right-[30%] top-[20%] h-5 w-5 rounded-full border-2 border-purple-500/[0.05]" />
+                </>
+              )}
+            </div>
+
+            <div className="relative flex flex-col items-center gap-1.5 text-center">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${theme.pill}`}
+              >
+                🏆 {monthUpper} PRIZE
+              </span>
+
+              <h3 className={`max-w-full px-1 text-base font-bold leading-snug sm:text-lg ${theme.title}`}>
+                {reward}
+              </h3>
+
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${theme.countdown}`}
+              >
+                <Calendar className="h-3 w-3 shrink-0 opacity-80" />
+                {daysRemaining}
+              </span>
+
+              <p className="text-[10px] text-muted-foreground/90">{theme.sponsor}</p>
+
+              <p className="text-[10px] text-muted-foreground/75">{theme.rankLine}</p>
+            </div>
           </div>
         </div>
       </div>
