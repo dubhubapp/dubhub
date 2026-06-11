@@ -32,6 +32,8 @@ export type BuildMentionSuggestionsInput = {
   recentMentionUsers: RecentMentionUser[];
   threadParticipants: MentionSuggestion[];
   globalSearchResults?: GlobalSearchUserRow[];
+  /** Lowercase usernames already @mentioned in the composer draft (excludes active token). */
+  excludedMentionUsernames?: Set<string>;
   currentUserId?: string | null;
   pinSelfArtist?: boolean;
   selfUsername?: string | null;
@@ -129,6 +131,9 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
     if (!suggestion.userId || !suggestion.username?.trim()) return;
     if (!matchesMentionQuery(suggestion.username, query)) return;
     if (seen.has(suggestion.userId)) return;
+
+    const normalizedUsername = suggestion.username.trim().toLowerCase();
+    if (input.excludedMentionUsernames?.has(normalizedUsername)) return;
 
     const isSelf = !!input.currentUserId && suggestion.userId === input.currentUserId;
     if (isSelf && !options?.allowSelf && !suggestion.isPinnedSelf) return;

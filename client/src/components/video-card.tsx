@@ -354,6 +354,10 @@ function VideoCardInner({
   const [showComments, setShowComments] = useState(false);
   // Freeze the post snapshot used by the comments modal to avoid mismatched post IDs
   const [commentsPost, setCommentsPost] = useState<PostWithUser | null>(null);
+  const [commentCountBump, setCommentCountBump] = useState(0);
+  useEffect(() => {
+    setCommentCountBump(0);
+  }, [post.id, post.comments]);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -2507,7 +2511,7 @@ function VideoCardInner({
                     ) : null}
                   </div>
                   <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                    {formatCount(post.comments)}
+                    {formatCount(Number(post.comments ?? 0) + commentCountBump)}
                   </span>
                 </button>
                 {artistSelfTagHintVisible ? (
@@ -3184,6 +3188,7 @@ function VideoCardInner({
         <CommentsModal
           post={commentsPost}
           isOpen={showComments}
+          onCommentCountDelta={(delta) => setCommentCountBump((n) => n + delta)}
           onClose={() => {
             if (debugComments) {
               console.log("[CommentsOpen] close", { modalPostId: commentsPost.id });

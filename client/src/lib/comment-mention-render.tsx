@@ -24,8 +24,8 @@ export function renderCommentMentionNodes(
     const isVerifiedArtist = isVerifiedArtistUsername(username);
 
     let className = isVerifiedArtist
-      ? "text-yellow-500 font-medium cursor-pointer hover:underline"
-      : "text-inherit font-medium cursor-pointer hover:underline";
+      ? "text-yellow-500 font-semibold cursor-pointer no-underline hover:no-underline active:no-underline focus:no-underline"
+      : "text-inherit font-semibold cursor-pointer no-underline hover:no-underline active:no-underline focus:no-underline";
 
     if (tagStatus === "confirmed") {
       className =

@@ -1,12 +1,21 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
-import { commentMentionsUsername } from "@shared/mentionParsing";
+import {
+  commentMentionsUsername,
+  getExcludedMentionUsernamesForAutocomplete,
+} from "@shared/mentionParsing";
 import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
 import {
   DELETED_COMMENT_BODY,
@@ -57,6 +66,39 @@ interface CommentsModalProps {
   post: PostWithUser;
   isOpen: boolean;
   onClose: () => void;
+  /** Local feed count offset (e.g. Random mode post not in query cache). */
+  onCommentCountDelta?: (delta: number) => void;
+}
+
+function patchPostInFeedCaches(
+  queryClient: QueryClient,
+  postId: string,
+  patch: (p: PostWithUser) => PostWithUser,
+): void {
+  queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old: unknown) => {
+    if (!old) return old;
+    if (Array.isArray(old)) {
+      return (old as PostWithUser[]).map((p) => (p.id === postId ? patch(p) : p));
+    }
+    if (typeof old === "object" && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+      const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+      return {
+        ...paged,
+        pages: paged.pages.map((page) => ({
+          ...page,
+          items: Array.isArray(page.items)
+            ? page.items.map((p) => (p.id === postId ? patch(p) : p))
+            : page.items,
+        })),
+      };
+    }
+    return old;
+  });
+}
+
+function bumpPostCommentCount(p: PostWithUser, delta: number): PostWithUser {
+  const current = Number((p as { comments?: number }).comments ?? 0);
+  return { ...p, comments: Math.max(0, current + delta) };
 }
 
 /** Matches previous sheet cap: min(66vh, 33rem). */
@@ -71,6 +113,9 @@ const COMMENTS_SHEET_REM_CAP = 33;
 const COMMENTS_SHEET_TOP_RESERVE_PX = 72;
 
 const COMMENTS_SHEET_MIN_PX = 160;
+
+/** Debounce before GET /api/users/search — balances feel vs request volume while typing. */
+const MENTION_GLOBAL_SEARCH_DEBOUNCE_MS = 180;
 
 /** Comment ⋯ menu (delete / report) — keep inset from screen edges on mobile. */
 const COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS =
@@ -120,7 +165,7 @@ function computeCommentsSheetMaxPxWithoutVisualViewport(): number {
   return Math.min(preferredCap, visibleBudget);
 }
 
-export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
+export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: CommentsModalProps) {
   const closeCommittedRef = useRef(false);
   const drawerContentRef = useRef<HTMLDivElement | null>(null);
 
@@ -888,7 +933,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     }
     const timer = window.setTimeout(() => {
       setDebouncedMentionQuery(artistSearchTerm);
-    }, 300);
+    }, MENTION_GLOBAL_SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [artistSearchTerm, showArtistDropdown]);
 
@@ -922,6 +967,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     staleTime: 30_000,
   });
 
+  const excludedMentionUsernames = useMemo(
+    () => getExcludedMentionUsernamesForAutocomplete(newComment, currentMentionStart),
+    [newComment, currentMentionStart],
+  );
+
   const mentionSuggestions = useMemo(() => {
     if (!showArtistDropdown) return [];
     return buildMentionSuggestions({
@@ -930,6 +980,7 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       recentMentionUsers: readRecentMentionUsers(contextUser?.id),
       threadParticipants,
       globalSearchResults: shouldFetchGlobalMentionSearch ? globalMentionSearchUsers : [],
+      excludedMentionUsernames,
       currentUserId: contextUser?.id,
       pinSelfArtist: shouldPinCurrentArtistInMentions,
       selfUsername: contextUsername,
@@ -941,29 +992,38 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     threadParticipants,
     shouldFetchGlobalMentionSearch,
     globalMentionSearchUsers,
+    excludedMentionUsernames,
     contextUser?.id,
     shouldPinCurrentArtistInMentions,
     contextUsername,
   ]);
 
   const trimmedActiveMentionQuery = artistSearchTerm.trim();
+  const isDebouncingGlobalMentionSearch =
+    showArtistDropdown &&
+    trimmedActiveMentionQuery.length >= 2 &&
+    isValidMentionQuery(trimmedActiveMentionQuery) &&
+    trimmedDebouncedMentionQuery !== trimmedActiveMentionQuery;
+
   const showMentionAutocompleteDropdown =
     showArtistDropdown &&
     (mentionSuggestions.length > 0 ||
       (trimmedActiveMentionQuery.length >= 2 &&
-        shouldFetchGlobalMentionSearch &&
-        (isFetchingGlobalMentionSearch ||
-          (isGlobalMentionSearchFetched && mentionSuggestions.length === 0))));
+        (isDebouncingGlobalMentionSearch ||
+          (shouldFetchGlobalMentionSearch &&
+            (isFetchingGlobalMentionSearch ||
+              (isGlobalMentionSearchFetched && mentionSuggestions.length === 0))))));
 
   const showMentionSearchLoadingRow =
     trimmedActiveMentionQuery.length >= 2 &&
-    shouldFetchGlobalMentionSearch &&
-    isFetchingGlobalMentionSearch &&
-    mentionSuggestions.length === 0;
+    mentionSuggestions.length === 0 &&
+    (isDebouncingGlobalMentionSearch ||
+      (shouldFetchGlobalMentionSearch && isFetchingGlobalMentionSearch));
 
   const showMentionSearchEmptyRow =
     trimmedActiveMentionQuery.length >= 2 &&
     shouldFetchGlobalMentionSearch &&
+    !isDebouncingGlobalMentionSearch &&
     isGlobalMentionSearchFetched &&
     !isFetchingGlobalMentionSearch &&
     mentionSuggestions.length === 0;
@@ -976,6 +1036,10 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
       });
       const created = await res.json();
       return created as { id: string; post_id: string; user_id: string; body: string; artist_tag: string | null; created_at: string };
+    },
+    onMutate: () => {
+      patchPostInFeedCaches(queryClient, post.id, (p) => bumpPostCommentCount(p, 1));
+      onCommentCountDelta?.(1);
     },
     onSuccess: (data, variables) => {
       playSuccessNotification();
@@ -1050,50 +1114,23 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
         );
         scrollToPostedComment(data.id, { isReply: false });
       }
-      const nextComments = Number((post as any).comments ?? post.comments ?? 0) + 1;
       const isVerifiedArtistSelfTag =
         verifiedArtist &&
         !!contextUsername &&
         commentMentionsUsername(variables.content, contextUsername);
 
-      const patchFeedPost = (p: PostWithUser): PostWithUser => {
-        if (p.id !== post.id) return p;
-        const next: PostWithUser & { current_user_tagged_as_artist?: boolean } = {
+      if (isVerifiedArtistSelfTag) {
+        patchPostInFeedCaches(queryClient, post.id, (p) => ({
           ...p,
-          comments: nextComments,
-        };
-        if (isVerifiedArtistSelfTag) {
-          next.currentUserTaggedAsArtist = true;
-          next.current_user_tagged_as_artist = true;
-        }
-        return next;
-      };
-
-      queryClient.setQueriesData(
-        { queryKey: ["/api/posts"], exact: false },
-        (old: unknown) => {
-          if (!old) return old;
-          if (Array.isArray(old)) {
-            return (old as PostWithUser[]).map(patchFeedPost);
-          }
-          if (typeof old === "object" && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
-            const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
-            return {
-              ...paged,
-              pages: paged.pages.map((page) => ({
-                ...page,
-                items: Array.isArray(page.items)
-                  ? page.items.map(patchFeedPost)
-                  : page.items,
-              })),
-            };
-          }
-          return old;
-        },
-      );
+          currentUserTaggedAsArtist: true,
+          current_user_tagged_as_artist: true,
+        }));
+      }
       toast({ title: "Comment added successfully!" });
     },
     onError: () => {
+      patchPostInFeedCaches(queryClient, post.id, (p) => bumpPostCommentCount(p, -1));
+      onCommentCountDelta?.(-1);
       toast({ title: "Error", description: "Failed to add comment", variant: "destructive" });
     },
   });

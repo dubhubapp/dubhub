@@ -120,3 +120,24 @@ export function parseCommentMentionSegments(text: string): MentionSegment[] {
 
   return segments;
 }
+
+/**
+ * Usernames already @mentioned in a draft comment, for autocomplete exclusion.
+ * Omits the mention being edited at `activeAtIndex` so replacement still works.
+ */
+export function getExcludedMentionUsernamesForAutocomplete(
+  draft: string,
+  activeAtIndex: number,
+): Set<string> {
+  const excluded = new Set(
+    extractMentionUsernames(draft).map((username) => username.toLowerCase()),
+  );
+  if (activeAtIndex >= 0 && draft[activeAtIndex] === "@") {
+    const segments = parseCommentMentionSegments(draft.slice(activeAtIndex));
+    const first = segments[0];
+    if (first?.type === "mention") {
+      excluded.delete(first.username.toLowerCase());
+    }
+  }
+  return excluded;
+}
