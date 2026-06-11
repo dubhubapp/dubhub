@@ -287,6 +287,15 @@ export default function Leaderboard() {
     const profileImageUrl =
       resolveAvatarUrlForProfile(entry.avatar_url, entry.account_type) ?? "";
 
+    const handleOpenProfile = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openByUsername(entry.username, {
+        anchor: { x: e.clientX, y: e.clientY },
+        surfaceGenreHint: entry.favorite_genre,
+      });
+    };
+
     return (
       <div
         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
@@ -306,10 +315,16 @@ export default function Leaderboard() {
         </div>
 
         {/* Avatar with Profile Picture */}
-        <div className="relative">
+        <button
+          type="button"
+          className="relative ios-press ios-press-soft shrink-0 p-0"
+          aria-label={`View profile ${formatUsernameDisplay(entry.username) || entry.username}`}
+          data-testid={`avatar-${entry.user_id}`}
+          onClick={handleOpenProfile}
+        >
           <img 
             src={profileImageUrl} 
-            alt={formatUsernameDisplay(entry.username) || entry.username || "Community member"}
+            alt=""
             className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(profileImageUrl) ? "avatar-default-media" : ""}`}
             onError={(e) => {
               // Fallback to initials if image fails to load
@@ -321,7 +336,7 @@ export default function Leaderboard() {
           <div className="hidden w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-white font-bold">
             {(formatUsernameDisplay(entry.username).replace(/^@/, "") || entry.username || "?").charAt(0).toUpperCase()}
           </div>
-        </div>
+        </button>
 
         {/* User Info */}
         <div className="flex-1 min-w-0">
@@ -330,14 +345,7 @@ export default function Leaderboard() {
               type="button"
               className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 basis-0 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
               data-testid={`username-${entry.user_id}`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                openByUsername(entry.username, {
-                  anchor: { x: e.clientX, y: e.clientY },
-                  surfaceGenreHint: entry.favorite_genre,
-                });
-              }}
+              onClick={handleOpenProfile}
             >
               <span className="min-w-0 truncate">
                 {formatUsernameDisplay(entry.username) || entry.username}

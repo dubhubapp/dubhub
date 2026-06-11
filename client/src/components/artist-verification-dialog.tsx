@@ -1,11 +1,11 @@
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { CheckCircle, Clock3, User } from "lucide-react";
+import { Clock3, User } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
@@ -14,6 +14,8 @@ import { formatDate } from "@/pages/release-tracker";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { commentMentionsUsername } from "@shared/mentionParsing";
+import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
+import { UserRoleInlineIcons } from "./moderator-shield";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
@@ -50,6 +52,11 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
+    enabled: isOpen,
+  });
+
+  const { data: verifiedArtists = [] } = useQuery<{ username?: string }[]>({
+    queryKey: ["/api/artists/verified"],
     enabled: isOpen,
   });
 
@@ -242,6 +249,51 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
   const oldestCommentId = sortedComments[0]?.id ?? null;
   const reviewingArtistId = currentUser?.id ?? null;
   const reviewingArtistUsername = currentUser?.username ?? null;
+
+  const selfVerifiedArtistUsername = useMemo(() => {
+    if (!verifiedArtist) return null;
+    const normalized = reviewingArtistUsername?.trim().toLowerCase();
+    return normalized || null;
+  }, [verifiedArtist, reviewingArtistUsername]);
+
+  const verifiedArtistUsernameSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const artist of verifiedArtists) {
+      const normalized = artist.username?.trim().toLowerCase();
+      if (normalized) set.add(normalized);
+    }
+    if (selfVerifiedArtistUsername) {
+      set.add(selfVerifiedArtistUsername);
+    }
+    for (const comment of commentsList) {
+      if (comment.user?.verified_artist && comment.user.username?.trim()) {
+        set.add(comment.user.username.trim().toLowerCase());
+      }
+      const tagged = comment.taggedArtist as { username?: string; verified_artist?: boolean } | undefined;
+      if (tagged?.username?.trim() && (tagged.verified_artist || verifiedArtist)) {
+        set.add(tagged.username.trim().toLowerCase());
+      }
+    }
+    return set;
+  }, [verifiedArtists, selfVerifiedArtistUsername, commentsList, verifiedArtist]);
+
+  const isVerifiedArtistUsername = useCallback(
+    (username: string) => {
+      const normalized = username.trim().toLowerCase();
+      if (!normalized) return false;
+      if (selfVerifiedArtistUsername && normalized === selfVerifiedArtistUsername) return true;
+      if (
+        verifiedArtist &&
+        reviewingArtistUsername &&
+        normalized === reviewingArtistUsername.trim().toLowerCase()
+      ) {
+        return true;
+      }
+      return verifiedArtistUsernameSet.has(normalized);
+    },
+    [selfVerifiedArtistUsername, verifiedArtistUsernameSet, verifiedArtist, reviewingArtistUsername],
+  );
+
   const getTaggedArtistIdFromComment = (comment: CommentWithUser) => {
     const taggedArtistId = (comment as any)?.taggedArtist?.id as string | undefined;
     const artistTagId = (comment as any)?.artistTag as string | undefined;
@@ -387,10 +439,17 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="font-medium text-sm">{formatUsernameDisplay(comment.user.username)}</span>
-                                  {comment.user.verified_artist && (
-                                    <CheckCircle className="w-4 h-4 text-primary" />
-                                  )}
+                                  <span
+                                    className={`font-medium text-sm ${
+                                      comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
+                                    }`}
+                                  >
+                                    {formatUsernameDisplay(comment.user.username)}
+                                  </span>
+                                  <UserRoleInlineIcons
+                                    verifiedArtist={comment.user.verified_artist === true}
+                                    moderator={!!comment.user.moderator}
+                                  />
                                 </div>
                               </div>
                               <div className="flex flex-wrap items-center gap-1">
@@ -418,10 +477,21 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                 )}
                               </div>
                             </div>
-                            <p className="text-sm text-white/92">{comment.body}</p>
+                            <p className="text-sm text-white/92">
+                              {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
+                            </p>
                             {comment.taggedArtist && (
                               <p className="mt-1 text-xs text-white/65">
-                                Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
+                                Tagged artist:{" "}
+                                <span
+                                  className={
+                                    isVerifiedArtistUsername(comment.taggedArtist.username ?? "")
+                                      ? "font-medium text-[#FFD700]"
+                                      : "text-white/92"
+                                  }
+                                >
+                                  {formatUsernameDisplay(comment.taggedArtist.username)}
+                                </span>
                               </p>
                             )}
                             <div className="mt-2 flex items-center gap-1 text-[11px] text-white/65">

@@ -252,6 +252,11 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     if (getPostFeedPosterRaw(prev.post) !== getPostFeedPosterRaw(next.post)) return false;
     if (prev.post.verificationStatus !== next.post.verificationStatus) return false;
     if (prev.post.description !== next.post.description) return false;
+    if (prev.post.comments !== next.post.comments) return false;
+    if (prev.post.currentUserTaggedAsArtist !== next.post.currentUserTaggedAsArtist) return false;
+    const pTaggedSnake = (prev.post as { current_user_tagged_as_artist?: boolean }).current_user_tagged_as_artist;
+    const nTaggedSnake = (next.post as { current_user_tagged_as_artist?: boolean }).current_user_tagged_as_artist;
+    if (pTaggedSnake !== nTaggedSnake) return false;
   }
   return (
     prev.isHighlighted === next.isHighlighted &&
