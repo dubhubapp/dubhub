@@ -111,6 +111,14 @@ export interface IStorage {
   // Artist Tagging
   createArtistVideoTag(tag: { postId: string; artistId: string; taggedBy: string }): Promise<any>;
   getArtistVideoTags(postId: string): Promise<any[]>;
+
+  // Comment @user mentions (Phase C1 — persistence only)
+  createCommentUserMention(data: {
+    commentId: string;
+    postId: string;
+    mentionedUserId: string;
+    mentionedByUserId: string;
+  }): Promise<any | null>;
   updateArtistVideoTagStatus(tagId: string, status: "confirmed" | "denied", artistId: string): Promise<any | undefined>;
 
   // Notifications
@@ -263,7 +271,9 @@ export class DatabaseStorage implements IStorage {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url, account_type, moderator, verified_artist, created_at")
+        .select(
+          "id, username, avatar_url, account_type, moderator, verified_artist, banned, suspended_until, created_at",
+        )
         .ilike("username", normalized)
         .maybeSingle();
 
@@ -1525,6 +1535,42 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[createArtistVideoTag] Error:", error);
       throw error;
+    }
+  }
+
+  async createCommentUserMention(data: {
+    commentId: string;
+    postId: string;
+    mentionedUserId: string;
+    mentionedByUserId: string;
+  }): Promise<any | null> {
+    const { commentId, postId, mentionedUserId, mentionedByUserId } = data;
+
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO comment_user_mentions (
+          comment_id,
+          post_id,
+          mentioned_user_id,
+          mentioned_by_user_id,
+          created_at
+        )
+        VALUES (
+          ${commentId},
+          ${postId},
+          ${mentionedUserId},
+          ${mentionedByUserId},
+          NOW()
+        )
+        ON CONFLICT (comment_id, mentioned_user_id) DO NOTHING
+        RETURNING *
+      `);
+
+      const rows = (result as any).rows || [];
+      return rows[0] ?? null;
+    } catch (error) {
+      console.error("[createCommentUserMention] Error:", error);
+      return null;
     }
   }
 

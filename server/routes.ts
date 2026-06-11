@@ -536,6 +536,49 @@ async function processArtistTags(
   return tagged;
 }
 
+/** Persist regular @user mentions (Phase C1). Does not notify; skips artist_video_tags recipients. */
+async function persistCommentUserMentions(
+  commentId: string,
+  postId: string,
+  mentionedByUserId: string,
+  content: string,
+  taggedArtistIds: ReadonlySet<string>,
+): Promise<void> {
+  try {
+    const mentionUsernames = extractMentionUsernames(content);
+    const seenUsernames = new Set<string>();
+    const seenUserIds = new Set<string>();
+
+    for (const rawUsername of mentionUsernames) {
+      const normalizedUsername = rawUsername.trim().toLowerCase();
+      if (!normalizedUsername || seenUsernames.has(normalizedUsername)) continue;
+      seenUsernames.add(normalizedUsername);
+
+      const user = await storage.getUserByUsername(rawUsername);
+      if (!user?.id) continue;
+      if (user.id === mentionedByUserId) continue;
+      if (seenUserIds.has(user.id)) continue;
+      if (taggedArtistIds.has(user.id)) continue;
+
+      if (user.banned === true) continue;
+      if (user.suspended_until) {
+        const suspendedUntil = new Date(user.suspended_until).getTime();
+        if (!Number.isNaN(suspendedUntil) && suspendedUntil > Date.now()) continue;
+      }
+
+      seenUserIds.add(user.id);
+      await storage.createCommentUserMention({
+        commentId,
+        postId,
+        mentionedUserId: user.id,
+        mentionedByUserId,
+      });
+    }
+  } catch (err) {
+    console.error("[persistCommentUserMentions] Error:", err);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log("[Routes] Registering routes...");
   registerPostSharePreviewRoutes(app);
@@ -2223,6 +2266,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           skipReason,
         });
       }
+
+      const taggedArtistIds = new Set(taggedArtists.map(({ artistId }) => artistId));
+      await persistCommentUserMentions(comment.id, postId, userId, commentText, taggedArtistIds);
 
       res.status(201).json(comment);
     } catch (error) {

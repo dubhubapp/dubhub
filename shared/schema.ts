@@ -72,6 +72,28 @@ export const comments = pgTable("comments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Regular @user mentions on comments (Phase C1 persistence; not artist ID tags)
+export const commentUserMentions = pgTable(
+  "comment_user_mentions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    commentId: varchar("comment_id")
+      .notNull()
+      .references(() => comments.id, { onDelete: "cascade" }),
+    postId: varchar("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    mentionedUserId: varchar("mentioned_user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    mentionedByUserId: varchar("mentioned_by_user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("comment_user_mentions_comment_user_unique").on(t.commentId, t.mentionedUserId)],
+);
+
 // Artist video tags - updated to use postId
 export const artistVideoTags = pgTable("artist_video_tags", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -296,6 +318,13 @@ export const insertArtistVideoTagSchema = createInsertSchema(artistVideoTags).pi
   releaseDate: true,
 });
 
+export const insertCommentUserMentionSchema = createInsertSchema(commentUserMentions).pick({
+  commentId: true,
+  postId: true,
+  mentionedUserId: true,
+  mentionedByUserId: true,
+});
+
 export const insertUserReputationSchema = createInsertSchema(userReputation).pick({
   userId: true,
   reputation: true,
@@ -340,6 +369,8 @@ export type InsertPost = z.infer<typeof insertPostSchema>;
 export type Post = typeof posts.$inferSelect;
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type InsertArtistVideoTag = z.infer<typeof insertArtistVideoTagSchema>;
+export type InsertCommentUserMention = z.infer<typeof insertCommentUserMentionSchema>;
+export type CommentUserMention = typeof commentUserMentions.$inferSelect;
 export type InsertUserReputation = z.infer<typeof insertUserReputationSchema>;
 export type InsertCommentVote = z.infer<typeof insertCommentVoteSchema>;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;

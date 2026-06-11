@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 07-05-2026
+Last updated: 10-06-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -66,6 +66,33 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 
 ⚠️ **Uniqueness:**  
 - One like per `user_id` + `comment_id` + `vote_type`.
+
+---
+
+## comment_user_mentions
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | uuid | NO | gen_random_uuid() | Primary key |
+| comment_id | uuid | NO | – | FK → comments.id ON DELETE CASCADE |
+| post_id | uuid | NO | – | FK → posts.id ON DELETE CASCADE |
+| mentioned_user_id | uuid | NO | – | FK → profiles.id ON DELETE CASCADE |
+| mentioned_by_user_id | uuid | NO | – | FK → profiles.id ON DELETE CASCADE (comment author) |
+| created_at | timestamptz | NO | now() | Created |
+
+**Constraints:**
+- `UNIQUE (comment_id, mentioned_user_id)` — one mention row per user per comment
+
+**Indexes:**
+- `comment_user_mentions_mentioned_user_id_idx` on `(mentioned_user_id, created_at DESC)`
+- `comment_user_mentions_comment_id_idx` on `(comment_id)`
+
+**RLS:** Enabled (backend service role writes via API; no client direct writes in Phase C1).
+
+⚠️ **Important:**
+- Stores regular user `@mentions` parsed from comment bodies.
+- Does **not** replace `artist_video_tags`.
+- Verified artist `@tags` for ID Track continue to use `artist_video_tags` + `artist_tag_comment` notifications.
+- Phase C1 persists mention rows only; `comment_user_mention` notifications come in a later phase.
 
 ---
 
