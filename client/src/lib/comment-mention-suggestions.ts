@@ -106,14 +106,26 @@ function resolveUserFromVerifiedArtists(
   };
 }
 
+const SEARCH_SLOT_RESERVE_MAX = 3;
+
 export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): MentionSuggestion[] {
   const maxResults = input.maxResults ?? DEFAULT_MAX_RESULTS;
   const query = input.query;
+  const searchResults = input.globalSearchResults ?? [];
+  const reservedSearchSlots =
+    query.length >= 2 && searchResults.length > 0
+      ? Math.min(SEARCH_SLOT_RESERVE_MAX, searchResults.length)
+      : 0;
+  const b1MaxResults = maxResults - reservedSearchSlots;
   const seen = new Set<string>();
   const results: MentionSuggestion[] = [];
 
-  const tryAdd = (suggestion: MentionSuggestion, options?: { allowSelf?: boolean }) => {
-    if (results.length >= maxResults) return;
+  const tryAdd = (
+    suggestion: MentionSuggestion,
+    options?: { allowSelf?: boolean; cap?: number },
+  ) => {
+    const cap = options?.cap ?? maxResults;
+    if (results.length >= cap) return;
     if (!suggestion.userId || !suggestion.username?.trim()) return;
     if (!matchesMentionQuery(suggestion.username, query)) return;
     if (seen.has(suggestion.userId)) return;
@@ -144,7 +156,7 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
           "pinned",
           { isPinnedSelf: true },
         ),
-        { allowSelf: true },
+        { allowSelf: true, cap: b1MaxResults },
       );
     }
   }
@@ -160,6 +172,7 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
         },
         "artist",
       ),
+      { cap: b1MaxResults },
     );
   }
 
@@ -173,7 +186,7 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
       },
       input.verifiedArtists,
     );
-    tryAdd(toSuggestion(resolved, "recent"));
+    tryAdd(toSuggestion(resolved, "recent"), { cap: b1MaxResults });
   }
 
   for (const participant of input.threadParticipants) {
@@ -186,10 +199,10 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
       },
       input.verifiedArtists,
     );
-    tryAdd(toSuggestion(resolved, participant.source ?? "thread"));
+    tryAdd(toSuggestion(resolved, participant.source ?? "thread"), { cap: b1MaxResults });
   }
 
-  for (const searchUser of input.globalSearchResults ?? []) {
+  for (const searchUser of searchResults) {
     const resolved = resolveUserFromVerifiedArtists(
       {
         userId: searchUser.id,

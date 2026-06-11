@@ -1385,6 +1385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .select("id, username, avatar_url, account_type, verified_artist, moderator, banned, suspended_until")
         .ilike("username", `%${normalizedQ}%`)
         .neq("id", requesterId)
+        .order("username", { ascending: true })
         .limit(fetchLimit);
 
       if (error) {

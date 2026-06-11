@@ -899,7 +899,11 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     trimmedDebouncedMentionQuery.length >= 2 &&
     isValidMentionQuery(trimmedDebouncedMentionQuery);
 
-  const { data: globalMentionSearchUsers = [] } = useQuery<
+  const {
+    data: globalMentionSearchUsers = [],
+    isFetching: isFetchingGlobalMentionSearch,
+    isFetched: isGlobalMentionSearchFetched,
+  } = useQuery<
     {
       id: string;
       username: string;
@@ -941,6 +945,28 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
     shouldPinCurrentArtistInMentions,
     contextUsername,
   ]);
+
+  const trimmedActiveMentionQuery = artistSearchTerm.trim();
+  const showMentionAutocompleteDropdown =
+    showArtistDropdown &&
+    (mentionSuggestions.length > 0 ||
+      (trimmedActiveMentionQuery.length >= 2 &&
+        shouldFetchGlobalMentionSearch &&
+        (isFetchingGlobalMentionSearch ||
+          (isGlobalMentionSearchFetched && mentionSuggestions.length === 0))));
+
+  const showMentionSearchLoadingRow =
+    trimmedActiveMentionQuery.length >= 2 &&
+    shouldFetchGlobalMentionSearch &&
+    isFetchingGlobalMentionSearch &&
+    mentionSuggestions.length === 0;
+
+  const showMentionSearchEmptyRow =
+    trimmedActiveMentionQuery.length >= 2 &&
+    shouldFetchGlobalMentionSearch &&
+    isGlobalMentionSearchFetched &&
+    !isFetchingGlobalMentionSearch &&
+    mentionSuggestions.length === 0;
 
   const addCommentMutation = useMutation({
     mutationFn: async (data: { content: string; parentId?: string }) => {
@@ -1925,8 +1951,18 @@ export function CommentsModal({ post, isOpen, onClose }: CommentsModalProps) {
           )}
           <div className="relative">
             {/* @mention autocomplete */}
-            {showArtistDropdown && mentionSuggestions.length > 0 && (
+            {showMentionAutocompleteDropdown && (
               <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-border dark:bg-popover dark:shadow-black/40">
+                {showMentionSearchLoadingRow ? (
+                  <div className="px-3 py-2.5 text-xs text-gray-500 dark:text-muted-foreground">
+                    Searching…
+                  </div>
+                ) : null}
+                {showMentionSearchEmptyRow ? (
+                  <div className="px-3 py-2.5 text-xs text-gray-500 dark:text-muted-foreground">
+                    No users found
+                  </div>
+                ) : null}
                 {mentionSuggestions.map((suggestion) => {
                   const isVerifiedArtistSuggestion = suggestion.verified_artist === true;
                   const isPinnedCurrentArtist =
