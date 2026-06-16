@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { Heart, MessageCircle, Bookmark, Share2, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreVertical, Link as LinkIcon, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Send, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -40,7 +40,8 @@ import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { RandomDiceButton } from "@/components/random-dice-button";
 import { playInteractionLight } from "@/lib/haptic";
-import { getPublicPostShareUrl } from "@/lib/public-app-url";
+import { sharePost } from "@/lib/post-share";
+import { appendReleaseDetailFromFeedParam } from "@/lib/release-detail-navigation";
 import {
   dubhubVideoDebugEnabled,
   dubhubVideoDebugLog,
@@ -351,6 +352,13 @@ function VideoCardInner({
     !!contextUser?.id &&
     !!releasePreview?.ownerArtistId &&
     releasePreview.ownerArtistId === contextUser.id;
+  const navigateToReleasePreview = useCallback(
+    (releaseId: string) => {
+      const base = isReleaseOwner ? `/releases/${releaseId}/edit` : `/releases/${releaseId}`;
+      navigate(homeFeedPosterFallback ? appendReleaseDetailFromFeedParam(base) : base);
+    },
+    [isReleaseOwner, homeFeedPosterFallback, navigate],
+  );
   const [showComments, setShowComments] = useState(false);
   // Freeze the post snapshot used by the comments modal to avoid mismatched post IDs
   const [commentsPost, setCommentsPost] = useState<PostWithUser | null>(null);
@@ -361,7 +369,7 @@ function VideoCardInner({
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportMenuOpen, setReportMenuOpen] = useState(false);
   const [artistSelfTagHintSeen, setArtistSelfTagHintSeen] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -480,7 +488,9 @@ function VideoCardInner({
   const likeRequestInFlightRef = useRef(false);
   const [likeSaveNoteBurstKey, setLikeSaveNoteBurstKey] = useState<number | null>(null);
   const likeSaveNoteBurstTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const reportMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  /** Blocks the next video tap-to-pause after report menu dismiss (outside tap bleeds through). */
+  const suppressVideoToggleUntilRef = useRef(0);
   const hasPlayedArtistSelfTagHintAppearRef = useRef(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
@@ -541,7 +551,7 @@ function VideoCardInner({
     !showVerificationDialog &&
     !showArtistVerificationDialog &&
     !showReportModal &&
-    !menuOpen &&
+    !reportMenuOpen &&
     !artistSelfTagHintSeen;
 
   useEffect(() => {
@@ -1921,21 +1931,27 @@ function VideoCardInner({
   });
 
   const handleShare = async () => {
-    const shareUrl = getPublicPostShareUrl(post.id);
-    try {
-      await navigator.clipboard.writeText(shareUrl);
+    const result = await sharePost(post.id);
+    if (result === "copied") {
       toast({
         title: "Link Copied",
         description: "Post link copied to clipboard",
       });
-    } catch (error) {
+    } else if (result === "failed") {
       toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
     }
   };
 
+  const handleReportMenuOpenChange = useCallback((open: boolean) => {
+    setReportMenuOpen(open);
+    if (!open) {
+      suppressVideoToggleUntilRef.current = Date.now() + 450;
+    }
+  }, []);
+
   const handleReport = () => {
     // Close menu first, then open modal after menu has closed
-    setMenuOpen(false);
+    setReportMenuOpen(false);
     requestAnimationFrame(() => {
       setShowReportModal(true);
     });
@@ -2268,6 +2284,9 @@ function VideoCardInner({
           }}
           onClick={(e) => {
             e.preventDefault();
+            if (Date.now() < suppressVideoToggleUntilRef.current) {
+              return;
+            }
             const video = videoRef.current;
             if (video) {
               if (video.paused) {
@@ -2343,6 +2362,52 @@ function VideoCardInner({
           </div>
         ) : null}
       </div>
+      <DropdownMenu open={reportMenuOpen} onOpenChange={handleReportMenuOpenChange}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            ref={reportMenuTriggerRef}
+            aria-label="More options"
+            className={cn(
+              "pointer-events-auto absolute flex min-h-[44px] min-w-[44px] touch-manipulation items-center justify-center text-white outline-none [-webkit-tap-highlight-color:transparent] focus-visible:ring-2 focus-visible:ring-white/50 [&_svg]:drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]",
+              "right-[max(0.625rem,env(safe-area-inset-right,0px))]",
+              "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+              isScrubbingUi ? "opacity-[0.2]" : "opacity-100",
+              homeFeedPosterFallback
+                ? "top-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem))] z-[41]"
+                : moderatorPreview
+                  ? "top-[max(3.25rem,calc(env(safe-area-inset-top,0px)+2.75rem))] z-30"
+                  : "top-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.375rem))] z-30",
+            )}
+            data-testid="button-more-options"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+          >
+            <MoreHorizontal className="h-6 w-6 text-white/90" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="z-[45] bg-white/95 backdrop-blur-sm"
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              handleReport();
+            }}
+            className="cursor-pointer text-red-600 focus:text-red-600"
+            data-testid="menu-item-report"
+          >
+            <Flag className="mr-2 h-4 w-4" />
+            Report Video
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {(() => {
         const postOwnerId = (post as any).user_id ?? post.userId ?? post.user?.id;
         const currentUserId = (post as any).viewer_id ?? contextUser?.id ?? null;
@@ -2411,7 +2476,7 @@ function VideoCardInner({
                 </div>
               </div>
             )}
-            {/* Right action rail — top→bottom: Like, Comment, optional verify/delete, More (short-form pattern) */}
+            {/* Right action rail — top→bottom: Like, Comment, Share, optional verify/delete, Mute */}
             <div
               data-video-action-rail
               className={cn(
@@ -2538,6 +2603,22 @@ function VideoCardInner({
                 ) : null}
               </div>
 
+              <button
+                type="button"
+                className={railBtn}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void handleShare();
+                }}
+                aria-label="Share video"
+                data-testid="button-share-post"
+              >
+                <div className={railIconWrap}>
+                  <Send className="h-7 w-7 text-white" />
+                </div>
+              </button>
+
               {canVerify ? (
                 <button
                   type="button"
@@ -2573,48 +2654,6 @@ function VideoCardInner({
                   <span className="text-[10px] font-medium leading-none text-red-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">Del</span>
                 </button>
               ) : null}
-
-              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    ref={menuTriggerRef}
-                    aria-label="More options"
-                    className={`${railBtn} !gap-0 outline-none ring-0 ring-offset-0 [-webkit-tap-highlight-color:transparent] focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-transparent data-[state=open]:outline-none data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:shadow-none`}
-                    data-testid="button-more-options"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setMenuOpen((prev) => !prev);
-                    }}
-                  >
-                    <div className={railIconWrap}>
-                      <MoreVertical className="h-6 w-6 text-white" />
-                    </div>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm">
-                  <DropdownMenuItem
-                    onClick={handleShare}
-                    className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 pl-[6px] pr-[6px] pt-[6px] pb-[6px] text-sm font-normal text-[#000000] outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled:pointer-events-none] data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-                    data-testid="menu-item-share"
-                  >
-                    <LinkIcon className="mr-2 h-4 w-4" />
-                    Share Video
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      handleReport();
-                    }}
-                    className="cursor-pointer text-red-600 focus:text-red-600"
-                    data-testid="menu-item-report"
-                  >
-                    <Flag className="mr-2 h-4 w-4" />
-                    Report Video
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
 
               {!homeFeedPosterFallback ? (
                 <button
@@ -2845,7 +2884,7 @@ function VideoCardInner({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
+                          navigateToReleasePreview(releasePreview.id);
                         }}
                         className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
                       >
@@ -2955,7 +2994,7 @@ function VideoCardInner({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(isReleaseOwner ? `/releases/${releasePreview.id}/edit` : `/releases/${releasePreview.id}`);
+                    navigateToReleasePreview(releasePreview.id);
                   }}
                   className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
                 >
@@ -3167,15 +3206,15 @@ function VideoCardInner({
               // Root still has aria-hidden, wait for cleanup
               requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                  if (menuTriggerRef.current && document.contains(menuTriggerRef.current)) {
-                    menuTriggerRef.current.focus({ preventScroll: true });
+                  if (reportMenuTriggerRef.current && document.contains(reportMenuTriggerRef.current)) {
+                    reportMenuTriggerRef.current.focus({ preventScroll: true });
                   }
                 });
               });
             } else {
               // Root is clean, safe to restore focus
-              if (menuTriggerRef.current && document.contains(menuTriggerRef.current)) {
-                menuTriggerRef.current.focus({ preventScroll: true });
+              if (reportMenuTriggerRef.current && document.contains(reportMenuTriggerRef.current)) {
+                reportMenuTriggerRef.current.focus({ preventScroll: true });
               }
             }
           }, 10);

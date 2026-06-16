@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus, ImageOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 import { SEARCH_INPUT_KEYBOARD_PROPS } from "@/lib/form-search-input";
 import { ReleaseStatusFields } from "@/components/release-status-fields";
+import { resolveReleaseDetailBackPath } from "@/lib/release-detail-navigation";
 
 function EligiblePostPreview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -81,6 +82,7 @@ function EligiblePostPreview({ src }: { src: string | null }) {
 export default function ReleaseEdit() {
   const [, params] = useRoute("/releases/:id/edit");
   const [, navigate] = useLocation();
+  const search = useSearch();
   const releaseId = params?.id;
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -105,7 +107,7 @@ export default function ReleaseEdit() {
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const handleBack = () => navigate("/releases");
+  const handleBack = () => navigate(resolveReleaseDetailBackPath(search));
   useIosKeyboardResizeNone(true);
   const { isNativeIos, keyboardHeight, prefersReducedMotion } = useIosKeyboardAwareScroll({
     enabled: true,

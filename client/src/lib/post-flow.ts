@@ -1,4 +1,5 @@
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
+import { clearHomeFeedSession } from "@/lib/home-feed-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/export-trimmed-video";
 
@@ -39,6 +40,7 @@ export function cancelDubhubPostFlow(): void {
 
 export async function cancelPostAndHardResetToHome(reason: string): Promise<void> {
   dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "cancelPostAndHardResetToHome start", { reason });
+  clearHomeFeedSession();
   bumpDubhubHomeMediaEpoch(reason);
   // Run the same storage/blob cleanup path first.
   cancelDubhubPostFlow();

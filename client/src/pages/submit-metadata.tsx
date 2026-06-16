@@ -340,12 +340,14 @@ export default function SubmitMetadata() {
       scrollSubmitMetadataActiveFieldAboveIosKeyboard(
         el,
         `keyboardBottomSlack:${phaseSuffix}:sync`,
+        lastIosKeyboardCapHeightPxRef.current,
       );
       requestAnimationFrame(() => {
         if (!submitMetadataKeyboardOpenRef.current) return;
         scrollSubmitMetadataActiveFieldAboveIosKeyboard(
           el,
           `keyboardBottomSlack:${phaseSuffix}:rAF`,
+          lastIosKeyboardCapHeightPxRef.current,
         );
       });
     };
@@ -486,7 +488,11 @@ export default function SubmitMetadata() {
         });
       }
       if (keyboardSessionActive) {
-        scrollSubmitMetadataActiveFieldAboveIosKeyboard(pageScrollRef.current, "visualViewport:scroll");
+        scrollSubmitMetadataActiveFieldAboveIosKeyboard(
+          pageScrollRef.current,
+          "visualViewport:scroll",
+          lastIosKeyboardCapHeightPxRef.current,
+        );
         return;
       }
       if (coveredPx <= 0.5) {
@@ -1776,229 +1782,6 @@ export default function SubmitMetadata() {
 
               <FormField
                 control={form.control}
-                name="description"
-                render={({ field }) => {
-                  const valid = isDescriptionComplete(field.value);
-                  const success = showFieldSuccess("description", valid);
-                  return (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">
-                        Description
-                      </FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Textarea
-                            placeholder="What makes this track special? How long have you been looking for this tune? Where did you first hear this?"
-                            className={cn(
-                              "min-h-[72px] resize-none py-2 text-white placeholder-gray-400 transition-[border-color,box-shadow,background-color]",
-                              success ? "pr-9" : "",
-                              success
-                                ? fieldSuccessOutlineClass
-                                : "border-gray-600 bg-surface",
-                            )}
-                            rows={4}
-                            data-testid="textarea-description"
-                            maxLength={INPUT_LIMITS.postDescription}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value ?? ""}
-                            onFocus={() =>
-                              setFieldFocused((f) => ({ ...f, description: true }))
-                            }
-                            onBlur={(e) => {
-                              field.onBlur();
-                              setFieldFocused((f) => ({ ...f, description: false }));
-                              const v = (e.target as HTMLTextAreaElement).value;
-                              setFieldConfirmed((c) => ({
-                                ...c,
-                                description: isDescriptionComplete(v),
-                              }));
-                            }}
-                            onChange={(e) => {
-                              field.onChange(e);
-                              if (!isDescriptionComplete(e.target.value)) {
-                                setFieldConfirmed((c) => ({ ...c, description: false }));
-                              }
-                            }}
-                          />
-                        </FormControl>
-                        {success ? (
-                          <FieldCompleteCheck className="right-2 top-2" />
-                        ) : null}
-                      </div>
-                      <p className="text-xs leading-none text-gray-500 text-right">
-                        {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
-              />
-
-              <FormField
-                control={form.control}
-                name="playedDate"
-                render={({ field }) => {
-                  const valid = isPlayedDateComplete(field.value);
-                  const success = showFieldSuccess("playedDate", valid);
-                  return (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Date</FormLabel>
-                      <div className="relative isolate flex min-w-0 w-full max-w-full overflow-hidden rounded-md [contain:inline-size]">
-                        <FormControl className="min-w-0 w-full max-w-full flex-1 basis-0">
-                          <Input
-                            type="date"
-                            max={getTodayInputValue()}
-                            className={cn(
-                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start bg-surface px-3 py-0 pr-12 text-white text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
-                              "focus-visible:ring-offset-0",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
-                              success && "ring-inset",
-                            )}
-                            data-testid="input-date"
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value ?? ""}
-                            onFocus={() =>
-                              setFieldFocused((f) => ({ ...f, playedDate: true }))
-                            }
-                            onBlur={(e) => {
-                              field.onBlur();
-                              setFieldFocused((f) => ({ ...f, playedDate: false }));
-                              const v = (e.target as HTMLInputElement).value;
-                              setFieldConfirmed((c) => ({
-                                ...c,
-                                playedDate: isPlayedDateComplete(v),
-                              }));
-                              scheduleSubmitMetadataPopoverDismissLayoutReset();
-                            }}
-                            onChange={(e) => {
-                              const max = getTodayInputValue();
-                              let next = e.target.value;
-                              if (next > max) next = max;
-                              field.onChange(next);
-                              if (!isPlayedDateComplete(next)) {
-                                setFieldConfirmed((c) => ({ ...c, playedDate: false }));
-                              }
-                            }}
-                          />
-                        </FormControl>
-                        {success ? (
-                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
-                        ) : null}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
-              />
-
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => {
-                  const valid = isLocationComplete(field.value);
-                  const success = showFieldSuccess("location", valid);
-                  return (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Location</FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., Fabric London, Printworks"
-                            className={cn(
-                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
-                            )}
-                            data-testid="input-location"
-                            maxLength={INPUT_LIMITS.postLocation}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value || ""}
-                            onFocus={() =>
-                              setFieldFocused((f) => ({ ...f, location: true }))
-                            }
-                            onBlur={(e) => {
-                              field.onBlur();
-                              setFieldFocused((f) => ({ ...f, location: false }));
-                              const v = (e.target as HTMLInputElement).value;
-                              setFieldConfirmed((c) => ({
-                                ...c,
-                                location: isLocationComplete(v),
-                              }));
-                            }}
-                            onChange={(e) => {
-                              field.onChange(e);
-                              if (!isLocationComplete(e.target.value)) {
-                                setFieldConfirmed((c) => ({ ...c, location: false }));
-                              }
-                            }}
-                          />
-                        </FormControl>
-                        {success ? (
-                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
-                        ) : null}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
-              />
-
-              <FormField
-                control={form.control}
-                name="djName"
-                render={({ field }) => {
-                  const valid = isDjNameComplete(field.value);
-                  const success = showFieldSuccess("djName", valid);
-                  return (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Played by</FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., DJ Name"
-                            className={cn(
-                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
-                            )}
-                            data-testid="input-dj"
-                            maxLength={INPUT_LIMITS.postDjName}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value || ""}
-                            onFocus={() =>
-                              setFieldFocused((f) => ({ ...f, djName: true }))
-                            }
-                            onBlur={(e) => {
-                              field.onBlur();
-                              setFieldFocused((f) => ({ ...f, djName: false }));
-                              const v = (e.target as HTMLInputElement).value;
-                              setFieldConfirmed((c) => ({
-                                ...c,
-                                djName: isDjNameComplete(v),
-                              }));
-                            }}
-                            onChange={(e) => {
-                              field.onChange(e);
-                              if (!isDjNameComplete(e.target.value)) {
-                                setFieldConfirmed((c) => ({ ...c, djName: false }));
-                              }
-                            }}
-                          />
-                        </FormControl>
-                        {success ? (
-                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
-                        ) : null}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
-              />
-
-              <FormField
-                control={form.control}
                 name="genre"
                 render={({ field }) => {
                   const valid = isGenreComplete(field.value);
@@ -2066,6 +1849,229 @@ export default function SubmitMetadata() {
                           >
                             <FieldCompleteCheck variant="inline" />
                           </div>
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => {
+                  const valid = isDescriptionComplete(field.value);
+                  const success = showFieldSuccess("description", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">
+                        Description (Optional)
+                      </FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Textarea
+                            placeholder="What makes this track special? How long have you been looking for this tune? Where did you first hear this?"
+                            className={cn(
+                              "min-h-[72px] resize-none py-2 text-white placeholder-gray-400 transition-[border-color,box-shadow,background-color]",
+                              success ? "pr-9" : "",
+                              success
+                                ? fieldSuccessOutlineClass
+                                : "border-gray-600 bg-surface",
+                            )}
+                            rows={4}
+                            data-testid="textarea-description"
+                            maxLength={INPUT_LIMITS.postDescription}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value ?? ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, description: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, description: false }));
+                              const v = (e.target as HTMLTextAreaElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                description: isDescriptionComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isDescriptionComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, description: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-2" />
+                        ) : null}
+                      </div>
+                      <p className="text-xs leading-none text-gray-500 text-right">
+                        {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <FormField
+                control={form.control}
+                name="playedDate"
+                render={({ field }) => {
+                  const valid = isPlayedDateComplete(field.value);
+                  const success = showFieldSuccess("playedDate", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Date (Optional)</FormLabel>
+                      <div className="relative isolate flex min-w-0 w-full max-w-full overflow-hidden rounded-md [contain:inline-size]">
+                        <FormControl className="min-w-0 w-full max-w-full flex-1 basis-0">
+                          <Input
+                            type="date"
+                            max={getTodayInputValue()}
+                            className={cn(
+                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start bg-surface px-3 py-0 pr-12 text-white text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
+                              "focus-visible:ring-offset-0",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                              success && "ring-inset",
+                            )}
+                            data-testid="input-date"
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value ?? ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, playedDate: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, playedDate: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                playedDate: isPlayedDateComplete(v),
+                              }));
+                              scheduleSubmitMetadataPopoverDismissLayoutReset();
+                            }}
+                            onChange={(e) => {
+                              const max = getTodayInputValue();
+                              let next = e.target.value;
+                              if (next > max) next = max;
+                              field.onChange(next);
+                              if (!isPlayedDateComplete(next)) {
+                                setFieldConfirmed((c) => ({ ...c, playedDate: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <FormField
+                control={form.control}
+                name="location"
+                render={({ field }) => {
+                  const valid = isLocationComplete(field.value);
+                  const success = showFieldSuccess("location", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Location (Optional)</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Fabric London, Printworks"
+                            className={cn(
+                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                            )}
+                            data-testid="input-location"
+                            maxLength={INPUT_LIMITS.postLocation}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value || ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, location: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, location: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                location: isLocationComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isLocationComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, location: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <FormField
+                control={form.control}
+                name="djName"
+                render={({ field }) => {
+                  const valid = isDjNameComplete(field.value);
+                  const success = showFieldSuccess("djName", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-300">Played by (Optional)</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., DJ Name"
+                            className={cn(
+                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
+                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                            )}
+                            data-testid="input-dj"
+                            maxLength={INPUT_LIMITS.postDjName}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value || ""}
+                            onFocus={() =>
+                              setFieldFocused((f) => ({ ...f, djName: true }))
+                            }
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setFieldFocused((f) => ({ ...f, djName: false }));
+                              const v = (e.target as HTMLInputElement).value;
+                              setFieldConfirmed((c) => ({
+                                ...c,
+                                djName: isDjNameComplete(v),
+                              }));
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              if (!isDjNameComplete(e.target.value)) {
+                                setFieldConfirmed((c) => ({ ...c, djName: false }));
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        {success ? (
+                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
                         ) : null}
                       </div>
                       <FormMessage />

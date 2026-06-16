@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
@@ -25,6 +25,7 @@ import {
   hasFullReleaseDetail,
   type ReleaseDetailRecord,
 } from "@/lib/release-cache";
+import { resolveReleaseDetailBackPath } from "@/lib/release-detail-navigation";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -124,6 +125,7 @@ function ReleaseStatsSectionSkeleton() {
 export default function ReleaseDetail() {
   const [, params] = useRoute("/releases/:id");
   const [, navigate] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
@@ -184,17 +186,7 @@ export default function ReleaseDetail() {
     return null;
   }
 
-  const releasesBackUrl = (() => {
-    const search = typeof window !== "undefined" ? window.location.search : "";
-    const params = new URLSearchParams(search);
-    const scope = params.get("scope");
-    const view = params.get("view");
-    const q = new URLSearchParams();
-    if (scope) q.set("scope", scope);
-    if (view) q.set("view", view);
-    const qs = q.toString();
-    return qs ? `/releases?${qs}` : "/releases";
-  })();
+  const releasesBackUrl = resolveReleaseDetailBackPath(search);
   const handleBack = () => navigate(releasesBackUrl);
 
   if (isPending && !release) {

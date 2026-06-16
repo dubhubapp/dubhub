@@ -307,7 +307,11 @@ function shouldSubmitMetadataAdjustScrollForActiveKeyboardField(active: HTMLElem
  * After flushing document scroll on keyboard hide, WKWebKit no longer pans the page — keep focused
  * fields visible by adjusting `pageScrollRef.scrollTop` only while the IME is up.
  */
-export function scrollSubmitMetadataActiveFieldAboveIosKeyboard(scrollRoot: HTMLElement | null, phase: string): void {
+export function scrollSubmitMetadataActiveFieldAboveIosKeyboard(
+  scrollRoot: HTMLElement | null,
+  phase: string,
+  keyboardCoveredPx = 0,
+): void {
   if (!scrollRoot || typeof window === "undefined") return;
   const vv = window.visualViewport;
   if (!vv) return;
@@ -317,9 +321,17 @@ export function scrollSubmitMetadataActiveFieldAboveIosKeyboard(scrollRoot: HTML
   if (!scrollRoot.contains(active)) return;
   if (!shouldSubmitMetadataAdjustScrollForActiveKeyboardField(active)) return;
 
-  const bufferPx = 14;
+  const bufferPx = 18;
   const visibleTop = vv.offsetTop + bufferPx;
-  const visibleBottom = vv.offsetTop + vv.height - bufferPx;
+  /**
+   * Under KeyboardResize.None the visual viewport does not shrink for the IME, so vv.height alone
+   * places visibleBottom behind the keyboard. Fold in the plugin-reported keyboard height; Math.min
+   * is safe whether or not the viewport shrinks, and a 0/missing value degrades to vv-only behaviour.
+   */
+  const vvBottom = vv.offsetTop + vv.height;
+  const safeKeyboardCoveredPx = Math.max(0, keyboardCoveredPx);
+  const kbTop = window.innerHeight - safeKeyboardCoveredPx;
+  const visibleBottom = Math.min(vvBottom, kbTop) - bufferPx;
 
   const rect = active.getBoundingClientRect();
   let wantedDelta = 0;

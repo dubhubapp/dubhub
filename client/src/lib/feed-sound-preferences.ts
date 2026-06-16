@@ -8,7 +8,7 @@ export function getFeedStartWithSound(): boolean {
   } catch {
     /* ignore */
   }
-  return false;
+  return true;
 }
 
 export function setFeedStartWithSound(value: boolean): void {

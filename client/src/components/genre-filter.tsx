@@ -460,6 +460,19 @@ export function GenreFilter({
             })}
           </div>
         </div>
+
+        <div className="sticky bottom-0 border-t border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => {
+              playInteractionMedium();
+              setIsOpen(false);
+            }}
+            className="ios-press min-h-9 w-full rounded-full bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+          >
+            Done
+          </button>
+        </div>
       </>
     );
 

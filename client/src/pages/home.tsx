@@ -55,6 +55,11 @@ import {
   markWelcomeBackSeenForUser,
   persistHintSeen,
 } from "@/lib/onboarding";
+import {
+  buildHomeFeedSessionSnapshot,
+  getHomeFeedSessionBootstrap,
+  saveHomeFeedSession,
+} from "@/lib/home-feed-session";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
 const WELCOME_MESSAGES = [
@@ -715,9 +720,25 @@ function applyDeepLinkPostMergeToCache(
 }
 
 export default function Home() {
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">("all");
-  const [sortMode, setSortMode] = useState<FeedSortMode>("trending");
+  const [feedSessionBootstrap] = useState(() =>
+    getHomeFeedSessionBootstrap(typeof window !== "undefined" ? window.location.search : ""),
+  );
+  /** Blocks scroll listeners from overwriting restored activePostId until scroll restore completes. */
+  const feedSessionRestorePendingRef = useRef(feedSessionBootstrap.restoreSession);
+  /** Skips the first feed-chrome reset after remount when restoring a saved session. */
+  const feedChromeResetSkippedForRestoreRef = useRef(feedSessionBootstrap.restoreSession);
+  const pendingFeedScrollRestoreRef = useRef<{ activePostId: string | null; scrollTop: number } | null>(
+    feedSessionBootstrap.restoreSession
+      ? { activePostId: feedSessionBootstrap.activePostId, scrollTop: feedSessionBootstrap.scrollTop }
+      : null,
+  );
+  const feedSessionPersistReadyRef = useRef(false);
+
+  const [selectedGenres, setSelectedGenres] = useState<string[]>(feedSessionBootstrap.selectedGenres);
+  const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">(
+    feedSessionBootstrap.identificationFilter,
+  );
+  const [sortMode, setSortMode] = useState<FeedSortMode>(feedSessionBootstrap.sortMode);
   const [genreMenuOpen, setGenreMenuOpen] = useState(false);
   /** True while the rail dice plays exit before leaving Random mode. */
   const [randomViewExiting, setRandomViewExiting] = useState(false);
@@ -728,7 +749,9 @@ export default function Home() {
   const { registerHomeWhileOnHomeHandler, isFeedMuted, toggleFeedMute } = useHomeFeedInteraction();
   /** Persists while scrolling the home feed (and between Random / sorted feeds). */
   const [isFeedOverlayCollapsed, setIsFeedOverlayCollapsed] = useState(false);
-  const [activePostId, setActivePostId] = useState<string | null>(null);
+  const [activePostId, setActivePostId] = useState<string | null>(
+    feedSessionBootstrap.restoreSession ? feedSessionBootstrap.activePostId : null,
+  );
   /** Swipe decoder prewarm target (feature-flagged; not the same as `activePostId`). */
   const [prewarmPostId, setPrewarmPostId] = useState<string | null>(null);
   const prewarmPostIdRef = useRef<string | null>(null);
@@ -777,6 +800,8 @@ export default function Home() {
   const deepLinkRandomExitForPostRef = useRef<string | null>(null);
   /** One-shot guard for merge failure / filter-blocked / watchdog so we don’t toast or navigate twice. */
   const deepLinkTerminalHandledRef = useRef<string | null>(null);
+  /** One-shot guard: cleared genre/ID filters once for this deep-link post so the target can win over active filters. */
+  const deepLinkFiltersNeutralizedRef = useRef<string | null>(null);
   const deepLinkWatchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Post id the active watchdog was scheduled for (skip redundant timer resets). */
   const deepLinkWatchdogForPostRef = useRef<string | null>(null);
@@ -805,6 +830,49 @@ export default function Home() {
   } | null>(null);
 
   const genresKey = [...selectedGenres].sort().join(",");
+
+  const feedSessionSavePayloadRef = useRef({
+    sortMode: feedSessionBootstrap.sortMode,
+    selectedGenres: feedSessionBootstrap.selectedGenres,
+    identificationFilter: feedSessionBootstrap.identificationFilter,
+    activePostId: feedSessionBootstrap.activePostId,
+  });
+  feedSessionSavePayloadRef.current = {
+    sortMode,
+    selectedGenres,
+    identificationFilter,
+    activePostId,
+  };
+
+  const persistFeedSessionSnapshot = useCallback(() => {
+    const { sortMode: sm, selectedGenres: sg, identificationFilter: idf, activePostId: apid } =
+      feedSessionSavePayloadRef.current;
+    const scrollTop = videoFeedRef.current?.scrollTop ?? 0;
+    saveHomeFeedSession(
+      buildHomeFeedSessionSnapshot({
+        sortMode: sm,
+        selectedGenres: sg,
+        identificationFilter: idf,
+        activePostId: apid,
+        scrollTop,
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      persistFeedSessionSnapshot();
+    };
+  }, [persistFeedSessionSnapshot]);
+
+  useEffect(() => {
+    if (!feedSessionPersistReadyRef.current) {
+      feedSessionPersistReadyRef.current = true;
+      return;
+    }
+    if (feedSessionRestorePendingRef.current) return;
+    persistFeedSessionSnapshot();
+  }, [sortMode, genresKey, identificationFilter, persistFeedSessionSnapshot]);
 
   useEffect(() => {
     const userId = currentUser?.id;
@@ -1236,6 +1304,53 @@ export default function Home() {
     feedChromeResetPending &&
     Boolean(isPlaceholderData);
 
+  /** Restore scroll / active post once after remount with a saved session (skipped for deep links). */
+  useLayoutEffect(() => {
+    const pending = pendingFeedScrollRestoreRef.current;
+    if (!pending) return;
+    if (sortMode === "random") {
+      pendingFeedScrollRestoreRef.current = null;
+      feedSessionRestorePendingRef.current = false;
+      return;
+    }
+    if (isInitialFeedLoad || suppressPlaceholderFeedRows || isPlaceholderData) return;
+    const el = videoFeedRef.current;
+    if (!el || uiPosts.length === 0) return;
+
+    const escapePostId =
+      pending.activePostId != null &&
+      typeof CSS !== "undefined" &&
+      typeof CSS.escape === "function"
+        ? CSS.escape(pending.activePostId)
+        : pending.activePostId;
+
+    let restored = false;
+    if (pending.activePostId && uiPosts.some((p) => p.id === pending.activePostId)) {
+      const node = el.querySelector<HTMLElement>(`[data-post-id="${escapePostId}"]`);
+      if (node) {
+        el.scrollTo({ top: node.offsetTop, behavior: "auto" });
+        setActivePostId(pending.activePostId);
+        restored = true;
+      }
+    }
+
+    if (!restored && pending.scrollTop > 0) {
+      el.scrollTo({ top: pending.scrollTop, behavior: "auto" });
+    }
+
+    pendingFeedScrollRestoreRef.current = null;
+    feedSessionRestorePendingRef.current = false;
+    prevFeedChromeKeyRef.current = `${sortMode}\0${identificationFilter}\0${genresKey}`;
+  }, [
+    uiPosts,
+    sortMode,
+    identificationFilter,
+    genresKey,
+    isInitialFeedLoad,
+    suppressPlaceholderFeedRows,
+    isPlaceholderData,
+  ]);
+
   const shouldShowFeedEndCard =
     sortMode !== "random" &&
     !isInitialFeedLoad &&
@@ -1313,6 +1428,7 @@ export default function Home() {
   const feedPreloadAnchorIndex = activePostIndex >= 0 ? activePostIndex : 0;
 
   useLayoutEffect(() => {
+    if (feedSessionRestorePendingRef.current) return;
     if (!isAppForegroundActive) return;
     if (sortMode === "random" || uiPosts.length === 0) return;
     if (isPlaceholderData || suppressPlaceholderFeedRows) return;
@@ -1636,6 +1752,11 @@ export default function Home() {
   // nearest-active logic never run against a stale viewport or treat a chrome change as pure reorder.
   useLayoutEffect(() => {
     if (sortMode === "random") return;
+    if (feedChromeResetSkippedForRestoreRef.current) {
+      feedChromeResetSkippedForRestoreRef.current = false;
+      prevFeedChromeKeyRef.current = `${sortMode}\0${identificationFilter}\0${genresKey}`;
+      return;
+    }
     const el = videoFeedRef.current;
     const u = uiPostsNewest201TraceRef.current;
     const scrollBefore = el?.scrollTop ?? null;
@@ -2194,6 +2315,7 @@ export default function Home() {
   useEffect(() => {
     const el = videoFeedRef.current;
     if (!el) return;
+    if (feedSessionRestorePendingRef.current) return;
     if (sortMode === "random") {
       const nextRp = isAppForegroundActive ? (randomPost?.id ?? null) : null;
       newest201Trace("setActivePostId/random-mode-sync", {
@@ -2539,6 +2661,7 @@ export default function Home() {
       deepLinkFetchInFlightRef.current.clear();
       deepLinkRandomExitForPostRef.current = null;
       deepLinkTerminalHandledRef.current = null;
+      deepLinkFiltersNeutralizedRef.current = null;
       clearDeepLinkWatchdog();
       return;
     }
@@ -2565,25 +2688,20 @@ export default function Home() {
 
     /**
      * If the resolved post sits in TanStack Query `posts` but client chrome filters exclude it from `uiPosts`
-     * (merged posts bypass server filtering), toast and clear params — avoids a stuck/no-op deep link.
+     * (merged posts bypass server filtering), the user intentionally tapped this link — the target post must win
+     * over active filters. Neutralize genre/ID filters once for this postId, then let the effect rerun so the
+     * existing fetch/merge/scroll/open-comments flow continues. Do NOT toast or navigate away here.
      */
     const inPostsSlice = posts.find((p) => p.id === postId);
     if (
       inPostsSlice &&
       !uiPosts.some((p) => p.id === postId) &&
       !isInitialFeedLoad &&
-      deepLinkTerminalHandledRef.current !== postId
+      deepLinkFiltersNeutralizedRef.current !== postId
     ) {
-      deepLinkTerminalHandledRef.current = postId;
-      pendingDeepLinkPostRef.current = null;
-      clearDeepLinkWatchdog();
-      clearPendingOpenComments();
-      toast({
-        title: "Post hidden by current filters",
-        description: "Adjust genre or ID filters in the menu, then try opening the notification again.",
-        variant: "destructive",
-      });
-      navigate("/", { replace: true });
+      deepLinkFiltersNeutralizedRef.current = postId;
+      if (selectedGenres.length > 0) setSelectedGenres([]);
+      if (identificationFilter !== "all") setIdentificationFilter("all");
       return;
     }
 
