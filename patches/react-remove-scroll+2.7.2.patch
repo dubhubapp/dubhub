@@ -1,0 +1,66 @@
+diff --git a/node_modules/react-remove-scroll/dist/es2015/SideEffect.js b/node_modules/react-remove-scroll/dist/es2015/SideEffect.js
+index 68552f3..7d6f0f8 100644
+--- a/node_modules/react-remove-scroll/dist/es2015/SideEffect.js
++++ b/node_modules/react-remove-scroll/dist/es2015/SideEffect.js
+@@ -59,6 +59,17 @@
+         if (isTouchingSelection) {
+             return false;
+         }
++        // allow iOS selection handle drag inside scroll-lock shards (Radix Dialog content)
++        if (selection && !selection.isCollapsed && selection.toString().length > 0) {
++            var shards = lastProps.current.shards || [];
++            var targetIsInsideShard = shards.some(function (shard) {
++                var node = shard && 'current' in shard ? shard.current : shard;
++                return node && target instanceof Node && node.contains(target);
++            });
++            if (targetIsInsideShard) {
++                return false;
++            }
++        }
+         var canBeScrolledInMainDirection = locationCouldBeScrolled(moveDirection, target);
+         if (!canBeScrolledInMainDirection) {
+             return true;
+diff --git a/node_modules/react-remove-scroll/dist/es2019/SideEffect.js b/node_modules/react-remove-scroll/dist/es2019/SideEffect.js
+index c0a7203..20889b1 100644
+--- a/node_modules/react-remove-scroll/dist/es2019/SideEffect.js
++++ b/node_modules/react-remove-scroll/dist/es2019/SideEffect.js
+@@ -57,6 +57,17 @@
+         if (isTouchingSelection) {
+             return false;
+         }
++        // allow iOS selection handle drag inside scroll-lock shards (Radix Dialog content)
++        if (selection && !selection.isCollapsed && selection.toString().length > 0) {
++            const shards = lastProps.current.shards || [];
++            const targetIsInsideShard = shards.some((shard) => {
++                const node = shard && 'current' in shard ? shard.current : shard;
++                return node && target instanceof Node && node.contains(target);
++            });
++            if (targetIsInsideShard) {
++                return false;
++            }
++        }
+         let canBeScrolledInMainDirection = locationCouldBeScrolled(moveDirection, target);
+         if (!canBeScrolledInMainDirection) {
+             return true;
+diff --git a/node_modules/react-remove-scroll/dist/es5/SideEffect.js b/node_modules/react-remove-scroll/dist/es5/SideEffect.js
+index a6d45ed..4aea782 100644
+--- a/node_modules/react-remove-scroll/dist/es5/SideEffect.js
++++ b/node_modules/react-remove-scroll/dist/es5/SideEffect.js
+@@ -64,6 +64,17 @@
+         if (isTouchingSelection) {
+             return false;
+         }
++        // allow iOS selection handle drag inside scroll-lock shards (Radix Dialog content)
++        if (selection && !selection.isCollapsed && selection.toString().length > 0) {
++            var shards = lastProps.current.shards || [];
++            var targetIsInsideShard = shards.some(function (shard) {
++                var node = shard && 'current' in shard ? shard.current : shard;
++                return node && target instanceof Node && node.contains(target);
++            });
++            if (targetIsInsideShard) {
++                return false;
++            }
++        }
+         var canBeScrolledInMainDirection = (0, handleScroll_1.locationCouldBeScrolled)(moveDirection, target);
+         if (!canBeScrolledInMainDirection) {
+             return true;

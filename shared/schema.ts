@@ -425,6 +425,10 @@ export type UserStats = {
   accuracyPercent: number;
   likesOnPosts: number;
   commentsOnPosts: number;
+  /** Distinct saved releases (Releases tab saved scope; upcoming + past combined). */
+  releasesSaved: number;
+  /** User's own posts artist-identified (`is_verified_artist` + `artist_verified_by`). */
+  artistIds: number;
 };
 
 /**

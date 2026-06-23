@@ -62,8 +62,10 @@ import { storePendingNativeAuthCallbackUrl } from "@/lib/native-auth-callback-ur
 import {
   clearDubhubAuthLocalMarkers,
   hardResetLocalAuthState,
+  isOnAuthCallbackRoute,
   isProfileRowMissingError,
   isRecoverableAuthSessionError,
+  isSessionUserStillActive,
   shouldDeferSignOutForAuthCallback,
 } from "@/lib/auth-session-utils";
 
@@ -344,14 +346,23 @@ function App() {
         }
 
         if (session?.user) {
+          const sessionUserId = session.user.id;
           // Validate account state before marking the app session authenticated.
           
           // Fetch user profile to get role and check artist verification
           const { data: profileData, error: profileError } = await supabase
             .from('profiles')
             .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
-            .eq('id', session.user.id)
+            .eq('id', sessionUserId)
             .single();
+
+          if (!(await isSessionUserStillActive(sessionUserId))) {
+            setIsAuthenticated(false);
+            setIsHomeFeedReady(false);
+            setProfileGateBanner(null);
+            setIsLoading(false);
+            return;
+          }
           
           if (profileData) {
             const suspendedUntil = profileData.suspended_until ? new Date(profileData.suspended_until) : null;
@@ -390,11 +401,14 @@ function App() {
             // Keep logged-out shell while /auth-callback still has PKCE/hash in the URL.
             // Otherwise SIGNED_IN + profile promotes to the authenticated Switch mid-callback,
             // remounting AuthCallback and re-running exchangeCodeForSession (“already used” / Link not usable).
-            if (shouldDeferSignOutForAuthCallback(wouterLocationRef.current)) {
+            if (
+              isOnAuthCallbackRoute(wouterLocationRef.current) ||
+              shouldDeferSignOutForAuthCallback(wouterLocationRef.current)
+            ) {
               console.log(
-                "[dubhub][App][checkAuth] deferred authenticated shell: auth-callback OAuth payload active",
+                "[dubhub][App][checkAuth] deferred authenticated shell: auth-callback active",
               );
-            } else {
+            } else if (await isSessionUserStillActive(sessionUserId)) {
               setIsAuthenticated(true);
               setUserRole(userRole);
               maybeQueueFirstLoginOnboarding({
@@ -448,13 +462,26 @@ function App() {
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
+        const signedInUserId = session.user.id;
+        if (isOnAuthCallbackRoute(wouterLocationRef.current)) {
+          console.log(
+            "[dubhub][App][onAuthStateChange] ignored SIGNED_IN during auth-callback route",
+          );
+          return;
+        }
         // Fetch role and check artist verification before allowing app entry.
         supabase
           .from('profiles')
           .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
-          .eq('id', session.user.id)
+          .eq('id', signedInUserId)
           .single()
           .then(async ({ data: profileData }) => {
+            if (isOnAuthCallbackRoute(wouterLocationRef.current)) {
+              return;
+            }
+            if (!(await isSessionUserStillActive(signedInUserId))) {
+              return;
+            }
             if (profileData) {
               const suspendedUntil = profileData.suspended_until ? new Date(profileData.suspended_until) : null;
               const isSuspended = !!suspendedUntil && suspendedUntil.getTime() > Date.now();
@@ -486,11 +513,14 @@ function App() {
               if (profileData.moderator) {
                 userRole = 'moderator';
               }
-              if (shouldDeferSignOutForAuthCallback(wouterLocationRef.current)) {
+              if (
+                isOnAuthCallbackRoute(wouterLocationRef.current) ||
+                shouldDeferSignOutForAuthCallback(wouterLocationRef.current)
+              ) {
                 console.log(
-                  "[dubhub][App][onAuthStateChange] deferred authenticated shell: auth-callback OAuth payload active",
+                  "[dubhub][App][onAuthStateChange] deferred authenticated shell: auth-callback active",
                 );
-              } else {
+              } else if (await isSessionUserStillActive(signedInUserId)) {
                 setIsAuthenticated(true);
                 setUserRole(userRole);
                 maybeQueueFirstLoginOnboarding({

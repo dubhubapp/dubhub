@@ -16,6 +16,7 @@ import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { useUser } from "@/lib/user-context";
 import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
+import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
 
 interface CommunityVerificationDialogProps {
   postId: string;
@@ -44,8 +45,9 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
   });
 
   const commentsList = Array.isArray(comments) ? comments : [];
+  const flatComments = flattenCommentsForIdSelection(commentsList);
 
-  const sortedComments = [...commentsList].sort((a, b) => {
+  const sortedComments = [...flatComments].sort((a, b) => {
     const toTime = (value: unknown) => {
       if (!value) return 0;
       if (value instanceof Date) return value.getTime();
@@ -168,6 +170,8 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                       : "ring-2 ring-white shadow-[0_0_28px_rgba(255,255,255,0.45)]"
                   : "";
 
+                const isReply = comment.selectionDepth > 0;
+
                 return (
                   <div
                     key={comment.id}
@@ -177,7 +181,7 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                       isSelected && !isOldest && !isFirstComment
                         ? "bg-white/8 border-white/95 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)]"
                         : ""
-                    }`}
+                    } ${isReply ? "ml-3 border-l-2 border-l-white/25" : ""}`}
                   >
                     <RadioGroupItem
                       value={comment.id}
@@ -218,6 +222,13 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                               )}
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-1">
+                              {isReply && (
+                                <span className="whitespace-nowrap rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
+                                  {comment.parentAuthorUsername
+                                    ? `Reply to ${formatUsernameDisplay(comment.parentAuthorUsername)}`
+                                    : "Reply"}
+                                </span>
+                              )}
                               {isOldest && (
                                 <span
                                   className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${

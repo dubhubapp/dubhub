@@ -2421,7 +2421,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.params.id;
       const { score, correct_ids: correctIds } = await getUserKarmaAggregate(userId);
-      res.json({ reputation: score, correct_ids: correctIds, karma: score });
+      const rankMeta = await storage.getLeaderboardUserRank("user", userId, "all");
+      res.json({
+        reputation: score,
+        correct_ids: correctIds,
+        karma: score,
+        communityRank: rankMeta.rank,
+        communityTopPercent: rankMeta.communityTopPercent ?? null,
+      });
     } catch (error) {
       console.error("[/api/user/:id/karma] Error:", error);
       console.error("[/api/user/:id/karma] Error details:", {
@@ -2512,6 +2519,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE p.user_id = ${userId}
       `);
       const commentsOnPosts = Number((commentsOnPostsResult as any).rows?.[0]?.count ?? 0);
+
+      const releasesSaved = await storage.countSavedReleasesForProfile(userId);
+
+      // Artist IDs: own uploads artist-confirmed only (`is_verified_artist` + `artist_verified_by`).
+      // API field `artistIds` ↔ frontend `userStats.artistIds`. Zero means no rows match those flags.
+      const artistIdsResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM posts
+        WHERE user_id = ${userId}
+          AND artist_verified_by IS NOT NULL
+          AND COALESCE(is_verified_artist, false) = true
+      `);
+      const artistIds = Number((artistIdsResult as any).rows?.[0]?.count ?? 0);
       
       res.json({
         totalIDs,
@@ -2521,6 +2541,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accuracyPercent,
         likesOnPosts,
         commentsOnPosts,
+        releasesSaved,
+        artistIds,
       });
     } catch (error) {
       console.error("[/api/user/:id/stats] Error:", error);

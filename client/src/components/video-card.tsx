@@ -240,6 +240,8 @@ interface VideoCardProps {
   moderatorPreview?: boolean;
   /** Home swipe decoder prewarm (v1): inactive buffer/decode only — no play(), feature-flagged in Home. */
   decoderPrewarm?: boolean;
+  /** Home feed: bumped after foreground return / session restore to retry play() when still paused. */
+  playbackRecoveryEpoch?: number;
 }
 
 function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolean {
@@ -281,7 +283,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.requestOpenComments === next.requestOpenComments &&
     prev.onOpenCommentsRequestHandled === next.onOpenCommentsRequestHandled &&
     prev.moderatorPreview === next.moderatorPreview &&
-    prev.decoderPrewarm === next.decoderPrewarm
+    prev.decoderPrewarm === next.decoderPrewarm &&
+    prev.playbackRecoveryEpoch === next.playbackRecoveryEpoch
   );
 }
 
@@ -309,6 +312,7 @@ function VideoCardInner({
   onOpenCommentsRequestHandled,
   moderatorPreview = false,
   decoderPrewarm = false,
+  playbackRecoveryEpoch,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -804,6 +808,7 @@ function VideoCardInner({
 
   /** Feed swipe / delete handoff: ensure `isPlayingRef` allows play() after inactive→active without tab focus. */
   const prevIsActiveForFeedRef = useRef(false);
+  const playbackRecoveryAttemptedEpochRef = useRef<number | null>(null);
   useEffect(() => {
     if (!homeFeedPosterFallback || embeddedFeed) {
       prevIsActiveForFeedRef.current = isActive;
@@ -815,6 +820,25 @@ function VideoCardInner({
       setIsPlaying(true);
     }
   }, [isActive, homeFeedPosterFallback, embeddedFeed, post.id, mediaEpoch, isMinimalBootMode]);
+
+  /** Home lifecycle recovery: one play() retry per epoch when the active card stayed paused after restore/foreground. */
+  useEffect(() => {
+    if (playbackRecoveryEpoch == null || playbackRecoveryEpoch <= 0) return;
+    if (!homeFeedPosterFallback || embeddedFeed) return;
+    if (!isActive || !shouldLoadVideo) return;
+    if (playbackRecoveryAttemptedEpochRef.current === playbackRecoveryEpoch) return;
+    playbackRecoveryAttemptedEpochRef.current = playbackRecoveryEpoch;
+
+    const video = videoRef.current;
+    if (!video) return;
+    if (!isPlayingRef.current) return;
+    if (!video.paused) return;
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+    void video.play().catch(() => {
+      /* autoplay policy or transient WebKit stall — activation / user tap still apply */
+    });
+  }, [playbackRecoveryEpoch, isActive, shouldLoadVideo, homeFeedPosterFallback, embeddedFeed, post.id]);
 
   const clearHold2xWinListeners = useCallback(() => {
     const fn = hold2xWinCleanupRef.current;

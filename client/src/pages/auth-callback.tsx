@@ -10,6 +10,8 @@ import {
   EMAIL_VERIFIED_SESSION_STORAGE_KEY,
   replaceHistoryPath,
 } from "@/lib/auth-session-utils";
+import { clearPendingVerificationEmail, getPendingVerificationEmail } from "@/lib/auth-resend";
+import { ResendVerificationPanel } from "@/components/auth/ResendVerificationPanel";
 import {
   clearPendingNativeAuthCallbackUrl,
   peekPendingNativeAuthCallbackUrl,
@@ -29,8 +31,6 @@ const RECOVERY_INTENT_KEY = "dubhub:auth-recovery-intent";
 
 const COPY_NO_LINK =
   "Open this page from the link in your dub hub email. If you opened this screen by mistake, you can go back to sign in.";
-const COPY_EXPIRED_FALLBACK =
-  "This link has expired or is invalid. Request a new confirmation or reset email from the sign-in screen.";
 
 const SESSION_POLL_ATTEMPTS = 52;
 const SESSION_POLL_GAP_MS = 275;
@@ -340,6 +340,7 @@ export default function AuthCallbackPage() {
             });
             await supabase.auth.signOut();
             if (!stillCurrent()) return;
+            clearPendingVerificationEmail();
             try {
               sessionStorage.setItem(EMAIL_VERIFIED_SESSION_STORAGE_KEY, "1");
             } catch {
@@ -618,16 +619,22 @@ export default function AuthCallbackPage() {
   }
 
   if (outcome === "expired_or_failed") {
-    return shell(
-      <>
-        <CardTitle className="text-xl">Link not usable</CardTitle>
-        <CardDescription className="text-muted-foreground">
-          {detail || COPY_EXPIRED_FALLBACK}
-        </CardDescription>
-      </>,
-      <Button className="w-full" type="button" onClick={() => setLocation("/", { replace: true })}>
-        Back to sign in
-      </Button>,
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-10">
+        <Card className="w-full max-w-md border-border">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <Logo size="lg" />
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 text-center">
+            <ResendVerificationPanel
+              initialEmail={getPendingVerificationEmail()}
+              onBackToSignIn={() => setLocation("/", { replace: true })}
+            />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 

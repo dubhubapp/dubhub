@@ -1,5 +1,15 @@
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   useMutation,
   useQuery,
@@ -50,6 +60,7 @@ import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { findCommentInTree } from "@/lib/comment-selection";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { Capacitor } from "@capacitor/core";
@@ -128,6 +139,15 @@ function getAppViewportHostEl(): HTMLElement | null {
   return inner instanceof HTMLElement ? inner : root;
 }
 
+function isActiveSelectionInsideElement(root: HTMLElement | null): boolean {
+  if (!root || typeof window === "undefined") return false;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.toString().length === 0) return false;
+  const anchorInside = selection.anchorNode != null && root.contains(selection.anchorNode);
+  const focusInside = selection.focusNode != null && root.contains(selection.focusNode);
+  return anchorInside || focusInside;
+}
+
 /** Lifts a `position:fixed; bottom:0` sheet to sit above the on-screen keyboard. */
 function computeCommentsKeyboardBottomInset(): number {
   if (typeof window === "undefined") return 0;
@@ -168,6 +188,7 @@ function computeCommentsSheetMaxPxWithoutVisualViewport(): number {
 export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: CommentsModalProps) {
   const closeCommittedRef = useRef(false);
   const drawerContentRef = useRef<HTMLDivElement | null>(null);
+  const savedDrawerTouchActionRef = useRef<string | null>(null);
 
   const handleClose = useCallback(() => {
     if (closeCommittedRef.current) return;
@@ -205,6 +226,47 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     verifiedArtistsEnabled: isOpen,
   });
+
+  const restoreDrawerTouchAction = useCallback(() => {
+    const drawer = drawerContentRef.current;
+    if (!drawer) return;
+    if (savedDrawerTouchActionRef.current !== null) {
+      drawer.style.touchAction = savedDrawerTouchActionRef.current;
+      savedDrawerTouchActionRef.current = null;
+    } else {
+      drawer.style.removeProperty("touch-action");
+    }
+  }, []);
+
+  const syncDrawerTouchActionForSelection = useCallback(() => {
+    const drawer = drawerContentRef.current;
+    if (!drawer) return;
+    if (isActiveSelectionInsideElement(drawer)) {
+      if (savedDrawerTouchActionRef.current === null) {
+        savedDrawerTouchActionRef.current = drawer.style.touchAction;
+        drawer.style.touchAction = "auto";
+      }
+      return;
+    }
+    restoreDrawerTouchAction();
+  }, [restoreDrawerTouchAction]);
+
+  useEffect(() => {
+    if (!isOpen || typeof document === "undefined") return;
+    const onSelectionChange = () => syncDrawerTouchActionForSelection();
+    document.addEventListener("selectionchange", onSelectionChange);
+    onSelectionChange();
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      restoreDrawerTouchAction();
+    };
+  }, [isOpen, restoreDrawerTouchAction, syncDrawerTouchActionForSelection]);
+
+  const handleCommentBodyPointerDown = useCallback((e: ReactPointerEvent<HTMLParagraphElement>) => {
+    if (isActiveSelectionInsideElement(drawerContentRef.current)) {
+      e.stopPropagation();
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -737,6 +799,32 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
     refetchOnMount: "always",
   });
   const comments = Array.isArray(commentsData) ? commentsData : [];
+  const verifiedCommentId =
+    post.verifiedCommentId ??
+    (post as { verified_comment_id?: string | null }).verified_comment_id ??
+    null;
+  const verifiedReplyPin = useMemo(() => {
+    if (!verifiedCommentId || comments.length === 0) return null;
+    const found = findCommentInTree(comments, verifiedCommentId);
+    if (!found?.isReply) return null;
+    return found;
+  }, [comments, verifiedCommentId]);
+
+  // When the verified ID is a reply, expand its parent thread so the in-thread copy is visible.
+  useEffect(() => {
+    if (!isOpen || !verifiedReplyPin?.parentId) return;
+    const parentLookup = findCommentInTree(comments, verifiedReplyPin.parentId);
+    const totalReplies = parentLookup?.comment.replies?.length ?? 0;
+    if (totalReplies === 0) return;
+
+    const parentId = verifiedReplyPin.parentId;
+    setVisibleReplyCountByParent((prev) => {
+      const current = prev[parentId] ?? 0;
+      if (current >= totalReplies) return prev;
+      return { ...prev, [parentId]: totalReplies };
+    });
+  }, [isOpen, verifiedReplyPin?.parentId, verifiedReplyPin?.comment.id, comments]);
+
   const shouldShowCommentsLoadingState =
     isOpen && commentsData === undefined && (isLoadingComments || isFetchingComments);
 
@@ -1486,7 +1574,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
               );
             }
 
-            if (filteredComments.length === 0) {
+            if (filteredComments.length === 0 && !verifiedReplyPin) {
               return (
                 <div className="flex h-full min-h-[9rem] items-center justify-center px-4 text-center">
                   <div className="flex max-w-[18rem] flex-col items-center gap-2 text-gray-500/85 dark:text-white/55">
@@ -1499,7 +1587,124 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
               );
             }
 
-            return filteredComments.map((comment) => {
+            const pinnedVerifiedReply = verifiedReplyPin?.comment ?? null;
+            const pinnedReplyIsDeleted =
+              pinnedVerifiedReply != null && isDeletedCommentBody(pinnedVerifiedReply.body);
+
+            return (
+              <>
+                {pinnedVerifiedReply && !pinnedReplyIsDeleted && (
+                  <div
+                    data-testid="pinned-verified-reply"
+                    className="mb-3 flex items-start space-x-2 rounded-lg border-2 border-green-500 bg-green-50/40 p-2 dark:border-green-500/75 dark:bg-green-500/[0.11]"
+                  >
+                    <button
+                      type="button"
+                      className="relative flex-shrink-0 p-0"
+                      aria-label={
+                        pinnedVerifiedReply.user.username
+                          ? `View profile ${formatUsernameDisplay(pinnedVerifiedReply.user.username)}`
+                          : "View profile"
+                      }
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openByUsername(pinnedVerifiedReply.user.username, {
+                          anchor: { x: e.clientX, y: e.clientY },
+                        });
+                      }}
+                    >
+                      <img
+                        src={pinnedVerifiedReply.user.avatar_url || undefined}
+                        alt=""
+                        className={`avatar-media h-6 w-6 rounded-full border-2 sm:h-7 sm:w-7 ${isDefaultAvatarUrl(pinnedVerifiedReply.user.avatar_url) ? "avatar-default-media" : ""} ${
+                          pinnedVerifiedReply.user.account_type === "artist" &&
+                          pinnedVerifiedReply.user.verified_artist
+                            ? "border-[#FFD700] " + goldAvatarGlowShadowClass
+                            : "border-transparent"
+                        }`}
+                      />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <div className="flex items-center space-x-1">
+                          <span
+                            className={`cursor-pointer text-xs font-medium hover:underline sm:text-[13px] ${
+                              pinnedVerifiedReply.user.account_type === "artist" &&
+                              pinnedVerifiedReply.user.verified_artist
+                                ? "text-[#FFD700]"
+                                : "text-gray-900 dark:text-white"
+                            }`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openByUsername(pinnedVerifiedReply.user.username, {
+                                anchor: { x: e.clientX, y: e.clientY },
+                              });
+                            }}
+                          >
+                            {formatUsernameDisplay(pinnedVerifiedReply.user.username)}
+                          </span>
+                          <UserRoleInlineIcons
+                            verifiedArtist={
+                              pinnedVerifiedReply.user.account_type === "artist" &&
+                              pinnedVerifiedReply.user.verified_artist === true
+                            }
+                            moderator={!!pinnedVerifiedReply.user.moderator}
+                          />
+                        </div>
+                        <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-white/10 dark:text-white/70">
+                          {verifiedReplyPin?.parentAuthorUsername
+                            ? `Reply to ${formatUsernameDisplay(verifiedReplyPin.parentAuthorUsername)}`
+                            : "Reply in thread"}
+                        </span>
+                        {(post.verificationStatus === "community" ||
+                          post.verificationStatus === "community_approved") &&
+                          !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                            <span
+                              className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                              style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                              data-testid="badge-pinned-community-identified"
+                            >
+                              <Users className="h-3 w-3 shrink-0" />
+                              Identified
+                            </span>
+                          )}
+                        {post.verificationStatus === "identified" &&
+                          !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                            <span
+                              className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                              style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                              data-testid="badge-pinned-identified"
+                            >
+                              <Check className="h-3 w-3 shrink-0 text-white" />
+                              Identified
+                            </span>
+                          )}
+                        {isArtistVerifiedPost && (
+                          <span
+                            className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+                            style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                            data-testid="badge-pinned-artist-identified"
+                          >
+                            <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
+                            Identified
+                          </span>
+                        )}
+                        <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/60">
+                          {formatTimeAgo(pinnedVerifiedReply.createdAt)}
+                        </span>
+                      </div>
+                      <p
+                        className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white"
+                        onPointerDown={handleCommentBodyPointerDown}
+                      >
+                        {highlightArtistMentions(pinnedVerifiedReply.body, pinnedVerifiedReply.tagStatus)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {filteredComments.map((comment) => {
               const commentIsDeleted = isDeletedCommentBody(comment.body);
               const isOwnComment = !!contextUser?.id && comment.userId === contextUser.id;
               const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment
@@ -1649,7 +1854,10 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                     {DELETED_COMMENT_DISPLAY}
                   </p>
                 ) : (
-                  <p className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white">
+                  <p
+                    className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white"
+                    onPointerDown={handleCommentBodyPointerDown}
+                  >
                     {highlightArtistMentions(comment.body, comment.tagStatus)}
                   </p>
                 )}
@@ -1775,8 +1983,19 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                       .map((reply) => {
                         const replyIsDeleted = isDeletedCommentBody(reply.body);
                         const isOwnReply = !!contextUser?.id && reply.userId === contextUser.id;
+                        const isVerifiedReply = post.verifiedCommentId === reply.id;
+                        const isArtistConfirmationReply =
+                          !!artistConfirmationCommentId && reply.id === artistConfirmationCommentId;
                         return (
-                        <div key={reply.id} data-comment-id={reply.id} className="flex items-start space-x-2">
+                        <div
+                          key={reply.id}
+                          data-comment-id={reply.id}
+                          className={`flex items-start space-x-2 ${
+                            !replyIsDeleted && isVerifiedReply
+                              ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-1.5 dark:border-green-500/75 dark:bg-green-500/[0.11]"
+                              : ""
+                          }`}
+                        >
                           <button
                             type="button"
                             className="relative flex-shrink-0 p-0"
@@ -1829,6 +2048,43 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                                 moderator={!!reply.user.moderator}
                               />
                             </div>
+                            {!replyIsDeleted && isArtistConfirmationReply && isArtistVerifiedPost && !isVerifiedReply && (
+                              <span
+                                className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] leading-snug ring-1 ring-white/15"
+                                style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                                data-testid={`badge-artist-verified-${reply.id}`}
+                              >
+                                <GoldVerifiedTick className="h-2.5 w-2.5 shrink-0 text-[#FFD700]" />
+                                Identified
+                              </span>
+                            )}
+                            {!replyIsDeleted &&
+                              (post.verificationStatus === "community" ||
+                                post.verificationStatus === "community_approved") &&
+                              isVerifiedReply &&
+                              !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                                <span
+                                  className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] leading-snug ring-1 ring-white/15"
+                                  style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                                  data-testid={`badge-community-identified-${reply.id}`}
+                                >
+                                  <Users className="h-2.5 w-2.5 shrink-0" />
+                                  Identified
+                                </span>
+                              )}
+                            {!replyIsDeleted &&
+                              isVerifiedReply &&
+                              post.verificationStatus === "identified" &&
+                              !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                                <span
+                                  className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] leading-snug ring-1 ring-white/15"
+                                  style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                                  data-testid={`badge-identified-${reply.id}`}
+                                >
+                                  <Check className="h-2.5 w-2.5 shrink-0 text-white" />
+                                  Identified
+                                </span>
+                              )}
                             {/* Verified by Artist Badge for Reply */}
                             {reply.isVerifiedByArtist && (
                               <div className="flex items-center space-x-1 rounded-full bg-green-50 px-1.5 py-0.5 dark:bg-green-500/16 dark:ring-1 dark:ring-green-400/25">
@@ -1852,7 +2108,10 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                               {DELETED_COMMENT_DISPLAY}
                             </p>
                           ) : (
-                            <p className="mt-0.5 text-xs text-gray-700 dark:text-white">
+                            <p
+                              className="mt-0.5 text-xs text-gray-700 dark:text-white"
+                              onPointerDown={handleCommentBodyPointerDown}
+                            >
                               {highlightArtistMentions(reply.body, reply.tagStatus)}
                             </p>
                           )}
@@ -1959,7 +2218,9 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                 </div>
               </div>
               );
-            });
+            })}
+              </>
+            );
           })()}
         </div>
 

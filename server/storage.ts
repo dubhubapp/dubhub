@@ -18,6 +18,15 @@ import { mapPostThumbnailUrl } from "./postThumbnailUrl";
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
 
+/**
+ * Releases tab `scope=saved`: public releases linked via artist-verified posts the user
+ * liked OR uploaded (release artist must match `posts.artist_verified_by`).
+ * Shared by feed queries and profile `releasesSaved` count — keep in sync.
+ */
+function savedReleasesFeedWhereSql(userId: string) {
+  return sql`(r.is_public = true AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+}
+
 type NotificationMediaSnapshot = {
   thumbnailUrl?: string | null;
   videoUrl?: string | null;
@@ -140,11 +149,18 @@ export interface IStorage {
     userType: "user" | "artist",
     userId: string,
     timeFilter?: "month" | "year" | "all",
-  ): Promise<{ rank: number; entry: any | null }>;
+  ): Promise<{
+    rank: number;
+    entry: any | null;
+    communityTotal?: number;
+    communityTopPercent?: number | null;
+  }>;
   getArtistStats(artistId: string): Promise<any>;
 
   // Releases
   getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]>;
+  /** Distinct saved releases (Releases tab saved scope; upcoming + past combined). */
+  countSavedReleasesForProfile(userId: string): Promise<number>;
   /** Saved (liked/uploaded) or owned/collaborator releases; narrow date window; client applies local “release day” filter. */
   getReleasesDropDayBannerCandidates(userId: string): Promise<any[]>;
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
@@ -954,9 +970,11 @@ export class DatabaseStorage implements IStorage {
         playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
+        isVerifiedArtist: row.is_verified_artist === true,
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
+        artistVerifiedBy: row.artist_verified_by ?? null,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
@@ -1398,6 +1416,8 @@ export class DatabaseStorage implements IStorage {
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
+          p.is_verified_artist,
+          p.artist_verified_by,
           p.created_at,
           pr.id         AS profile_id,
           pr.username   AS profile_username,
@@ -1479,6 +1499,8 @@ export class DatabaseStorage implements IStorage {
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
+        isVerifiedArtist: row.is_verified_artist === true,
+        artistVerifiedBy: row.artist_verified_by ?? null,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
@@ -2259,7 +2281,12 @@ export class DatabaseStorage implements IStorage {
     userType: "user" | "artist",
     userId: string,
     timeFilter: "month" | "year" | "all" = "all",
-  ): Promise<{ rank: number; entry: any | null }> {
+  ): Promise<{
+    rank: number;
+    entry: any | null;
+    communityTotal?: number;
+    communityTopPercent?: number | null;
+  }> {
     try {
       // Same field semantics as getLeaderboard. `rank_score` is internal-only (excluded from final SELECT)
       // so ROW_NUMBER ranks by period activity when filtered while `reputation` stays lifetime for UI.
@@ -2352,7 +2379,8 @@ export class DatabaseStorage implements IStorage {
             *,
             ROW_NUMBER() OVER (
               ORDER BY rank_score DESC, correct_ids DESC, username ASC, user_id ASC
-            ) AS rank
+            ) AS rank,
+            COUNT(*) OVER () AS community_total
           FROM scoped
         )
         SELECT
@@ -2366,18 +2394,25 @@ export class DatabaseStorage implements IStorage {
           correct_ids,
           created_at,
           favorite_genre,
-          rank
+          rank,
+          community_total
         FROM ranked
         WHERE user_id = ${userId}
         LIMIT 1
       `);
 
       const row = (result as any).rows?.[0] ?? null;
-      if (!row) return { rank: 0, entry: null };
-      return { rank: Number(row.rank ?? 0), entry: row };
+      if (!row) return { rank: 0, entry: null, communityTotal: 0, communityTopPercent: null };
+      const rank = Number(row.rank ?? 0);
+      const communityTotal = Number(row.community_total ?? 0);
+      const communityTopPercent =
+        communityTotal > 0 && rank > 0
+          ? Math.min(100, Math.max(1, Math.ceil((100 * rank) / communityTotal)))
+          : null;
+      return { rank, entry: row, communityTotal, communityTopPercent };
     } catch (error) {
       console.error("[getLeaderboardUserRank] Error:", error);
-      return { rank: 0, entry: null };
+      return { rank: 0, entry: null, communityTotal: 0, communityTopPercent: null };
     }
   }
 
@@ -2479,7 +2514,7 @@ export class DatabaseStorage implements IStorage {
         `);
         return this.mapReleasesFeedRows((result as any).rows || []);
       }
-      const savedWhere = sql`(r.is_public = true AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+      const savedWhere = savedReleasesFeedWhereSql(userId);
       const baseWhere = scopeVal === "saved"
         ? savedWhere
         : sql`(r.artist_id = ${userId} OR EXISTS (
@@ -2543,10 +2578,29 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async countSavedReleasesForProfile(userId: string): Promise<number> {
+    if (!userId) return 0;
+    try {
+      const [upcoming, past] = await Promise.all([
+        this.getReleasesFeed(userId, "upcoming", "saved"),
+        this.getReleasesFeed(userId, "past", "saved"),
+      ]);
+      const releaseIds = new Set<string>();
+      for (const release of [...upcoming, ...past]) {
+        const id = release?.id;
+        if (id != null) releaseIds.add(String(id));
+      }
+      return releaseIds.size;
+    } catch (error) {
+      console.error("[countSavedReleasesForProfile] Error:", error);
+      return 0;
+    }
+  }
+
   async getReleasesDropDayBannerCandidates(userId: string): Promise<any[]> {
     if (!userId) return [];
     try {
-      const savedWhere = sql`(r.is_public = true AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+      const savedWhere = savedReleasesFeedWhereSql(userId);
       const myWhere = sql`(r.artist_id = ${userId} OR EXISTS (
                  SELECT 1
                  FROM release_collaborators rc0

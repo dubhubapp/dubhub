@@ -24,6 +24,7 @@ import {
 } from '@/lib/auth-errors';
 import { getAuthCallbackUrl } from '@/lib/auth-callback-url';
 import { markOnboardingPendingForEmail } from '@/lib/onboarding';
+import { setPendingVerificationEmail } from '@/lib/auth-resend';
 
 interface SignUpProps {
   onToggleMode: () => void;
@@ -346,6 +347,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
             "We've sent a verification email. Check your spam or junk folder if it doesn't arrive within a couple of minutes.",
         });
         markOnboardingPendingForEmail(trimmedEmail);
+        setPendingVerificationEmail(trimmedEmail);
 
         // Show verification modal
         openVerificationModal();
@@ -423,7 +425,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
     <Card className="w-full max-w-md mx-auto border-0 bg-transparent shadow-none">
       <CardHeader className="text-center">
         <div className="flex justify-center mb-4">
-          <Logo size="xl" />
+          <Logo size="xl" className="!h-24 w-auto" />
         </div>
         <CardTitle className="text-2xl font-bold text-foreground bg-transparent">Join dub hub</CardTitle>
         <CardDescription className="text-muted-foreground">
@@ -456,7 +458,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
+              placeholder="Email"
               className="bg-input border-border text-foreground placeholder-muted-foreground"
               required
               disabled={hasSignupSucceeded}
@@ -499,7 +501,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Create a password"
+                placeholder="Password"
                 className="bg-input border-border text-foreground placeholder-muted-foreground pr-10"
                 required
                 minLength={8}
@@ -589,7 +591,7 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           
           <Button 
             type="submit" 
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
             disabled={
               isLoading ||
               !!usernameError ||
@@ -620,12 +622,12 @@ export function SignUp({ onToggleMode, onAuthSuccess }: SignUpProps) {
           )}
         </form>
         
-        <div className="text-center mt-4">
-          <p className="text-muted-foreground text-sm">
+        <div className="text-center mt-5">
+          <p className="text-muted-foreground text-[15px]">
             Already have an account?{' '}
             <button
               onClick={onToggleMode}
-              className="text-accent hover:underline"
+              className="text-accent font-semibold hover:underline"
             >
               Sign In
             </button>

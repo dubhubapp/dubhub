@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
 import { Eye, EyeOff } from "lucide-react";
+import {
+  clearPendingVerificationEmail,
+  EMAIL_NOT_CONFIRMED_MESSAGE,
+  VERIFICATION_RESEND_COOLDOWN_MESSAGE,
+  VERIFICATION_RESEND_SUCCESS_MESSAGE,
+  useResendVerificationEmail,
+} from '@/lib/auth-resend';
 
 const RECOVERY_INTENT_KEY = "dubhub:auth-recovery-intent";
 
@@ -24,12 +31,29 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [emailNotConfirmed, setEmailNotConfirmed] = useState(false);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const {
+    send: sendVerificationEmail,
+    isLoading: isResendLoading,
+    errorMessage: resendErrorMessage,
+    success: resendSuccess,
+    cooldownRemaining: resendCooldownRemaining,
+    isOnCooldown: isResendOnCooldown,
+    reset: resetResendState,
+  } = useResendVerificationEmail(email);
+
+  useEffect(() => {
+    setEmailNotConfirmed(false);
+    resetResendState();
+  }, [email, resetResendState]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMessage('');
+    setEmailNotConfirmed(false);
+    resetResendState();
     try {
       sessionStorage.removeItem(RECOVERY_INTENT_KEY);
     } catch {
@@ -53,7 +77,8 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
         if (error.message.includes('Invalid login credentials')) {
           setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         } else if (error.message.includes('Email not confirmed')) {
-          setErrorMessage('Please check your email and confirm your account. If it doesn\'t arrive within a couple of minutes, check your spam or junk folder.');
+          setEmailNotConfirmed(true);
+          setErrorMessage(EMAIL_NOT_CONFIRMED_MESSAGE);
         } else if (error.message.includes('Too many requests')) {
           setErrorMessage('Too many sign in attempts. Please try again later');
         } else if (error.message.includes('User not found')) {
@@ -89,6 +114,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
 
         if (profileError || !profileData) {
           console.error('Profile fetch error:', profileError);
+          await supabase.auth.signOut();
           setErrorMessage('Account found but profile data is missing. Please contact support');
           return;
         }
@@ -109,6 +135,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
           userRole = 'moderator';
         }
 
+        clearPendingVerificationEmail();
         onAuthSuccess(userRole);
       }
     } catch (error: any) {
@@ -123,7 +150,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
     <Card className="w-full max-w-md mx-auto border-0 bg-transparent shadow-none">
       <CardHeader className="text-center">
         <div className="flex justify-center mb-4">
-          <Logo size="xl" />
+          <Logo size="xl" className="!h-24 w-auto" />
         </div>
         <CardTitle className="text-2xl font-bold text-foreground bg-transparent">Welcome Back</CardTitle>
         <CardDescription className="text-muted-foreground">
@@ -139,7 +166,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
+              placeholder="Email"
               className="bg-input border-border text-foreground placeholder-muted-foreground"
               required
             />
@@ -163,7 +190,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
+                placeholder="Password"
                 className="bg-input border-border text-foreground placeholder-muted-foreground pr-10"
                 required
               />
@@ -182,7 +209,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
           
           <Button 
             type="submit" 
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
             disabled={isLoading}
           >
             {isLoading ? "Signing In..." : "Sign In"}
@@ -193,16 +220,53 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
               <p className="text-red-600 text-sm font-medium">{errorMessage}</p>
             </div>
           )}
+
+          {emailNotConfirmed && resendSuccess && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-green-800 text-sm font-medium" data-testid="text-resend-verification-success">
+                {VERIFICATION_RESEND_SUCCESS_MESSAGE}
+              </p>
+            </div>
+          )}
+
+          {emailNotConfirmed && !resendSuccess && (
+            <div className="mt-3 space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => void sendVerificationEmail()}
+                disabled={isResendLoading || isResendOnCooldown || !email.trim()}
+                data-testid="button-resend-verification-sign-in"
+              >
+                {isResendLoading
+                  ? "Sending…"
+                  : isResendOnCooldown
+                    ? `Please wait (${resendCooldownRemaining}s)`
+                    : "Send new verification email"}
+              </Button>
+              {resendErrorMessage && (
+                <p className="text-sm text-red-600" data-testid="text-resend-verification-error-sign-in">
+                  {resendErrorMessage}
+                </p>
+              )}
+              {isResendOnCooldown && !resendErrorMessage && (
+                <p className="text-xs text-muted-foreground text-center">
+                  {VERIFICATION_RESEND_COOLDOWN_MESSAGE}
+                </p>
+              )}
+            </div>
+          )}
         </form>
         
-        <div className="text-center mt-4">
-          <p className="text-muted-foreground text-sm">
-            Don't have an account?{' '}
+        <div className="text-center mt-5">
+          <p className="text-muted-foreground text-[15px]">
+            New to dub hub?{' '}
             <button
               onClick={onToggleMode}
-              className="text-accent hover:underline"
+              className="text-accent font-semibold hover:underline"
             >
-              Sign Up
+              Create account
             </button>
           </p>
         </div>

@@ -117,3 +117,27 @@ export function replaceHistoryPath(path: string): void {
     // ignore
   }
 }
+
+/** True when the app route is `/auth-callback` (router or window — Capacitor may differ). */
+export function isOnAuthCallbackRoute(wouterLocation?: string): boolean {
+  const raw = (wouterLocation ?? "").trim();
+  const pathFromRouter = raw.split(/[?#]/)[0].toLowerCase();
+  if (pathFromRouter === "/auth-callback" || pathFromRouter.startsWith("/auth-callback/")) {
+    return true;
+  }
+  if (typeof window !== "undefined") {
+    const pathWin = window.location.pathname.toLowerCase();
+    if (pathWin === "/auth-callback" || pathWin.startsWith("/auth-callback/")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Re-check live session before promoting authenticated shell (guards stale SIGNED_IN handlers). */
+export async function isSessionUserStillActive(userId: string): Promise<boolean> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return !!session?.user && session.user.id === userId;
+}

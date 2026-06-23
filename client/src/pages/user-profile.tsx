@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff, Target, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,7 +22,8 @@ import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils
 import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
-import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
+import { goldAvatarGlowShadowClass, GoldVerifiedTick } from "@/components/verified-artist";
+import { isPostArtistVerified } from "@/lib/post-artist-verification";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
@@ -72,10 +73,11 @@ const PROFILE_HELP = {
     "Genres for every clip you’ve posted. Each upload counts once toward the genre totals.",
   tracksIdentifiedGenres:
     "Shows genres for tracks you correctly identified. Excludes your own tracks and IDs on your own posts.",
-  totalIDs: "Total clips or tracks you’ve uploaded to the community.",
-  confirmedOverview:
-    "The number of tracks you've correctly identified on other people's posts.",
-  tracksIdentifiedStat: "Tracks you correctly identified on other community members' posts.",
+  topGenresPosted: "Genres for every clip you've posted. Each upload counts once toward the genre totals.",
+  totalIDs: "Total clips or tracks you've uploaded to the community.",
+  idsStat: "Lifetime tracks you've helped identify.",
+  releasesSaved: "Releases saved to your collection.",
+  artistIds: "Your uploads that an artist has identified and confirmed.",
   accuracy:
     "The percentage of your ID attempts that turned out to be correct.",
   likesOnPosts: "Total likes received across posts you uploaded.",
@@ -165,66 +167,6 @@ function getGenreChipColors(genre: string) {
     default:
       return { bg: "bg-gray-600/20", text: "text-gray-400" };
   }
-}
-
-type GenreStatRow = { genre: string; count: number };
-
-function GenreBreakdownSection({
-  title,
-  titleInfo,
-  titleIcon: TitleIcon,
-  stats,
-  emptyMessage,
-  isLoading,
-  testIdPrefix,
-}: {
-  title: string;
-  titleInfo: string;
-  titleIcon?: React.ComponentType<{ className?: string }>;
-  stats: GenreStatRow[];
-  emptyMessage: string;
-  isLoading?: boolean;
-  testIdPrefix: string;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-      <div className="mb-4 flex items-center justify-center gap-1.5 text-center">
-        {TitleIcon ? <TitleIcon className="w-4 h-4 text-gray-300 shrink-0" /> : null}
-        <h3 className="font-semibold">{title}</h3>
-        <StatInfoPopover
-          label={title}
-          content={titleInfo}
-          side="bottom"
-          align="start"
-          className="text-gray-400 hover:text-gray-200"
-        />
-      </div>
-      {isLoading ? (
-        <p className="text-gray-400 text-sm" data-testid={`${testIdPrefix}-loading`}>
-          Loading genre breakdown…
-        </p>
-      ) : stats.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {stats.map((genreStat) => {
-            const colorSet = getGenreChipColors(genreStat.genre);
-            return (
-              <span
-                key={`${genreStat.genre}-${genreStat.count}`}
-                className={`${colorSet.bg} ${colorSet.text} border border-white/10 px-3 py-1 rounded-full text-sm`}
-                data-testid={`${testIdPrefix}-genre-${genreStat.genre.toLowerCase()}`}
-              >
-                {genreStat.genre} ({genreStat.count})
-              </span>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="text-gray-400 text-sm" data-testid={`${testIdPrefix}-empty`}>
-          {emptyMessage}
-        </p>
-      )}
-    </div>
-  );
 }
 
 /** Shared placeholder for profile/notification post preview tiles (no stored thumbnail yet). */
@@ -428,6 +370,8 @@ export default function UserProfile() {
   /** Shell height for the Artist/User 3D flip so tall faces don’t overlap Rep; updated from face measurements. */
   const [artistUserFlipShellPx, setArtistUserFlipShellPx] = useState(430);
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
+  /** Local-only toggle for genre detail inside the Your Activity card (collapsed by default). */
+  const [showActivityGenres, setShowActivityGenres] = useState(false);
   const [likesViewerStartIndex, setLikesViewerStartIndex] = useState<number | null>(null);
   const [postsViewerStartIndex, setPostsViewerStartIndex] = useState<number | null>(null);
   /** Nearest snapped page in full-screen post viewers — drives a single active VideoCard (avoids N× `preload=auto`). */
@@ -476,6 +420,8 @@ export default function UserProfile() {
     reputation: number;
     correct_ids: number;
     karma?: number; // backwards-compatible
+    communityRank?: number;
+    communityTopPercent?: number | null;
   }>({
     queryKey: ["/api/user", currentUser?.id, "karma"],
     enabled: !!currentUser?.id,
@@ -696,6 +642,11 @@ export default function UserProfile() {
       .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
   }, [identifiedGenresData]);
 
+  const artistIdsFromPosts = useMemo(
+    () => userPosts.filter((post) => isPostArtistVerified(post)).length,
+    [userPosts],
+  );
+
   /** Top genre for rep bar colouring: IDs first, then posted genres (same mapping as elsewhere). */
   const repBarGenreChip = useMemo(() => {
     const topId = identifiedGenresData?.genres?.[0]?.genreKey;
@@ -815,27 +766,20 @@ export default function UserProfile() {
       label: "Posts",
       value: Number(userStats?.totalIDs || 0).toLocaleString(),
       Icon: Upload,
-      toneClassName: "border-primary/35 bg-primary/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-primary [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
+      toneClassName: "border-white/20 bg-white/5 text-gray-200 [&_svg]:text-gray-200",
       info: PROFILE_HELP.totalIDs,
     },
     {
-      label: "Correct IDs",
-      value: Number(userReputation?.confirmedIds || 0).toLocaleString(),
-      Icon: CheckCircle,
-      toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
-      info: PROFILE_HELP.confirmedOverview,
-    },
-    {
       label: "IDs",
-      value: Number(userStats?.tracksIdentified || 0).toLocaleString(),
+      value: Number(userReputation?.confirmedIds || 0).toLocaleString(),
       Icon: Check,
-      toneClassName: "border-violet-500/35 bg-violet-500/5 shadow-[0_0_12px_rgba(139,92,246,0.12)] text-violet-300 [&_svg]:drop-shadow-[0_0_6px_rgba(139,92,246,0.4)]",
-      info: PROFILE_HELP.tracksIdentifiedStat,
+      toneClassName: "border-green-500/35 bg-green-500/5 text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
+      info: PROFILE_HELP.idsStat,
     },
     {
       label: "Likes",
       value: Number(userStats?.likesOnPosts || 0).toLocaleString(),
-      toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+      toneClassName: "border-pink-500/35 bg-pink-500/5 text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
       Icon: Heart,
       info: PROFILE_HELP.likesOnPosts,
     },
@@ -843,17 +787,48 @@ export default function UserProfile() {
       label: "Comments",
       value: Number(userStats?.commentsOnPosts || 0).toLocaleString(),
       Icon: MessageCircle,
-      toneClassName: "border-cyan-500/35 bg-cyan-500/5 shadow-[0_0_12px_rgba(6,182,212,0.12)] text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
+      toneClassName: "border-cyan-500/35 bg-cyan-500/5 text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
       info: PROFILE_HELP.commentsOnPosts,
     },
     {
       label: "Accuracy",
       value: `${Math.max(0, Math.min(100, Number(userStats?.accuracyPercent || 0)))}%`,
-      Icon: TrendingUp,
-      toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
+      Icon: Target,
+      toneClassName: "border-violet-500/35 bg-violet-500/5 text-violet-300 [&_svg]:drop-shadow-[0_0_6px_rgba(139,92,246,0.4)]",
       info: PROFILE_HELP.accuracy,
     },
+    {
+      label: "Releases Saved",
+      value: Number(userStats?.releasesSaved ?? 0).toLocaleString(),
+      Icon: Disc3,
+      toneClassName: "border-indigo-500/35 bg-indigo-500/5 text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
+      info: PROFILE_HELP.releasesSaved,
+    },
+    {
+      label: "Artist IDs",
+      value: Math.max(Number(userStats?.artistIds ?? 0), artistIdsFromPosts).toLocaleString(),
+      Icon: Radio,
+      toneClassName: "border-amber-500/35 bg-amber-500/5 text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+      info: PROFILE_HELP.artistIds,
+    },
   ];
+
+  // Compact key-stat row under the profile identity header. Reuses the same
+  // values/icons as the overview cards (single source of truth) and only applies
+  // a clean text tone so it reads as an icon row rather than a boxed dashboard.
+  const KEY_STAT_TONES: Record<string, string> = {
+    Posts: "text-gray-200",
+    IDs: "text-green-300",
+    Likes: "text-pink-300",
+    Comments: "text-cyan-300",
+    Accuracy: "text-violet-300",
+  };
+  const keyStatRow = (["Posts", "IDs", "Likes", "Comments", "Accuracy"] as const)
+    .map((label) => {
+      const item = userOverviewItems.find((i) => i.label === label);
+      return item ? { ...item, tone: KEY_STAT_TONES[label] } : null;
+    })
+    .filter((x): x is StatsCardItem & { tone: string } => x != null);
 
   const measureArtistUserFlipShell = useCallback(() => {
     if (userType !== "artist" || !artistStats) {
@@ -1855,26 +1830,43 @@ export default function UserProfile() {
   };
 
   const getPostStatusMeta = (post: PostWithUser) => {
-    const status = post.verificationStatus ?? (post as any).verification_status;
-    if (status === "community_approved") {
+    const status = post.verificationStatus ?? (post as { verification_status?: string }).verification_status;
+    const isModeratorVerified =
+      post.verifiedByModerator ??
+      (post as { verified_by_moderator?: boolean }).verified_by_moderator;
+
+    // Mirror video-card.tsx tier order for Profile Posts/Likes thumbnail pills.
+    if (isPostArtistVerified(post)) {
+      return {
+        label: "Identified",
+        className: "bg-green-500/85 text-white [&_svg]:!text-[#FFD700]",
+        Icon: ({ className }: { className?: string }) => (
+          <GoldVerifiedTick
+            className={`w-3 h-3 shrink-0 text-[#FFD700] ${className ?? ""}`}
+            glow="inline"
+          />
+        ),
+      };
+    }
+    if (status === "identified" || isModeratorVerified) {
       return {
         label: "Identified",
         className: "bg-green-500/85 text-white",
-        Icon: CheckCircle,
+        Icon: Check,
       };
     }
-    const isIdentified = status === "identified" || status === "community";
-    return isIdentified
-      ? {
-          label: "Identified",
-          className: "bg-green-500/85 text-white",
-          Icon: CheckCircle,
-        }
-      : {
-          label: "Unidentified",
-          className: "bg-red-500/85 text-white",
-          Icon: Clock,
-        };
+    if (status === "community_approved" || status === "community") {
+      return {
+        label: "Identified",
+        className: "bg-green-500/85 text-white",
+        Icon: Users,
+      };
+    }
+    return {
+      label: "Unidentified",
+      className: "bg-red-500/85 text-white",
+      Icon: Clock,
+    };
   };
 
   const getPostThumbnail = (post: PostWithUser) => {
@@ -1956,37 +1948,49 @@ export default function UserProfile() {
       <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           {/* User Header */}
-          <div className="text-center mb-0">
-            <div className="relative inline-block">
-              {userData.profileImage ? (
-                <img 
-                  src={userData.profileImage}
-                  alt="Profile"
-                  className={`avatar-media w-20 h-20 rounded-full mx-auto border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
-                    verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                  }`}
-                />
-              ) : (
-                <div
-                  className={`avatar-shell w-20 h-20 mx-auto border-2 ${
-                    verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                  } bg-gray-700`}
+          <div className="mb-6 flex items-start gap-4">
+            <div className="flex shrink-0 flex-col items-center gap-2">
+              <div className="relative">
+                {userData.profileImage ? (
+                  <img
+                    src={userData.profileImage}
+                    alt="Profile"
+                    className={`avatar-media w-20 h-20 rounded-full border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
+                      verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                    }`}
+                  />
+                ) : (
+                  <div
+                    className={`avatar-shell w-20 h-20 border-2 ${
+                      verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                    } bg-gray-700`}
+                  >
+                    <User className="avatar-icon w-10 h-10 text-gray-400" />
+                  </div>
+                )}
+                <button
+                  onClick={handleProfileImageChange}
+                  className="ios-press ios-press-soft absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
+                  data-testid="button-edit-profile-picture"
                 >
-                  <User className="avatar-icon w-10 h-10 text-gray-400" />
-                </div>
-              )}
-              <button 
-                onClick={handleProfileImageChange}
-                className="ios-press ios-press-soft absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
-                data-testid="button-edit-profile-picture"
+                  <Camera className="w-4 h-4 text-black" />
+                </button>
+              </div>
+              {/* Rep tier badge under avatar */}
+              <div
+                className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1"
+                data-testid="profile-rep-badge"
               >
-                <Camera className="w-4 h-4 text-black" />
-              </button>
+                <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
+                <span className="text-xs font-semibold text-accent">
+                  {repTrustForProfile.displayName}
+                </span>
+              </div>
             </div>
-            <div className="mt-3">
-              <div className="inline-flex items-center justify-center gap-1.5">
+            <div className="min-w-0 flex-1 pt-1">
+              <div className="flex items-center gap-1.5">
                 <h1
-                  className={`text-xl font-bold leading-none ${
+                  className={`min-w-0 truncate text-xl font-bold leading-tight ${
                     verifiedArtist ? "text-[#FFD700]" : "text-foreground"
                   }`}
                 >
@@ -1999,10 +2003,21 @@ export default function UserProfile() {
                   />
                 )}
               </div>
+              <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-0.5 text-xs font-medium text-white/70 backdrop-blur-lg">
+                {userData.joinedDateLine}
+              </p>
             </div>
-            <p className="text-xs font-medium mt-3 mb-3 inline-flex items-center rounded-full px-3 py-0.5 border border-white/20 bg-white/10 backdrop-blur-lg text-white/70">
-              {userData.joinedDateLine}
-            </p>
+          </div>
+
+          {/* Key stats */}
+          <div className="mb-6 grid grid-cols-5 gap-1" data-testid="profile-key-stats">
+            {keyStatRow.map(({ label, value, Icon, tone }) => (
+              <div key={label} className="flex flex-col items-center gap-1 text-center">
+                <Icon className={`w-4 h-4 shrink-0 ${tone}`} />
+                <span className={`text-base font-bold leading-none ${tone}`}>{value}</span>
+                <span className="text-[10px] leading-tight text-gray-400">{label}</span>
+              </div>
+            ))}
           </div>
 
           {/* Tabs */}
@@ -2017,7 +2032,7 @@ export default function UserProfile() {
                 className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
                 <User className="w-4 h-4 shrink-0 mr-1" />
-                Profile
+                Overview
               </TabsTrigger>
               <TabsTrigger
                 value="posts"
@@ -2148,18 +2163,145 @@ export default function UserProfile() {
                   </div>
                 </div>
               ) : (
-                <StatsCardSection
-                  title="Your Activity"
-                  titleInfo={PROFILE_HELP.sectionOverview}
-                  items={userOverviewItems}
-                  className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                />
+                <div
+                  className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                  data-testid="your-activity-list"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 shrink-0 text-gray-300" />
+                      <h3 className="font-semibold">Your Activity</h3>
+                      <StatInfoPopover
+                        label="Your Activity"
+                        content={PROFILE_HELP.sectionOverview}
+                        side="bottom"
+                        align="start"
+                        className="text-gray-400 hover:text-gray-200"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowActivityGenres((prev) => !prev)}
+                      className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-accent hover:text-accent/80"
+                      aria-expanded={showActivityGenres}
+                      data-testid="your-activity-toggle-genres"
+                    >
+                      {showActivityGenres ? "Show Less" : "View All"}
+                      <ChevronRight
+                        className={`w-3.5 h-3.5 transition-transform ${showActivityGenres ? "rotate-90" : ""}`}
+                      />
+                    </button>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {userOverviewItems.map(({ label, value, Icon, info }) => (
+                      <div key={label} className="flex items-center justify-between py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <Icon className="w-4 h-4 shrink-0 text-gray-400" />
+                          <span className="text-sm text-gray-200">{label}</span>
+                          {info ? (
+                            <StatInfoPopover
+                              label={label}
+                              content={info}
+                              size="compact"
+                              side="top"
+                              align="center"
+                              className="text-gray-500 hover:text-gray-300"
+                            />
+                          ) : null}
+                        </div>
+                        <span className="text-sm font-semibold tabular-nums">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {showActivityGenres ? (
+                    <div className="mt-4 space-y-4 border-t border-white/5 pt-4" data-testid="your-activity-genres">
+                      <div>
+                        <div className="mb-3 flex items-center gap-1.5">
+                          <Check className="w-4 h-4 shrink-0 text-gray-300" />
+                          <h4 className="text-sm font-semibold">Top Genres ID&apos;d</h4>
+                          <StatInfoPopover
+                            label="Top Genres ID'd"
+                            content={PROFILE_HELP.tracksIdentifiedGenres}
+                            side="bottom"
+                            align="start"
+                            className="text-gray-400 hover:text-gray-200"
+                          />
+                        </div>
+                        {identifiedGenresLoading ? (
+                          <p className="text-gray-400 text-sm" data-testid="identified-genres-loading">
+                            Loading genre breakdown…
+                          </p>
+                        ) : identifiedGenreStats.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {identifiedGenreStats.map((genreStat) => {
+                              const colorSet = getGenreChipColors(genreStat.genre);
+                              return (
+                                <div
+                                  key={`idd-${genreStat.genre}-${genreStat.count}`}
+                                  className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
+                                  data-testid={`identified-genres-genre-${genreStat.genre.toLowerCase()}`}
+                                >
+                                  <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
+                                  <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-gray-400 text-sm" data-testid="identified-genres-empty">
+                            When your ID is confirmed as the correct track, those tracks will show up here.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-3 flex items-center gap-1.5">
+                          <Upload className="w-4 h-4 shrink-0 text-gray-300" />
+                          <h4 className="text-sm font-semibold">Top Genres Posted</h4>
+                          <StatInfoPopover
+                            label="Top Genres Posted"
+                            content={PROFILE_HELP.topGenresPosted}
+                            side="bottom"
+                            align="start"
+                            className="text-gray-400 hover:text-gray-200"
+                          />
+                        </div>
+                        {postsLoading ? (
+                          <p className="text-gray-400 text-sm" data-testid="posted-genres-loading">
+                            Loading genre breakdown…
+                          </p>
+                        ) : genreStats.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {genreStats.map((genreStat) => {
+                              const colorSet = getGenreChipColors(genreStat.genre);
+                              return (
+                                <div
+                                  key={`posted-${genreStat.genre}-${genreStat.count}`}
+                                  className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
+                                  data-testid={`posted-genres-genre-${genreStat.genre.toLowerCase()}`}
+                                >
+                                  <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
+                                  <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-gray-400 text-sm" data-testid="posted-genres-empty">
+                            No tracks posted yet. Start submitting tracks to see your genre breakdown.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               )}
 
           {/* Rep (trust tier) */}
           <div>
             <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-              <div className="mb-3 flex items-center justify-center gap-1.5 text-center">
+              <div className="mb-3 flex items-center justify-start gap-1.5">
                 <TrendingUp className="w-5 h-5 text-accent shrink-0" />
                 <h3 className="font-semibold">Rep</h3>
                 <StatInfoPopover
@@ -2170,11 +2312,18 @@ export default function UserProfile() {
                   className="text-gray-400 hover:text-gray-200"
                 />
               </div>
-              <div className="mb-3 text-center">
+              <div className="mb-1">
                 <span className="text-sm font-medium" data-testid="reputation-level">
                   {repTrustForProfile.displayName}
                 </span>
               </div>
+              {karmaData?.communityTopPercent != null && karmaData.communityTopPercent > 0 ? (
+                <p className="mb-3 text-xs text-gray-400" data-testid="reputation-percentile">
+                  You&apos;re in the top {karmaData.communityTopPercent}% of the community
+                </p>
+              ) : (
+                <div className="mb-3" />
+              )}
               <div className="w-full rounded-full h-2 overflow-hidden bg-black/55">
                 <div
                   className="h-2 rounded-full transition-[width] duration-700 ease-out"
@@ -2202,26 +2351,6 @@ export default function UserProfile() {
               </div>
             </div>
           </div>
-
-          <GenreBreakdownSection
-            title="Posts"
-            titleInfo={PROFILE_HELP.tracksPosted}
-            titleIcon={Upload}
-            stats={genreStats}
-            emptyMessage="No tracks posted yet. Start submitting tracks to see your genre breakdown."
-            isLoading={postsLoading}
-            testIdPrefix="posted-genres"
-          />
-
-          <GenreBreakdownSection
-            title="IDs"
-            titleInfo={PROFILE_HELP.tracksIdentifiedGenres}
-            titleIcon={Check}
-            stats={identifiedGenreStats}
-            emptyMessage="When your ID is confirmed as the correct track, those tracks will show up here."
-            isLoading={identifiedGenresLoading}
-            testIdPrefix="identified-genres"
-          />
 
           {/* Settings */}
           <div>

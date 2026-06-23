@@ -70,7 +70,7 @@ export default function AuthPage({
             : undefined,
       }}
     >
-      <div className="w-full max-w-md py-2">
+      <div className="w-full max-w-md py-2 -translate-y-4 sm:-translate-y-6">
         <div className="mb-4 flex flex-col items-center gap-3">
           {authBanner ? (
             <p className="w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-center text-sm text-amber-100/95">

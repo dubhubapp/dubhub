@@ -21,6 +21,7 @@ import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
 import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
 import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
+import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -61,6 +62,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
   });
 
   const commentsList = Array.isArray(comments) ? comments : [];
+  const flatComments = flattenCommentsForIdSelection(commentsList);
 
   const resetState = () => {
     setStep("verify");
@@ -236,7 +238,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
 
   const handleConfirm = () => confirmMutation.mutate();
   const handleDeny = () => denyMutation.mutate();
-  const sortedComments = [...commentsList].sort((a, b) => {
+  const sortedComments = [...flatComments].sort((a, b) => {
     const toTime = (value: unknown) => {
       if (!value) return 0;
       if (value instanceof Date) return value.getTime();
@@ -265,7 +267,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     if (selfVerifiedArtistUsername) {
       set.add(selfVerifiedArtistUsername);
     }
-    for (const comment of commentsList) {
+    for (const comment of flatComments) {
       if (comment.user?.verified_artist && comment.user.username?.trim()) {
         set.add(comment.user.username.trim().toLowerCase());
       }
@@ -275,7 +277,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
       }
     }
     return set;
-  }, [verifiedArtists, selfVerifiedArtistUsername, commentsList, verifiedArtist]);
+  }, [verifiedArtists, selfVerifiedArtistUsername, flatComments, verifiedArtist]);
 
   const isVerifiedArtistUsername = useCallback(
     (username: string) => {
@@ -392,10 +394,11 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                     </p>
                   </div>
                   <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
-                    {sortedComments.map((comment, index) => {
+                    {sortedComments.map((comment) => {
                       const isSelected = selectedCommentId === comment.id;
                       const isOldest = comment.id === oldestCommentId;
                       const isFirstTag = comment.id === firstTaggedCommentId;
+                      const isReply = comment.selectionDepth > 0;
                       const selectionRingClass = isFirstTag
                         ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
                         : isOldest
@@ -417,7 +420,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                             isSelected && !isOldest && !isFirstTag
                               ? "border-white/95 bg-white/8 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)] ring-0"
                               : ""
-                          }`}
+                          } ${isReply ? "ml-3 border-l-2 border-l-white/25" : ""}`}
                         >
                           <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} />
                           <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
@@ -453,6 +456,13 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                 </div>
                               </div>
                               <div className="flex flex-wrap items-center gap-1">
+                                {isReply && (
+                                  <span className="whitespace-nowrap rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
+                                    {comment.parentAuthorUsername
+                                      ? `Reply to ${formatUsernameDisplay(comment.parentAuthorUsername)}`
+                                      : "Reply"}
+                                  </span>
+                                )}
                                 {isOldest && (
                                   <span
                                     className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${

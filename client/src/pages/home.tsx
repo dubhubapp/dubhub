@@ -781,6 +781,13 @@ export default function Home() {
   const newest201SortModeRef = useRef<FeedSortMode>(sortMode);
   newest201SortModeRef.current = sortMode;
   const [isAppForegroundActive, setIsAppForegroundActive] = useState(true);
+  /** Bumped to nudge the active Home card to retry play() after foreground return or session restore. */
+  const [playbackRecoveryEpoch, setPlaybackRecoveryEpoch] = useState(0);
+  const bumpPlaybackRecovery = useCallback(() => {
+    setPlaybackRecoveryEpoch((n) => n + 1);
+  }, []);
+  const prevAppForegroundActiveRef = useRef(isAppForegroundActive);
+  const mountPlaybackRecoveryKickSentRef = useRef(false);
   const videoFeedRef = useRef<HTMLDivElement>(null);
   const prevHomePullPhaseRef = useRef<PullToRefreshPhase>("idle");
   const [location, navigate] = useLocation();
@@ -1341,6 +1348,7 @@ export default function Home() {
     pendingFeedScrollRestoreRef.current = null;
     feedSessionRestorePendingRef.current = false;
     prevFeedChromeKeyRef.current = `${sortMode}\0${identificationFilter}\0${genresKey}`;
+    bumpPlaybackRecovery();
   }, [
     uiPosts,
     sortMode,
@@ -1349,6 +1357,7 @@ export default function Home() {
     isInitialFeedLoad,
     suppressPlaceholderFeedRows,
     isPlaceholderData,
+    bumpPlaybackRecovery,
   ]);
 
   const shouldShowFeedEndCard =
@@ -1663,6 +1672,22 @@ export default function Home() {
       void appStateHandle?.remove();
     };
   }, [pauseFeedPlaybackForBackground]);
+
+  useEffect(() => {
+    const prev = prevAppForegroundActiveRef.current;
+    prevAppForegroundActiveRef.current = isAppForegroundActive;
+    if (!prev && isAppForegroundActive) {
+      bumpPlaybackRecovery();
+    }
+  }, [isAppForegroundActive, bumpPlaybackRecovery]);
+
+  useEffect(() => {
+    if (mountPlaybackRecoveryKickSentRef.current) return;
+    if (isInitialFeedLoad || isError) return;
+    if (!activePostId || !isAppForegroundActive) return;
+    mountPlaybackRecoveryKickSentRef.current = true;
+    bumpPlaybackRecovery();
+  }, [isInitialFeedLoad, isError, activePostId, isAppForegroundActive, bumpPlaybackRecovery]);
 
   useEffect(() => {
     try {
@@ -3012,6 +3037,11 @@ export default function Home() {
               isHighlighted={false}
               isMuted={isFeedMuted}
               isActive={isAppForegroundActive && activePostId === randomPost.id}
+              playbackRecoveryEpoch={
+                isAppForegroundActive && activePostId === randomPost.id
+                  ? playbackRecoveryEpoch
+                  : undefined
+              }
               shouldLoadVideo={true}
               videoPreload="auto"
               homeFeedPosterFallback
@@ -3211,6 +3241,9 @@ export default function Home() {
               isHighlighted={highlightedPostId === post.id}
               isMuted={isFeedMuted}
               isActive={isAppForegroundActive && activePostId === post.id}
+              playbackRecoveryEpoch={
+                isAppForegroundActive && activePostId === post.id ? playbackRecoveryEpoch : undefined
+              }
               shouldLoadVideo={shouldLoadVideo}
               videoPreload={videoPreload}
               decoderPrewarm={
