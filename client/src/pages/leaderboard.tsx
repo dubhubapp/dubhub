@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { Capacitor } from "@capacitor/core";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -77,16 +78,6 @@ function formatDaysRemaining(days: number): string {
   return `${days} days remaining`;
 }
 const TOP_LIMIT = 100;
-const LEADERBOARD_FLIP_SHELL_MIN_PX = 520;
-
-function measureFaceHeight(el: HTMLDivElement | null): number {
-  if (!el) return 0;
-  return Math.max(
-    el.scrollHeight,
-    el.offsetHeight,
-    Math.ceil(el.getBoundingClientRect().height),
-  );
-}
 
 function formatRank(rank: number) {
   return `#${rank}`;
@@ -130,33 +121,14 @@ export default function Leaderboard() {
   const { currentUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
   const [activeTab, setActiveTab] = useState<"users" | "artists">("users");
-  const [isFlipAnimating, setIsFlipAnimating] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("month");
   const pageScrollRef = useRef<HTMLDivElement | null>(null);
-  const leaderboardUsersFaceRef = useRef<HTMLDivElement | null>(null);
-  const leaderboardArtistsFaceRef = useRef<HTMLDivElement | null>(null);
-  /** Flip shell: active face at rest; max(both faces) during rotateY so the taller side isn’t clipped. */
-  const [leaderboardFlipShellPx, setLeaderboardFlipShellPx] = useState(LEADERBOARD_FLIP_SHELL_MIN_PX);
   const currentUserId = currentUser?.id;
-
-  const measureLeaderboardFlipShell = useCallback(() => {
-    const elUsers = leaderboardUsersFaceRef.current;
-    const elArtists = leaderboardArtistsFaceRef.current;
-    const hu = measureFaceHeight(elUsers);
-    const ha = measureFaceHeight(elArtists);
-    const activeHeight = activeTab === "users" ? hu : ha;
-    const next = isFlipAnimating
-      ? Math.max(LEADERBOARD_FLIP_SHELL_MIN_PX, hu, ha)
-      : Math.max(LEADERBOARD_FLIP_SHELL_MIN_PX, activeHeight);
-    setLeaderboardFlipShellPx((prev) => (prev === next ? prev : next));
-  }, [activeTab, isFlipAnimating]);
 
   const handleLeaderboardTabChange = (v: string) => {
     const next = v as "users" | "artists";
     if (next === activeTab) return;
-    const scrollEl = pageScrollRef.current;
-    if (scrollEl) scrollEl.scrollTop = 0;
-    setIsFlipAnimating(true);
+    pageScrollRef.current?.scrollTo({ top: 0 });
     setActiveTab(next);
   };
 
@@ -236,26 +208,17 @@ export default function Leaderboard() {
     return artistMyRank;
   }, [currentUserId, artistHasCurrentUserInTop, artistMyRank]);
 
-  useLayoutEffect(() => {
-    const elUsers = leaderboardUsersFaceRef.current;
-    const elArtists = leaderboardArtistsFaceRef.current;
-    measureLeaderboardFlipShell();
-    const ro = new ResizeObserver(measureLeaderboardFlipShell);
-    if (elUsers) ro.observe(elUsers);
-    if (elArtists) ro.observe(elArtists);
-    return () => ro.disconnect();
-  }, [
-    measureLeaderboardFlipShell,
-    userTopEntries.length,
-    artistTopEntries.length,
-    isLoadingUsers,
-    isLoadingArtists,
-    timeFilter,
-    userOutsideTop?.rank,
-    artistOutsideTop?.rank,
-    userOutsideTop?.entry?.user_id,
-    artistOutsideTop?.entry?.user_id,
-  ]);
+  /** iOS status-bar tap → scroll leaderboard to top (page-scoped; no refresh). */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+
+    const onStatusTap = () => {
+      pageScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
+    window.addEventListener("statusTap", onStatusTap);
+    return () => window.removeEventListener("statusTap", onStatusTap);
+  }, []);
 
   const getRankIcon = (rank: number) => {
     if (rank === 1) return <Trophy className="w-6 h-6 text-yellow-500" />;
@@ -524,7 +487,7 @@ export default function Leaderboard() {
       <div className="app-page-top-pad max-w-4xl mx-auto px-4 pb-6">
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange} className="mb-6">
-          <div className="sticky top-2 z-30 mb-4 space-y-2 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-2">
+          <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 space-y-2 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-2">
             <TabsList className="grid w-full grid-cols-2 bg-transparent p-0" data-testid="leaderboard-tabs">
               <TabsTrigger
                 value="users"
@@ -557,59 +520,32 @@ export default function Leaderboard() {
             </div>
           </div>
 
-          <div className="relative z-0 mt-0 w-full">
+          <div className="relative z-0 pt-14 w-full">
             <div
-              className="relative w-full min-h-[520px]"
-              style={{ height: `${leaderboardFlipShellPx}px` }}
+              key={activeTab}
+              className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 duration-200 ease-out"
             >
-              <div className="relative h-full w-full overflow-hidden [perspective:1200px]">
-                <div
-                  className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
-                  onTransitionEnd={(e) => {
-                    if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
-                    setIsFlipAnimating(false);
-                  }}
-                  style={{
-                    transform: activeTab === "users" ? "rotateY(0deg)" : "rotateY(180deg)",
-                    WebkitTransformStyle: "preserve-3d",
-                  }}
-                >
-                  <div
-                    ref={leaderboardUsersFaceRef}
-                    className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                    style={{
-                      backfaceVisibility: "hidden",
-                      WebkitBackfaceVisibility: "hidden",
-                      transform: "rotateY(0deg)",
-                    }}
-                  >
-                    <RewardsBanner tab="users" />
-                    <LeaderboardList
-                      entries={userTopEntries}
-                      emptyLabel="No community members found for this period"
-                      isLoading={isLoadingUsers}
-                      outsideTop={userOutsideTop}
-                    />
-                  </div>
-                  <div
-                    ref={leaderboardArtistsFaceRef}
-                    className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                    style={{
-                      backfaceVisibility: "hidden",
-                      WebkitBackfaceVisibility: "hidden",
-                      transform: "rotateY(180deg)",
-                    }}
-                  >
-                    <RewardsBanner tab="artists" />
-                    <LeaderboardList
-                      entries={artistTopEntries}
-                      emptyLabel="No artists found for this period"
-                      isLoading={isLoadingArtists}
-                      outsideTop={artistOutsideTop}
-                    />
-                  </div>
-                </div>
-              </div>
+              {activeTab === "users" ? (
+                <>
+                  <RewardsBanner tab="users" />
+                  <LeaderboardList
+                    entries={userTopEntries}
+                    emptyLabel="No community members found for this period"
+                    isLoading={isLoadingUsers}
+                    outsideTop={userOutsideTop}
+                  />
+                </>
+              ) : (
+                <>
+                  <RewardsBanner tab="artists" />
+                  <LeaderboardList
+                    entries={artistTopEntries}
+                    emptyLabel="No artists found for this period"
+                    isLoading={isLoadingArtists}
+                    outsideTop={artistOutsideTop}
+                  />
+                </>
+              )}
             </div>
           </div>
         </Tabs>

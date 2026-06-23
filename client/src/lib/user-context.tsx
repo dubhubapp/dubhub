@@ -15,6 +15,7 @@ interface SupabaseProfile {
   email: string;
   username: string;
   avatar_url: string | null;
+  banner_url: string | null;
   account_type: string;
   verified_artist: boolean | null;
   moderator: boolean;
@@ -26,6 +27,7 @@ interface UserContextType {
   currentUser: User | null;
   userType: "user" | "artist" | "moderator";
   profileImage: string | null;
+  bannerUrl: string | null;
   username: string | null;
   verifiedArtist: boolean; // Whether current user is a verified artist
   /** True when the profile has moderator privileges (independent of artist verification). */
@@ -33,6 +35,7 @@ interface UserContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   updateProfileImage: (url: string) => void;
+  updateProfileBanner: (url: string | null) => void;
 }
 
 const UserContext = createContext<UserContextType | null>(null);
@@ -40,6 +43,7 @@ const UserContext = createContext<UserContextType | null>(null);
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [userType, setUserType] = useState<"user" | "artist" | "moderator">("user");
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [verifiedArtist, setVerifiedArtist] = useState<boolean>(false);
@@ -65,6 +69,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           resetSilentPushRegistrationSession();
           // No session - clear all profile data
           setProfileImage(null);
+          setBannerUrl(null);
           setUsername(null);
           setUserType("user");
           setCurrentUser(null);
@@ -79,7 +84,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select(
-            'id, email, username, avatar_url, account_type, verified_artist, moderator, created_at'
+            'id, email, username, avatar_url, banner_url, account_type, verified_artist, moderator, created_at'
           )
           .eq('id', session.user.id)
           .single();
@@ -99,6 +104,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           profileData.account_type
         );
         setProfileImage(resolvedAvatar);
+        setBannerUrl(profileData.banner_url || null);
         const shouldPersistAvatar =
           resolvedAvatar &&
           (isMismatchedDefaultAvatar(profileData.avatar_url, profileData.account_type) ||
@@ -175,6 +181,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     void syncPushTokenIfPermissionGranted(currentUser.id);
   }, [isLoading, isAuthenticated, currentUser?.id]);
 
+  // Warm browser cache for profile banner before the user opens Profile.
+  useEffect(() => {
+    if (!bannerUrl || typeof window === "undefined") return;
+    const img = new window.Image();
+    img.decoding = "async";
+    img.src = bannerUrl;
+  }, [bannerUrl]);
+
   const updateProfileImage = (url: string) => {
     setProfileImage(url);
     setCurrentUser((prev) => {
@@ -192,17 +206,23 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const updateProfileBanner = (url: string | null) => {
+    setBannerUrl(url);
+  };
+
   return (
     <UserContext.Provider value={{ 
       currentUser: currentUser || null, 
       userType, 
-      profileImage, 
+      profileImage,
+      bannerUrl,
       username,
       verifiedArtist,
       isModerator,
       isLoading,
       isAuthenticated,
       updateProfileImage,
+      updateProfileBanner,
     }}>
       {children}
     </UserContext.Provider>

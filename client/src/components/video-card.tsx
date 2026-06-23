@@ -1190,14 +1190,16 @@ function VideoCardInner({
   }, []);
 
   const feedVideoObjectFit = useMemo(() => {
-    if (!videoIntrinsic || !stageSize) return "contain" as const;
+    if (!videoIntrinsic || !stageSize) {
+      return homeFeedPosterFallback && !embeddedFeed ? ("cover" as const) : ("contain" as const);
+    }
     return resolveFeedVideoObjectFit(
       videoIntrinsic.w,
       videoIntrinsic.h,
       stageSize.w,
       stageSize.h,
     );
-  }, [videoIntrinsic, stageSize]);
+  }, [videoIntrinsic, stageSize, homeFeedPosterFallback, embeddedFeed]);
 
   const feedWideLandscape =
     videoIntrinsic != null && isWideLandscapePresentation(videoIntrinsic.w, videoIntrinsic.h);

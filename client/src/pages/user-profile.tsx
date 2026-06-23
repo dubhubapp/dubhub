@@ -1,9 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff, Target, BarChart3 } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
@@ -11,6 +17,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { hardResetLocalAuthState } from "@/lib/auth-session-utils";
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
 import { exportCroppedAvatar } from "@/lib/avatar-crop";
+import { exportCroppedBanner } from "@/lib/banner-crop";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -25,7 +32,7 @@ import { VideoCard } from "@/components/video-card";
 import { goldAvatarGlowShadowClass, GoldVerifiedTick } from "@/components/verified-artist";
 import { isPostArtistVerified } from "@/lib/post-artist-verification";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
-import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
+import { type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import {
@@ -50,6 +57,72 @@ function isProfileTabId(v: string): v is ProfileTabId {
   return (PROFILE_TAB_IDS as readonly string[]).includes(v);
 }
 
+const PROFILE_IMAGE_ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"] as const;
+const PROFILE_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+function validateProfileImageFile(file: File): string | null {
+  if (!PROFILE_IMAGE_ALLOWED_TYPES.includes(file.type as (typeof PROFILE_IMAGE_ALLOWED_TYPES)[number])) {
+    return "Please select a valid image file (JPEG, PNG, GIF, or WebP).";
+  }
+  if (file.size > PROFILE_IMAGE_MAX_BYTES) {
+    return "Please select an image smaller than 10MB.";
+  }
+  return null;
+}
+
+function getProfileBannerStoragePath(userId: string, accountType: string): string {
+  const folder = accountType === "artist" ? "artists" : "users";
+  return `${folder}/${userId}_banner.png`;
+}
+
+/** Profile shell surface — matches `--dark` in index.css / Capacitor underlay (#0f1324). */
+const PROFILE_SURFACE_DARK = "#0f1324";
+
+const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
+  background: `linear-gradient(to bottom, rgba(15,19,36,0) 0%, rgba(15,19,36,0.65) 45%, rgba(15,19,36,0.92) 72%, var(--dark) 86%, var(--dark) 100%)`,
+};
+
+function ProfileBannerDefaultGradient() {
+  return (
+    <>
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)]"
+        style={{
+          background:
+            "linear-gradient(180deg, hsl(227, 88%, 52%) 0%, rgba(30,56,249,0.55) 6%, hsl(222, 70%, 40%) 14%, rgba(15,19,36,0.88) 32%, #0f1324 48%, #0f1324 90%, #0f1324 100%)",
+        }}
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] overflow-hidden"
+        aria-hidden
+      >
+        <div
+          className="absolute -left-[10%] -top-[18%] h-[58%] w-[56%] rounded-full blur-3xl"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(74,233,223,0.32) 0%, rgba(74,233,223,0.1) 38%, transparent 70%)",
+          }}
+        />
+        <div
+          className="absolute -right-[6%] -top-[8%] h-[50%] w-[48%] rounded-full blur-3xl"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(99,102,241,0.26) 0%, rgba(99,102,241,0.07) 40%, transparent 72%)",
+          }}
+        />
+        <div
+          className="absolute left-[28%] top-[2%] h-[34%] w-[38%] rounded-full blur-2xl"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(30,56,249,0.28) 0%, rgba(30,56,249,0.06) 45%, transparent 74%)",
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
 function notificationRowFields(n: NotificationWithUser) {
   return {
     message: n.message,
@@ -62,7 +135,7 @@ function notificationRowFields(n: NotificationWithUser) {
 /** Concise copy for profile stat sections and cards (popover help). */
 const PROFILE_HELP = {
   sectionImpact:
-    "How your music shows up on dub hub: confirmed tracks, releases, clips that feature your songs, and engagement from the community.",
+    "Statistics related to your verified artist activity on dub hub.",
   sectionUserActivity:
     "Your personal activity: uploads, confirmed IDs on your posts, and engagement your posts receive.",
   sectionOverview:
@@ -92,6 +165,16 @@ const PROFILE_HELP = {
   artistUploaders: "Different people who posted clips of your tracks.",
   artistCollaborations: "Collaborative releases you’re credited on.",
 } as const;
+
+/** Verified-artist tick shape for Your Activity stats (white, not gold). */
+function ArtistIdsStatIcon({ className }: { className?: string }) {
+  return (
+    <GoldVerifiedTick
+      className={`text-white drop-shadow-none ${className ?? ""}`}
+      glow="inline"
+    />
+  );
+}
 
 function formatGenreDisplayLabel(genreKey: string): string {
   const g = genreKey.toLowerCase();
@@ -167,6 +250,162 @@ function getGenreChipColors(genre: string) {
     default:
       return { bg: "bg-gray-600/20", text: "text-gray-400" };
   }
+}
+
+const PROFILE_ACTIVITY_CARD_CLASS =
+  "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
+
+type ProfileCommunityActivitySectionProps = {
+  userOverviewItems: StatsCardItem[];
+  showActivityGenres: boolean;
+  onToggleGenres: () => void;
+  identifiedGenresLoading: boolean;
+  identifiedGenreStats: { genre: string; count: number }[];
+  postsLoading: boolean;
+  genreStats: { genre: string; count: number }[];
+};
+
+function ProfileCommunityActivitySection({
+  userOverviewItems,
+  showActivityGenres,
+  onToggleGenres,
+  identifiedGenresLoading,
+  identifiedGenreStats,
+  postsLoading,
+  genreStats,
+}: ProfileCommunityActivitySectionProps) {
+  return (
+    <>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <BarChart3 className="w-4 h-4 shrink-0 text-gray-300" />
+          <h3 className="font-semibold">Your Activity</h3>
+          <StatInfoPopover
+            label="Your Activity"
+            content={PROFILE_HELP.sectionOverview}
+            side="bottom"
+            align="start"
+            className="text-gray-400 hover:text-gray-200"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onToggleGenres}
+          className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-accent hover:text-accent/80"
+          aria-expanded={showActivityGenres}
+          data-testid="your-activity-toggle-genres"
+        >
+          {showActivityGenres ? "Show Less" : "View All"}
+          <ChevronRight
+            className={`w-3.5 h-3.5 transition-transform ${showActivityGenres ? "rotate-90" : ""}`}
+          />
+        </button>
+      </div>
+      <div className="divide-y divide-white/5">
+        {userOverviewItems.map(({ label, value, Icon, info }) => (
+          <div key={label} className="flex items-center justify-between py-2.5">
+            <div className="flex items-center gap-2.5">
+              <Icon className="w-4 h-4 shrink-0 text-gray-400" />
+              <span className="text-sm text-gray-200">{label}</span>
+              {info ? (
+                <StatInfoPopover
+                  label={label}
+                  content={info}
+                  size="compact"
+                  side="top"
+                  align="center"
+                  className="text-gray-500 hover:text-gray-300"
+                />
+              ) : null}
+            </div>
+            <span className="text-sm font-semibold tabular-nums">{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {showActivityGenres ? (
+        <div className="mt-4 space-y-4 border-t border-white/5 pt-4" data-testid="your-activity-genres">
+          <div>
+            <div className="mb-3 flex items-center gap-1.5">
+              <Check className="w-4 h-4 shrink-0 text-gray-300" />
+              <h4 className="text-sm font-semibold">Top Genres ID&apos;d</h4>
+              <StatInfoPopover
+                label="Top Genres ID'd"
+                content={PROFILE_HELP.tracksIdentifiedGenres}
+                side="bottom"
+                align="start"
+                className="text-gray-400 hover:text-gray-200"
+              />
+            </div>
+            {identifiedGenresLoading ? (
+              <p className="text-gray-400 text-sm" data-testid="identified-genres-loading">
+                Loading genre breakdown…
+              </p>
+            ) : identifiedGenreStats.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {identifiedGenreStats.map((genreStat) => {
+                  const colorSet = getGenreChipColors(genreStat.genre);
+                  return (
+                    <div
+                      key={`idd-${genreStat.genre}-${genreStat.count}`}
+                      className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
+                      data-testid={`identified-genres-genre-${genreStat.genre.toLowerCase()}`}
+                    >
+                      <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
+                      <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-gray-400 text-sm" data-testid="identified-genres-empty">
+                When your ID is confirmed as the correct track, those tracks will show up here.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-3 flex items-center gap-1.5">
+              <Upload className="w-4 h-4 shrink-0 text-gray-300" />
+              <h4 className="text-sm font-semibold">Top Genres Posted</h4>
+              <StatInfoPopover
+                label="Top Genres Posted"
+                content={PROFILE_HELP.topGenresPosted}
+                side="bottom"
+                align="start"
+                className="text-gray-400 hover:text-gray-200"
+              />
+            </div>
+            {postsLoading ? (
+              <p className="text-gray-400 text-sm" data-testid="posted-genres-loading">
+                Loading genre breakdown…
+              </p>
+            ) : genreStats.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {genreStats.map((genreStat) => {
+                  const colorSet = getGenreChipColors(genreStat.genre);
+                  return (
+                    <div
+                      key={`posted-${genreStat.genre}-${genreStat.count}`}
+                      className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
+                      data-testid={`posted-genres-genre-${genreStat.genre.toLowerCase()}`}
+                    >
+                      <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
+                      <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-gray-400 text-sm" data-testid="posted-genres-empty">
+                No tracks posted yet. Start submitting tracks to see your genre breakdown.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /** Shared placeholder for profile/notification post preview tiles (no stored thumbnail yet). */
@@ -345,7 +584,7 @@ function dedupeBurstNotificationsKeepNewestFirst(
 export default function UserProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profileImage, username, updateProfileImage, currentUser, verifiedArtist, isModerator, userType } = useUser();
+  const { profileImage, bannerUrl, username, updateProfileImage, updateProfileBanner, currentUser, verifiedArtist, isModerator, userType } = useUser();
   const [activeTab, setActiveTab] = useState("profile");
 
   useEffect(() => {
@@ -367,8 +606,6 @@ export default function UserProfile() {
     return () => setProfileNotificationsTabOpen(false);
   }, [activeTab]);
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
-  /** Shell height for the Artist/User 3D flip so tall faces don’t overlap Rep; updated from face measurements. */
-  const [artistUserFlipShellPx, setArtistUserFlipShellPx] = useState(430);
   const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
   /** Local-only toggle for genre detail inside the Your Activity card (collapsed by default). */
   const [showActivityGenres, setShowActivityGenres] = useState(false);
@@ -386,11 +623,19 @@ export default function UserProfile() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [isExportingCroppedAvatar, setIsExportingCroppedAvatar] = useState(false);
+  const [isBannerCropDialogOpen, setIsBannerCropDialogOpen] = useState(false);
+  const [pendingBannerFileName, setPendingBannerFileName] = useState<string | null>(null);
+  const [pendingBannerSrc, setPendingBannerSrc] = useState<string | null>(null);
+  const [bannerCrop, setBannerCrop] = useState({ x: 0, y: 0 });
+  const [bannerZoom, setBannerZoom] = useState(1);
+  const [bannerCroppedAreaPixels, setBannerCroppedAreaPixels] = useState<Area | null>(null);
+  const [isExportingCroppedBanner, setIsExportingCroppedBanner] = useState(false);
+  const [bannerImageReady, setBannerImageReady] = useState(false);
+  const [bannerImageFailed, setBannerImageFailed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerFileInputRef = useRef<HTMLInputElement>(null);
   const likesViewerRef = useRef<HTMLDivElement | null>(null);
   const postsViewerRef = useRef<HTMLDivElement | null>(null);
-  const artistFlipFaceRef = useRef<HTMLDivElement | null>(null);
-  const userFlipFaceRef = useRef<HTMLDivElement | null>(null);
   const [, navigate] = useLocation();
   const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
     queryKey: ["/api/user", currentUser?.id, "stats"],
@@ -800,15 +1045,15 @@ export default function UserProfile() {
     {
       label: "Releases Saved",
       value: Number(userStats?.releasesSaved ?? 0).toLocaleString(),
-      Icon: Disc3,
+      Icon: Calendar,
       toneClassName: "border-indigo-500/35 bg-indigo-500/5 text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
       info: PROFILE_HELP.releasesSaved,
     },
     {
       label: "Artist IDs",
       value: Math.max(Number(userStats?.artistIds ?? 0), artistIdsFromPosts).toLocaleString(),
-      Icon: Radio,
-      toneClassName: "border-amber-500/35 bg-amber-500/5 text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+      Icon: ArtistIdsStatIcon,
+      toneClassName: "border-amber-500/35 bg-amber-500/5 text-amber-300 [&_svg]:text-white [&_svg]:drop-shadow-none",
       info: PROFILE_HELP.artistIds,
     },
   ];
@@ -830,52 +1075,44 @@ export default function UserProfile() {
     })
     .filter((x): x is StatsCardItem & { tone: string } => x != null);
 
-  const measureArtistUserFlipShell = useCallback(() => {
-    if (userType !== "artist" || !artistStats) {
-      setArtistUserFlipShellPx((prev) => (prev === 430 ? prev : 430));
+  useEffect(() => {
+    if (!bannerUrl || typeof window === "undefined") {
+      setBannerImageReady(false);
+      setBannerImageFailed(false);
       return;
     }
-    const elArtist = artistFlipFaceRef.current;
-    const elUser = userFlipFaceRef.current;
-    const ha = Math.max(
-      elArtist?.scrollHeight ?? 0,
-      elArtist?.offsetHeight ?? 0,
-      Math.ceil(elArtist?.getBoundingClientRect().height ?? 0),
-    );
-    const hu = Math.max(
-      elUser?.scrollHeight ?? 0,
-      elUser?.offsetHeight ?? 0,
-      Math.ceil(elUser?.getBoundingClientRect().height ?? 0),
-    );
-    const next = Math.max(430, Math.ceil(ha), Math.ceil(hu));
-    setArtistUserFlipShellPx((prev) => (prev === next ? prev : next));
-  }, [userType, artistStats]);
 
-  useLayoutEffect(() => {
-    if (userType !== "artist" || !artistStats) return;
-    const elArtist = artistFlipFaceRef.current;
-    const elUser = userFlipFaceRef.current;
-    measureArtistUserFlipShell();
-    const ro = new ResizeObserver(measureArtistUserFlipShell);
-    if (elArtist) ro.observe(elArtist);
-    if (elUser) ro.observe(elUser);
-    return () => ro.disconnect();
-  }, [userType, artistStats, userStats, userReputation, hasAnyArtistImpact, measureArtistUserFlipShell]);
+    let cancelled = false;
+    setBannerImageReady(false);
+    setBannerImageFailed(false);
 
-  useEffect(() => {
-    if (activeTab !== "profile") return;
-    const rafA = requestAnimationFrame(() => {
-      const rafB = requestAnimationFrame(() => {
-        measureArtistUserFlipShell();
-      });
-      return () => cancelAnimationFrame(rafB);
-    });
-    return () => cancelAnimationFrame(rafA);
-  }, [activeTab, artistStatsMode, measureArtistUserFlipShell]);
+    const img = new window.Image();
+    img.decoding = "async";
 
-  const handleProfileImageChange = () => {
-    fileInputRef.current?.click();
-  };
+    const onReady = () => {
+      if (!cancelled) setBannerImageReady(true);
+    };
+    const onFail = () => {
+      if (!cancelled) setBannerImageFailed(true);
+    };
+
+    img.onload = onReady;
+    img.onerror = onFail;
+    img.src = bannerUrl;
+
+    if (img.complete && img.naturalWidth > 0) {
+      onReady();
+    }
+
+    return () => {
+      cancelled = true;
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [bannerUrl]);
+
+  const showBannerDefaultGradient = !bannerUrl || bannerImageFailed || !bannerImageReady;
+  const showUploadedBannerImage = Boolean(bannerUrl) && !bannerImageFailed;
 
   const profileImageMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -944,6 +1181,119 @@ export default function UserProfile() {
       });
     },
   });
+
+  const profileBannerMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!currentUser?.id) {
+        throw new Error("No user logged in");
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("No active session");
+      }
+
+      const filePath = getProfileBannerStoragePath(currentUser.id, currentUser.userType);
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile_uploads")
+        .upload(filePath, file, {
+          cacheControl: "60",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("profile_uploads")
+        .getPublicUrl(filePath);
+
+      const nextBannerUrl = withAvatarCacheBust(publicUrl);
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ banner_url: nextBannerUrl })
+        .eq("id", currentUser.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return { url: nextBannerUrl };
+    },
+    onSuccess: (data) => {
+      updateProfileBanner(data.url);
+      toast({
+        title: "Banner Updated",
+        description: "Your profile banner has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Profile banner upload error:", error);
+      toast({
+        title: "Upload Failed",
+        description: error.message || "Failed to upload profile banner. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeProfileBannerMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentUser?.id) {
+        throw new Error("No user logged in");
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("No active session");
+      }
+
+      const filePath = getProfileBannerStoragePath(currentUser.id, currentUser.userType);
+
+      const { error: removeError } = await supabase.storage
+        .from("profile_uploads")
+        .remove([filePath]);
+
+      if (removeError) {
+        console.warn("[removeProfileBanner] Storage remove failed:", removeError);
+      }
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ banner_url: null })
+        .eq("id", currentUser.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+    },
+    onSuccess: () => {
+      updateProfileBanner(null);
+      toast({
+        title: "Banner Removed",
+        description: "Your profile banner has been removed.",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Profile banner remove error:", error);
+      toast({
+        title: "Remove Failed",
+        description: error.message || "Failed to remove profile banner. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleProfileImageChange = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleBannerImagePick = () => {
+    bannerFileInputRef.current?.click();
+  };
 
   const markNotificationAsReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
@@ -1686,22 +2036,11 @@ export default function UserProfile() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
+      const validationError = validateProfileImageFile(file);
+      if (validationError) {
         toast({
-          title: "Invalid File Type",
-          description: "Please select a valid image file (JPEG, PNG, GIF, or WebP).",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Validate file size (10MB limit)
-      if (file.size > 10 * 1024 * 1024) {
-        toast({
-          title: "File Too Large",
-          description: "Please select an image smaller than 10MB.",
+          title: validationError.includes("10MB") ? "File Too Large" : "Invalid File Type",
+          description: validationError,
           variant: "destructive",
         });
         return;
@@ -1717,6 +2056,33 @@ export default function UserProfile() {
       setZoom(1);
       setCroppedAreaPixels(null);
       setIsCropDialogOpen(true);
+    }
+    event.target.value = "";
+  };
+
+  const handleBannerFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const validationError = validateProfileImageFile(file);
+      if (validationError) {
+        toast({
+          title: validationError.includes("10MB") ? "File Too Large" : "Invalid File Type",
+          description: validationError,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      setPendingBannerSrc((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return objectUrl;
+      });
+      setPendingBannerFileName(file.name);
+      setBannerCrop({ x: 0, y: 0 });
+      setBannerZoom(1);
+      setBannerCroppedAreaPixels(null);
+      setIsBannerCropDialogOpen(true);
     }
     event.target.value = "";
   };
@@ -1760,6 +2126,45 @@ export default function UserProfile() {
     }
   };
 
+  const handleBannerCropCancel = () => {
+    setIsBannerCropDialogOpen(false);
+    setPendingBannerFileName(null);
+    setBannerCroppedAreaPixels(null);
+    setBannerCrop({ x: 0, y: 0 });
+    setBannerZoom(1);
+    setPendingBannerSrc((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  const handleBannerCropSave = async () => {
+    if (!pendingBannerSrc || !bannerCroppedAreaPixels) {
+      toast({
+        title: "Unable to crop image",
+        description: "Please adjust your banner and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExportingCroppedBanner(true);
+    try {
+      const baseName = (pendingBannerFileName ?? "banner").replace(/\.[^/.]+$/, "") || "banner";
+      const croppedFile = await exportCroppedBanner(pendingBannerSrc, bannerCroppedAreaPixels, baseName);
+      profileBannerMutation.mutate(croppedFile);
+      handleBannerCropCancel();
+    } catch (error: any) {
+      toast({
+        title: "Unable to crop image",
+        description: error?.message || "Please try another photo.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingCroppedBanner(false);
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (pendingAvatarSrc?.startsWith("blob:")) {
@@ -1767,6 +2172,14 @@ export default function UserProfile() {
       }
     };
   }, [pendingAvatarSrc]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingBannerSrc?.startsWith("blob:")) {
+        URL.revokeObjectURL(pendingBannerSrc);
+      }
+    };
+  }, [pendingBannerSrc]);
 
   if (!currentUser) {
     const handleRecoverAuth = async () => {
@@ -1944,86 +2357,162 @@ export default function UserProfile() {
   const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
 
   return (
-    <div className="min-h-0 min-w-0 w-full flex-1 bg-background overflow-x-hidden overflow-y-auto overscroll-y-contain">
-      <div className="app-page-top-pad px-6 pb-8">
+    <div className="min-h-0 min-w-0 w-full flex-1 bg-[var(--dark)] overflow-x-hidden overflow-y-auto overscroll-y-contain">
+      <div className="px-6 pb-8">
         <div className="max-w-md mx-auto">
-          {/* User Header */}
-          <div className="mb-6 flex items-start gap-4">
-            <div className="flex shrink-0 flex-col items-center gap-2">
-              <div className="relative">
-                {userData.profileImage ? (
-                  <img
-                    src={userData.profileImage}
-                    alt="Profile"
-                    className={`avatar-media w-20 h-20 rounded-full border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
-                      verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                    }`}
-                  />
-                ) : (
-                  <div
-                    className={`avatar-shell w-20 h-20 border-2 ${
-                      verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                    } bg-gray-700`}
-                  >
-                    <User className="avatar-icon w-10 h-10 text-gray-400" />
-                  </div>
-                )}
-                <button
-                  onClick={handleProfileImageChange}
-                  className="ios-press ios-press-soft absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
-                  data-testid="button-edit-profile-picture"
-                >
-                  <Camera className="w-4 h-4 text-black" />
-                </button>
-              </div>
-              {/* Rep tier badge under avatar */}
+          {/* Profile banner — Phase A default gradient; Phase B optional uploaded image */}
+          <section
+            className="relative -mx-6 mb-6 overflow-hidden bg-[var(--dark)]"
+            data-testid="profile-banner"
+          >
+            {showBannerDefaultGradient ? <ProfileBannerDefaultGradient /> : null}
+            {showUploadedBannerImage ? (
+              <img
+                src={bannerUrl!}
+                alt=""
+                className={`pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] h-full w-full object-cover transition-opacity duration-500 ease-out ${
+                  bannerImageReady ? "opacity-100" : "opacity-0"
+                }`}
+                data-testid="profile-banner-image"
+              />
+            ) : null}
+            <div
+              className={`pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] ${
+                showUploadedBannerImage && bannerImageReady
+                  ? "bg-black/40"
+                  : "bg-gradient-to-b from-slate-950/45 via-slate-900/32 to-slate-950/35"
+              }`}
+              aria-hidden
+            />
+            {showUploadedBannerImage && bannerImageReady ? (
               <div
-                className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1"
-                data-testid="profile-rep-badge"
-              >
-                <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
-                <span className="text-xs font-semibold text-accent">
-                  {repTrustForProfile.displayName}
-                </span>
-              </div>
-            </div>
-            <div className="min-w-0 flex-1 pt-1">
-              <div className="flex items-center gap-1.5">
-                <h1
-                  className={`min-w-0 truncate text-xl font-bold leading-tight ${
-                    verifiedArtist ? "text-[#FFD700]" : "text-foreground"
-                  }`}
-                >
-                  {userData.username ? formatUsernameDisplay(userData.username) : "@user"}
-                </h1>
-                {userData.username && (verifiedArtist || isModerator) && (
-                  <UserRoleInlineIcons
-                    verifiedArtist={verifiedArtist}
-                    moderator={isModerator}
-                  />
-                )}
-              </div>
-              <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-0.5 text-xs font-medium text-white/70 backdrop-blur-lg">
-                {userData.joinedDateLine}
-              </p>
-            </div>
-          </div>
+                className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] bg-gradient-to-b from-slate-950/35 via-transparent to-transparent"
+                aria-hidden
+              />
+            ) : null}
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-48"
+              style={PROFILE_BANNER_BOTTOM_FADE_STYLE}
+              aria-hidden
+            />
 
-          {/* Key stats */}
-          <div className="mb-6 grid grid-cols-5 gap-1" data-testid="profile-key-stats">
-            {keyStatRow.map(({ label, value, Icon, tone }) => (
-              <div key={label} className="flex flex-col items-center gap-1 text-center">
-                <Icon className={`w-4 h-4 shrink-0 ${tone}`} />
-                <span className={`text-base font-bold leading-none ${tone}`}>{value}</span>
-                <span className="text-[10px] leading-tight text-gray-400">{label}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="ios-press ios-press-soft absolute right-4 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm hover:bg-black/60"
+                  data-testid="button-edit-profile-banner"
+                  aria-label="Edit profile banner"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[10rem]">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    handleBannerImagePick();
+                  }}
+                  data-testid="menu-change-profile-banner"
+                >
+                  Change banner
+                </DropdownMenuItem>
+                {bannerUrl ? (
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      removeProfileBannerMutation.mutate();
+                    }}
+                    disabled={removeProfileBannerMutation.isPending}
+                    data-testid="menu-remove-profile-banner"
+                  >
+                    Remove banner
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <div className="relative z-10 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
+              <div className="mb-4 flex items-start gap-4">
+                <div className="flex shrink-0 flex-col items-center gap-2">
+                  <div className="relative">
+                    {userData.profileImage ? (
+                      <img
+                        src={userData.profileImage}
+                        alt="Profile"
+                        className={`avatar-media w-20 h-20 rounded-full border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
+                          verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                        }`}
+                      />
+                    ) : (
+                      <div
+                        className={`avatar-shell w-20 h-20 border-2 ${
+                          verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                        } bg-gray-700`}
+                      >
+                        <User className="avatar-icon w-10 h-10 text-gray-400" />
+                      </div>
+                    )}
+                    <button
+                      onClick={handleProfileImageChange}
+                      className="ios-press ios-press-soft absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
+                      data-testid="button-edit-profile-picture"
+                    >
+                      <Camera className="w-4 h-4 text-black" />
+                    </button>
+                  </div>
+                  {/* Rep tier badge under avatar */}
+                  <div
+                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2.5 py-1 backdrop-blur-sm"
+                    data-testid="profile-rep-badge"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
+                    <span className="text-xs font-semibold text-accent">
+                      {repTrustForProfile.displayName}
+                    </span>
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <h1
+                      className={`min-w-0 truncate text-xl font-bold leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] ${
+                        verifiedArtist ? "text-[#FFD700]" : "text-foreground"
+                      }`}
+                    >
+                      {userData.username ? formatUsernameDisplay(userData.username) : "@user"}
+                    </h1>
+                    {userData.username && (verifiedArtist || isModerator) && (
+                      <UserRoleInlineIcons
+                        verifiedArtist={verifiedArtist}
+                        moderator={isModerator}
+                      />
+                    )}
+                  </div>
+                  <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
+                    {userData.joinedDateLine}
+                  </p>
+                </div>
               </div>
-            ))}
-          </div>
+
+              <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
+                {keyStatRow.map(({ label, value, Icon, tone }) => (
+                  <div key={label} className="flex flex-col items-center gap-1 text-center">
+                    <Icon className={`w-4 h-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`} />
+                    <span className={`text-base font-bold leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`}>
+                      {value}
+                    </span>
+                    <span className="text-[10px] leading-tight text-gray-300/90">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
           {/* Tabs */}
           <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-6">
+            <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5">
             <TabsList
-              className="grid w-full grid-cols-4 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5 h-auto"
+              className="grid w-full grid-cols-4 bg-transparent p-0 h-auto"
               data-testid="profile-tabs"
             >
               <TabsTrigger
@@ -2064,6 +2553,7 @@ export default function UserProfile() {
                 )}
               </TabsTrigger>
             </TabsList>
+            </div>
 
             <TabsContent value="profile" className="space-y-4 mt-5">
               {currentUser?.userType === "artist" ? (
@@ -2077,8 +2567,8 @@ export default function UserProfile() {
               ) : null}
 
               {userType === "artist" && artistStats ? (
-                <div>
-                  <div className="flex justify-center my-3">
+                <div className={PROFILE_ACTIVITY_CARD_CLASS} data-testid="your-activity-list">
+                  <div className="mb-3">
                     <div className="inline-flex items-center rounded-xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5">
                       <button
                         type="button"
@@ -2090,7 +2580,7 @@ export default function UserProfile() {
                         }`}
                         data-testid="stats-mode-artist"
                       >
-                        Artist
+                        Artist Impact
                       </button>
                       <button
                         type="button"
@@ -2102,199 +2592,74 @@ export default function UserProfile() {
                         }`}
                         data-testid="stats-mode-user"
                       >
-                        Community
+                        Community Activity
                       </button>
                     </div>
                   </div>
 
-                  <div className="w-full">
-                    <div
-                      className="relative w-full min-h-[430px]"
-                      style={{ height: `${artistUserFlipShellPx}px` }}
-                    >
-                      <div className="relative h-full w-full overflow-hidden [perspective:1200px]">
-                        <div
-                          className="absolute inset-0 origin-center transition-transform duration-500 ease-out will-change-transform [transform-style:preserve-3d]"
-                          style={{
-                            transform: artistStatsMode === "artist" ? "rotateY(0deg)" : "rotateY(180deg)",
-                            WebkitTransformStyle: "preserve-3d",
-                          }}
-                        >
-                          <div
-                            ref={artistFlipFaceRef}
-                            className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                            style={{
-                              backfaceVisibility: "hidden",
-                              WebkitBackfaceVisibility: "hidden",
-                              transform: "rotateY(0deg)",
-                            }}
-                          >
-                            <StatsCardSection
-                              title="Your Impact"
-                              titleInfo={PROFILE_HELP.sectionImpact}
-                              items={artistImpactItems}
-                              className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                              helperText={
-                                hasAnyArtistImpact
-                                  ? undefined
-                                  : "Your impact stats will grow as tracks are confirmed and clips get linked to your releases."
-                              }
-                            />
-                          </div>
-                          <div
-                            ref={userFlipFaceRef}
-                            className="absolute left-0 right-0 top-0 w-full [backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
-                            style={{
-                              backfaceVisibility: "hidden",
-                              WebkitBackfaceVisibility: "hidden",
-                              transform: "rotateY(180deg)",
-                            }}
-                          >
-                            <StatsCardSection
-                              title="Your Activity"
-                              titleInfo={PROFILE_HELP.sectionUserActivity}
-                              items={userOverviewItems}
-                              className="border border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                            />
-                          </div>
-                        </div>
+                  {artistStatsMode === "artist" ? (
+                    <>
+                      <div className="mb-2 flex items-center gap-1.5">
+                        <BarChart3 className="w-4 h-4 shrink-0 text-gray-300" />
+                        <h3 className="font-semibold">Your Impact</h3>
+                        <StatInfoPopover
+                          label="Your Impact"
+                          content={PROFILE_HELP.sectionImpact}
+                          side="bottom"
+                          align="start"
+                          className="text-gray-400 hover:text-gray-200"
+                        />
                       </div>
-                    </div>
-                  </div>
+                      <div className="divide-y divide-white/5">
+                        {artistImpactItems.map(({ label, value, Icon, info }) => (
+                          <div key={label} className="flex items-center justify-between py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <Icon className="w-4 h-4 shrink-0 text-gray-400" />
+                              <span className="text-sm text-gray-200">{label}</span>
+                              {info ? (
+                                <StatInfoPopover
+                                  label={label}
+                                  content={info}
+                                  size="compact"
+                                  side="top"
+                                  align="center"
+                                  className="text-gray-500 hover:text-gray-300"
+                                />
+                              ) : null}
+                            </div>
+                            <span className="text-sm font-semibold tabular-nums">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {!hasAnyArtistImpact ? (
+                        <p className="text-xs text-gray-400 mt-3 text-center">
+                          Your impact stats will grow as tracks are confirmed and clips get linked to your releases.
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <ProfileCommunityActivitySection
+                      userOverviewItems={userOverviewItems}
+                      showActivityGenres={showActivityGenres}
+                      onToggleGenres={() => setShowActivityGenres((prev) => !prev)}
+                      identifiedGenresLoading={identifiedGenresLoading}
+                      identifiedGenreStats={identifiedGenreStats}
+                      postsLoading={postsLoading}
+                      genreStats={genreStats}
+                    />
+                  )}
                 </div>
               ) : (
-                <div
-                  className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                  data-testid="your-activity-list"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <BarChart3 className="w-4 h-4 shrink-0 text-gray-300" />
-                      <h3 className="font-semibold">Your Activity</h3>
-                      <StatInfoPopover
-                        label="Your Activity"
-                        content={PROFILE_HELP.sectionOverview}
-                        side="bottom"
-                        align="start"
-                        className="text-gray-400 hover:text-gray-200"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowActivityGenres((prev) => !prev)}
-                      className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-accent hover:text-accent/80"
-                      aria-expanded={showActivityGenres}
-                      data-testid="your-activity-toggle-genres"
-                    >
-                      {showActivityGenres ? "Show Less" : "View All"}
-                      <ChevronRight
-                        className={`w-3.5 h-3.5 transition-transform ${showActivityGenres ? "rotate-90" : ""}`}
-                      />
-                    </button>
-                  </div>
-                  <div className="divide-y divide-white/5">
-                    {userOverviewItems.map(({ label, value, Icon, info }) => (
-                      <div key={label} className="flex items-center justify-between py-2.5">
-                        <div className="flex items-center gap-2.5">
-                          <Icon className="w-4 h-4 shrink-0 text-gray-400" />
-                          <span className="text-sm text-gray-200">{label}</span>
-                          {info ? (
-                            <StatInfoPopover
-                              label={label}
-                              content={info}
-                              size="compact"
-                              side="top"
-                              align="center"
-                              className="text-gray-500 hover:text-gray-300"
-                            />
-                          ) : null}
-                        </div>
-                        <span className="text-sm font-semibold tabular-nums">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {showActivityGenres ? (
-                    <div className="mt-4 space-y-4 border-t border-white/5 pt-4" data-testid="your-activity-genres">
-                      <div>
-                        <div className="mb-3 flex items-center gap-1.5">
-                          <Check className="w-4 h-4 shrink-0 text-gray-300" />
-                          <h4 className="text-sm font-semibold">Top Genres ID&apos;d</h4>
-                          <StatInfoPopover
-                            label="Top Genres ID'd"
-                            content={PROFILE_HELP.tracksIdentifiedGenres}
-                            side="bottom"
-                            align="start"
-                            className="text-gray-400 hover:text-gray-200"
-                          />
-                        </div>
-                        {identifiedGenresLoading ? (
-                          <p className="text-gray-400 text-sm" data-testid="identified-genres-loading">
-                            Loading genre breakdown…
-                          </p>
-                        ) : identifiedGenreStats.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {identifiedGenreStats.map((genreStat) => {
-                              const colorSet = getGenreChipColors(genreStat.genre);
-                              return (
-                                <div
-                                  key={`idd-${genreStat.genre}-${genreStat.count}`}
-                                  className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
-                                  data-testid={`identified-genres-genre-${genreStat.genre.toLowerCase()}`}
-                                >
-                                  <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
-                                  <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="text-gray-400 text-sm" data-testid="identified-genres-empty">
-                            When your ID is confirmed as the correct track, those tracks will show up here.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="mb-3 flex items-center gap-1.5">
-                          <Upload className="w-4 h-4 shrink-0 text-gray-300" />
-                          <h4 className="text-sm font-semibold">Top Genres Posted</h4>
-                          <StatInfoPopover
-                            label="Top Genres Posted"
-                            content={PROFILE_HELP.topGenresPosted}
-                            side="bottom"
-                            align="start"
-                            className="text-gray-400 hover:text-gray-200"
-                          />
-                        </div>
-                        {postsLoading ? (
-                          <p className="text-gray-400 text-sm" data-testid="posted-genres-loading">
-                            Loading genre breakdown…
-                          </p>
-                        ) : genreStats.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {genreStats.map((genreStat) => {
-                              const colorSet = getGenreChipColors(genreStat.genre);
-                              return (
-                                <div
-                                  key={`posted-${genreStat.genre}-${genreStat.count}`}
-                                  className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
-                                  data-testid={`posted-genres-genre-${genreStat.genre.toLowerCase()}`}
-                                >
-                                  <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
-                                  <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="text-gray-400 text-sm" data-testid="posted-genres-empty">
-                            No tracks posted yet. Start submitting tracks to see your genre breakdown.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
+                <div className={PROFILE_ACTIVITY_CARD_CLASS} data-testid="your-activity-list">
+                  <ProfileCommunityActivitySection
+                    userOverviewItems={userOverviewItems}
+                    showActivityGenres={showActivityGenres}
+                    onToggleGenres={() => setShowActivityGenres((prev) => !prev)}
+                    identifiedGenresLoading={identifiedGenresLoading}
+                    identifiedGenreStats={identifiedGenreStats}
+                    postsLoading={postsLoading}
+                    genreStats={genreStats}
+                  />
                 </div>
               )}
 
@@ -2840,12 +3205,73 @@ export default function UserProfile() {
               </div>
             </DialogContent>
           </Dialog>
+          <Dialog
+            open={isBannerCropDialogOpen}
+            onOpenChange={(open) => (!open ? handleBannerCropCancel() : setIsBannerCropDialogOpen(true))}
+          >
+            <DialogContent className="w-[92vw] max-w-md rounded-2xl border-white/15 bg-black/95 p-4 text-white">
+              <DialogHeader className="space-y-1 text-left">
+                <DialogTitle className="text-base font-semibold">Adjust profile banner</DialogTitle>
+                <DialogDescription className="text-xs text-white/70">
+                  Drag to reposition. Pinch with two fingers to zoom.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="relative mt-2 overflow-hidden rounded-2xl border border-white/10 bg-black/60">
+                <div className="relative aspect-[3/1] w-full">
+                  {pendingBannerSrc ? (
+                    <Cropper
+                      image={pendingBannerSrc}
+                      crop={bannerCrop}
+                      zoom={bannerZoom}
+                      minZoom={1}
+                      maxZoom={4}
+                      restrictPosition
+                      aspect={3}
+                      objectFit="horizontal-cover"
+                      cropShape="rect"
+                      showGrid={false}
+                      zoomWithScroll={false}
+                      onCropChange={setBannerCrop}
+                      onZoomChange={setBannerZoom}
+                      onCropComplete={(_, pixels) => setBannerCroppedAreaPixels(pixels)}
+                    />
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-white/80 hover:text-white hover:bg-white/10"
+                  onClick={handleBannerCropCancel}
+                  disabled={isExportingCroppedBanner}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-cyan-300 text-black hover:bg-cyan-200"
+                  onClick={handleBannerCropSave}
+                  disabled={isExportingCroppedBanner}
+                >
+                  {isExportingCroppedBanner ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
             accept="image/*"
             style={{ display: 'none' }}
+          />
+          <input
+            type="file"
+            ref={bannerFileInputRef}
+            onChange={handleBannerFileChange}
+            accept="image/*"
+            style={{ display: "none" }}
           />
         </div>
       </div>

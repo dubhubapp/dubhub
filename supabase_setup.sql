@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   account_type TEXT NOT NULL DEFAULT 'user',
   moderator BOOLEAN DEFAULT FALSE,
   avatar_url TEXT,
+  banner_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -107,6 +108,34 @@ USING (
   bucket_id = 'profile_uploads' AND
   (storage.foldername(name))[1] IN ('users', 'artists') AND
   (storage.filename(name)) = (auth.uid()::text || '.png')
+);
+
+-- Storage RLS Policies for profile banners ({userId}_banner.png)
+CREATE POLICY "Users can upload their own profile banner"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'profile_uploads' AND
+  (storage.foldername(name))[1] IN ('users', 'artists') AND
+  (storage.filename(name)) = (auth.uid()::text || '_banner.png')
+);
+
+CREATE POLICY "Users can update their own profile banner"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'profile_uploads' AND
+  (storage.foldername(name))[1] IN ('users', 'artists') AND
+  (storage.filename(name)) = (auth.uid()::text || '_banner.png')
+);
+
+CREATE POLICY "Users can delete their own profile banner"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'profile_uploads' AND
+  (storage.foldername(name))[1] IN ('users', 'artists') AND
+  (storage.filename(name)) = (auth.uid()::text || '_banner.png')
 );
 
 -- ========================================

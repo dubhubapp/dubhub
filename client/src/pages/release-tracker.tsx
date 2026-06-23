@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Calendar, Music, ExternalLink, Disc3, Plus } from "lucide-react";
@@ -28,6 +28,7 @@ import {
   markReleasesPushPromptHandled,
   shouldOfferReleasesPushPrompt,
 } from "@/lib/push-prompt";
+import { Capacitor } from "@capacitor/core";
 
 export type ReleaseFeedItem = {
   id: string;
@@ -174,6 +175,7 @@ export default function ReleaseTracker() {
     typeof window !== "undefined" ? getViewFromSearch(window.location.search, scope) : "upcoming"
   );
   const [releasesPushPromptOpen, setReleasesPushPromptOpen] = useState(false);
+  const releaseScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,6 +223,18 @@ export default function ReleaseTracker() {
     setScopeState(s);
     setFeedViewState(getViewFromSearch(window.location.search, s));
   }, [currentUser?.id, isArtist]);
+
+  /** iOS status-bar tap → scroll releases feed to top (page-scoped; no refresh). */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
+
+    const onStatusTap = () => {
+      releaseScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
+    window.addEventListener("statusTap", onStatusTap);
+    return () => window.removeEventListener("statusTap", onStatusTap);
+  }, []);
 
   const setScope = (s: FeedScope) => {
     setScopeState(s);
@@ -419,10 +433,13 @@ export default function ReleaseTracker() {
         variant="releases"
         onDismiss={() => setReleasesPushPromptOpen(false)}
       />
-      <div className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[var(--releases-feed-bottom-pad)]">
+      <div
+        ref={releaseScrollRef}
+        className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[var(--releases-feed-bottom-pad)]"
+      >
       <div className="app-page-top-pad px-4 max-w-md mx-auto">
         {currentUser?.id && (
-          <div className="space-y-3 mb-4">
+          <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 space-y-3">
             {isArtist && (
               <div className={tabGroupClass}>
                 {(["my", "saved"] as FeedScope[]).map((s) => (
@@ -459,6 +476,7 @@ export default function ReleaseTracker() {
           </div>
         )}
 
+        <div className={currentUser?.id ? "pt-14" : undefined}>
         {currentUser?.id && !isFeedLoading && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && (
           <div className="relative z-10 mb-7 rounded-xl border-2 border-amber-300/80 bg-gradient-to-br from-violet-500/16 via-background/86 to-amber-400/22 shadow-[0_0_34px_-8px_rgba(139,92,246,0.4),0_0_78px_-8px_rgba(245,158,11,0.95),0_14px_32px_-18px_rgba(245,158,11,0.6),inset_0_1px_0_rgba(255,255,255,0.14)] p-3 space-y-3">
             <ReleaseDayCelebration releaseId={myReleasesDueToday[0].id} variant="heading" />
@@ -625,6 +643,7 @@ export default function ReleaseTracker() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {isArtist && (

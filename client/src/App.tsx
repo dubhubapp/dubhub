@@ -104,7 +104,10 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   }, [location]);
 
   const shellClass =
-    location === "/"
+    location === "/" ||
+    location === "/profile" ||
+    location === "/releases" ||
+    location === "/leaderboard"
       ? APP_MAIN_SHELL_BASE
       : `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`;
   return (

@@ -13,6 +13,7 @@ export const profiles = pgTable("profiles", {
   account_type: text("account_type").notNull(), // "user" | "artist"
   moderator: boolean("moderator").notNull().default(false),
   avatar_url: text("avatar_url"),
+  banner_url: text("banner_url"),
   verified_artist: boolean("verified_artist").notNull().default(false),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });

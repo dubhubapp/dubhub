@@ -1,10 +1,11 @@
 import type { LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 
 export type StatsCardItem = {
   label: string;
   value: string | number;
-  Icon: LucideIcon;
+  Icon: LucideIcon | ComponentType<{ className?: string }>;
   toneClassName: string;
   /** Optional short explanation for this stat (info icon next to the label). */
   info?: string;
