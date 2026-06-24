@@ -451,6 +451,16 @@ export type PublicLightProfileStats = {
   topGenreKey: string | null;
 };
 
+/** Supplemental community stats for public user/moderator profiles (Profile Overview parity). */
+export type PublicCommunityOverviewStats = {
+  /** Legacy coarse ID ratio — same metric as own-profile Community Overview. */
+  accuracyPercent: number;
+  /** Distinct public saved releases (saved feed scope). */
+  releasesSaved: number;
+  /** Own uploads artist-confirmed only. */
+  artistIds: number;
+};
+
 // NotificationWithUser - updated to use Post instead of Track
 export type NotificationWithUser = Notification & {
   triggeredByUser: Profile;

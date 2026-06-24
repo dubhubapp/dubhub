@@ -494,6 +494,72 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
   };
 }
 
+async function fetchPublicCommunityOverviewStats(
+  userId: string,
+): Promise<import("@shared/schema").PublicCommunityOverviewStats> {
+  const tracksIdentifiedResult = await db.execute(sql`
+    SELECT COUNT(*)::int AS count
+    FROM posts p
+    INNER JOIN comments c ON c.id = p.verified_comment_id
+    WHERE p.verified_comment_id IS NOT NULL
+      AND c.user_id = ${userId}
+      AND p.user_id <> ${userId}
+  `);
+  const tracksIdentified = Number((tracksIdentifiedResult as any).rows?.[0]?.count ?? 0);
+
+  const identificationAttemptsResult = await db.execute(sql`
+    SELECT COUNT(*)::int AS count
+    FROM comments c
+    INNER JOIN posts p ON p.id = c.post_id
+    WHERE c.user_id = ${userId}
+      AND p.user_id <> ${userId}
+  `);
+  const identificationAttempts = Number((identificationAttemptsResult as any).rows?.[0]?.count ?? 0);
+  const accuracyPercent =
+    identificationAttempts > 0 ? Math.round((tracksIdentified / identificationAttempts) * 100) : 0;
+
+  const artistIdsResult = await db.execute(sql`
+    SELECT COUNT(*)::int AS count
+    FROM posts
+    WHERE user_id = ${userId}
+      AND artist_verified_by IS NOT NULL
+      AND COALESCE(is_verified_artist, false) = true
+  `);
+  const artistIds = Number((artistIdsResult as any).rows?.[0]?.count ?? 0);
+  const releasesSaved = await storage.countSavedReleasesForProfile(userId);
+
+  return {
+    accuracyPercent: Math.max(0, Math.min(100, accuracyPercent)),
+    releasesSaved,
+    artistIds,
+  };
+}
+
+async function buildPublicSavedReleasesPayload(userId: string) {
+  const [upcoming, released] = await Promise.all([
+    storage.getReleasesFeed(userId, "upcoming", "saved"),
+    storage.getReleasesFeed(userId, "past", "saved"),
+  ]);
+  const mapWithLinksAndArtwork = async (rows: any[]) =>
+    Promise.all(
+      rows
+        .filter((r) => r.isPublic !== false)
+        .map(async (r: any) => {
+          const links = await storage.getReleaseLinks(r.id);
+          return {
+            ...r,
+            artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
+            links: Array.isArray(links) ? links : [],
+          };
+        }),
+    );
+  const [upcomingWithMeta, releasedWithMeta] = await Promise.all([
+    mapWithLinksAndArtwork(upcoming),
+    mapWithLinksAndArtwork(released),
+  ]);
+  return { upcoming: upcomingWithMeta, released: releasedWithMeta };
+}
+
 function releaseArtworkPublicUrl(artworkUrl: string | null | undefined): string | null {
   if (!artworkUrl) return null;
   if (artworkUrl.startsWith("http")) return artworkUrl;
@@ -1541,11 +1607,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       let publicReleases: { upcoming: any[]; released: any[] } | undefined;
-      if (user.verified_artist === true && user.account_type === "artist") {
+      const isVerifiedArtistProfile = user.verified_artist === true && user.account_type === "artist";
+      if (isVerifiedArtistProfile) {
         try {
           publicReleases = await buildPublicReleasesPayload(user.id);
         } catch (releasesErr) {
           console.error("[/api/user/profile/:username] publicReleases:", releasesErr);
+        }
+      }
+
+      let publicCommunityOverview: import("@shared/schema").PublicCommunityOverviewStats | undefined;
+      let publicSavedReleases: { upcoming: any[]; released: any[] } | undefined;
+      if (!isVerifiedArtistProfile) {
+        try {
+          publicCommunityOverview = await fetchPublicCommunityOverviewStats(user.id);
+        } catch (overviewErr) {
+          console.error("[/api/user/profile/:username] publicCommunityOverview:", overviewErr);
+        }
+        try {
+          publicSavedReleases = await buildPublicSavedReleasesPayload(user.id);
+        } catch (savedErr) {
+          console.error("[/api/user/profile/:username] publicSavedReleases:", savedErr);
         }
       }
 
@@ -1557,6 +1639,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         karma: reputation,
         ...(publicLight !== undefined ? { publicLight } : {}),
         ...(publicReleases !== undefined ? { publicReleases } : {}),
+        ...(publicCommunityOverview !== undefined ? { publicCommunityOverview } : {}),
+        ...(publicSavedReleases !== undefined ? { publicSavedReleases } : {}),
       };
 
       res.json(userProfile);

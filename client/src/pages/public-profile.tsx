@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Check, Heart, MessageCircle, TrendingUp, Upload, User } from "lucide-react";
+import { ArrowLeft, Calendar, Check, Heart, MessageCircle, Target, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
-import { DubHubSkeletonBar, dubhubSkeletonGlassShellClass } from "@/components/ui/skeleton";
+import { DubHubSkeletonBar } from "@/components/ui/skeleton";
+import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
+import { GoldVerifiedTick } from "@/components/verified-artist";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
@@ -13,11 +15,17 @@ import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
-import type { PublicLightProfileStats } from "@shared/schema";
+import type { PublicCommunityOverviewStats, PublicLightProfileStats } from "@shared/schema";
 import { consumePublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
-import { ReleaseFeedCard, type ReleaseFeedCardData } from "@/components/release-feed-card";
+import { ProfileRepOverview } from "@/components/profile-rep-overview";
+import {
+  PublicArtistDiscography,
+  PublicArtistDiscographySkeleton,
+} from "@/components/public-artist-discography";
+import { type ReleaseFeedCardData } from "@/components/release-feed-card";
 import { prefetchReleaseDetail } from "@/lib/release-cache";
 import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-navigation";
+import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 
 type PublicReleasesResponse = {
   upcoming: ReleaseFeedCardData[];
@@ -38,6 +46,8 @@ type PublicProfileResponse = {
   karma?: number;
   publicLight?: PublicLightProfileStats;
   publicReleases?: PublicReleasesResponse;
+  publicCommunityOverview?: PublicCommunityOverviewStats;
+  publicSavedReleases?: PublicReleasesResponse;
 };
 
 const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
@@ -47,11 +57,34 @@ const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
 const PROFILE_ACTIVITY_CARD_CLASS =
   "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
 
+const PUBLIC_PROFILE_PAGE_SCROLL_CLASS = cn(
+  APP_PAGE_SCROLL_CLASS,
+  "bg-[var(--dark)] overflow-x-hidden",
+);
+
+/** Shared compact pill footprint for fav genre value beneath avatar. */
+const PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS =
+  "inline-flex min-h-[1.625rem] w-full max-w-[5.5rem] items-center justify-center rounded px-2 py-1 text-[10px] font-semibold leading-none ring-1 ring-white/15";
+
+/** Equal vertical rhythm: stats → rep → releases */
+const PUBLIC_PROFILE_SECTION_GAP_CLASS = "flex flex-col gap-5";
+
 function normalizePublicProfileResponse(data: PublicProfileResponse): PublicProfileResponse {
+  const overview = data.publicCommunityOverview
+    ? {
+        accuracyPercent: Math.max(0, Math.min(100, Number(data.publicCommunityOverview.accuracyPercent ?? 0))),
+        releasesSaved: Number(data.publicCommunityOverview.releasesSaved ?? 0),
+        artistIds: Number(data.publicCommunityOverview.artistIds ?? 0),
+      }
+    : undefined;
+
   const light = data.publicLight;
-  if (!light) return data;
+  if (!light) {
+    return overview ? { ...data, publicCommunityOverview: overview } : data;
+  }
   return {
     ...data,
+    publicCommunityOverview: overview,
     publicLight: {
       ...light,
       posts: Number(light.posts ?? 0),
@@ -62,6 +95,38 @@ function normalizePublicProfileResponse(data: PublicProfileResponse): PublicProf
       topGenreKey: light.topGenreKey ?? null,
     },
   };
+}
+
+function PublicArtistIdsStatIcon({ className }: { className?: string }) {
+  return (
+    <GoldVerifiedTick className={`text-white drop-shadow-none ${className ?? ""}`} glow="inline" />
+  );
+}
+
+function buildPublicCommunityOverviewItems(overview: PublicCommunityOverviewStats): StatsCardItem[] {
+  return [
+    {
+      label: "Accuracy",
+      value: `${overview.accuracyPercent}%`,
+      Icon: Target,
+      toneClassName:
+        "border-violet-500/35 bg-violet-500/5 text-violet-300 [&_svg]:drop-shadow-[0_0_6px_rgba(139,92,246,0.4)]",
+    },
+    {
+      label: "Releases Saved",
+      value: overview.releasesSaved.toLocaleString(),
+      Icon: Calendar,
+      toneClassName:
+        "border-indigo-500/35 bg-indigo-500/5 text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
+    },
+    {
+      label: "Artist IDs",
+      value: overview.artistIds.toLocaleString(),
+      Icon: PublicArtistIdsStatIcon,
+      toneClassName:
+        "border-amber-500/35 bg-amber-500/5 text-amber-300 [&_svg]:text-white [&_svg]:drop-shadow-none",
+    },
+  ];
 }
 
 function ProfileBannerDefaultGradient() {
@@ -105,14 +170,6 @@ function ProfileBannerDefaultGradient() {
   );
 }
 
-function PublicProfileShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-0 min-w-0 w-full flex-1 bg-[var(--dark)] overflow-x-hidden overflow-y-auto overscroll-y-contain">
-      {children}
-    </div>
-  );
-}
-
 function PublicProfileKeyStat({
   label,
   icon: Icon,
@@ -153,10 +210,10 @@ function PublicProfileKeyStatsSkeleton() {
 
 function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
   return (
-    <PublicProfileShell>
-      <div className="px-6 pb-8" aria-busy="true" aria-label="Loading profile">
+    <SwipeBackPage onBack={onBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+      <div className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS)} aria-busy="true" aria-label="Loading profile">
         <div className="mx-auto max-w-md">
-          <section className="relative -mx-6 mb-6 overflow-hidden bg-[var(--dark)]">
+          <section className="relative -mx-6 overflow-hidden bg-[var(--dark)]">
             <ProfileBannerDefaultGradient />
             <div
               className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] bg-gradient-to-b from-slate-950/45 via-slate-900/32 to-slate-950/35"
@@ -176,42 +233,37 @@ function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
               <ArrowLeft className="h-4 w-4 shrink-0" />
               Back
             </button>
-            <div className="relative z-10 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
+            <div className="relative z-10 px-6 pb-5 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
               <div className="mb-4 flex items-start gap-4">
                 <DubHubSkeletonBar tone="teal" className="h-20 w-20 shrink-0 rounded-full" />
                 <div className="min-w-0 flex-1 space-y-2 pt-1">
                   <DubHubSkeletonBar tone="default" className="h-5 w-36 max-w-full" />
                   <DubHubSkeletonBar tone="faint" className="h-5 w-28 rounded-full" />
-                  <DubHubSkeletonBar tone="faint" className="h-4 w-24" />
                 </div>
               </div>
               <PublicProfileKeyStatsSkeleton />
             </div>
           </section>
-          <div className="space-y-3">
-            <DubHubSkeletonBar tone="default" className="h-4 w-20" />
-            <PublicArtistReleasesSkeleton />
+          <div className={PUBLIC_PROFILE_SECTION_GAP_CLASS}>
+            <div className="space-y-2" aria-hidden>
+              <DubHubSkeletonBar tone="default" className="h-4 w-28" />
+              <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
+              <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
+            </div>
+            <div className="space-y-3">
+              <DubHubSkeletonBar tone="default" className="h-24 w-full rounded-xl" />
+              <DubHubSkeletonBar tone="default" className="h-4 w-28" />
+              <PublicArtistReleasesSkeleton />
+            </div>
           </div>
         </div>
       </div>
-    </PublicProfileShell>
+    </SwipeBackPage>
   );
 }
 
 function PublicArtistReleasesSkeleton() {
-  return (
-    <div className="space-y-3" aria-busy="true">
-      {[0, 1].map((i) => (
-        <div key={i} className={`flex gap-4 p-4 ${dubhubSkeletonGlassShellClass}`}>
-          <DubHubSkeletonBar tone="teal" className="h-20 w-20 shrink-0 rounded-lg" />
-          <div className="flex-1 space-y-2 pt-1">
-            <DubHubSkeletonBar tone="default" className="h-3 w-2/3 max-w-[10rem]" />
-            <DubHubSkeletonBar tone="mid" className="h-4 w-full max-w-[14rem]" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <PublicArtistDiscographySkeleton />;
 }
 
 export default function PublicProfile() {
@@ -301,6 +353,19 @@ export default function PublicProfile() {
   const profileIsVerifiedArtist = profile?.verified_artist === true;
   const embeddedReleases = profile?.publicReleases;
 
+  const { data: karmaData, isLoading: karmaLoading } = useQuery<{
+    communityTopPercent?: number | null;
+  }>({
+    queryKey: ["/api/user", profileId, "karma"],
+    enabled: Boolean(profileId),
+    retry: false,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/user/${profileId}/karma`);
+      if (!res.ok) throw new Error("Failed to load reputation");
+      return res.json();
+    },
+  });
+
   const { data: fetchedReleases, isLoading: fetchedReleasesLoading } = useQuery<PublicReleasesResponse>({
     queryKey: ["/api/artists", profileId, "public-releases"],
     enabled: Boolean(profileId && profileIsVerifiedArtist && embeddedReleases === undefined),
@@ -341,20 +406,18 @@ export default function PublicProfile() {
 
   if (!routeUsername) {
     return (
-      <SwipeBackPage onBack={handleBack} className="min-h-0 min-w-0 w-full flex-1">
-        <PublicProfileShell>
-          <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
-            <p className="text-sm text-gray-400">Profile not found.</p>
-            <button
-              type="button"
-              className="ios-press mt-4 inline-flex items-center gap-1 text-sm text-gray-300"
-              onClick={handleBack}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </button>
-          </div>
-        </PublicProfileShell>
+      <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+        <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
+          <p className="text-sm text-gray-400">Profile not found.</p>
+          <button
+            type="button"
+            className="ios-press mt-4 inline-flex items-center gap-1 text-sm text-gray-300"
+            onClick={handleBack}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+        </div>
       </SwipeBackPage>
     );
   }
@@ -364,36 +427,29 @@ export default function PublicProfile() {
   }
 
   if (isLoading) {
-    return (
-      <SwipeBackPage onBack={handleBack} className="min-h-0 min-w-0 w-full flex-1">
-        <PublicProfilePageSkeleton onBack={handleBack} />
-      </SwipeBackPage>
-    );
+    return <PublicProfilePageSkeleton onBack={handleBack} />;
   }
 
   if (isError || !profile) {
     return (
-      <SwipeBackPage onBack={handleBack} className="min-h-0 min-w-0 w-full flex-1">
-        <PublicProfileShell>
-          <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
-            <p className="text-sm text-gray-400">This profile could not be found.</p>
-            <button
-              type="button"
-              className="ios-press mt-4 inline-flex items-center gap-1 text-sm text-gray-300"
-              onClick={handleBack}
-              data-testid="public-profile-back"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </button>
-          </div>
-        </PublicProfileShell>
+      <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+        <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
+          <p className="text-sm text-gray-400">This profile could not be found.</p>
+          <button
+            type="button"
+            className="ios-press mt-4 inline-flex items-center gap-1 text-sm text-gray-300"
+            onClick={handleBack}
+            data-testid="public-profile-back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+        </div>
       </SwipeBackPage>
     );
   }
 
   const isVerifiedArtist = profileIsVerifiedArtist;
-  const isArtist = profile.account_type === "artist";
 
   const light = profile.publicLight;
   const statsReady = light != null;
@@ -425,13 +481,21 @@ export default function PublicProfile() {
   const releasedReleases = publicReleases?.released ?? [];
   const hasAnyReleases = upcomingReleases.length > 0 || releasedReleases.length > 0;
 
+  const communityOverview = profile.publicCommunityOverview;
+  const savedReleases = profile.publicSavedReleases;
+  const upcomingSaved = savedReleases?.upcoming ?? [];
+  const releasedSaved = savedReleases?.released ?? [];
+  const hasAnySavedReleases = upcomingSaved.length > 0 || releasedSaved.length > 0;
+
   return (
-    <SwipeBackPage onBack={handleBack} className="min-h-0 min-w-0 w-full flex-1">
-      <PublicProfileShell>
-        <div className={cn("px-6 pb-8", enterMotionClass)} onAnimationEnd={() => setPlayEnterAnimation(false)}>
+    <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+      <div
+        className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS, enterMotionClass)}
+        onAnimationEnd={() => setPlayEnterAnimation(false)}
+      >
           <div className="mx-auto max-w-md">
             <section
-              className="relative -mx-6 mb-6 overflow-hidden bg-[var(--dark)]"
+              className="relative -mx-6 overflow-hidden bg-[var(--dark)]"
               data-testid="public-profile-banner"
             >
               {showBannerDefaultGradient ? <ProfileBannerDefaultGradient /> : null}
@@ -476,7 +540,7 @@ export default function PublicProfile() {
                 Back
               </button>
 
-              <div className="relative z-10 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
+              <div className="relative z-10 px-6 pb-5 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
                 <div className="mb-4 flex items-start gap-4">
                   <div className="flex shrink-0 flex-col items-center gap-2">
                     <div className="relative">
@@ -498,21 +562,24 @@ export default function PublicProfile() {
                         </div>
                       )}
                     </div>
-                    {repTrust ? (
+                    {genreChip && genrePillStyle ? (
                       <div
-                        className="inline-flex max-w-[5.5rem] items-center justify-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2 py-1 backdrop-blur-sm"
-                        data-testid="public-profile-rep-badge"
+                        className="flex w-full max-w-[5.5rem] flex-col items-center gap-1 text-center"
+                        data-testid="public-profile-fav-genre"
                       >
-                        <TrendingUp className="h-3.5 w-3.5 shrink-0 text-accent" />
-                        <span className="truncate text-[10px] font-semibold leading-tight text-accent">
-                          {repTrust.displayName}
+                        <span className="text-[10px] font-medium leading-none text-white/60">Fav genre</span>
+                        <span
+                          className={PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS}
+                          style={genrePillStyle as CSSProperties}
+                        >
+                          <span className="truncate">{genreChip.label}</span>
                         </span>
                       </div>
                     ) : null}
                   </div>
 
                   <div className="min-w-0 flex-1 pt-1">
-                    <div className="flex min-w-0 items-start gap-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       <h1
                         className={`min-w-0 break-words text-xl font-bold leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] sm:truncate ${
                           isVerifiedArtist ? "text-[#FFD700]" : "text-foreground"
@@ -528,29 +595,10 @@ export default function PublicProfile() {
                         shieldTone="onDark"
                       />
                     </div>
-                    {isArtist ? (
-                      <p className="mt-1 text-xs font-medium text-white/70">
-                        {isVerifiedArtist ? "Verified Artist" : "Artist"}
-                      </p>
-                    ) : null}
                     {joinedDateLine ? (
-                      <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
+                      <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium leading-none text-white/80 backdrop-blur-md">
                         {joinedDateLine}
                       </p>
-                    ) : null}
-                    {genreChip && genrePillStyle ? (
-                      <div
-                        className="mt-2 flex flex-wrap items-center gap-1.5"
-                        data-testid="public-profile-fav-genre"
-                      >
-                        <span className="text-[11px] font-medium text-white/60">Fav genre</span>
-                        <span
-                          className="inline-flex max-w-full items-center rounded px-2 py-0.5 text-[10px] font-semibold ring-1 ring-white/15"
-                          style={genrePillStyle as React.CSSProperties}
-                        >
-                          <span className="truncate">{genreChip.label}</span>
-                        </span>
-                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -573,6 +621,28 @@ export default function PublicProfile() {
               </div>
             </section>
 
+            <div className={PUBLIC_PROFILE_SECTION_GAP_CLASS}>
+              {statsReady && repTrust ? (
+                karmaLoading ? (
+                  <div className="space-y-2" aria-busy="true" data-testid="public-profile-rep-skeleton">
+                    <DubHubSkeletonBar tone="default" className="h-4 w-28" />
+                    <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
+                    <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
+                  </div>
+                ) : (
+                  <div data-testid="public-profile-rep">
+                    <ProfileRepOverview
+                      trust={repTrust}
+                      communityTopPercent={karmaData?.communityTopPercent}
+                      genreBarColorHex={genreChip?.bgColor}
+                      showSectionHeader
+                      percentileVariant="public"
+                      compact
+                    />
+                  </div>
+                )
+              ) : null}
+
             {isVerifiedArtist ? (
               <section className="space-y-4" data-testid="public-profile-releases">
                 <div className="flex items-baseline justify-between gap-3">
@@ -582,40 +652,11 @@ export default function PublicProfile() {
                 {releasesLoading ? (
                   <PublicArtistReleasesSkeleton />
                 ) : hasAnyReleases ? (
-                  <div className="space-y-5">
-                    {upcomingReleases.length > 0 ? (
-                      <div>
-                        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                          Upcoming
-                        </h3>
-                        <div className="space-y-3">
-                          {upcomingReleases.map((release) => (
-                            <ReleaseFeedCard
-                              key={release.id}
-                              release={release}
-                              onOpen={() => openRelease(release)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {releasedReleases.length > 0 ? (
-                      <div>
-                        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                          Released
-                        </h3>
-                        <div className="space-y-3">
-                          {releasedReleases.map((release) => (
-                            <ReleaseFeedCard
-                              key={release.id}
-                              release={release}
-                              onOpen={() => openRelease(release)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                  <PublicArtistDiscography
+                    upcoming={upcomingReleases}
+                    released={releasedReleases}
+                    onOpen={openRelease}
+                  />
                 ) : (
                   <div className={PROFILE_ACTIVITY_CARD_CLASS}>
                     <p className="text-sm leading-relaxed text-gray-400">
@@ -627,16 +668,37 @@ export default function PublicProfile() {
                 {/* Reserved layout slot for a future paid release-alerts CTA — not implemented in Phase B */}
               </section>
             ) : (
-              <div className={PROFILE_ACTIVITY_CARD_CLASS}>
-                <h2 className="mb-2 text-sm font-semibold text-white">Community</h2>
-                <p className="text-sm leading-relaxed text-gray-400">
-                  Public music and ID activity for this account will expand here in a future update.
-                </p>
-              </div>
+              <>
+                {communityOverview ? (
+                  <section data-testid="public-profile-community-overview">
+                    <StatsCardSection
+                      title="Community Overview"
+                      items={buildPublicCommunityOverviewItems(communityOverview)}
+                    />
+                  </section>
+                ) : null}
+
+                <section className="space-y-4" data-testid="public-profile-saved-releases">
+                  <h2 className="text-sm font-semibold text-white">Saved Releases</h2>
+                  {savedReleases ? (
+                    hasAnySavedReleases ? (
+                      <PublicArtistDiscography
+                        upcoming={upcomingSaved}
+                        released={releasedSaved}
+                        onOpen={openRelease}
+                      />
+                    ) : (
+                      <p className="text-sm text-gray-400">No saved releases yet.</p>
+                    )
+                  ) : (
+                    <PublicArtistReleasesSkeleton />
+                  )}
+                </section>
+              </>
             )}
+            </div>
           </div>
         </div>
-      </PublicProfileShell>
     </SwipeBackPage>
   );
 }
