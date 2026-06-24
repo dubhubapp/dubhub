@@ -13,6 +13,7 @@ import { formatReleaseTitleLine, sanitizeReleaseText } from "@/lib/release-displ
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
+import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
 import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
@@ -367,15 +368,16 @@ export default function ReleaseDetail() {
               )}
             </h1>
             <p className="text-sm mt-1">
-              {releaseData.isComingSoon ? "Coming soon..." : formatDate(releaseData.releaseDate)}
+              {releaseStatusSubtitle(releaseData.isComingSoon, releaseData.releaseDate) ||
+                formatDate(releaseData.releaseDate)}
             </p>
-            <span
-              className={`inline-block mt-2 text-xs px-2 py-0.5 rounded ${
-                upcoming ? "bg-amber-500/20 text-amber-600" : "bg-green-500/20 text-green-600"
-              }`}
-            >
-              {upcoming ? "Upcoming" : "Released"}
-            </span>
+            <div className="mt-2">
+              <ReleaseStatusPill
+                isComingSoon={releaseData.isComingSoon}
+                releaseDate={releaseData.releaseDate}
+                upcoming={upcoming}
+              />
+            </div>
             {getBannerFromLinks(releaseData.links, upcoming) && (
               <p className="text-sm text-primary mt-2">
                 {getBannerFromLinks(releaseData.links, upcoming)}

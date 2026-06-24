@@ -23,6 +23,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
+import { ProfileRepOverview } from "@/components/profile-rep-overview";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
@@ -181,52 +182,6 @@ function formatGenreDisplayLabel(genreKey: string): string {
   if (g === "dnb") return "DNB";
   if (g === "ukg") return "UKG";
   return g.charAt(0).toUpperCase() + g.slice(1);
-}
-
-function hexToRgbForGradient(hex: string): { r: number; g: number; b: number } | null {
-  const h = hex.replace("#", "").trim();
-  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) return null;
-  return {
-    r: parseInt(h.slice(0, 2), 16),
-    g: parseInt(h.slice(2, 4), 16),
-    b: parseInt(h.slice(4, 6), 16),
-  };
-}
-
-/** Smooth horizontal gradient in a genre hue; used for rep progress fill. */
-function repProgressGradientFromGenreBg(bgHex: string): string {
-  const t = hexToRgbForGradient(bgHex);
-  if (!t) {
-    return "linear-gradient(90deg, rgba(255,255,255,0.88) 0%, rgba(255,255,255,1) 45%, rgba(248,250,252,0.92) 100%)";
-  }
-  const { r, g, b } = t;
-  const start = `rgb(${Math.round(r * 0.58)}, ${Math.round(g * 0.58)}, ${Math.round(b * 0.58)})`;
-  const mid = bgHex;
-  const end = `rgb(${Math.round(r + (255 - r) * 0.34)}, ${Math.round(g + (255 - g) * 0.34)}, ${Math.round(b + (255 - b) * 0.34)})`;
-  return `linear-gradient(90deg, ${start} 0%, ${mid} 52%, ${end} 100%)`;
-}
-
-function whiteRepProgressGradient(): string {
-  return "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,1) 50%, rgba(241,245,249,0.95) 100%)";
-}
-
-/** Base fill colour under the rep gradient — aligned with leaderboard progress bars. */
-function repProgressBarBaseColor(hexColor: string | null | undefined): string {
-  const h = (hexColor ?? "").replace("#", "").trim();
-  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) return "#ffffff";
-  return `#${h}`;
-}
-
-/** Soft genre-tinted glow on the rep fill — aligned with leaderboard progress bars. */
-function repGenreGlowShadow(hexColor: string | null | undefined): string {
-  const h = (hexColor ?? "").replace("#", "").trim();
-  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) {
-    return "0 0 10px rgba(255,255,255,0.35)";
-  }
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `0 0 12px rgba(${r}, ${g}, ${b}, 0.45)`;
 }
 
 function getGenreChipColors(genre: string) {
@@ -908,29 +863,6 @@ export default function UserProfile() {
     const s = Number(userReputation?.reputation ?? 0);
     return deriveTrustLevel(Number.isFinite(s) ? s : 0);
   }, [userReputation?.reputation]);
-
-  const repProgressPctClamped = useMemo(() => {
-    const p = repTrustForProfile.progressPct;
-    return Math.min(100, Math.max(0, Number.isFinite(p) ? p : 0));
-  }, [repTrustForProfile.progressPct]);
-
-  const repProgressFillCss = useMemo(
-    () =>
-      repBarGenreChip != null
-        ? repProgressGradientFromGenreBg(repBarGenreChip.bgColor)
-        : whiteRepProgressGradient(),
-    [repBarGenreChip],
-  );
-
-  const repProgressBarBase = useMemo(
-    () => repProgressBarBaseColor(repBarGenreChip?.bgColor ?? null),
-    [repBarGenreChip],
-  );
-
-  const repProgressBarGlow = useMemo(
-    () => repGenreGlowShadow(repBarGenreChip?.bgColor ?? null),
-    [repBarGenreChip],
-  );
 
   const hasAnyArtistImpact =
     !!artistStats &&
@@ -2666,54 +2598,15 @@ export default function UserProfile() {
           {/* Rep (trust tier) */}
           <div>
             <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-              <div className="mb-3 flex items-center justify-start gap-1.5">
-                <TrendingUp className="w-5 h-5 text-accent shrink-0" />
-                <h3 className="font-semibold">Rep</h3>
-                <StatInfoPopover
-                  label="Rep"
-                  content={PROFILE_HELP.reputation}
-                  side="bottom"
-                  align="start"
-                  className="text-gray-400 hover:text-gray-200"
-                />
-              </div>
-              <div className="mb-1">
-                <span className="text-sm font-medium" data-testid="reputation-level">
-                  {repTrustForProfile.displayName}
-                </span>
-              </div>
-              {karmaData?.communityTopPercent != null && karmaData.communityTopPercent > 0 ? (
-                <p className="mb-3 text-xs text-gray-400" data-testid="reputation-percentile">
-                  You&apos;re in the top {karmaData.communityTopPercent}% of the community
-                </p>
-              ) : (
-                <div className="mb-3" />
-              )}
-              <div className="w-full rounded-full h-2 overflow-hidden bg-black/55">
-                <div
-                  className="h-2 rounded-full transition-[width] duration-700 ease-out"
-                  style={{
-                    width: `${repTrustForProfile.isTopTier ? 100 : repProgressPctClamped}%`,
-                    minWidth: (repTrustForProfile.isTopTier ? 100 : repProgressPctClamped) > 0 ? 3 : 0,
-                    backgroundImage: repProgressFillCss,
-                    backgroundColor: repProgressBarBase,
-                    filter: "saturate(1.32) contrast(1.05)",
-                    opacity: 1,
-                    boxShadow: repProgressBarGlow,
-                  }}
-                  data-testid="reputation-bar"
-                />
-              </div>
-              <div
-                className={`mt-2 flex items-center text-[11px] font-medium text-gray-400 ${
-                  repTrustForProfile.isTopTier ? "justify-start" : "justify-between"
-                }`}
-              >
-                <span>{repTrustForProfile.displayName}</span>
-                {!repTrustForProfile.isTopTier && repTrustForProfile.nextDisplayName && (
-                  <span>{repTrustForProfile.nextDisplayName}</span>
-                )}
-              </div>
+              <ProfileRepOverview
+                trust={repTrustForProfile}
+                communityTopPercent={karmaData?.communityTopPercent}
+                genreBarColorHex={repBarGenreChip?.bgColor}
+                showSectionHeader
+                showHelp
+                helpContent={PROFILE_HELP.reputation}
+                percentileVariant="self"
+              />
             </div>
           </div>
 

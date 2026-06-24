@@ -4,7 +4,6 @@ import { useRoute, useLocation } from "wouter";
 import { ArrowLeft, Calendar, Check, Heart, MessageCircle, Target, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
-import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
 import { GoldVerifiedTick } from "@/components/verified-artist";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -92,6 +91,8 @@ function normalizePublicProfileResponse(data: PublicProfileResponse): PublicProf
       reputation: Number(light.reputation ?? data.reputation ?? data.karma ?? 0),
       likesOnPosts: Number(light.likesOnPosts ?? 0),
       commentsOnPosts: Number(light.commentsOnPosts ?? 0),
+      likesGiven: Number(light.likesGiven ?? 0),
+      commentsWritten: Number(light.commentsWritten ?? 0),
       topGenreKey: light.topGenreKey ?? null,
     },
   };
@@ -103,30 +104,57 @@ function PublicArtistIdsStatIcon({ className }: { className?: string }) {
   );
 }
 
-function buildPublicCommunityOverviewItems(overview: PublicCommunityOverviewStats): StatsCardItem[] {
-  return [
+type PublicCommunityRow = {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: string;
+};
+
+function PublicCommunityOverviewSection({ overview }: { overview: PublicCommunityOverviewStats }) {
+  const rows: PublicCommunityRow[] = [
     {
       label: "Accuracy",
       value: `${overview.accuracyPercent}%`,
-      Icon: Target,
-      toneClassName:
-        "border-violet-500/35 bg-violet-500/5 text-violet-300 [&_svg]:drop-shadow-[0_0_6px_rgba(139,92,246,0.4)]",
+      icon: Target,
+      tone: "text-violet-300",
     },
     {
       label: "Releases Saved",
       value: overview.releasesSaved.toLocaleString(),
-      Icon: Calendar,
-      toneClassName:
-        "border-indigo-500/35 bg-indigo-500/5 text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
+      icon: Calendar,
+      tone: "text-indigo-300",
     },
     {
       label: "Artist IDs",
       value: overview.artistIds.toLocaleString(),
-      Icon: PublicArtistIdsStatIcon,
-      toneClassName:
-        "border-amber-500/35 bg-amber-500/5 text-amber-300 [&_svg]:text-white [&_svg]:drop-shadow-none",
+      icon: PublicArtistIdsStatIcon,
+      tone: "text-amber-300",
     },
   ];
+
+  return (
+    <section data-testid="public-profile-community-overview">
+      <h2 className="mb-2 text-sm font-semibold text-white">Community Overview</h2>
+      <div className="overflow-hidden rounded-lg border border-white/10 bg-black/25">
+        {rows.map(({ label, value, icon: Icon, tone }, index) => (
+          <div
+            key={label}
+            className={cn(
+              "flex items-center justify-between gap-3 px-3 py-2.5",
+              index > 0 && "border-t border-white/10",
+            )}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <Icon className={cn("h-4 w-4 shrink-0", tone)} />
+              <span className="text-xs font-medium text-gray-300">{label}</span>
+            </div>
+            <span className={cn("shrink-0 text-sm font-semibold tabular-nums leading-none", tone)}>{value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ProfileBannerDefaultGradient() {
@@ -250,8 +278,9 @@ function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
               <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
               <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
             </div>
-            <div className="space-y-3">
-              <DubHubSkeletonBar tone="default" className="h-24 w-full rounded-xl" />
+            <div className="space-y-2" aria-hidden>
+              <DubHubSkeletonBar tone="default" className="h-4 w-32" />
+              <DubHubSkeletonBar tone="faint" className="h-10 w-full rounded-lg" />
               <DubHubSkeletonBar tone="default" className="h-4 w-28" />
               <PublicArtistReleasesSkeleton />
             </div>
@@ -460,8 +489,12 @@ export default function PublicProfile() {
 
   const postsValue = statsReady ? Number(light.posts).toLocaleString() : "—";
   const idsValue = statsReady ? Number(light.correct_ids).toLocaleString() : "—";
-  const likesValue = statsReady ? Number(light.likesOnPosts).toLocaleString() : "—";
-  const commentsValue = statsReady ? Number(light.commentsOnPosts).toLocaleString() : "—";
+  const likesValue = statsReady
+    ? Number(isVerifiedArtist ? light.likesOnPosts : light.likesGiven).toLocaleString()
+    : "—";
+  const commentsValue = statsReady
+    ? Number(isVerifiedArtist ? light.commentsOnPosts : light.commentsWritten).toLocaleString()
+    : "—";
 
   const reputationRaw = light?.reputation ?? profile.reputation ?? profile.karma;
   const reputationNum = Number(reputationRaw);
@@ -670,12 +703,7 @@ export default function PublicProfile() {
             ) : (
               <>
                 {communityOverview ? (
-                  <section data-testid="public-profile-community-overview">
-                    <StatsCardSection
-                      title="Community Overview"
-                      items={buildPublicCommunityOverviewItems(communityOverview)}
-                    />
-                  </section>
+                  <PublicCommunityOverviewSection overview={communityOverview} />
                 ) : null}
 
                 <section className="space-y-4" data-testid="public-profile-saved-releases">

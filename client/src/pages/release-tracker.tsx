@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Calendar, Music, Disc3, Plus } from "lucide-react";
-import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
+import { Calendar, Disc3, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
@@ -443,78 +442,7 @@ export default function ReleaseTracker() {
                 <div className="space-y-4">
                   {feedItems
                     .filter((r) => r.isComingSoon)
-                    .map((r) => {
-                      const normalized = normalizeReleaseCardFields(r);
-                      const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
-                      return (
-                      <div
-                        key={r.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openRelease(r)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            openRelease(r);
-                          }
-                        }}
-                        className={`${releaseCardBaseClass} min-w-0 overflow-hidden`}
-                      >
-                        <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-                          {normalized.artworkUrl ? (
-                            <img src={normalized.artworkUrl} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <Music className="w-10 h-10 text-muted-foreground" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <p className="min-w-0 truncate text-xs font-semibold leading-snug text-foreground">
-                            {formatReleaseByline(r.artistUsername, r.collaborators)}
-                          </p>
-                          {normalized.title ? (
-                            <p className="text-sm leading-snug text-foreground mt-0.5 min-w-0 line-clamp-2 break-all">
-                              {normalized.title}
-                            </p>
-                          ) : null}
-                          <p className="text-xs text-muted-foreground mt-1">Coming soon...</p>
-                          {getBannerFromLinks(r.links, true) && (
-                            <p className="text-xs text-primary mt-1">
-                              {getBannerFromLinks(r.links, true)}
-                            </p>
-                          )}
-                          <div className="flex flex-wrap gap-1 mt-2 items-center">
-                            <span className="inline-block text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400">
-                              Upcoming
-                            </span>
-                            {collabDisplay && (
-                              <span className={collabDisplay.className}>{collabDisplay.label}</span>
-                            )}
-                          </div>
-                          {r.links && r.links.length > 0 && (
-                            <div className="flex gap-1 mt-2 flex-wrap">
-                              {sortLinksByPlatform(r.links).map((link) => (
-                                <a
-                                  key={link.id}
-                                  href={link.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
-                                  title={getPlatformLabel(link.platform)}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                                  <span className="max-w-[10rem] truncate">
-                                    {getLinkCtaLabel(link.platform, true)}
-                                  </span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                    })}
+                    .map((r) => renderReleaseCard(r))}
                 </div>
               </section>
             )}

@@ -1,4 +1,5 @@
 import { ExternalLink, Music } from "lucide-react";
+import { ReleaseStatusPill } from "@/components/release-status-pill";
 import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
@@ -132,15 +133,7 @@ export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCa
           <p className="mt-1 text-xs text-primary">{getBannerFromLinks(r.links, upcoming)}</p>
         ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          <span
-            className={`inline-block rounded px-2 py-0.5 text-xs ${
-              upcoming
-                ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                : "bg-green-500/20 text-green-600 dark:text-green-400"
-            }`}
-          >
-            {upcoming ? "Upcoming" : "Released"}
-          </span>
+          <ReleaseStatusPill isComingSoon={r.isComingSoon} releaseDate={r.releaseDate} upcoming={upcoming} />
           {collabDisplay ? <span className={collabDisplay.className}>{collabDisplay.label}</span> : null}
         </div>
         {r.links && r.links.length > 0 ? (

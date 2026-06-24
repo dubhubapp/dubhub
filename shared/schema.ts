@@ -447,6 +447,10 @@ export type PublicLightProfileStats = {
   likesOnPosts: number;
   /** Total comments received on posts uploaded by this account. */
   commentsOnPosts: number;
+  /** Total likes the account has given on posts (community participation). */
+  likesGiven: number;
+  /** Total comments the account has written. */
+  commentsWritten: number;
   /** Canonical genre key (e.g. dnb) for the strongest associated community-side activity. */
   topGenreKey: string | null;
 };

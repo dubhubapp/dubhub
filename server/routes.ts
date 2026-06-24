@@ -445,6 +445,8 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
       COALESCE(uk.correct_ids, 0) AS correct_ids,
       (SELECT COUNT(*)::int FROM post_likes pl INNER JOIN posts p ON p.id = pl.post_id WHERE p.user_id = ${userId}) AS likes_on_posts,
       (SELECT COUNT(*)::int FROM comments c INNER JOIN posts p ON p.id = c.post_id WHERE p.user_id = ${userId}) AS comments_on_posts,
+      (SELECT COUNT(*)::int FROM post_likes WHERE user_id = ${userId}) AS likes_given,
+      (SELECT COUNT(*)::int FROM comments WHERE user_id = ${userId}) AS comments_written,
 
       /* Strongest associated genre for community-side IDs:
          prefer genres where this user's comment became the verified/correct ID */
@@ -490,6 +492,8 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
     correct_ids: Number(row.correct_ids ?? 0),
     likesOnPosts: Number(row.likes_on_posts ?? 0),
     commentsOnPosts: Number(row.comments_on_posts ?? 0),
+    likesGiven: Number(row.likes_given ?? 0),
+    commentsWritten: Number(row.comments_written ?? 0),
     topGenreKey: row.top_genre_key != null ? String(row.top_genre_key) : null,
   };
 }
