@@ -443,6 +443,10 @@ export type PublicLightProfileStats = {
   reputation: number;
   /** Hardened count of correct IDs contributed by the account. */
   correct_ids: number;
+  /** Total likes received on posts uploaded by this account. */
+  likesOnPosts: number;
+  /** Total comments received on posts uploaded by this account. */
+  commentsOnPosts: number;
   /** Canonical genre key (e.g. dnb) for the strongest associated community-side activity. */
   topGenreKey: string | null;
 };

@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 10-06-2026
+Last updated: 24-06-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -236,6 +236,7 @@ NOT `user_id` or `from_user_id`.
 | suspended_until | timestamptz | YES | – | Temporary suspension |
 | banned | boolean | YES | false | Permanent ban flag |
 | warning_count | integer | YES | 0 | Moderation warnings |
+| banner_url | text | YES | – | Profile cover/banner image URL/path |
 
 ---
 

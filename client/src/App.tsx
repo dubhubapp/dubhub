@@ -24,6 +24,7 @@ import ReleaseDetail from "@/pages/release-detail";
 import ReleaseCreate from "@/pages/release-create";
 import ReleaseEdit from "@/pages/release-edit";
 import UserProfile from "@/pages/user-profile";
+import PublicProfile from "@/pages/public-profile";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
 import ResetPasswordPage from "@/pages/reset-password";
@@ -103,9 +104,12 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
     }
   }, [location]);
 
+  const isProfileShellRoute =
+    location === "/profile" || /^\/profile\/[^/]+$/.test(location);
+
   const shellClass =
     location === "/" ||
-    location === "/profile" ||
+    isProfileShellRoute ||
     location === "/releases" ||
     location === "/leaderboard"
       ? APP_MAIN_SHELL_BASE
@@ -772,6 +776,7 @@ function App() {
               <Route path="/releases/:id" component={ReleaseDetail} />
               <Route path="/releases" component={ReleaseTracker} />
               <Route path="/leaderboard" component={Leaderboard} />
+              <Route path="/profile/:username" component={PublicProfile} />
               <Route path="/profile" component={UserProfile} />
               <Route path="/settings" component={SettingsWithSignOut} />
               <Route path="/moderator" component={ModeratorPage} />

@@ -443,6 +443,8 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
       (SELECT COUNT(*)::int FROM posts WHERE user_id = ${userId}) AS posts,
       COALESCE(uk.score, 0) AS reputation,
       COALESCE(uk.correct_ids, 0) AS correct_ids,
+      (SELECT COUNT(*)::int FROM post_likes pl INNER JOIN posts p ON p.id = pl.post_id WHERE p.user_id = ${userId}) AS likes_on_posts,
+      (SELECT COUNT(*)::int FROM comments c INNER JOIN posts p ON p.id = c.post_id WHERE p.user_id = ${userId}) AS comments_on_posts,
 
       /* Strongest associated genre for community-side IDs:
          prefer genres where this user's comment became the verified/correct ID */
@@ -486,8 +488,37 @@ async function fetchPublicLightProfileStats(userId: string): Promise<import("@sh
     posts: Number(row.posts ?? 0),
     reputation: Number(row.reputation ?? 0),
     correct_ids: Number(row.correct_ids ?? 0),
+    likesOnPosts: Number(row.likes_on_posts ?? 0),
+    commentsOnPosts: Number(row.comments_on_posts ?? 0),
     topGenreKey: row.top_genre_key != null ? String(row.top_genre_key) : null,
   };
+}
+
+function releaseArtworkPublicUrl(artworkUrl: string | null | undefined): string | null {
+  if (!artworkUrl) return null;
+  if (artworkUrl.startsWith("http")) return artworkUrl;
+  const { data } = supabase.storage.from("release-artworks").getPublicUrl(artworkUrl);
+  return data?.publicUrl ?? null;
+}
+
+async function buildPublicReleasesPayload(artistId: string) {
+  const { upcoming, released } = await storage.getPublicReleasesForArtist(artistId);
+  const mapWithLinksAndArtwork = async (rows: any[]) =>
+    Promise.all(
+      rows.map(async (r: any) => {
+        const links = await storage.getReleaseLinks(r.id);
+        return {
+          ...r,
+          artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
+          links: Array.isArray(links) ? links : [],
+        };
+      }),
+    );
+  const [upcomingWithMeta, releasedWithMeta] = await Promise.all([
+    mapWithLinksAndArtwork(upcoming),
+    mapWithLinksAndArtwork(released),
+  ]);
+  return { upcoming: upcomingWithMeta, released: releasedWithMeta };
 }
 
 // Helper function to detect artist mentions in comment text
@@ -1509,6 +1540,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
       }
 
+      let publicReleases: { upcoming: any[]; released: any[] } | undefined;
+      if (user.verified_artist === true && user.account_type === "artist") {
+        try {
+          publicReleases = await buildPublicReleasesPayload(user.id);
+        } catch (releasesErr) {
+          console.error("[/api/user/profile/:username] publicReleases:", releasesErr);
+        }
+      }
+
       const { email: _email, ...publicUser } = user;
       const userProfile = {
         ...publicUser,
@@ -1516,6 +1556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         correct_ids: correctIdsAgg,
         karma: reputation,
         ...(publicLight !== undefined ? { publicLight } : {}),
+        ...(publicReleases !== undefined ? { publicReleases } : {}),
       };
 
       res.json(userProfile);
@@ -2602,6 +2643,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/artists/:id/stats] Error:", error);
       res.status(500).json({ message: "Failed to get artist stats" });
+    }
+  });
+
+  app.get("/api/artists/:id/public-releases", async (req, res) => {
+    try {
+      const artistId = req.params.id;
+      const artist = await storage.getUser(artistId);
+      if (!artist || artist.account_type !== "artist") {
+        return res.status(404).json({ message: "Artist not found" });
+      }
+
+      const payload = await buildPublicReleasesPayload(artistId);
+      res.json(payload);
+    } catch (error) {
+      console.error("[/api/artists/:id/public-releases] Error:", error);
+      res.status(500).json({ message: "Failed to get public artist releases" });
     }
   });
 
@@ -5236,13 +5293,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else cb(new Error('Invalid file type. Only image files are allowed.'));
     },
   });
-
-  function releaseArtworkPublicUrl(artworkUrl: string | null | undefined): string | null {
-    if (!artworkUrl) return null;
-    if (artworkUrl.startsWith('http')) return artworkUrl;
-    const { data } = supabase.storage.from('release-artworks').getPublicUrl(artworkUrl);
-    return data?.publicUrl ?? null;
-  }
 
   function looksLikeImageDataUri(value: string | null | undefined): boolean {
     if (!value) return false;

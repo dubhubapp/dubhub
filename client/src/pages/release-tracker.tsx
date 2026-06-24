@@ -1,21 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Calendar, Music, ExternalLink, Disc3, Plus } from "lucide-react";
+import { Calendar, Music, Disc3, Plus } from "lucide-react";
 import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
-import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
-import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
-import { PlatformIcon } from "@/components/PlatformIcon";
-import {
-  getLinkCtaLabel,
-  getBannerFromLinks,
-} from "@/lib/release-cta";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
 import { isReleaseDayToday } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
-import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import {
@@ -29,57 +21,27 @@ import {
   shouldOfferReleasesPushPrompt,
 } from "@/lib/push-prompt";
 import { Capacitor } from "@capacitor/core";
+import {
+  ReleaseFeedCard,
+  formatReleaseCardDate,
+  isReleaseCardUpcoming,
+  type ReleaseFeedCardData,
+} from "@/components/release-feed-card";
 
-export type ReleaseFeedItem = {
-  id: string;
-  artistId: string;
-  title: string;
-  releaseDate: string | null;
-  artworkUrl: string | null;
+export type ReleaseFeedItem = ReleaseFeedCardData & {
   notifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  artistUsername: string;
-  isComingSoon?: boolean;
-  links?: { id: string; platform: string; url: string }[];
-  collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
-  collaborators?: { username: string; status: string }[];
 };
 
 export { PLATFORM_ICONS, PLATFORM_LABELS, getPlatformIcon, getPlatformLabel } from "@/lib/platforms";
 
-function looksLikeImageDataUri(value: string | null | undefined): boolean {
-  if (!value) return false;
-  return /^data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value.trim());
-}
-
-function stripEmbeddedImageDataUris(value: string): string {
-  return value
-    .replace(/\b[a-z]*data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,\S*/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeReleaseCardFields(r: ReleaseFeedItem): { title: string; artworkUrl: string | null } {
-  const rawTitle = String(r.title ?? "").trim();
-  const rawArtwork = typeof r.artworkUrl === "string" ? r.artworkUrl.trim() : "";
-  const titleIsDataUri = looksLikeImageDataUri(rawTitle);
-  const safeTitle = sanitizeReleaseText(stripEmbeddedImageDataUris(rawTitle));
-  if (titleIsDataUri && !rawArtwork) {
-    return { title: "", artworkUrl: rawTitle };
-  }
-  return { title: titleIsDataUri ? "" : safeTitle, artworkUrl: rawArtwork || null };
-}
-
 function formatDate(d: string | null) {
-  if (!d) return "";
-  const date = new Date(d);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatReleaseCardDate(d);
 }
 
 function isUpcoming(d: string | null) {
-  if (!d) return false;
-  return new Date(d) > new Date();
+  return isReleaseCardUpcoming(d);
 }
 
 function getMonthYearKey(d: string): string {
@@ -260,8 +222,6 @@ export default function ReleaseTracker() {
   const activeTabClass =
     "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]";
   const inactiveTabClass = "bg-black/20 text-white/70 hover:text-white hover:bg-black/30";
-  const releaseCardBaseClass =
-    "ios-press w-full text-left rounded-xl p-4 transition-all border flex gap-4 bg-black/30 backdrop-blur-md border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] hover:bg-black/40 hover:border-white/20";
 
   const { data: feed } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
@@ -325,104 +285,21 @@ export default function ReleaseTracker() {
   );
 
   const renderReleaseCard = (r: ReleaseFeedItem, opts?: { featured?: boolean }) => {
-    const normalized = normalizeReleaseCardFields(r);
-    const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
     const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
     const releaseDayHighlight = isReleaseDayHighlight(r);
     const isOwnerReleaseDay = r.artistId === currentUser?.id && releaseDayHighlight;
-    const featured = !!opts?.featured;
     return (
-      <div
+      <ReleaseFeedCard
         key={r.id}
-        role="button"
-        tabIndex={0}
-        onClick={() => openRelease(r)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            openRelease(r);
-          }
+        release={r}
+        onOpen={() => openRelease(r)}
+        highlight={{
+          featured: opts?.featured,
+          savedOutToday,
+          isOwnerReleaseDay,
+          releaseDayHighlight,
         }}
-        className={cn(
-          releaseCardBaseClass,
-          "min-w-0 overflow-hidden",
-          featured
-            ? "bg-transparent border-0 px-1 py-2 shadow-none hover:bg-transparent"
-            : "",
-          !featured && savedOutToday &&
-            "ring-1 ring-emerald-500/40 shadow-[0_0_24px_-8px_rgba(16,185,129,0.3)] bg-emerald-500/[0.06] border-emerald-500/35",
-          !featured && isOwnerReleaseDay &&
-            "ring-1 ring-violet-500/40 shadow-[0_0_26px_-8px_rgba(139,92,246,0.35)] bg-violet-500/[0.06] border-violet-500/35",
-          !featured && releaseDayHighlight && !savedOutToday && !isOwnerReleaseDay &&
-            "ring-1 ring-amber-500/35 shadow-[0_0_22px_-8px_rgba(245,158,11,0.3)] bg-amber-500/[0.06] border-amber-500/30"
-        )}
-      >
-        <div className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-          {normalized.artworkUrl ? (
-            <img src={normalized.artworkUrl} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <Music className="w-10 h-10 text-muted-foreground" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <p className="min-w-0 truncate text-xs font-semibold leading-snug text-foreground">
-            {formatReleaseByline(r.artistUsername, r.collaborators)}
-          </p>
-          {normalized.title ? (
-            <p className="text-sm leading-snug text-foreground mt-0.5 min-w-0 line-clamp-2 break-all">
-              {normalized.title}
-            </p>
-          ) : null}
-          <p className="text-xs text-muted-foreground mt-1">
-            {r.isComingSoon ? "Coming soon..." : formatDate(r.releaseDate)}
-          </p>
-          {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null)) && (
-            <p className="text-xs text-primary mt-1">
-              {getBannerFromLinks(r.links, r.isComingSoon || isUpcoming(r.releaseDate || null))}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-1 mt-2 items-center">
-            {(() => {
-              const upcoming = r.isComingSoon || isUpcoming(r.releaseDate);
-              return (
-                <span
-                  className={`inline-block text-xs px-2 py-0.5 rounded ${
-                    upcoming
-                      ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                      : "bg-green-500/20 text-green-600 dark:text-green-400"
-                  }`}
-                >
-                  {upcoming ? "Upcoming" : "Released"}
-                </span>
-              );
-            })()}
-            {collabDisplay && (
-              <span className={collabDisplay.className}>{collabDisplay.label}</span>
-            )}
-          </div>
-          {r.links && r.links.length > 0 && (
-            <div className="flex gap-1 mt-2 flex-wrap">
-              {sortLinksByPlatform(r.links).map((link) => (
-                <a
-                  key={link.id}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded p-1 bg-muted hover:bg-muted/80 text-xs"
-                  title={getPlatformLabel(link.platform)}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                  <span className="max-w-[10rem] truncate">
-                    {getLinkCtaLabel(link.platform, r.isComingSoon || isUpcoming(r.releaseDate || null))}
-                  </span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      />
     );
   };
 

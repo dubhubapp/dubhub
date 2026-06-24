@@ -908,10 +908,11 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
         onMentionClick: (username, e) => {
           openByUsername(username, {
             anchor: { x: e.clientX, y: e.clientY },
+            reopenCommentsPostId: post.id,
           });
         },
       }),
-    [isVerifiedArtistUsername, openByUsername],
+    [isVerifiedArtistUsername, openByUsername, post.id],
   );
 
   // Note: karma display has been removed from the comments UI to avoid stray numeric artifacts near names.
@@ -1611,6 +1612,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                         e.stopPropagation();
                         openByUsername(pinnedVerifiedReply.user.username, {
                           anchor: { x: e.clientX, y: e.clientY },
+                          reopenCommentsPostId: post.id,
                         });
                       }}
                     >
@@ -1640,6 +1642,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                               e.stopPropagation();
                               openByUsername(pinnedVerifiedReply.user.username, {
                                 anchor: { x: e.clientX, y: e.clientY },
+                                reopenCommentsPostId: post.id,
                               });
                             }}
                           >
@@ -1744,6 +1747,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                       e.stopPropagation();
                       openByUsername(comment.user.username, {
                         anchor: { x: e.clientX, y: e.clientY },
+                        reopenCommentsPostId: post.id,
                       });
                     }}
                   >
@@ -1771,6 +1775,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                         e.stopPropagation();
                         openByUsername(comment.user.username, {
                           anchor: { x: e.clientX, y: e.clientY },
+                          reopenCommentsPostId: post.id,
                         });
                       }}
                     >
@@ -2009,6 +2014,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                               e.stopPropagation();
                               openByUsername(reply.user.username, {
                                 anchor: { x: e.clientX, y: e.clientY },
+                                reopenCommentsPostId: post.id,
                               });
                             }}
                           >
@@ -2036,6 +2042,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                                   e.stopPropagation();
                                   openByUsername(reply.user.username, {
                                     anchor: { x: e.clientX, y: e.clientY },
+                                    reopenCommentsPostId: post.id,
                                   });
                                 }}
                               >

@@ -60,6 +60,7 @@ import {
   getHomeFeedSessionBootstrap,
   saveHomeFeedSession,
 } from "@/lib/home-feed-session";
+import { consumeProfileReturnReopenComments } from "@/lib/profile-navigation-return";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
 const WELCOME_MESSAGES = [
@@ -818,6 +819,14 @@ export default function Home() {
   const clearPendingOpenComments = useCallback(() => {
     pendingOpenCommentsPostIdRef.current = null;
     setOpenCommentsTargetPostId(null);
+  }, []);
+
+  useEffect(() => {
+    const reopenPostId = consumeProfileReturnReopenComments();
+    if (reopenPostId) {
+      pendingOpenCommentsPostIdRef.current = reopenPostId;
+      setOpenCommentsTargetPostId(reopenPostId);
+    }
   }, []);
   /** True from the moment sort/filter changes until real (non-placeholder) query data arrives. */
   const feedChromeResetPendingRef = useRef(false);

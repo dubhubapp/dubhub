@@ -1,5 +1,7 @@
-/** Query value marking Release Detail/Edit opened from the Home feed release preview card. */
+/** Query value marking Release Detail opened from the Home feed release preview card. */
 export const RELEASE_DETAIL_FROM_FEED_VALUE = "feed";
+/** Query value marking Release Detail opened from a public artist profile. */
+export const RELEASE_DETAIL_FROM_PROFILE_VALUE = "profile";
 
 export function appendReleaseDetailFromFeedParam(path: string): string {
   const qIndex = path.indexOf("?");
@@ -17,12 +19,33 @@ export function releaseDetailOpenedFromFeed(search: string): boolean {
   return params.get("from") === RELEASE_DETAIL_FROM_FEED_VALUE;
 }
 
+export function releaseDetailOpenedFromProfile(search: string): boolean {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const params = new URLSearchParams(raw);
+  return params.get("from") === RELEASE_DETAIL_FROM_PROFILE_VALUE;
+}
+
+export function appendReleaseDetailFromProfileParam(path: string, profileUsername: string): string {
+  const qIndex = path.indexOf("?");
+  const base = qIndex === -1 ? path : path.slice(0, qIndex);
+  const existing = qIndex === -1 ? "" : path.slice(qIndex + 1);
+  const params = new URLSearchParams(existing);
+  params.set("from", RELEASE_DETAIL_FROM_PROFILE_VALUE);
+  params.set("profile", profileUsername.trim());
+  const qs = params.toString();
+  return `${base}?${qs}`;
+}
+
 /** Back target for Release Detail / Edit: Home when opened from feed preview, else Releases list. */
 export function resolveReleaseDetailBackPath(search: string): string {
   if (releaseDetailOpenedFromFeed(search)) return "/";
 
   const raw = search.startsWith("?") ? search.slice(1) : search;
   const params = new URLSearchParams(raw);
+  if (releaseDetailOpenedFromProfile(search)) {
+    const profileUsername = params.get("profile")?.trim();
+    if (profileUsername) return `/profile/${encodeURIComponent(profileUsername)}`;
+  }
   const scope = params.get("scope");
   const view = params.get("view");
   const q = new URLSearchParams();

@@ -25,7 +25,7 @@ import {
   hasFullReleaseDetail,
   type ReleaseDetailRecord,
 } from "@/lib/release-cache";
-import { resolveReleaseDetailBackPath } from "@/lib/release-detail-navigation";
+import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -187,7 +187,13 @@ export default function ReleaseDetail() {
   }
 
   const releasesBackUrl = resolveReleaseDetailBackPath(search);
-  const handleBack = () => navigate(releasesBackUrl);
+  const handleBack = () => {
+    if (releaseDetailOpenedFromProfile(search) && typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    navigate(releasesBackUrl);
+  };
 
   if (isPending && !release) {
     return (

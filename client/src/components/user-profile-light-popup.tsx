@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useUser } from "@/lib/user-context";
+import { stashProfileReturnReopenComments, markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
@@ -61,6 +64,8 @@ type OpenByUsernameOptions = {
    * Ignored after profile returns; `other` sentinel is never treated as a hint.
    */
   surfaceGenreHint?: string | null;
+  /** When set, Home reopens the comments drawer after returning from a public profile. */
+  reopenCommentsPostId?: string | null;
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -130,11 +135,14 @@ type ProfilePopupUser = {
 };
 
 export function useUserProfileLightPopup(options?: LightPopupOptions) {
+  const [, navigate] = useLocation();
+  const { username: viewerUsername } = useUser();
   const [selectedUser, setSelectedUser] = useState<ProfilePopupUser | null>(null);
   const [showUserPopup, setShowUserPopup] = useState(false);
   const [popupAnchor, setPopupAnchor] = useState<{ x: number; y: number } | null>(null);
   /** Increments on each `openByUsername` call so stale fetches never overwrite the active popup. */
   const profileOpenSeqRef = useRef(0);
+  const lastOpenOptionsRef = useRef<OpenByUsernameOptions | undefined>(undefined);
 
   const { data: verifiedArtists = [] } = useQuery<any[]>({
     queryKey: ["/api/artists/verified"],
@@ -148,6 +156,7 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
       playInteractionLight();
 
       const trimmed = username.trim();
+      lastOpenOptionsRef.current = openOptions;
       setPopupAnchor(openOptions?.anchor ?? null);
       setSelectedUser({
         username: trimmed,
@@ -203,11 +212,41 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
 
   const closePopup = useCallback(() => setShowUserPopup(false), []);
 
+  const openFullProfile = useCallback(
+    (username: string) => {
+      const trimmed = username.trim();
+      if (!trimmed) return;
+
+      const viewerNorm = (viewerUsername ?? "").trim().toLowerCase();
+      const targetNorm = trimmed.toLowerCase();
+
+      const reopenPostId = lastOpenOptionsRef.current?.reopenCommentsPostId?.trim();
+      if (reopenPostId) {
+        stashProfileReturnReopenComments(reopenPostId);
+      }
+
+      setShowUserPopup(false);
+
+      const navigateAfterClose = () => {
+        if (viewerNorm && targetNorm === viewerNorm) {
+          navigate("/profile");
+          return;
+        }
+        markPublicProfileEnterAnimation();
+        navigate(`/profile/${encodeURIComponent(trimmed)}`);
+      };
+
+      window.setTimeout(navigateAfterClose, POPUP_CLOSE_MS);
+    },
+    [navigate, viewerUsername],
+  );
+
   const popup = (
     <UserProfileLightPopup
       user={selectedUser}
       open={showUserPopup}
       onClose={closePopup}
+      onOpenFullProfile={openFullProfile}
       anchor={popupAnchor}
     />
   );
@@ -219,6 +258,7 @@ type UserProfileLightPopupProps = {
   user: ProfilePopupUser | null;
   open: boolean;
   onClose: () => void;
+  onOpenFullProfile: (username: string) => void;
   /** Viewport-aware anchor point (used by comment identity taps). */
   anchor: { x: number; y: number } | null;
 };
@@ -264,7 +304,7 @@ function StatLine({
   );
 }
 
-export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfileLightPopupProps) {
+export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, anchor }: UserProfileLightPopupProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const prevOpenRef = useRef(false);
   const exitFinishFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -672,8 +712,31 @@ export function UserProfileLightPopup({ user, open, onClose, anchor }: UserProfi
         onTransitionEnd={handleMotionTransitionEnd}
       >
         <div
-          className="relative overflow-hidden rounded-xl border px-3 py-2.5 transition-[background,box-shadow,border-color] duration-300 ease-out"
+          className="relative cursor-pointer overflow-hidden rounded-xl border px-3 py-2.5 transition-[background,box-shadow,border-color] duration-300 ease-out"
           style={cardSurfaceStyle}
+          role="button"
+          tabIndex={0}
+          data-testid="open-full-profile-from-popup"
+          aria-label={
+            user.username
+              ? `Open full profile for ${formatUsernameDisplay(user.username)}`
+              : "Open full profile"
+          }
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const name = user.username?.trim();
+            if (!name) return;
+            onOpenFullProfile(name);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            e.stopPropagation();
+            const name = user.username?.trim();
+            if (!name) return;
+            onOpenFullProfile(name);
+          }}
         >
         <button
           type="button"

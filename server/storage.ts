@@ -164,6 +164,8 @@ export interface IStorage {
   /** Saved (liked/uploaded) or owned/collaborator releases; narrow date window; client applies local “release day” filter. */
   getReleasesDropDayBannerCandidates(userId: string): Promise<any[]>;
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
+  /** Public releases owned by an artist (`is_public = true` only). */
+  getPublicReleasesForArtist(artistId: string): Promise<{ upcoming: any[]; released: any[] }>;
   /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
   isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean>;
   getRelease(id: string): Promise<any | undefined>;
@@ -288,7 +290,7 @@ export class DatabaseStorage implements IStorage {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, username, avatar_url, account_type, moderator, verified_artist, banned, suspended_until, created_at",
+          "id, username, avatar_url, banner_url, account_type, moderator, verified_artist, banned, suspended_until, created_at",
         )
         .ilike("username", normalized)
         .maybeSingle();
@@ -2719,6 +2721,49 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[getUpcomingReleasesForArtist] Error:", error);
       return [];
+    }
+  }
+
+  async getPublicReleasesForArtist(artistId: string): Promise<{ upcoming: any[]; released: any[] }> {
+    if (!artistId) return { upcoming: [], released: [] };
+    try {
+      const [upcomingResult, releasedResult] = await Promise.all([
+        db.execute(sql`
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+                 pr.username AS artist_username,
+                 (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+                  FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
+                  WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+          FROM releases r
+          JOIN profiles pr ON pr.id = r.artist_id
+          WHERE r.artist_id = ${artistId} AND r.is_public = true
+            AND (
+              (r.release_date IS NULL AND r.is_coming_soon = true)
+              OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
+            )
+          ORDER BY r.release_date ASC NULLS LAST
+        `),
+        db.execute(sql`
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+                 pr.username AS artist_username,
+                 (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
+                  FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
+                  WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
+          FROM releases r
+          JOIN profiles pr ON pr.id = r.artist_id
+          WHERE r.artist_id = ${artistId} AND r.is_public = true
+            AND r.release_date IS NOT NULL
+            AND ((r.release_date AT TIME ZONE 'UTC')::date < (NOW() AT TIME ZONE 'UTC')::date)
+          ORDER BY r.release_date DESC NULLS LAST
+        `),
+      ]);
+      return {
+        upcoming: this.mapReleasesFeedRows((upcomingResult as any).rows || []),
+        released: this.mapReleasesFeedRows((releasedResult as any).rows || []),
+      };
+    } catch (error) {
+      console.error("[getPublicReleasesForArtist] Error:", error);
+      return { upcoming: [], released: [] };
     }
   }
 
