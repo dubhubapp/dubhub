@@ -5469,12 +5469,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           viewerSavedReleaseRemoveBlocked = await storage.viewerHasOwnUploadOnRelease(userId, release.id);
         }
       }
+      const attachedClips = await storage.getAttachedClipsForRelease(release.id);
       res.json({
         ...release,
         artworkPath,
         artworkUrl,
         viewerSavedRelease,
         viewerSavedReleaseRemoveBlocked,
+        attachedClips,
       });
     } catch (error) {
       console.error("[/api/releases/:id] Error:", error);

@@ -176,6 +176,8 @@ export interface IStorage {
     | { ok: false; code: "BLOCKED_OWN_UPLOAD" | "NOT_FOUND" | "NOT_SAVED"; message: string }
   >;
   getRelease(id: string): Promise<any | undefined>;
+  /** Public clips attached to a release (feed-visible posts only), quality-ordered. */
+  getAttachedClipsForRelease(releaseId: string): Promise<any[]>;
   getReleaseStats(releaseId: string): Promise<any | undefined>;
   createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
   updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
@@ -2877,6 +2879,56 @@ export class DatabaseStorage implements IStorage {
         collaborators: (collaborators || []).map((c: any) => ({ ...c, status: "ACCEPTED" })),
       };
     });
+  }
+
+  async getAttachedClipsForRelease(releaseId: string): Promise<any[]> {
+    if (!releaseId) return [];
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.title,
+          p.thumbnail_url,
+          p.video_url,
+          p.is_verified_artist,
+          p.artist_verified_by,
+          p.verification_status,
+          p.is_verified_community,
+          p.created_at,
+          pr.username AS uploader_username,
+          COALESCE(pl_counts.likes_count, 0) AS likes_count
+        FROM release_posts rp
+        JOIN posts p ON p.id = rp.post_id
+        JOIN profiles pr ON pr.id = p.user_id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS likes_count
+          FROM post_likes pl
+          WHERE pl.post_id = p.id
+        ) pl_counts ON TRUE
+        WHERE rp.release_id = ${releaseId}
+          AND COALESCE(p.verification_status, 'unverified') != 'under_review'
+        ORDER BY
+          CASE
+            WHEN COALESCE(p.is_verified_artist, false) = true AND p.artist_verified_by IS NOT NULL THEN 0
+            WHEN COALESCE(p.verification_status, '') IN ('identified', 'community', 'community_approved')
+              OR COALESCE(p.is_verified_community, false) = true THEN 1
+            ELSE 2
+          END ASC,
+          p.created_at DESC
+      `);
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => ({
+        id: row.id,
+        title: row.title ?? null,
+        thumbnailUrl: mapPostThumbnailUrl(row),
+        uploaderUsername: row.uploader_username ?? "user",
+        isVerifiedArtist: row.is_verified_artist === true && row.artist_verified_by != null,
+        likes: Number(row.likes_count ?? 0),
+      }));
+    } catch (error) {
+      console.error("[getAttachedClipsForRelease] Error:", error);
+      return [];
+    }
   }
 
   async getRelease(id: string): Promise<any | undefined> {

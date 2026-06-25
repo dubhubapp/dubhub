@@ -42,6 +42,7 @@ import { RandomDiceButton } from "@/components/random-dice-button";
 import { playInteractionLight } from "@/lib/haptic";
 import { sharePost } from "@/lib/post-share";
 import { appendReleaseDetailFromFeedParam } from "@/lib/release-detail-navigation";
+import { invalidateAfterAttachedReleaseSaveStateChanged } from "@/lib/release-cache";
 import {
   dubhubVideoDebugEnabled,
   dubhubVideoDebugLog,
@@ -1911,6 +1912,14 @@ function VideoCardInner({
       if (contextUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
         queryClient.refetchQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
+      }
+
+      if (releasePreview?.id && contextUser?.id) {
+        invalidateAfterAttachedReleaseSaveStateChanged(queryClient, {
+          releaseId: releasePreview.id,
+          userId: contextUser.id,
+          username: contextUser.username ?? null,
+        });
       }
     },
     onError: () => {

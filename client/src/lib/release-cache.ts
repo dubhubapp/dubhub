@@ -3,6 +3,15 @@ import { apiUrl } from "@/lib/apiBase";
 import { supabase } from "@/lib/supabaseClient";
 import type { ReleaseFeedItem } from "@/pages/release-tracker";
 
+export type ReleaseAttachedClip = {
+  id: string;
+  title: string | null;
+  thumbnailUrl: string | null;
+  uploaderUsername: string;
+  isVerifiedArtist: boolean;
+  likes: number;
+};
+
 export type ReleaseDetailRecord = {
   id: string;
   artistId: string;
@@ -20,6 +29,7 @@ export type ReleaseDetailRecord = {
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   viewerSavedRelease?: boolean;
   viewerSavedReleaseRemoveBlocked?: boolean;
+  attachedClips?: ReleaseAttachedClip[];
   postIds?: string[];
   artworkPath?: string | null;
   __previewFromFeed?: true;
@@ -89,18 +99,123 @@ export function hasFullReleaseDetail(
   return !!release && !isPlaceholderData && !release.__previewFromFeed;
 }
 
+function filterSavedReleaseFeedItems(
+  items: ReleaseFeedItem[] | undefined,
+  releaseId: string,
+): ReleaseFeedItem[] | undefined {
+  if (!items || !Array.isArray(items)) return items;
+  return items.filter((r) => r.id !== releaseId);
+}
+
+type PublicSavedReleasesPayload = {
+  upcoming?: { id: string }[];
+  released?: { id: string }[];
+};
+
+type PublicProfileCache = {
+  publicSavedReleases?: PublicSavedReleasesPayload;
+  publicCommunityOverview?: { releasesSaved?: number; artistIds?: number; accuracyPercent?: number };
+};
+
+type UserStatsCache = { releasesSaved?: number };
+
+/** Immediately drop a release from saved-release client caches (before refetch). */
+export function optimisticallyRemoveSavedReleaseFromCaches(
+  queryClient: QueryClient,
+  opts: { releaseId: string; userId?: string | null; username?: string | null },
+): void {
+  const { releaseId, userId, username } = opts;
+
+  queryClient.setQueriesData<ReleaseFeedItem[]>(
+    {
+      queryKey: ["/api/releases/feed"],
+      exact: false,
+      predicate: (query) => query.queryKey[1] === "saved",
+    },
+    (old) => filterSavedReleaseFeedItems(old, releaseId),
+  );
+
+  queryClient.setQueryData<ReleaseDetailRecord>(["/api/releases", releaseId], (old) => {
+    if (!old) return old;
+    return {
+      ...old,
+      viewerSavedRelease: false,
+      viewerSavedReleaseRemoveBlocked: false,
+    };
+  });
+
+  if (username) {
+    queryClient.setQueryData<PublicProfileCache>(["/api/user/profile", username], (old) => {
+      if (!old?.publicSavedReleases) return old;
+      const upcoming = (old.publicSavedReleases.upcoming ?? []).filter((r) => r.id !== releaseId);
+      const released = (old.publicSavedReleases.released ?? []).filter((r) => r.id !== releaseId);
+      const hadRelease =
+        upcoming.length < (old.publicSavedReleases.upcoming ?? []).length ||
+        released.length < (old.publicSavedReleases.released ?? []).length;
+      return {
+        ...old,
+        publicSavedReleases: { upcoming, released },
+        publicCommunityOverview: old.publicCommunityOverview
+          ? {
+              ...old.publicCommunityOverview,
+              releasesSaved: hadRelease
+                ? Math.max(0, Number(old.publicCommunityOverview.releasesSaved ?? 0) - 1)
+                : old.publicCommunityOverview.releasesSaved,
+            }
+          : old.publicCommunityOverview,
+      };
+    });
+  }
+
+  if (userId) {
+    queryClient.setQueryData<UserStatsCache>(["/api/user", userId, "stats"], (old) => {
+      if (!old || old.releasesSaved === undefined) return old;
+      return {
+        ...old,
+        releasesSaved: Math.max(0, Number(old.releasesSaved) - 1),
+      };
+    });
+  }
+}
+
 /** Refresh feeds, release detail, posts likes, and profile saved-release surfaces after removal. */
 export function invalidateAfterSavedReleaseRemoved(
   queryClient: QueryClient,
   opts: { releaseId: string; userId?: string | null; username?: string | null },
 ): void {
-  const { releaseId, userId, username } = opts;
+  optimisticallyRemoveSavedReleaseFromCaches(queryClient, opts);
+  invalidateReleaseSavedSurfaces(queryClient, { ...opts, includePosts: true });
+}
+
+/** After like/unlike on a post attached to a release — refresh saved-release UI without touching post feed caches. */
+export function invalidateAfterAttachedReleaseSaveStateChanged(
+  queryClient: QueryClient,
+  opts: { releaseId: string; userId?: string | null; username?: string | null },
+): void {
+  invalidateReleaseSavedSurfaces(queryClient, opts);
+}
+
+function invalidateReleaseSavedSurfaces(
+  queryClient: QueryClient,
+  opts: {
+    releaseId: string;
+    userId?: string | null;
+    username?: string | null;
+    includePosts?: boolean;
+  },
+): void {
+  const { releaseId, userId, username, includePosts } = opts;
   queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
   queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
+  void queryClient.refetchQueries({ queryKey: ["/api/releases", releaseId] });
   queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId, "stats"] });
-  queryClient.invalidateQueries({ queryKey: ["/api/posts"], exact: false });
+  if (includePosts) {
+    queryClient.invalidateQueries({ queryKey: ["/api/posts"], exact: false });
+  }
   if (userId) {
-    queryClient.invalidateQueries({ queryKey: ["/api/user", userId, "liked-posts"] });
+    if (includePosts) {
+      queryClient.invalidateQueries({ queryKey: ["/api/user", userId, "liked-posts"] });
+    }
     queryClient.invalidateQueries({ queryKey: ["/api/user", userId, "stats"] });
   }
   if (username) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4, BookmarkMinus } from "lucide-react";
@@ -37,6 +37,7 @@ import {
   invalidateAfterSavedReleaseRemoved,
   type ReleaseDetailRecord,
 } from "@/lib/release-cache";
+import { ReleaseAttachedClips } from "@/components/release-attached-clips";
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
 
@@ -236,6 +237,12 @@ export default function ReleaseDetail() {
   }
 
   const releasesBackUrl = resolveReleaseDetailBackPath(search);
+  const openAttachedClip = useCallback(
+    (postId: string) => {
+      navigate(`/?post=${encodeURIComponent(postId)}`);
+    },
+    [navigate],
+  );
   const handleBack = () => {
     if (releaseDetailOpenedFromProfile(search) && typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
@@ -465,6 +472,10 @@ export default function ReleaseDetail() {
             </div>
           </div>
         )}
+
+        {hasFullDetail && releaseData.attachedClips !== undefined ? (
+          <ReleaseAttachedClips clips={releaseData.attachedClips} onOpenClip={openAttachedClip} />
+        ) : null}
 
         <div className="mb-6">
           {stats ? (
