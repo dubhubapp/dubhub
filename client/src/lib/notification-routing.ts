@@ -47,7 +47,7 @@ export function getNotificationTapRoute(notification: NotificationWithUser): str
     return "/profile";
   }
 
-  if (type === "release_day" || type === "release_announce") {
+  if (type === "artist_release_alert" || type === "release_day" || type === "release_announce") {
     if (releaseId) return `/releases/${encodeURIComponent(releaseId)}`;
     return "/releases";
   }

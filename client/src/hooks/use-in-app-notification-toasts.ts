@@ -37,6 +37,7 @@ const TOASTABLE_TYPES = new Set<NotificationType>([
   "artist_tag_comment",
   "artist_identified_post",
   "release_attached",
+  "artist_release_alert",
   "release_day",
   "release_announce",
 ]);
@@ -47,8 +48,9 @@ const TYPE_PRIORITY: Partial<Record<NotificationType, number>> = {
   comment_on_post: 3,
   artist_identified_post: 4,
   release_day: 5,
-  release_attached: 6,
-  release_announce: 7,
+  artist_release_alert: 6,
+  release_attached: 7,
+  release_announce: 8,
 };
 
 const UPLOAD_FLOW_PREFIXES = ["/submit", "/trim-video", "/submit-metadata"] as const;
@@ -80,7 +82,12 @@ function isConversationType(type: NotificationType): boolean {
 }
 
 function isReleaseEventType(type: NotificationType): boolean {
-  return type === "release_attached" || type === "release_day" || type === "release_announce";
+  return (
+    type === "release_attached" ||
+    type === "artist_release_alert" ||
+    type === "release_day" ||
+    type === "release_announce"
+  );
 }
 
 function getTypePriority(type: NotificationType): number {
@@ -174,7 +181,13 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
     case "release_attached":
       return {
         title: "Release added",
-        description: n.message || "A release was added to a post you follow",
+        description:
+          n.message || "That tune you've been waiting for? It's finally got a release date.",
+      };
+    case "artist_release_alert":
+      return {
+        title: "New Release",
+        description: n.message || "An artist announced a new release.",
       };
     case "release_announce":
       return {

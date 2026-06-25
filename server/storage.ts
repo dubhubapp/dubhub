@@ -18,6 +18,16 @@ import { mapPostThumbnailUrl } from "./postThumbnailUrl";
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
 
+const RELEASE_ATTACHED_NOTIFICATION_MESSAGE =
+  "That tune you've been waiting for? It's finally got a release date.";
+
+function formatArtistReleaseAlertMessage(artistUsername: string, releaseTitle: string | null | undefined): string {
+  const mention = `@${artistUsername.trim() || "Artist"}`;
+  const title = typeof releaseTitle === "string" ? releaseTitle.trim() : "";
+  if (title.length > 0) return `${mention} announced a new release: ${title}`;
+  return `${mention} announced a new release.`;
+}
+
 /**
  * Releases tab `scope=saved`: public releases linked via artist-verified posts the user
  * liked OR uploaded (release artist must match `posts.artist_verified_by`).
@@ -3445,6 +3455,56 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
+   * Likers + uploaders on attached posts only. Excludes release owner.
+   */
+  private async getReleaseAttachedRecipientIds(
+    releaseId: string,
+    artistId: string,
+  ): Promise<string[]> {
+    if (!releaseId || !artistId) return [];
+    try {
+      const recipientsResult = await db.execute(sql`
+        SELECT DISTINCT user_id FROM (
+          SELECT pl.user_id
+          FROM release_posts rp
+          JOIN post_likes pl ON pl.post_id = rp.post_id
+          WHERE rp.release_id = ${releaseId} AND pl.user_id IS NOT NULL
+          UNION
+          SELECT p.user_id
+          FROM release_posts rp
+          JOIN posts p ON p.id = rp.post_id
+          WHERE rp.release_id = ${releaseId} AND p.user_id IS NOT NULL
+        ) sub
+        WHERE user_id IS NOT NULL AND user_id != ${artistId}
+      `);
+      const rows = (recipientsResult as any).rows || [];
+      return rows.map((row: { user_id?: string }) => row.user_id).filter((id): id is string => !!id);
+    } catch (error) {
+      console.error("[getReleaseAttachedRecipientIds] Error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Users who enabled Release Alerts for this artist. Excludes release owner.
+   */
+  private async getArtistReleaseAlertSubscriberIds(artistId: string): Promise<string[]> {
+    if (!artistId) return [];
+    try {
+      const recipientsResult = await db.execute(sql`
+        SELECT user_id
+        FROM artist_release_alerts
+        WHERE artist_id = ${artistId} AND user_id != ${artistId}
+      `);
+      const rows = (recipientsResult as any).rows || [];
+      return rows.map((row: { user_id?: string }) => row.user_id).filter((id): id is string => !!id);
+    } catch (error) {
+      console.error("[getArtistReleaseAlertSubscriberIds] Error:", error);
+      return [];
+    }
+  }
+
+  /**
    * Distinct recipient user IDs for release notifications.
    * Likers + uploaders on attached posts ∪ artist_release_alerts subscribers.
    * Excludes release owner. DISTINCT dedupes multi-source eligibility.
@@ -3484,7 +3544,8 @@ export class DatabaseStorage implements IStorage {
   /**
    * Send initial public/confirmed announcement notification once per release.
    * Triggered when is_public becomes true; uses notified_at to prevent duplicates.
-   * Recipients = likers + uploaders of attached posts + artist_release_alerts; excludes owner.
+   * Attached-post recipients get release_attached; alert-only subscribers get artist_release_alert.
+   * Users in both sets receive release_attached only (track-specific message takes priority).
    */
   private getReleaseStatus(isComingSoon: boolean, releaseDate: Date | null): "upcoming" | "released" {
     if (isComingSoon) return "upcoming";
@@ -3503,32 +3564,60 @@ export class DatabaseStorage implements IStorage {
       if (!r.is_public || r.notified_at) return;
       const postIds = await this.getReleasePostIds(releaseId);
       if (postIds.length === 0) return;
-      const recipientIds = await this.getReleaseNotificationRecipientIds(releaseId, r.artist_id);
+      const attachedRecipientIds = await this.getReleaseAttachedRecipientIds(releaseId, r.artist_id);
+      const attachedSet = new Set(attachedRecipientIds);
+      const alertSubscriberIds = await this.getArtistReleaseAlertSubscriberIds(r.artist_id);
+      const alertOnlyRecipientIds = alertSubscriberIds.filter((id) => !attachedSet.has(id));
       const ownerProfile = await this.getUser(r.artist_id);
       const ownerUsername = ownerProfile?.username ?? "Artist";
       const releaseTitle = r.title ?? "Release";
-      const message = `@${ownerUsername} release added: ${releaseTitle}`;
+      const attachedMessage = RELEASE_ATTACHED_NOTIFICATION_MESSAGE;
+      const alertMessage = formatArtistReleaseAlertMessage(ownerUsername, releaseTitle);
       const firstPostId = postIds[0] ?? null;
-      for (const recipientId of recipientIds) {
+
+      for (const recipientId of attachedRecipientIds) {
         if (!recipientId) continue;
         const notif = await this.createNotification({
           artistId: recipientId,
           triggeredBy: r.artist_id,
           postId: firstPostId,
           releaseId,
-          message,
+          message: attachedMessage,
           notificationType: "release_attached",
         } as any);
-        // Fire-and-forget push for release_attached_to_liked_or_uploaded_post.
         void import("./push/pushSend").then(({ sendPushToUser }) =>
           sendPushToUser(recipientId, {
             type: "release_attached_to_liked_or_uploaded_post",
             releaseId,
             postId: firstPostId,
             artistId: r.artist_id,
-          })
+          }),
         );
       }
+
+      for (const recipientId of alertOnlyRecipientIds) {
+        if (!recipientId) continue;
+        const notif = await this.createNotification({
+          artistId: recipientId,
+          triggeredBy: r.artist_id,
+          postId: firstPostId,
+          releaseId,
+          message: alertMessage,
+          notificationType: "artist_release_alert",
+        } as any);
+        void import("./push/pushSend").then(({ sendPushToUser }) =>
+          sendPushToUser(recipientId, {
+            type: "artist_release_alert",
+            notificationId: notif.id,
+            releaseId,
+            postId: firstPostId,
+            artistId: r.artist_id,
+            artistUsername: ownerUsername,
+            releaseTitle,
+          }),
+        );
+      }
+
       await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
     } catch (error) {
       console.error("[maybeNotifyReleasePublic] Error:", error);

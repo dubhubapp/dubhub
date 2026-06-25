@@ -13,6 +13,7 @@ type PushEventName =
   | "artist_tag_comment"
   | "artist_identified_post"
   | "release_attached_to_liked_or_uploaded_post"
+  | "artist_release_alert"
   | "release_day_out_today"
   | "release_announce"
   | "collab_invite"
@@ -61,6 +62,16 @@ interface ReleaseAttachedPayload extends BaseEventPayload {
   releaseId: string;
   postId: string | null;
   artistId: string;
+}
+
+interface ArtistReleaseAlertPayload extends BaseEventPayload {
+  type: "artist_release_alert";
+  notificationId: string;
+  releaseId: string;
+  postId: string | null;
+  artistId: string;
+  artistUsername: string;
+  releaseTitle?: string;
 }
 
 interface ReleaseDayOutPayload extends BaseEventPayload {
@@ -115,6 +126,7 @@ type EventPayload =
   | ArtistTagCommentPayload
   | ArtistIdentifiedPayload
   | ReleaseAttachedPayload
+  | ArtistReleaseAlertPayload
   | ReleaseDayOutPayload
   | ReleaseAnnouncePayload
   | CollabWorkflowPayload
@@ -145,9 +157,21 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       };
     case "release_attached_to_liked_or_uploaded_post":
       return {
-        title: "Release added 🗓️",
-        body: "A track you liked now has a release.",
+        title: "Release added",
+        body: "That tune you've been waiting for? It's finally got a release date.",
       };
+    case "artist_release_alert": {
+      const artist = toMention(payload.artistUsername) ?? "Artist";
+      const title = payload.releaseTitle?.trim();
+      const body =
+        title && title.length > 0
+          ? `${artist} announced a new release: ${title}`
+          : `${artist} announced a new release.`;
+      return {
+        title: "New Release",
+        body,
+      };
+    }
     case "release_day_out_today": {
       const name = payload.releaseTitle.trim() || "Release";
       const artist = toMention(payload.artistUsername);

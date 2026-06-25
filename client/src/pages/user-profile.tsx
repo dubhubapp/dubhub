@@ -1318,7 +1318,12 @@ export default function UserProfile() {
 
   const isReleaseNotification = (n: NotificationWithUser) => {
     const type = getEffectiveNotificationType(notificationRowFields(n));
-    return type === "release_attached" || type === "release_day" || type === "release_announce";
+    return (
+      type === "release_attached" ||
+      type === "artist_release_alert" ||
+      type === "release_day" ||
+      type === "release_announce"
+    );
   };
 
   type GroupedNotification = {

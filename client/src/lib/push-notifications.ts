@@ -77,6 +77,7 @@ function resolvePushTapRoute(payload: Record<string, unknown>): string {
 
   if (
     (type === "release_attached_to_liked_or_uploaded_post" ||
+      type === "artist_release_alert" ||
       type === "release_day_out_today" ||
       type === "release_announce" ||
       type === "collab_invite" ||

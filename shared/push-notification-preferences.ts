@@ -53,6 +53,7 @@ export function evaluatePushPreferenceGate(
       }
       break;
     case "release_attached_to_liked_or_uploaded_post":
+    case "artist_release_alert":
     case "release_day_out_today":
     case "release_announce":
       if (!prefs.releaseUpdatesPush) {
