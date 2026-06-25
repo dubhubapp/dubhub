@@ -189,6 +189,23 @@ export const patchUserNotificationPreferencesSchema = z
   })
   .strict();
 
+/**
+ * Explicit opt-in for future release updates from a verified artist.
+ * Not a follower graph — backend API access only.
+ */
+export const artistReleaseAlerts = pgTable(
+  "artist_release_alerts",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+    artistId: varchar("artist_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userArtistUnique: unique("artist_release_alerts_user_artist_unique").on(table.userId, table.artistId),
+  }),
+);
+
 // Notifications - actual database schema uses artist_id, triggered_by
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

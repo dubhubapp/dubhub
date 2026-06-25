@@ -2758,6 +2758,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/artists/:artistId/release-alert", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const artistId = req.params.artistId;
+      const artist = await storage.getUser(artistId);
+      if (!artist) return res.status(404).json({ message: "Artist not found" });
+      if (artist.account_type !== "artist" || artist.verified_artist !== true) {
+        return res.status(404).json({ message: "Artist not found" });
+      }
+      if (req.dbUser.id === artistId) {
+        return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
+      }
+      const enabled = await storage.hasArtistReleaseAlert(req.dbUser.id, artistId);
+      res.json({ enabled });
+    } catch (error) {
+      console.error("[/api/artists/:artistId/release-alert] GET Error:", error);
+      res.status(500).json({ message: "Failed to get release alert status" });
+    }
+  });
+
+  app.post("/api/artists/:artistId/release-alert", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const artistId = req.params.artistId;
+      if (req.dbUser.id === artistId) {
+        return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
+      }
+      try {
+        await storage.enableArtistReleaseAlert(req.dbUser.id, artistId);
+      } catch (err) {
+        const code = err instanceof Error ? err.message : "";
+        if (code === "ARTIST_NOT_FOUND" || code === "ARTIST_NOT_VERIFIED") {
+          return res.status(404).json({ message: "Artist not found" });
+        }
+        if (code === "SELF_ALERT_NOT_ALLOWED") {
+          return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
+        }
+        throw err;
+      }
+      res.json({ enabled: true });
+    } catch (error) {
+      console.error("[/api/artists/:artistId/release-alert] POST Error:", error);
+      res.status(500).json({ message: "Failed to enable release alerts" });
+    }
+  });
+
+  app.delete("/api/artists/:artistId/release-alert", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const artistId = req.params.artistId;
+      await storage.disableArtistReleaseAlert(req.dbUser.id, artistId);
+      res.json({ enabled: false });
+    } catch (error) {
+      console.error("[/api/artists/:artistId/release-alert] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to disable release alerts" });
+    }
+  });
+
   // Get user's uploaded posts (for profile page)
   app.get("/api/user/:id/liked-posts", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {

@@ -218,6 +218,11 @@ export interface IStorage {
     userId: string,
     patch: PatchUserNotificationPreferences,
   ): Promise<UserNotificationPreferencesPayload>;
+
+  // Artist release alerts (explicit opt-in; not followers)
+  hasArtistReleaseAlert(userId: string, artistId: string): Promise<boolean>;
+  enableArtistReleaseAlert(userId: string, artistId: string): Promise<void>;
+  disableArtistReleaseAlert(userId: string, artistId: string): Promise<void>;
 }
 
 /** API-facing push preference shape (defaults when no DB row). */
@@ -1909,6 +1914,73 @@ export class DatabaseStorage implements IStorage {
       return this.mapUserNotificationPreferencesRow(userId, inserted);
     } catch (error) {
       console.error("[upsertUserNotificationPreferences] Error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Phase 1 beta: all verified artists are eligible.
+   * Future paid plans: gate here before enableArtistReleaseAlert.
+   */
+  private isArtistProfileEligibleForReleaseAlerts(artist: {
+    account_type?: string | null;
+    verified_artist?: boolean | null;
+  }): boolean {
+    return artist.account_type === "artist" && artist.verified_artist === true;
+    // TODO(paid-plans): require active artist subscription when billing launches.
+  }
+
+  async hasArtistReleaseAlert(userId: string, artistId: string): Promise<boolean> {
+    if (!userId || !artistId) return false;
+    try {
+      const result = await db.execute(sql`
+        SELECT 1
+        FROM artist_release_alerts
+        WHERE user_id = ${userId} AND artist_id = ${artistId}
+        LIMIT 1
+      `);
+      return ((result as any).rows || []).length > 0;
+    } catch (error) {
+      console.error("[hasArtistReleaseAlert] Error:", error);
+      return false;
+    }
+  }
+
+  async enableArtistReleaseAlert(userId: string, artistId: string): Promise<void> {
+    if (!userId || !artistId) {
+      throw new Error("INVALID_IDS");
+    }
+    if (userId === artistId) {
+      throw new Error("SELF_ALERT_NOT_ALLOWED");
+    }
+    const artist = await this.getUser(artistId);
+    if (!artist) {
+      throw new Error("ARTIST_NOT_FOUND");
+    }
+    if (!this.isArtistProfileEligibleForReleaseAlerts(artist)) {
+      throw new Error("ARTIST_NOT_VERIFIED");
+    }
+    try {
+      await db.execute(sql`
+        INSERT INTO artist_release_alerts (user_id, artist_id)
+        VALUES (${userId}, ${artistId})
+        ON CONFLICT (user_id, artist_id) DO NOTHING
+      `);
+    } catch (error) {
+      console.error("[enableArtistReleaseAlert] Error:", error);
+      throw error;
+    }
+  }
+
+  async disableArtistReleaseAlert(userId: string, artistId: string): Promise<void> {
+    if (!userId || !artistId) return;
+    try {
+      await db.execute(sql`
+        DELETE FROM artist_release_alerts
+        WHERE user_id = ${userId} AND artist_id = ${artistId}
+      `);
+    } catch (error) {
+      console.error("[disableArtistReleaseAlert] Error:", error);
       throw error;
     }
   }

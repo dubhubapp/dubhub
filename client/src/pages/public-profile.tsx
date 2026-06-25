@@ -25,6 +25,7 @@ import { type ReleaseFeedCardData } from "@/components/release-feed-card";
 import { prefetchReleaseDetail } from "@/lib/release-cache";
 import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-navigation";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { ArtistReleaseAlertsButton } from "@/components/artist-release-alerts-button";
 
 type PublicReleasesResponse = {
   upcoming: ReleaseFeedCardData[];
@@ -259,7 +260,7 @@ export default function PublicProfile() {
   const [, params] = useRoute("/profile/:username");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const { username: viewerUsername } = useUser();
+  const { username: viewerUsername, currentUser, isAuthenticated } = useUser();
   const [playEnterAnimation, setPlayEnterAnimation] = useState(() => consumePublicProfileEnterAnimation());
   const [bannerImageReady, setBannerImageReady] = useState(false);
   const [bannerImageFailed, setBannerImageFailed] = useState(false);
@@ -483,6 +484,13 @@ export default function PublicProfile() {
   const releasedSaved = savedReleases?.released ?? [];
   const hasAnySavedReleases = upcomingSaved.length > 0 || releasedSaved.length > 0;
 
+  const showArtistReleaseAlerts =
+    isAuthenticated &&
+    isVerifiedArtist &&
+    Boolean(profileId) &&
+    Boolean(currentUser?.id) &&
+    currentUser?.id !== profileId;
+
   return (
     <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
       <div
@@ -627,6 +635,10 @@ export default function PublicProfile() {
                 )}
               </div>
             </section>
+
+            {showArtistReleaseAlerts && profileId ? (
+              <ArtistReleaseAlertsButton artistId={profileId} />
+            ) : null}
 
             <div className={PUBLIC_PROFILE_SECTION_GAP_CLASS}>
               {statsReady && repTrust ? (
