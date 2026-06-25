@@ -3402,19 +3402,7 @@ export class DatabaseStorage implements IStorage {
       if (r.notified_at) return false;
       const postIds = await this.getReleasePostIds(releaseId);
       if (postIds.length === 0) return false;
-      const recipientsResult = await db.execute(sql`
-        SELECT DISTINCT user_id FROM (
-          SELECT pl.user_id FROM release_posts rp
-          JOIN post_likes pl ON pl.post_id = rp.post_id
-          WHERE rp.release_id = ${releaseId} AND pl.user_id IS NOT NULL
-          UNION
-          SELECT p.user_id FROM release_posts rp
-          JOIN posts p ON p.id = rp.post_id
-          WHERE rp.release_id = ${releaseId} AND p.user_id IS NOT NULL
-        ) sub
-        WHERE user_id != ${artistId}
-      `);
-      const recipientRows = (recipientsResult as any).rows || [];
+      const recipientIds = await this.getReleaseNotificationRecipientIds(releaseId, artistId);
       const artistProfile = await this.getUser(artistId);
       const artistUsername = artistProfile?.username ?? "Artist";
       const releaseTitle = r.title ?? "Release";
@@ -3426,8 +3414,7 @@ export class DatabaseStorage implements IStorage {
         ? `${artistUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
         : `${artistUsername} released ${releaseTitle}`;
       const firstPostId = postIds[0] ?? null;
-      for (const row of recipientRows) {
-        const recipientId = row.user_id;
+      for (const recipientId of recipientIds) {
         if (!recipientId) continue;
         const notif = await this.createNotification({
           artistId: recipientId,
@@ -3458,9 +3445,46 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
+   * Distinct recipient user IDs for release notifications.
+   * Likers + uploaders on attached posts ∪ artist_release_alerts subscribers.
+   * Excludes release owner. DISTINCT dedupes multi-source eligibility.
+   */
+  private async getReleaseNotificationRecipientIds(
+    releaseId: string,
+    artistId: string,
+  ): Promise<string[]> {
+    if (!releaseId || !artistId) return [];
+    try {
+      const recipientsResult = await db.execute(sql`
+        SELECT DISTINCT user_id FROM (
+          SELECT pl.user_id
+          FROM release_posts rp
+          JOIN post_likes pl ON pl.post_id = rp.post_id
+          WHERE rp.release_id = ${releaseId} AND pl.user_id IS NOT NULL
+          UNION
+          SELECT p.user_id
+          FROM release_posts rp
+          JOIN posts p ON p.id = rp.post_id
+          WHERE rp.release_id = ${releaseId} AND p.user_id IS NOT NULL
+          UNION
+          SELECT ara.user_id
+          FROM artist_release_alerts ara
+          WHERE ara.artist_id = ${artistId}
+        ) sub
+        WHERE user_id IS NOT NULL AND user_id != ${artistId}
+      `);
+      const rows = (recipientsResult as any).rows || [];
+      return rows.map((row: { user_id?: string }) => row.user_id).filter((id): id is string => !!id);
+    } catch (error) {
+      console.error("[getReleaseNotificationRecipientIds] Error:", error);
+      return [];
+    }
+  }
+
+  /**
    * Send initial public/confirmed announcement notification once per release.
    * Triggered when is_public becomes true; uses notified_at to prevent duplicates.
-   * Recipients = likers + uploaders of ALL attached posts; excludes owner.
+   * Recipients = likers + uploaders of attached posts + artist_release_alerts; excludes owner.
    */
   private getReleaseStatus(isComingSoon: boolean, releaseDate: Date | null): "upcoming" | "released" {
     if (isComingSoon) return "upcoming";
@@ -3479,23 +3503,13 @@ export class DatabaseStorage implements IStorage {
       if (!r.is_public || r.notified_at) return;
       const postIds = await this.getReleasePostIds(releaseId);
       if (postIds.length === 0) return;
-      const inList = sql.join(postIds.map((id) => sql`${id}`), sql`, `);
-      const recipientsResult = await db.execute(sql`
-        SELECT DISTINCT user_id FROM (
-          SELECT pl.user_id FROM post_likes pl WHERE pl.post_id IN (${inList}) AND pl.user_id IS NOT NULL
-          UNION
-          SELECT p.user_id FROM posts p WHERE p.id IN (${inList}) AND p.user_id IS NOT NULL
-        ) sub
-        WHERE user_id IS NOT NULL AND user_id != ${r.artist_id}
-      `);
-      const recipientRows = (recipientsResult as any).rows || [];
+      const recipientIds = await this.getReleaseNotificationRecipientIds(releaseId, r.artist_id);
       const ownerProfile = await this.getUser(r.artist_id);
       const ownerUsername = ownerProfile?.username ?? "Artist";
       const releaseTitle = r.title ?? "Release";
       const message = `@${ownerUsername} release added: ${releaseTitle}`;
       const firstPostId = postIds[0] ?? null;
-      for (const row of recipientRows) {
-        const recipientId = row.user_id;
+      for (const recipientId of recipientIds) {
         if (!recipientId) continue;
         const notif = await this.createNotification({
           artistId: recipientId,
@@ -3571,19 +3585,7 @@ export class DatabaseStorage implements IStorage {
       for (const r of releases) {
         const pushTasks: Promise<void>[] = [];
         const pushTaskRecipients: string[] = [];
-        const recipientsResult = await db.execute(sql`
-          SELECT DISTINCT user_id FROM (
-            SELECT pl.user_id FROM release_posts rp
-            JOIN post_likes pl ON pl.post_id = rp.post_id
-            WHERE rp.release_id = ${r.id} AND pl.user_id IS NOT NULL
-            UNION
-            SELECT p.user_id FROM release_posts rp
-            JOIN posts p ON p.id = rp.post_id
-            WHERE rp.release_id = ${r.id} AND p.user_id IS NOT NULL
-          ) sub
-          WHERE user_id != ${r.artist_id}
-        `);
-        const recipientRows = (recipientsResult as any).rows || [];
+        const recipientIds = await this.getReleaseNotificationRecipientIds(r.id, r.artist_id);
         const postIds = await this.getReleasePostIds(r.id);
         const firstPostId = postIds[0] ?? null;
         const artistProfile = await this.getUser(r.artist_id);
@@ -3594,8 +3596,7 @@ export class DatabaseStorage implements IStorage {
           .map((c: any) => String(c.username).trim())
           .filter((name: string) => name.length > 0);
         const message = `${artistUsername} released ${r.title}`;
-        for (const row of recipientRows) {
-          const recipientId = row.user_id;
+        for (const recipientId of recipientIds) {
           if (!recipientId) continue;
           await this.createNotification({
             artistId: recipientId,
@@ -3669,7 +3670,7 @@ export class DatabaseStorage implements IStorage {
         `);
         console.log("[notifyReleaseDayLikers] Release processing completed", {
           releaseId: r.id,
-          recipients: recipientRows.length,
+          recipients: recipientIds.length,
           notificationsCreated,
           pushAttempts,
           pushFailures,
