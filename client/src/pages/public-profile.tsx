@@ -104,59 +104,6 @@ function PublicArtistIdsStatIcon({ className }: { className?: string }) {
   );
 }
 
-type PublicCommunityRow = {
-  label: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: string;
-};
-
-function PublicCommunityOverviewSection({ overview }: { overview: PublicCommunityOverviewStats }) {
-  const rows: PublicCommunityRow[] = [
-    {
-      label: "Accuracy",
-      value: `${overview.accuracyPercent}%`,
-      icon: Target,
-      tone: "text-violet-300",
-    },
-    {
-      label: "Releases Saved",
-      value: overview.releasesSaved.toLocaleString(),
-      icon: Calendar,
-      tone: "text-indigo-300",
-    },
-    {
-      label: "Artist IDs",
-      value: overview.artistIds.toLocaleString(),
-      icon: PublicArtistIdsStatIcon,
-      tone: "text-amber-300",
-    },
-  ];
-
-  return (
-    <section data-testid="public-profile-community-overview">
-      <h2 className="mb-2 text-sm font-semibold text-white">Community Overview</h2>
-      <div className="overflow-hidden rounded-lg border border-white/10 bg-black/25">
-        {rows.map(({ label, value, icon: Icon, tone }, index) => (
-          <div
-            key={label}
-            className={cn(
-              "flex items-center justify-between gap-3 px-3 py-2.5",
-              index > 0 && "border-t border-white/10",
-            )}
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <Icon className={cn("h-4 w-4 shrink-0", tone)} />
-              <span className="text-xs font-medium text-gray-300">{label}</span>
-            </div>
-            <span className={cn("shrink-0 text-sm font-semibold tabular-nums leading-none", tone)}>{value}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function ProfileBannerDefaultGradient() {
   return (
     <>
@@ -222,14 +169,28 @@ function PublicProfileKeyStat({
   );
 }
 
-function PublicProfileKeyStatsSkeleton() {
+function PublicProfileKeyStatsSkeleton({ columns = 5 }: { columns?: 4 | 5 }) {
   return (
-    <div className="grid grid-cols-4 gap-1" aria-hidden>
-      {[0, 1, 2, 3].map((i) => (
+    <div className={cn("grid gap-1", columns === 5 ? "grid-cols-5" : "grid-cols-4")} aria-hidden>
+      {Array.from({ length: columns }, (_, i) => (
         <div key={i} className="flex flex-col items-center gap-1">
           <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
           <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
           <DubHubSkeletonBar tone="faint" className="h-2.5 w-10" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PublicProfileSecondaryKeyStatsSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-1" aria-hidden>
+      {[0, 1].map((i) => (
+        <div key={i} className="flex flex-col items-center gap-1">
+          <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
+          <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
+          <DubHubSkeletonBar tone="faint" className="h-2.5 w-14" />
         </div>
       ))}
     </div>
@@ -278,9 +239,8 @@ function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
               <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
               <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
             </div>
+            <PublicProfileSecondaryKeyStatsSkeleton />
             <div className="space-y-2" aria-hidden>
-              <DubHubSkeletonBar tone="default" className="h-4 w-32" />
-              <DubHubSkeletonBar tone="faint" className="h-10 w-full rounded-lg" />
               <DubHubSkeletonBar tone="default" className="h-4 w-28" />
               <PublicArtistReleasesSkeleton />
             </div>
@@ -482,6 +442,7 @@ export default function PublicProfile() {
 
   const light = profile.publicLight;
   const statsReady = light != null;
+  const communityOverview = profile.publicCommunityOverview;
 
   const topGenreKey = light?.topGenreKey ?? null;
   const genreChip = topGenreKey ? getGenreChipStyle(topGenreKey) : null;
@@ -489,12 +450,15 @@ export default function PublicProfile() {
 
   const postsValue = statsReady ? Number(light.posts).toLocaleString() : "—";
   const idsValue = statsReady ? Number(light.correct_ids).toLocaleString() : "—";
-  const likesValue = statsReady
-    ? Number(isVerifiedArtist ? light.likesOnPosts : light.likesGiven).toLocaleString()
+  const likesValue = statsReady ? Number(light.likesGiven).toLocaleString() : "—";
+  const commentsValue = statsReady ? Number(light.commentsWritten).toLocaleString() : "—";
+  const accuracyValue = communityOverview
+    ? `${communityOverview.accuracyPercent}%`
     : "—";
-  const commentsValue = statsReady
-    ? Number(isVerifiedArtist ? light.commentsOnPosts : light.commentsWritten).toLocaleString()
+  const releasesSavedValue = communityOverview
+    ? communityOverview.releasesSaved.toLocaleString()
     : "—";
+  const artistIdsValue = communityOverview ? communityOverview.artistIds.toLocaleString() : "—";
 
   const reputationRaw = light?.reputation ?? profile.reputation ?? profile.karma;
   const reputationNum = Number(reputationRaw);
@@ -514,7 +478,6 @@ export default function PublicProfile() {
   const releasedReleases = publicReleases?.released ?? [];
   const hasAnyReleases = upcomingReleases.length > 0 || releasedReleases.length > 0;
 
-  const communityOverview = profile.publicCommunityOverview;
   const savedReleases = profile.publicSavedReleases;
   const upcomingSaved = savedReleases?.upcoming ?? [];
   const releasedSaved = savedReleases?.released ?? [];
@@ -637,7 +600,10 @@ export default function PublicProfile() {
                 </div>
 
                 {statsReady ? (
-                  <div className="grid grid-cols-4 gap-1" data-testid="public-profile-key-stats">
+                  <div
+                    className={cn("grid gap-1", isVerifiedArtist ? "grid-cols-4" : "grid-cols-5")}
+                    data-testid="public-profile-key-stats"
+                  >
                     <PublicProfileKeyStat label="Posts" value={postsValue} icon={Upload} tone="text-gray-200" />
                     <PublicProfileKeyStat label="IDs" value={idsValue} icon={Check} tone="text-green-300" />
                     <PublicProfileKeyStat label="Likes" value={likesValue} icon={Heart} tone="text-pink-300" />
@@ -647,9 +613,17 @@ export default function PublicProfile() {
                       icon={MessageCircle}
                       tone="text-cyan-300"
                     />
+                    {!isVerifiedArtist ? (
+                      <PublicProfileKeyStat
+                        label="Accuracy"
+                        value={accuracyValue}
+                        icon={Target}
+                        tone="text-violet-300"
+                      />
+                    ) : null}
                   </div>
                 ) : (
-                  <PublicProfileKeyStatsSkeleton />
+                  <PublicProfileKeyStatsSkeleton columns={isVerifiedArtist ? 4 : 5} />
                 )}
               </div>
             </section>
@@ -703,7 +677,20 @@ export default function PublicProfile() {
             ) : (
               <>
                 {communityOverview ? (
-                  <PublicCommunityOverviewSection overview={communityOverview} />
+                  <div className="grid grid-cols-2 gap-1" data-testid="public-profile-secondary-stats">
+                    <PublicProfileKeyStat
+                      label="Releases Saved"
+                      value={releasesSavedValue}
+                      icon={Calendar}
+                      tone="text-indigo-300"
+                    />
+                    <PublicProfileKeyStat
+                      label="Artist IDs"
+                      value={artistIdsValue}
+                      icon={PublicArtistIdsStatIcon}
+                      tone="text-amber-300"
+                    />
+                  </div>
                 ) : null}
 
                 <section className="space-y-4" data-testid="public-profile-saved-releases">

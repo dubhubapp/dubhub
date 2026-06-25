@@ -430,6 +430,8 @@ export type UserStats = {
   releasesSaved: number;
   /** User's own posts artist-identified (`is_verified_artist` + `artist_verified_by`). */
   artistIds: number;
+  /** Total comments written by the account. */
+  commentsWritten: number;
 };
 
 /**

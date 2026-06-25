@@ -168,6 +168,13 @@ export interface IStorage {
   getPublicReleasesForArtist(artistId: string): Promise<{ upcoming: any[]; released: any[] }>;
   /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
   isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean>;
+  /** True when any post attached to this release was uploaded by the user. */
+  viewerHasOwnUploadOnRelease(userId: string, releaseId: string): Promise<boolean>;
+  /** Unlike all attached posts the user liked; blocked when user uploaded an attached post. */
+  removeSavedRelease(userId: string, releaseId: string): Promise<
+    | { ok: true; unlikedCount: number }
+    | { ok: false; code: "BLOCKED_OWN_UPLOAD" | "NOT_FOUND" | "NOT_SAVED"; message: string }
+  >;
   getRelease(id: string): Promise<any | undefined>;
   getReleaseStats(releaseId: string): Promise<any | undefined>;
   createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
@@ -2674,6 +2681,85 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[isReleaseInViewerSavedFeed] Error:", error);
       return false;
+    }
+  }
+
+  async viewerHasOwnUploadOnRelease(userId: string, releaseId: string): Promise<boolean> {
+    if (!userId || !releaseId) return false;
+    try {
+      const result = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM release_posts rp
+          JOIN posts p ON p.id = rp.post_id
+          WHERE rp.release_id = ${releaseId}
+            AND p.user_id = ${userId}
+        ) AS ok
+      `);
+      return !!(result as any).rows?.[0]?.ok;
+    } catch (error) {
+      console.error("[viewerHasOwnUploadOnRelease] Error:", error);
+      return false;
+    }
+  }
+
+  async removeSavedRelease(
+    userId: string,
+    releaseId: string,
+  ): Promise<
+    | { ok: true; unlikedCount: number }
+    | { ok: false; code: "BLOCKED_OWN_UPLOAD" | "NOT_FOUND" | "NOT_SAVED"; message: string }
+  > {
+    if (!userId || !releaseId) {
+      return { ok: false, code: "NOT_FOUND", message: "Release not found" };
+    }
+    try {
+      const release = await this.getRelease(releaseId);
+      if (!release) {
+        return { ok: false, code: "NOT_FOUND", message: "Release not found" };
+      }
+
+      const ownUpload = await this.viewerHasOwnUploadOnRelease(userId, releaseId);
+      if (ownUpload) {
+        return {
+          ok: false,
+          code: "BLOCKED_OWN_UPLOAD",
+          message: "This release can't be removed because it's attached to one of your uploads.",
+        };
+      }
+
+      const saved = await this.isReleaseInViewerSavedFeed(userId, releaseId);
+      if (!saved) {
+        return { ok: false, code: "NOT_SAVED", message: "This release is not in your Saved Releases." };
+      }
+
+      const unlikeResult = await db.execute(sql`
+        DELETE FROM post_likes pl
+        USING release_posts rp
+        WHERE pl.post_id = rp.post_id
+          AND rp.release_id = ${releaseId}
+          AND pl.user_id = ${userId}
+        RETURNING pl.post_id
+      `);
+      const unlikedRows = (unlikeResult as any).rows || [];
+      const unlikedCount = unlikedRows.length;
+
+      if (unlikedCount === 0) {
+        const stillSaved = await this.isReleaseInViewerSavedFeed(userId, releaseId);
+        if (stillSaved) {
+          return {
+            ok: false,
+            code: "BLOCKED_OWN_UPLOAD",
+            message: "This release can't be removed because it's attached to one of your uploads.",
+          };
+        }
+        return { ok: false, code: "NOT_SAVED", message: "This release is not in your Saved Releases." };
+      }
+
+      return { ok: true, unlikedCount };
+    } catch (error) {
+      console.error("[removeSavedRelease] Error:", error);
+      throw error;
     }
   }
 

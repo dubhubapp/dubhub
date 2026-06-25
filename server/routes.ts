@@ -2661,6 +2661,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           AND COALESCE(is_verified_artist, false) = true
       `);
       const artistIds = Number((artistIdsResult as any).rows?.[0]?.count ?? 0);
+
+      const commentsWrittenResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM comments
+        WHERE user_id = ${userId}
+      `);
+      const commentsWritten = Number((commentsWrittenResult as any).rows?.[0]?.count ?? 0);
       
       res.json({
         totalIDs,
@@ -2670,6 +2677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accuracyPercent,
         likesOnPosts,
         commentsOnPosts,
+        commentsWritten,
         releasesSaved,
         artistIds,
       });
@@ -5454,13 +5462,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const artworkPath = release.artworkUrl || null;
       const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
       let viewerSavedRelease = false;
+      let viewerSavedReleaseRemoveBlocked = false;
       if (userId && !isOwner) {
         viewerSavedRelease = await storage.isReleaseInViewerSavedFeed(userId, release.id);
+        if (viewerSavedRelease) {
+          viewerSavedReleaseRemoveBlocked = await storage.viewerHasOwnUploadOnRelease(userId, release.id);
+        }
       }
-      res.json({ ...release, artworkPath, artworkUrl, viewerSavedRelease });
+      res.json({
+        ...release,
+        artworkPath,
+        artworkUrl,
+        viewerSavedRelease,
+        viewerSavedReleaseRemoveBlocked,
+      });
     } catch (error) {
       console.error("[/api/releases/:id] Error:", error);
       res.status(500).json({ message: "Failed to get release" });
+    }
+  });
+
+  app.delete("/api/releases/:id/save", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const releaseId = req.params.id;
+      const release = await storage.getRelease(releaseId);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const userId = req.dbUser.id;
+      const isOwner = release.artistId === userId;
+      const isCollab = (release.collaborators || []).some((c: any) => c.artistId === userId);
+      if (!release.isPublic && !isOwner && !isCollab) {
+        return res.status(404).json({ message: "Release not found" });
+      }
+
+      const result = await storage.removeSavedRelease(userId, releaseId);
+      if (!result.ok) {
+        if (result.code === "BLOCKED_OWN_UPLOAD") {
+          return res.status(409).json({ code: result.code, message: result.message });
+        }
+        if (result.code === "NOT_SAVED") {
+          return res.status(400).json({ code: result.code, message: result.message });
+        }
+        return res.status(404).json({ message: result.message });
+      }
+
+      res.json({ ok: true, unlikedCount: result.unlikedCount });
+    } catch (error) {
+      console.error("[/api/releases/:id/save] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to remove saved release" });
     }
   });
 

@@ -19,6 +19,7 @@ export type ReleaseDetailRecord = {
   collaborators?: { id?: string; artistId?: string; username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   viewerSavedRelease?: boolean;
+  viewerSavedReleaseRemoveBlocked?: boolean;
   postIds?: string[];
   artworkPath?: string | null;
   __previewFromFeed?: true;
@@ -86,4 +87,23 @@ export function hasFullReleaseDetail(
   isPlaceholderData: boolean
 ): boolean {
   return !!release && !isPlaceholderData && !release.__previewFromFeed;
+}
+
+/** Refresh feeds, release detail, posts likes, and profile saved-release surfaces after removal. */
+export function invalidateAfterSavedReleaseRemoved(
+  queryClient: QueryClient,
+  opts: { releaseId: string; userId?: string | null; username?: string | null },
+): void {
+  const { releaseId, userId, username } = opts;
+  queryClient.invalidateQueries({ queryKey: ["/api/releases/feed"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
+  queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId, "stats"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/posts"], exact: false });
+  if (userId) {
+    queryClient.invalidateQueries({ queryKey: ["/api/user", userId, "liked-posts"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/user", userId, "stats"] });
+  }
+  if (username) {
+    queryClient.invalidateQueries({ queryKey: ["/api/user/profile", username] });
+  }
 }

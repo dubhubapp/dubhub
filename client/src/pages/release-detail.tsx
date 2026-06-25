@@ -1,8 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4, BookmarkMinus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useUser } from "@/lib/user-context";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
@@ -24,9 +34,11 @@ import {
   fetchReleaseById,
   findReleaseInFeedCaches,
   hasFullReleaseDetail,
+  invalidateAfterSavedReleaseRemoved,
   type ReleaseDetailRecord,
 } from "@/lib/release-cache";
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
+import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -80,6 +92,11 @@ const RELEASE_STATS_HELP = {
     "How long after the first clip this release was announced (or added), based on available dates.",
   releasedAfter: "How long after the first clip the release date was, based on available dates.",
 } as const;
+
+const REMOVE_SAVED_RELEASE_CONFIRM =
+  "Removing this release will unlike all posts you've liked that are attached to it.";
+const REMOVE_SAVED_RELEASE_BLOCKED =
+  "This release can't be removed because it's attached to one of your uploads.";
 
 function formatDurationBetween(start: string | null | undefined, end: string | null | undefined, fallbackDays?: number | null): string {
   if (start && end) {
@@ -171,6 +188,37 @@ export default function ReleaseDetail() {
     isAcceptedCollab ||
     (release?.collaboratorStatus === "ACCEPTED" && !hasFullDetail);
 
+  const [removeSavedDialogOpen, setRemoveSavedDialogOpen] = useState(false);
+
+  const removeSavedMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/releases/${id}/save`);
+      return res.json() as Promise<{ ok: true; unlikedCount: number }>;
+    },
+    onSuccess: () => {
+      setRemoveSavedDialogOpen(false);
+      toast({ title: "Removed from Saved Releases" });
+      invalidateAfterSavedReleaseRemoved(queryClient, {
+        releaseId: id!,
+        userId: currentUser?.id,
+        username: currentUser?.username,
+      });
+    },
+    onError: (error: unknown) => {
+      const detail = getApiRequestErrorDetail(error);
+      let message = "Failed to remove saved release";
+      if (detail.responseBody) {
+        try {
+          const parsed = JSON.parse(detail.responseBody) as { message?: string };
+          if (parsed.message) message = parsed.message;
+        } catch {
+          // ignore
+        }
+      }
+      toast({ title: message, variant: "destructive" });
+    },
+  });
+
   const hasToastedNotFound = useRef(false);
   useEffect(() => {
     if (isPending || isFetching) return;
@@ -234,6 +282,16 @@ export default function ReleaseDetail() {
     !isOwner &&
     !!releaseData.viewerSavedRelease &&
     isReleaseDayToday(releaseData.isComingSoon, releaseData.releaseDate);
+  const showRemoveSavedRelease =
+    hasFullDetail &&
+    !isOwner &&
+    !!releaseData.viewerSavedRelease &&
+    !releaseData.viewerSavedReleaseRemoveBlocked;
+  const showRemoveSavedReleaseBlocked =
+    hasFullDetail &&
+    !isOwner &&
+    !!releaseData.viewerSavedRelease &&
+    !!releaseData.viewerSavedReleaseRemoveBlocked;
   const firstClipLabel = formatMonthYear(stats?.firstClipAt ?? null);
   const latestClipLabel = formatMonthYear(stats?.latestClipAt ?? null);
   const announcedAfterLabel =
@@ -478,6 +536,52 @@ export default function ReleaseDetail() {
             </Button>
           </div>
         )}
+
+        {showRemoveSavedReleaseBlocked && (
+          <p
+            className="mt-4 text-sm text-muted-foreground"
+            data-testid="text-remove-saved-release-blocked"
+          >
+            {REMOVE_SAVED_RELEASE_BLOCKED}
+          </p>
+        )}
+
+        {showRemoveSavedRelease && (
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              className="ios-press w-full justify-start text-destructive hover:text-destructive"
+              onClick={() => setRemoveSavedDialogOpen(true)}
+              data-testid="button-remove-saved-release"
+            >
+              <BookmarkMinus className="w-4 h-4 mr-2" />
+              Remove from Saved Releases
+            </Button>
+          </div>
+        )}
+
+        <AlertDialog open={removeSavedDialogOpen} onOpenChange={setRemoveSavedDialogOpen}>
+          <AlertDialogContent className="max-w-sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove from Saved Releases?</AlertDialogTitle>
+              <AlertDialogDescription>{REMOVE_SAVED_RELEASE_CONFIRM}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={removeSavedMutation.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={removeSavedMutation.isPending}
+                onClick={(e) => {
+                  e.preventDefault();
+                  removeSavedMutation.mutate();
+                }}
+                data-testid="button-confirm-remove-saved-release"
+              >
+                {removeSavedMutation.isPending ? "Removing…" : "Remove"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </SwipeBackPage>
   );

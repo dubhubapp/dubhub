@@ -140,7 +140,7 @@ const PROFILE_HELP = {
   sectionUserActivity:
     "Your personal activity: uploads, confirmed IDs on your posts, and engagement your posts receive.",
   sectionOverview:
-    "A quick snapshot of your account: posts you’ve shared, IDs confirmed on your uploads, and engagement on your posts.",
+    "A quick snapshot of your community activity: uploads, IDs you've contributed, likes and comments you've posted.",
   reputation:
     "Rep sums up your confirmed IDs and how you show up for the community. Nail IDs on others’ posts and it grows.",
   tracksPosted:
@@ -156,7 +156,8 @@ const PROFILE_HELP = {
     "The percentage of your ID attempts that turned out to be correct.",
   likesOnPosts: "Total likes received across posts you uploaded.",
   commentsOnPosts: "Total comments received across posts you uploaded.",
-  likesGiven: "Posts you’ve liked.",
+  likesGiven: "Posts you've liked.",
+  commentsWritten: "Comments you've posted.",
   artistConfirmedTracks: "Tracks on your artist profile that are confirmed as yours.",
   artistReleases: "Releases you’ve created on your artist profile.",
   artistUpcoming: "Scheduled releases that aren’t out yet.",
@@ -955,17 +956,17 @@ export default function UserProfile() {
     },
     {
       label: "Likes",
-      value: Number(userStats?.likesOnPosts || 0).toLocaleString(),
+      value: Number(userStats?.totalLikes || 0).toLocaleString(),
       toneClassName: "border-pink-500/35 bg-pink-500/5 text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
       Icon: Heart,
-      info: PROFILE_HELP.likesOnPosts,
+      info: PROFILE_HELP.likesGiven,
     },
     {
       label: "Comments",
-      value: Number(userStats?.commentsOnPosts || 0).toLocaleString(),
+      value: Number(userStats?.commentsWritten || 0).toLocaleString(),
       Icon: MessageCircle,
       toneClassName: "border-cyan-500/35 bg-cyan-500/5 text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
-      info: PROFILE_HELP.commentsOnPosts,
+      info: PROFILE_HELP.commentsWritten,
     },
     {
       label: "Accuracy",
@@ -2442,42 +2443,42 @@ export default function UserProfile() {
 
           {/* Tabs */}
           <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-6">
-            <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5">
+            <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-1">
             <TabsList
-              className="grid w-full grid-cols-4 bg-transparent p-0 h-auto"
+              className="grid w-full grid-cols-4 gap-1 bg-transparent p-0 h-auto"
               data-testid="profile-tabs"
             >
               <TabsTrigger
                 value="profile"
                 data-testid="tab-profile"
-                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
-                <User className="w-4 h-4 shrink-0 mr-1" />
-                Overview
+                <User className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
+                <span className="truncate">Overview</span>
               </TabsTrigger>
               <TabsTrigger
                 value="posts"
                 data-testid="tab-posts"
-                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
-                <Upload className="w-4 h-4 mr-1" />
-                Posts
+                <Upload className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
+                <span className="truncate">Posts</span>
               </TabsTrigger>
               <TabsTrigger
                 value="liked"
                 data-testid="tab-liked"
-                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
-                <Heart className="w-4 h-4 mr-1" />
-                Likes
+                <Heart className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
+                <span className="truncate">Likes</span>
               </TabsTrigger>
               <TabsTrigger
                 value="notifications"
                 data-testid="tab-notifications"
-                className="ios-press relative rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className="ios-press relative min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
               >
-                <Bell className="w-4 h-4 mr-1" />
-                Notif.
+                <Bell className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
+                <span className="truncate">Notif.</span>
                 {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold tabular-nums">
                     {formatNotificationBadgeCount(unreadCount)}
