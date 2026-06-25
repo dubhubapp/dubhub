@@ -21,6 +21,7 @@ export type InAppNotificationBadgeKind =
   | "artist_identified_post"
   | "release_attached"
   | "artist_release_alert"
+  | "release_alert_enabled"
   | "release_day"
   | "release_announce"
   | "summary"
@@ -33,6 +34,7 @@ const TOASTABLE_BADGE_KINDS = new Set<InAppNotificationBadgeKind>([
   "artist_identified_post",
   "release_attached",
   "artist_release_alert",
+  "release_alert_enabled",
   "release_day",
   "release_announce",
 ]);
@@ -56,6 +58,7 @@ const BADGE_ICON_BY_KIND: Record<InAppNotificationBadgeKind, BadgeIconConfig> = 
   artist_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
   release_attached: { Icon: CalendarDays, color: DUBHUB_TEAL },
   artist_release_alert: { Icon: Disc3, color: DUBHUB_TEAL },
+  release_alert_enabled: { Icon: Bell, color: DUBHUB_TEAL },
   release_day: { Icon: CalendarDays, color: DUBHUB_TEAL },
   release_announce: { Icon: Disc3, color: DUBHUB_TEAL },
   summary: { Icon: Bell, color: DUBHUB_TEAL },

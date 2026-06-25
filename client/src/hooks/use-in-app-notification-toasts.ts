@@ -38,6 +38,7 @@ const TOASTABLE_TYPES = new Set<NotificationType>([
   "artist_identified_post",
   "release_attached",
   "artist_release_alert",
+  "release_alert_enabled",
   "release_day",
   "release_announce",
 ]);
@@ -50,7 +51,8 @@ const TYPE_PRIORITY: Partial<Record<NotificationType, number>> = {
   release_day: 5,
   artist_release_alert: 6,
   release_attached: 7,
-  release_announce: 8,
+  release_alert_enabled: 8,
+  release_announce: 9,
 };
 
 const UPLOAD_FLOW_PREFIXES = ["/submit", "/trim-video", "/submit-metadata"] as const;
@@ -188,6 +190,11 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
       return {
         title: "New Release",
         description: n.message || "An artist announced a new release.",
+      };
+    case "release_alert_enabled":
+      return {
+        title: "Release Alerts",
+        description: n.message || "Someone turned on Release Alerts.",
       };
     case "release_announce":
       return {

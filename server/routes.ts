@@ -2786,7 +2786,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
       }
       try {
-        await storage.enableArtistReleaseAlert(req.dbUser.id, artistId);
+        const { created } = await storage.enableArtistReleaseAlert(req.dbUser.id, artistId);
+        res.json({ enabled: true, created });
       } catch (err) {
         const code = err instanceof Error ? err.message : "";
         if (code === "ARTIST_NOT_FOUND" || code === "ARTIST_NOT_VERIFIED") {
@@ -2801,6 +2802,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/artists/:artistId/release-alert] POST Error:", error);
       res.status(500).json({ message: "Failed to enable release alerts" });
+    }
+  });
+
+  app.get("/api/artists/me/release-alerts-audience", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist" || !req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artist access only" });
+      }
+      const count = await storage.countArtistReleaseAlertsForArtist(req.dbUser.id);
+      res.json({ count });
+    } catch (error) {
+      console.error("[/api/artists/me/release-alerts-audience] GET Error:", error);
+      res.status(500).json({ message: "Failed to get release alerts audience" });
     }
   });
 

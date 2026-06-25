@@ -616,6 +616,17 @@ export default function UserProfile() {
     retry: false,
   });
 
+  const { data: releaseAlertsAudience } = useQuery<{ count: number }>({
+    queryKey: ["/api/artists/me/release-alerts-audience"],
+    enabled: !!currentUser?.id && userType === "artist" && verifiedArtist,
+    retry: false,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/artists/me/release-alerts-audience");
+      if (!res.ok) throw new Error("Failed to load release alerts audience");
+      return res.json();
+    },
+  });
+
   // Karma system
   const { data: karmaData, isLoading: reputationLoading, isError: karmaError } = useQuery<{
     reputation: number;
@@ -2501,6 +2512,22 @@ export default function UserProfile() {
                   data-testid="artist-beta-profile-note"
                 >
                   <p className="text-xs leading-relaxed text-white/80">{ARTIST_BETA_ARTIST_TOOLS_MESSAGE}</p>
+                </div>
+              ) : null}
+
+              {userType === "artist" && verifiedArtist && releaseAlertsAudience != null ? (
+                <div
+                  className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                  data-testid="artist-release-alerts-audience"
+                >
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 shrink-0 text-[#4ae9df]" aria-hidden />
+                    <h3 className="text-sm font-semibold text-white">Release Alerts</h3>
+                  </div>
+                  <p className="mt-1.5 text-sm leading-relaxed text-gray-300">
+                    {releaseAlertsAudience.count.toLocaleString()} listener
+                    {releaseAlertsAudience.count === 1 ? "" : "s"} waiting for your next release.
+                  </p>
                 </div>
               ) : null}
 

@@ -11,6 +11,7 @@ export const NOTIFICATION_TYPES = [
   "artist_identified_post",
   "release_attached",
   "artist_release_alert",
+  "release_alert_enabled",
   "release_day",
   "release_announce",
   "collab_invite",
@@ -37,6 +38,7 @@ const PREFERENCE_BUCKET_BY_TYPE: Partial<Record<NotificationType, NotificationPr
   artist_tag_comment: "artist_tags",
   release_attached: "releases",
   artist_release_alert: "releases",
+  release_alert_enabled: "releases",
   release_day: "releases",
   release_announce: "releases",
 };
@@ -122,6 +124,7 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
 
   // --- Releases (message patterns; release_id not required for template match) ---
   if (lowerMessage.includes("release added:")) return "release_attached";
+  if (lowerMessage.includes("turned on release alerts")) return "release_alert_enabled";
   if (lowerMessage.includes("announced a new release")) return "artist_release_alert";
   if (lowerMessage.includes("that tune you've been waiting for")) return "release_attached";
   if (lowerMessage.includes("announced")) return "release_announce";
@@ -220,6 +223,8 @@ export function notificationTypeToGroupKind(type: NotificationType): Notificatio
     case "release_day":
     case "release_announce":
       return "release_event";
+    case "release_alert_enabled":
+      return "single";
     case "moderation_action":
     case "moderator_post_report":
     case "moderator_comment_report":
@@ -251,6 +256,7 @@ export function notificationTypeToToggleableKind(type: NotificationType): Toggle
       return "comment";
     case "release_attached":
     case "artist_release_alert":
+    case "release_alert_enabled":
     case "release_day":
     case "release_announce":
     case "collab_invite":

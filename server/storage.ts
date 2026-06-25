@@ -231,8 +231,9 @@ export interface IStorage {
 
   // Artist release alerts (explicit opt-in; not followers)
   hasArtistReleaseAlert(userId: string, artistId: string): Promise<boolean>;
-  enableArtistReleaseAlert(userId: string, artistId: string): Promise<void>;
+  enableArtistReleaseAlert(userId: string, artistId: string): Promise<{ created: boolean }>;
   disableArtistReleaseAlert(userId: string, artistId: string): Promise<void>;
+  countArtistReleaseAlertsForArtist(artistId: string): Promise<number>;
 }
 
 /** API-facing push preference shape (defaults when no DB row). */
@@ -1956,7 +1957,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async enableArtistReleaseAlert(userId: string, artistId: string): Promise<void> {
+  async enableArtistReleaseAlert(userId: string, artistId: string): Promise<{ created: boolean }> {
     if (!userId || !artistId) {
       throw new Error("INVALID_IDS");
     }
@@ -1971,14 +1972,54 @@ export class DatabaseStorage implements IStorage {
       throw new Error("ARTIST_NOT_VERIFIED");
     }
     try {
-      await db.execute(sql`
+      const insertResult = await db.execute(sql`
         INSERT INTO artist_release_alerts (user_id, artist_id)
         VALUES (${userId}, ${artistId})
         ON CONFLICT (user_id, artist_id) DO NOTHING
+        RETURNING user_id
       `);
+      const created = ((insertResult as any).rows || []).length > 0;
+      if (created) {
+        await this.notifyArtistReleaseAlertEnabled(userId, artistId);
+      }
+      return { created };
     } catch (error) {
       console.error("[enableArtistReleaseAlert] Error:", error);
       throw error;
+    }
+  }
+
+  private async notifyArtistReleaseAlertEnabled(subscriberUserId: string, artistId: string): Promise<void> {
+    try {
+      const subscriber = await this.getUser(subscriberUserId);
+      const rawUsername = subscriber?.username?.trim() || "Someone";
+      const username = rawUsername.replace(/^@+/, "");
+      const message = `@${username} turned on Release Alerts.`;
+      await this.createNotification({
+        artistId,
+        triggeredBy: subscriberUserId,
+        postId: null,
+        releaseId: null,
+        message,
+        notificationType: "release_alert_enabled",
+      } as any);
+    } catch (error) {
+      console.error("[notifyArtistReleaseAlertEnabled] Error:", error);
+    }
+  }
+
+  async countArtistReleaseAlertsForArtist(artistId: string): Promise<number> {
+    if (!artistId) return 0;
+    try {
+      const result = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM artist_release_alerts
+        WHERE artist_id = ${artistId}
+      `);
+      return Number((result as any).rows?.[0]?.count ?? 0);
+    } catch (error) {
+      console.error("[countArtistReleaseAlertsForArtist] Error:", error);
+      return 0;
     }
   }
 
