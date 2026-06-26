@@ -26,10 +26,14 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function truncate(value: string, maxLen: number): string {
+export function truncateSharePreviewText(value: string, maxLen: number): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLen) return trimmed;
   return `${trimmed.slice(0, maxLen - 1)}…`;
+}
+
+function truncate(value: string, maxLen: number): string {
+  return truncateSharePreviewText(value, maxLen);
 }
 
 function normalizePostId(raw: unknown): string | null {
@@ -44,7 +48,7 @@ function buildCanonicalShareUrl(postId: string): string {
   return `${DUBHUB_PUBLIC_SHARE_ORIGIN}/?post=${encodeURIComponent(postId)}`;
 }
 
-function resolveDefaultOgImageUrl(req: Request): string | null {
+export function resolveDefaultOgImageUrl(req: Request): string | null {
   const fromEnv = String(process.env.SHARE_PREVIEW_DEFAULT_IMAGE_URL ?? "").trim();
   if (fromEnv) return fromEnv;
 
@@ -177,7 +181,7 @@ ${imageLines}  <meta name="twitter:card" content="summary_large_image" />
 </html>`;
 }
 
-function sendSharePreviewHtml(res: Response, html: string): void {
+export function sendSharePreviewHtml(res: Response, html: string): void {
   res
     .status(200)
     .type("html")

@@ -171,8 +171,8 @@ function App() {
       }
     };
 
-    /** HTTPS Universal Links: home post only; never /auth-callback (browser-only). */
-    const toUniversalLinkPostRoute = (incomingUrl: string): string | null => {
+    /** HTTPS Universal Links on dubhub.uk root path; never /auth-callback (browser-only). */
+    const toUniversalLinkDubhubRootRoute = (incomingUrl: string): string | null => {
       try {
         const parsed = new URL(incomingUrl);
         if (parsed.protocol !== "https:") return null;
@@ -186,10 +186,17 @@ function App() {
         }
         if (normPath !== "/") return null;
 
-        const postId = parsed.searchParams.get("post");
-        if (postId == null || postId.trim() === "") return null;
+        const releaseId = parsed.searchParams.get("release");
+        if (releaseId != null && releaseId.trim() !== "") {
+          return `/releases/${encodeURIComponent(releaseId.trim())}`;
+        }
 
-        return `/?post=${encodeURIComponent(postId.trim())}`;
+        const postId = parsed.searchParams.get("post");
+        if (postId != null && postId.trim() !== "") {
+          return `/?post=${encodeURIComponent(postId.trim())}`;
+        }
+
+        return null;
       } catch {
         return null;
       }
@@ -202,7 +209,7 @@ function App() {
     const resolveIncomingUniversalAppUrl = (incomingUrl: string): string | null => {
       const authRoute = toAuthCallbackRoute(incomingUrl);
       if (authRoute) return authRoute;
-      return toUniversalLinkPostRoute(incomingUrl);
+      return toUniversalLinkDubhubRootRoute(incomingUrl);
     };
 
     const toWebFallbackAuthCallbackRoute = (): string | null => {

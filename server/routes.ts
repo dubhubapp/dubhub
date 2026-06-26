@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { registerPostSharePreviewRoutes } from "./postSharePreview";
+import { registerReleaseSharePreviewRoutes } from "./releaseSharePreview";
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
@@ -683,6 +684,7 @@ async function persistCommentUserMentions(
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log("[Routes] Registering routes...");
   registerPostSharePreviewRoutes(app);
+  registerReleaseSharePreviewRoutes(app);
   // Serve video files from processed directory
   app.use('/videos', express.static(path.join(process.cwd(), 'processed')));
   app.use('/images', express.static(path.join(process.cwd(), 'processed')));

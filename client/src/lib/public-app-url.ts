@@ -7,3 +7,7 @@ export const DUBHUB_PUBLIC_ORIGIN = "https://dubhub.uk";
 export function getPublicPostShareUrl(postId: string): string {
   return `${DUBHUB_PUBLIC_ORIGIN}/?post=${encodeURIComponent(postId)}`;
 }
+
+export function getPublicReleaseShareUrl(releaseId: string): string {
+  return `${DUBHUB_PUBLIC_ORIGIN}/?release=${encodeURIComponent(releaseId)}`;
+}

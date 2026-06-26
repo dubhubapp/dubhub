@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { ArrowLeft, ExternalLink, Edit2, Check, X, Radio, Heart, MessageCircle, Users, CalendarDays, Clock4, BookmarkMinus } from "lucide-react";
+import { ArrowLeft, ExternalLink, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,15 +25,14 @@ import { apiRequest } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "./release-tracker";
-import { formatReleaseTitleLine, sanitizeReleaseText } from "@/lib/release-display";
+import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
+import { GoldVerifiedTick } from "@/components/verified-artist";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
 import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
-import { StatsCardSection, type StatsCardItem } from "@/components/stats-card-section";
-import { DubHubSkeletonBar, dubhubSkeletonGlassShellClass } from "@/components/ui/skeleton";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import {
@@ -37,9 +42,12 @@ import {
   invalidateAfterSavedReleaseRemoved,
   type ReleaseDetailRecord,
 } from "@/lib/release-cache";
-import { ReleaseAttachedClips } from "@/components/release-attached-clips";
+import { ReleaseAttachedClips, ReleaseAttachedClipsSkeleton } from "@/components/release-attached-clips";
+import { ReleaseActivitySection } from "@/components/release-activity-section";
+import { ReleaseAttachedPostsGallery } from "@/components/release-attached-posts-gallery";
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
+import { shareRelease } from "@/lib/release-share";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -79,21 +87,6 @@ function formatDurationLabel(totalMinutes: number): string {
   return `${days} day${days === 1 ? "" : "s"}`;
 }
 
-/** Help copy for Release stats (same info pattern as profile StatsCardSection). */
-const RELEASE_STATS_HELP = {
-  section:
-    "Engagement for this release: clips that feature it, saves, comments, who posted, and key dates.",
-  featuredClips: "Community posts that include this track.",
-  trackSaves: "Total likes across posts featuring this release.",
-  comments: "Comments on posts featuring this release.",
-  uploaders: "Different accounts that posted a clip of this track.",
-  firstClip: "Month of the earliest community clip featuring this release.",
-  latestClip: "Month of the most recent clip featuring this release.",
-  announcedAfter:
-    "How long after the first clip this release was announced (or added), based on available dates.",
-  releasedAfter: "How long after the first clip the release date was, based on available dates.",
-} as const;
-
 const REMOVE_SAVED_RELEASE_CONFIRM =
   "Removing this release will unlike all posts you've liked that are attached to it.";
 const REMOVE_SAVED_RELEASE_BLOCKED =
@@ -113,32 +106,6 @@ function formatDurationBetween(start: string | null | undefined, end: string | n
 
   const safeDays = Number(fallbackDays ?? 0);
   return `${safeDays} day${safeDays === 1 ? "" : "s"}`;
-}
-
-/** Reserves the same footprint as StatsCardSection (4 core cards) while stats load. */
-function ReleaseStatsSectionSkeleton() {
-  return (
-    <div
-      className={`p-4 ${dubhubSkeletonGlassShellClass}`}
-      aria-busy="true"
-      aria-label="Loading release stats"
-    >
-      <div className="mb-4 flex justify-center">
-        <DubHubSkeletonBar tone="teal" className="h-5 w-28" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="rounded-lg border-2 border-white/10 bg-black/20 p-3 flex flex-col items-center justify-center min-h-[5.5rem]"
-          >
-            <DubHubSkeletonBar tone="default" className="h-4 w-24 max-w-full mb-2" />
-            <DubHubSkeletonBar tone="mid" className="h-7 w-12" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export default function ReleaseDetail() {
@@ -190,6 +157,8 @@ export default function ReleaseDetail() {
     (release?.collaboratorStatus === "ACCEPTED" && !hasFullDetail);
 
   const [removeSavedDialogOpen, setRemoveSavedDialogOpen] = useState(false);
+  const [releaseMenuOpen, setReleaseMenuOpen] = useState(false);
+  const [galleryInitialPostId, setGalleryInitialPostId] = useState<string | null>(null);
 
   const removeSavedMutation = useMutation({
     mutationFn: async () => {
@@ -237,12 +206,37 @@ export default function ReleaseDetail() {
   }
 
   const releasesBackUrl = resolveReleaseDetailBackPath(search);
-  const openAttachedClip = useCallback(
+  const openAttachedPost = useCallback((postId: string) => {
+    setGalleryInitialPostId(postId);
+  }, []);
+  const handleAttachedPostLoadFailed = useCallback(
     (postId: string) => {
+      toast({
+        title: "Post unavailable",
+        description: "Opening in Home feed instead.",
+        variant: "destructive",
+      });
       navigate(`/?post=${encodeURIComponent(postId)}`);
     },
-    [navigate],
+    [navigate, toast],
   );
+
+  const handleShareRelease = useCallback(async () => {
+    if (!id) return;
+    try {
+      const result = await shareRelease(id);
+      if (result === "copied") {
+        toast({
+          title: "Link Copied",
+          description: "Release link copied to clipboard",
+        });
+      } else if (result === "failed") {
+        toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
+    }
+  }, [id, toast]);
   const handleBack = () => {
     if (releaseDetailOpenedFromProfile(search) && typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
@@ -299,8 +293,8 @@ export default function ReleaseDetail() {
     !isOwner &&
     !!releaseData.viewerSavedRelease &&
     !!releaseData.viewerSavedReleaseRemoveBlocked;
-  const firstClipLabel = formatMonthYear(stats?.firstClipAt ?? null);
-  const latestClipLabel = formatMonthYear(stats?.latestClipAt ?? null);
+  const firstPostLabel = formatMonthYear(stats?.firstClipAt ?? null);
+  const latestPostLabel = formatMonthYear(stats?.latestClipAt ?? null);
   const announcedAfterLabel =
     stats?.daysToAnnouncement !== null && stats?.daysToAnnouncement !== undefined
       ? formatDurationBetween(stats?.firstClipAt, releaseData?.createdAt, stats.daysToAnnouncement)
@@ -309,93 +303,61 @@ export default function ReleaseDetail() {
     stats?.daysToRelease !== null && stats?.daysToRelease !== undefined
       ? formatDurationBetween(stats?.firstClipAt, releaseData?.releaseDate, stats.daysToRelease)
       : null;
-  const releaseStatsCards: StatsCardItem[] = stats
-    ? [
-        {
-          label: "Featured clips",
-          value: stats.postsFeaturingTrack.toLocaleString(),
-          Icon: Radio,
-          toneClassName: "border-purple-500/35 bg-purple-500/5 shadow-[0_0_12px_rgba(168,85,247,0.12)] text-purple-300 [&_svg]:drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]",
-          info: RELEASE_STATS_HELP.featuredClips,
-        },
-        {
-          label: "Track saves",
-          value: stats.totalLikes.toLocaleString(),
-          Icon: Heart,
-          toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
-          info: RELEASE_STATS_HELP.trackSaves,
-        },
-        {
-          label: "Comments",
-          value: stats.totalComments.toLocaleString(),
-          Icon: MessageCircle,
-          toneClassName: "border-cyan-500/35 bg-cyan-500/5 shadow-[0_0_12px_rgba(6,182,212,0.12)] text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
-          info: RELEASE_STATS_HELP.comments,
-        },
-        {
-          label: "Uploaders",
-          value: stats.uniqueUploaders.toLocaleString(),
-          Icon: Users,
-          toneClassName: "border-blue-500/35 bg-blue-500/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-blue-300 [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
-          info: RELEASE_STATS_HELP.uploaders,
-        },
-        ...(firstClipLabel
-          ? [
-              {
-                label: "First clip",
-                value: firstClipLabel,
-                Icon: CalendarDays,
-                toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
-                info: RELEASE_STATS_HELP.firstClip,
-              } satisfies StatsCardItem,
-            ]
-          : []),
-        ...(latestClipLabel
-          ? [
-              {
-                label: "Latest clip",
-                value: latestClipLabel,
-                Icon: CalendarDays,
-                toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
-                info: RELEASE_STATS_HELP.latestClip,
-              } satisfies StatsCardItem,
-            ]
-          : []),
-        ...(announcedAfterLabel
-          ? [
-              {
-                label: "Announced After",
-                value: announcedAfterLabel,
-                Icon: Clock4,
-                toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
-                info: RELEASE_STATS_HELP.announcedAfter,
-              } satisfies StatsCardItem,
-            ]
-          : []),
-        ...(releasedAfterLabel
-          ? [
-              {
-                label: "Released After",
-                value: releasedAfterLabel,
-                Icon: Clock4,
-                toneClassName: "border-indigo-500/35 bg-indigo-500/5 shadow-[0_0_12px_rgba(99,102,241,0.12)] text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
-                info: RELEASE_STATS_HELP.releasedAfter,
-              } satisfies StatsCardItem,
-            ]
-          : []),
-      ]
-    : [];
+  const showShareRelease = hasFullDetail && releaseData.isPublic === true;
 
   return (
     <SwipeBackPage
+      enabled={!galleryInitialPostId}
       onBack={handleBack}
       className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
     >
       <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
-        <Button variant="ghost" size="sm" className="ios-press mb-4 -ml-1" onClick={handleBack}>
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back
-        </Button>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" className="ios-press -ml-1" onClick={handleBack}>
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back
+          </Button>
+          {showRemoveSavedRelease ? (
+            <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ios-press h-9 w-9 shrink-0"
+                  aria-label="Release options"
+                  data-testid="button-release-detail-menu"
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[12rem]">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setReleaseMenuOpen(false);
+                    requestAnimationFrame(() => setRemoveSavedDialogOpen(true));
+                  }}
+                  data-testid="menu-remove-saved-release"
+                >
+                  <BookmarkMinus className="mr-2 h-4 w-4" />
+                  Remove from Saved Releases
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div className="h-9 w-9 shrink-0" aria-hidden />
+          )}
+        </div>
+
+        {showRemoveSavedReleaseBlocked && (
+          <p
+            className="mb-3 text-sm text-muted-foreground"
+            data-testid="text-remove-saved-release-blocked"
+          >
+            {REMOVE_SAVED_RELEASE_BLOCKED}
+          </p>
+        )}
 
         {isFetching && releaseData && (
           <p className="text-xs text-muted-foreground mb-3" aria-live="polite">
@@ -425,23 +387,35 @@ export default function ReleaseDetail() {
             )}
           </div>
           <div className="flex-1 min-w-0 overflow-hidden">
-            <h1 className="text-xl font-bold leading-tight break-all whitespace-normal">
-              {formatReleaseTitleLine(
-                releaseData.artistUsername,
-                sanitizeReleaseText(releaseData.title),
-                releaseData.collaborators
-              )}
+            <p className="text-sm font-medium leading-snug break-words">
+              {formatReleaseByline(releaseData.artistUsername, releaseData.collaborators)}
+              <GoldVerifiedTick className="ml-0.5 inline h-3 w-3 align-[-0.1em] text-[#FFD700]" glow="inline" />
+            </p>
+            <h1 className="mt-0.5 text-xl font-bold leading-tight break-words whitespace-normal">
+              {sanitizeReleaseText(releaseData.title)}
             </h1>
             <p className="text-sm mt-1">
               {releaseStatusSubtitle(releaseData.isComingSoon, releaseData.releaseDate) ||
                 formatDate(releaseData.releaseDate)}
             </p>
-            <div className="mt-2">
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <ReleaseStatusPill
                 isComingSoon={releaseData.isComingSoon}
                 releaseDate={releaseData.releaseDate}
                 upcoming={upcoming}
               />
+              {showShareRelease ? (
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center justify-center gap-1 rounded bg-muted/80 font-medium leading-none text-muted-foreground ios-press min-h-[1.375rem] px-2 py-0.5 text-xs hover:bg-muted"
+                  onClick={() => void handleShareRelease()}
+                  aria-label="Share release"
+                  data-testid="button-share-release"
+                >
+                  <Share2 className="h-3 w-3 shrink-0" aria-hidden />
+                  Share
+                </button>
+              ) : null}
             </div>
             {getBannerFromLinks(releaseData.links, upcoming) && (
               <p className="text-sm text-primary mt-2">
@@ -473,26 +447,20 @@ export default function ReleaseDetail() {
           </div>
         )}
 
-        {hasFullDetail && releaseData.attachedClips !== undefined ? (
-          <ReleaseAttachedClips clips={releaseData.attachedClips} onOpenClip={openAttachedClip} />
-        ) : null}
+        {!hasFullDetail || releaseData.attachedClips === undefined ? (
+          <ReleaseAttachedClipsSkeleton />
+        ) : (
+          <ReleaseAttachedClips clips={releaseData.attachedClips} onOpenClip={openAttachedPost} />
+        )}
 
-        <div className="mb-6">
-          {stats ? (
-            <StatsCardSection
-              title="Release stats"
-              titleInfo={RELEASE_STATS_HELP.section}
-              items={releaseStatsCards}
-              helperText={
-                stats.postsFeaturingTrack === 0
-                  ? "No clips featuring this track yet."
-                  : undefined
-              }
-            />
-          ) : isStatsLoading ? (
-            <ReleaseStatsSectionSkeleton />
-          ) : null}
-        </div>
+        <ReleaseActivitySection
+          stats={stats}
+          isLoading={isStatsLoading}
+          firstPostLabel={firstPostLabel}
+          latestPostLabel={latestPostLabel}
+          announcedAfterLabel={announcedAfterLabel}
+          releasedAfterLabel={releasedAfterLabel}
+        />
 
         {isPendingCollab && isArtist && hasFullDetail && myCollab?.id && (
           <div className="mb-4 space-y-2">
@@ -548,29 +516,6 @@ export default function ReleaseDetail() {
           </div>
         )}
 
-        {showRemoveSavedReleaseBlocked && (
-          <p
-            className="mt-4 text-sm text-muted-foreground"
-            data-testid="text-remove-saved-release-blocked"
-          >
-            {REMOVE_SAVED_RELEASE_BLOCKED}
-          </p>
-        )}
-
-        {showRemoveSavedRelease && (
-          <div className="mt-4">
-            <Button
-              variant="outline"
-              className="ios-press w-full justify-start text-destructive hover:text-destructive"
-              onClick={() => setRemoveSavedDialogOpen(true)}
-              data-testid="button-remove-saved-release"
-            >
-              <BookmarkMinus className="w-4 h-4 mr-2" />
-              Remove from Saved Releases
-            </Button>
-          </div>
-        )}
-
         <AlertDialog open={removeSavedDialogOpen} onOpenChange={setRemoveSavedDialogOpen}>
           <AlertDialogContent className="max-w-sm">
             <AlertDialogHeader>
@@ -594,6 +539,16 @@ export default function ReleaseDetail() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      {galleryInitialPostId && hasFullDetail && releaseData.attachedClips?.length ? (
+        <ReleaseAttachedPostsGallery
+          attachedPosts={releaseData.attachedClips}
+          initialPostId={galleryInitialPostId}
+          onClose={() => setGalleryInitialPostId(null)}
+          onLoadFailed={handleAttachedPostLoadFailed}
+          testId="release-attached-posts-gallery"
+        />
+      ) : null}
     </SwipeBackPage>
   );
 }
