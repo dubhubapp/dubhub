@@ -6,11 +6,9 @@ export type ShareReleaseResult = ShareLinkResult;
 /**
  * Share a release link via native sheet (Capacitor / Web Share) or clipboard fallback.
  * URL format is always https://dubhub.uk/?release=<releaseId>.
+ * Native payload is the URL only (no text/title), matching post share.
  */
 export async function shareRelease(releaseId: string): Promise<ShareReleaseResult> {
-  const url = getPublicReleaseShareUrl(releaseId);
-
   // Future: record release share event.
-
-  return shareLinkUrl(url);
+  return shareLinkUrl(getPublicReleaseShareUrl(releaseId));
 }
