@@ -124,6 +124,7 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
 
   // --- Releases (message patterns; release_id not required for template match) ---
   if (lowerMessage.includes("release added:")) return "release_attached";
+  if (lowerMessage.includes("wants to hear your future releases")) return "release_alert_enabled";
   if (lowerMessage.includes("turned on release alerts")) return "release_alert_enabled";
   if (lowerMessage.includes("announced a new release")) return "artist_release_alert";
   if (lowerMessage.includes("that tune you've been waiting for")) return "release_attached";

@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus, ImageOff } from "lucide-react";
+import { ArrowLeft, Upload, Plus, Trash2, UserPlus, ImageOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/user-context";
@@ -12,61 +12,16 @@ import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
-import { isLikelyStaticImagePreviewUrl, resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 import { SEARCH_INPUT_KEYBOARD_PROPS, preventEnterFormSubmit } from "@/lib/form-search-input";
 import { ReleaseStatusFields } from "@/components/release-status-fields";
-
-function EligiblePostPreview({ src }: { src: string | null }) {
-  const [failed, setFailed] = useState(false);
-  const useImage = !!src && isLikelyStaticImagePreviewUrl(src);
-  const shouldShowMedia = !!src && !failed;
-  const showFallback = !src || failed;
-
-  return (
-    <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-muted relative">
-      {shouldShowMedia && useImage ? (
-        <img
-          src={src ?? undefined}
-          alt=""
-          className="w-full h-full object-cover pointer-events-none"
-          onError={() => setFailed(true)}
-        />
-      ) : null}
-      {shouldShowMedia && !useImage ? (
-        <video
-          src={src ?? undefined}
-          muted
-          playsInline
-          preload="auto"
-          disablePictureInPicture
-          className="w-full h-full object-cover pointer-events-none"
-          onLoadedData={(e) => {
-            const el = e.currentTarget;
-            try {
-              if (el.currentTime < 0.05) el.currentTime = 0.05;
-              el.pause();
-            } catch {
-              // no-op
-            }
-          }}
-          onError={() => setFailed(true)}
-        />
-      ) : null}
-      {showFallback ? (
-        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-          <div className="flex flex-col items-center gap-1">
-            <ImageOff className="h-4 w-4" />
-            <span className="text-[10px] font-medium">No preview</span>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+import {
+  ReleaseAttachPostsSection,
+  type EligiblePostForAttach,
+} from "@/components/release-attach-posts-section";
 
 export default function ReleaseCreate() {
   const [, navigate] = useLocation();
@@ -127,28 +82,8 @@ export default function ReleaseCreate() {
     enabled: !!currentUser?.id && userType === "artist",
   });
 
-  type EligiblePost = {
-    id: string;
-    video_url?: string;
-    videoUrl?: string;
-    thumbnail_url?: string;
-    thumbnailUrl?: string;
-    dj_name?: string;
-    title?: string;
-    verified_comment_body?: string;
-    created_at?: string;
-  };
-
-  const getEligiblePostPreviewUrl = (post: EligiblePost) => {
-    const thumb =
-      post.thumbnailUrl ??
-      post.thumbnail_url ??
-      null;
-    return resolveMediaUrl(thumb) ?? resolveMediaUrl(post.videoUrl ?? post.video_url);
-  };
-
   const filteredEligiblePosts = useMemo(() => {
-    const posts = (eligiblePosts as EligiblePost[]) || [];
+    const posts = (eligiblePosts as EligiblePostForAttach[]) || [];
     if (!searchTerm.trim()) return posts;
     const q = searchTerm.trim().toLowerCase();
     return posts.filter(
@@ -563,88 +498,15 @@ export default function ReleaseCreate() {
             </div>
           </section>
 
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Attach posts</h2>
-            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-              Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
-            </p>
-            <p className="text-xs text-muted-foreground mb-2">
-              Selected posts will be attached when you create this release.
-            </p>
-
-            <div className="relative mb-3">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by DJ, title, or verified comment..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8"
-                {...SEARCH_INPUT_KEYBOARD_PROPS}
-              />
-            </div>
-
-            <div className="grid gap-3 max-h-80 overflow-y-auto">
-              {filteredEligiblePosts.map((p: EligiblePost) => (
-                <label
-                  key={p.id}
-                  className={`flex gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    selectedPostIds.includes(p.id)
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 bg-muted/30"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedPostIds.includes(p.id)}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      if (e.target.checked) setSelectedPostIds((s) => [...s, p.id]);
-                      else setSelectedPostIds((s) => s.filter((id) => id !== p.id));
-                    }}
-                    className="mt-1"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex gap-3">
-                      <EligiblePostPreview src={getEligiblePostPreviewUrl(p)} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          {p.dj_name || "DJ unknown"}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                          {p.verified_comment_body || "No verified comment found"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-            {eligiblePosts.length === 0 && (
-              <p className="text-sm text-muted-foreground py-4">
-                No eligible posts (artist-verified by you).
-              </p>
-            )}
-            {eligiblePosts.length > 0 && filteredEligiblePosts.length === 0 && (
-              <p className="text-sm text-muted-foreground py-2">
-                No posts match your search.
-              </p>
-            )}
-
-            <div className="flex items-center gap-2 mt-3">
-              <span className="text-sm text-muted-foreground">
-                Selected ({selectedPostIds.length})
-              </span>
-              <Button
-                size="sm"
-                type="button"
-                variant="outline"
-                onClick={() => setSelectedPostIds([])}
-                disabled={selectedPostIds.length === 0}
-              >
-                Detach all
-              </Button>
-            </div>
-          </section>
+          <ReleaseAttachPostsSection
+            eligiblePosts={(eligiblePosts as EligiblePostForAttach[]) || []}
+            filteredEligiblePosts={filteredEligiblePosts}
+            selectedPostIds={selectedPostIds}
+            onSelectedPostIdsChange={setSelectedPostIds}
+            searchTerm={searchTerm}
+            onSearchTermChange={setSearchTerm}
+            helperText="Selected posts will be attached when you create this release."
+          />
 
           <div className="pt-2 pb-8">
             <Button type="submit" disabled={saving} className="w-full">

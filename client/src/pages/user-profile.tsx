@@ -20,6 +20,10 @@ import { exportCroppedAvatar } from "@/lib/avatar-crop";
 import { exportCroppedBanner } from "@/lib/banner-crop";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  ARTIST_RELEASE_ALERTS_AUDIENCE_QUERY_KEY,
+  invalidateArtistReleaseAlertsAudience,
+} from "@/lib/artist-release-alerts-cache";
 import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
@@ -166,6 +170,7 @@ const PROFILE_HELP = {
   artistComments: "Comments on posts that feature your tracks.",
   artistUploaders: "Different people who posted clips of your tracks.",
   artistCollaborations: "Collaborative releases you’re credited on.",
+  artistReleaseAlerts: "Listeners waiting to be notified when you publish your next release.",
 } as const;
 
 /** Verified-artist tick shape for Your Activity stats (white, not gold). */
@@ -617,9 +622,11 @@ export default function UserProfile() {
   });
 
   const { data: releaseAlertsAudience } = useQuery<{ count: number }>({
-    queryKey: ["/api/artists/me/release-alerts-audience"],
+    queryKey: [...ARTIST_RELEASE_ALERTS_AUDIENCE_QUERY_KEY],
     enabled: !!currentUser?.id && userType === "artist" && verifiedArtist,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/artists/me/release-alerts-audience");
       if (!res.ok) throw new Error("Failed to load release alerts audience");
@@ -886,7 +893,8 @@ export default function UserProfile() {
       artistStats.totalLikesAcrossPosts > 0 ||
       artistStats.totalCommentsAcrossPosts > 0 ||
       artistStats.uniqueUploaders > 0 ||
-      artistStats.collaborations > 0
+      artistStats.collaborations > 0 ||
+      (verifiedArtist && releaseAlertsAudience != null && releaseAlertsAudience.count > 0)
     );
 
   const artistImpactItems: StatsCardItem[] = artistStats
@@ -947,6 +955,18 @@ export default function UserProfile() {
           toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
           info: PROFILE_HELP.artistCollaborations,
         },
+        ...(verifiedArtist && releaseAlertsAudience != null
+          ? [
+              {
+                label: "Release Alerts",
+                value: releaseAlertsAudience.count.toLocaleString(),
+                Icon: Bell,
+                toneClassName:
+                  "border-[#4ae9df]/35 bg-[#4ae9df]/5 text-[#4ae9df] [&_svg]:drop-shadow-[0_0_6px_rgba(74,233,223,0.35)]",
+                info: PROFILE_HELP.artistReleaseAlerts,
+              } satisfies StatsCardItem,
+            ]
+          : []),
       ]
     : [];
 
@@ -1740,6 +1760,27 @@ export default function UserProfile() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab !== "profile" || userType !== "artist" || !verifiedArtist) return;
+    invalidateArtistReleaseAlertsAudience(queryClient);
+  }, [activeTab, userType, verifiedArtist, queryClient]);
+
+  useEffect(() => {
+    if (activeTab !== "profile" || userType !== "artist" || !verifiedArtist) return;
+
+    const refetchAudienceOnFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      invalidateArtistReleaseAlertsAudience(queryClient);
+    };
+
+    window.addEventListener("focus", refetchAudienceOnFocus);
+    document.addEventListener("visibilitychange", refetchAudienceOnFocus);
+    return () => {
+      window.removeEventListener("focus", refetchAudienceOnFocus);
+      document.removeEventListener("visibilitychange", refetchAudienceOnFocus);
+    };
+  }, [activeTab, userType, verifiedArtist, queryClient]);
+
   // Scroll liked-post viewer to the opened index (must run unconditionally — hooks before any early return)
   useEffect(() => {
     if (likesViewerStartIndex === null) return;
@@ -2515,22 +2556,6 @@ export default function UserProfile() {
                 </div>
               ) : null}
 
-              {userType === "artist" && verifiedArtist && releaseAlertsAudience != null ? (
-                <div
-                  className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-                  data-testid="artist-release-alerts-audience"
-                >
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 shrink-0 text-[#4ae9df]" aria-hidden />
-                    <h3 className="text-sm font-semibold text-white">Release Alerts</h3>
-                  </div>
-                  <p className="mt-1.5 text-sm leading-relaxed text-gray-300">
-                    {releaseAlertsAudience.count.toLocaleString()} listener
-                    {releaseAlertsAudience.count === 1 ? "" : "s"} waiting for your next release.
-                  </p>
-                </div>
-              ) : null}
-
               {userType === "artist" && artistStats ? (
                 <div className={PROFILE_ACTIVITY_CARD_CLASS} data-testid="your-activity-list">
                   <div className="mb-3">
@@ -2577,7 +2602,13 @@ export default function UserProfile() {
                       </div>
                       <div className="divide-y divide-white/5">
                         {artistImpactItems.map(({ label, value, Icon, info }) => (
-                          <div key={label} className="flex items-center justify-between py-2.5">
+                          <div
+                            key={label}
+                            className="flex items-center justify-between py-2.5"
+                            {...(label === "Release Alerts"
+                              ? { "data-testid": "artist-release-alerts-audience" }
+                              : {})}
+                          >
                             <div className="flex items-center gap-2.5">
                               <Icon className="w-4 h-4 shrink-0 text-gray-400" />
                               <span className="text-sm text-gray-200">{label}</span>

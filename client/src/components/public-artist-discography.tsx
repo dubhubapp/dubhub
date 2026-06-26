@@ -5,6 +5,7 @@ import {
 } from "@/components/release-feed-card";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
 import { isReleaseUpcoming } from "@/lib/release-status";
+import { formatSavedAgoLabel } from "@/lib/saved-release-timing";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -38,14 +39,18 @@ export function groupReleasedReleasesByYear(releases: ReleaseFeedCardData[]): Di
 function PublicArtistDiscographyTile({
   release,
   onOpen,
+  showSavedAtLabels,
 }: {
   release: ReleaseFeedCardData;
   onOpen: () => void;
+  showSavedAtLabels?: boolean;
 }) {
   const { title, artworkUrl } = normalizeReleaseCardFields(release);
   const displayTitle = title || "Untitled release";
   const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
   const subtitle = releaseStatusSubtitle(release.isComingSoon, release.releaseDate);
+  const savedAgoLabel =
+    showSavedAtLabels && release.savedAt ? formatSavedAgoLabel(release.savedAt) : null;
 
   return (
     <button
@@ -78,6 +83,14 @@ function PublicArtistDiscographyTile({
       </div>
       <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-snug text-white">{displayTitle}</p>
       {subtitle ? <p className="mt-0.5 truncate text-[10px] leading-tight text-gray-400">{subtitle}</p> : null}
+      {savedAgoLabel ? (
+        <p
+          className="mt-0.5 truncate text-[10px] leading-tight text-gray-500"
+          data-testid={`saved-release-timing-${release.id}`}
+        >
+          {savedAgoLabel}
+        </p>
+      ) : null}
     </button>
   );
 }
@@ -90,9 +103,16 @@ type PublicArtistDiscographyProps = {
   upcoming: ReleaseFeedCardData[];
   released: ReleaseFeedCardData[];
   onOpen: (release: ReleaseFeedCardData) => void;
+  /** Community Saved Releases only — shows honest like-based save timing when present. */
+  showSavedAtLabels?: boolean;
 };
 
-export function PublicArtistDiscography({ upcoming, released, onOpen }: PublicArtistDiscographyProps) {
+export function PublicArtistDiscography({
+  upcoming,
+  released,
+  onOpen,
+  showSavedAtLabels,
+}: PublicArtistDiscographyProps) {
   const yearGroups = groupReleasedReleasesByYear(released);
 
   return (
@@ -104,7 +124,12 @@ export function PublicArtistDiscography({ upcoming, released, onOpen }: PublicAr
           </h3>
           <DiscographyGrid>
             {upcoming.map((release) => (
-              <PublicArtistDiscographyTile key={release.id} release={release} onOpen={() => onOpen(release)} />
+              <PublicArtistDiscographyTile
+                key={release.id}
+                release={release}
+                onOpen={() => onOpen(release)}
+                showSavedAtLabels={showSavedAtLabels}
+              />
             ))}
           </DiscographyGrid>
         </div>
@@ -117,7 +142,12 @@ export function PublicArtistDiscography({ upcoming, released, onOpen }: PublicAr
           </h3>
           <DiscographyGrid>
             {group.releases.map((release) => (
-              <PublicArtistDiscographyTile key={release.id} release={release} onOpen={() => onOpen(release)} />
+              <PublicArtistDiscographyTile
+                key={release.id}
+                release={release}
+                onOpen={() => onOpen(release)}
+                showSavedAtLabels={showSavedAtLabels}
+              />
             ))}
           </DiscographyGrid>
         </div>

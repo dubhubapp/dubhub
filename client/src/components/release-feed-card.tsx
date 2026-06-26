@@ -18,6 +18,8 @@ export type ReleaseFeedCardData = {
   links?: { id: string; platform: string; url: string }[];
   collaborators?: { username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
+  /** Earliest like timestamp when saved via attached-post like (public community profiles only). */
+  savedAt?: string | null;
 };
 
 export type ReleaseFeedCardHighlight = {

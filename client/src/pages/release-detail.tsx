@@ -407,12 +407,13 @@ export default function ReleaseDetail() {
               {showShareRelease ? (
                 <button
                   type="button"
-                  className="inline-flex shrink-0 items-center justify-center rounded bg-muted/80 font-medium leading-none text-muted-foreground ios-press min-h-[1.375rem] min-w-[1.375rem] px-1.5 py-0.5 hover:bg-muted"
+                  className="inline-flex shrink-0 items-center justify-center gap-1 rounded bg-muted/80 font-medium leading-none text-muted-foreground ios-press min-h-[1.375rem] px-2 py-0.5 text-xs hover:bg-muted"
                   onClick={() => void handleShareRelease()}
                   aria-label="Share release"
                   data-testid="button-share-release"
                 >
-                  <Send className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <Send className="h-3 w-3 shrink-0" aria-hidden />
+                  Share release
                 </button>
               ) : null}
             </div>

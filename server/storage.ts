@@ -176,6 +176,8 @@ export interface IStorage {
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
   /** Public releases owned by an artist (`is_public = true` only). */
   getPublicReleasesForArtist(artistId: string): Promise<{ upcoming: any[]; released: any[] }>;
+  /** Earliest like timestamp per release (liked attached-post path only); omit upload-only saves. */
+  getSavedReleaseLikeTimestamps(userId: string): Promise<Map<string, string>>;
   /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
   isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean>;
   /** True when any post attached to this release was uploaded by the user. */
@@ -1930,15 +1932,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
-   * Phase 1 beta: all verified artists are eligible.
-   * Future paid plans: gate here before enableArtistReleaseAlert.
+   * Whether fans can subscribe to Release Alerts on this artist's profile.
+   * Requires a verified artist profile only — not paid/pro status.
+   *
+   * Release Alert subscriptions stay available for all verified artists.
+   * Future paid/pro logic should gate outbound delivery of Release Alert
+   * notifications, not the user's ability to enable alerts. Delivery
+   * entitlement should live in a separate server-side helper, e.g.
+   * canArtistDeliverReleaseAlertNotifications(artistId).
    */
-  private isArtistProfileEligibleForReleaseAlerts(artist: {
+  private isArtistOpenForReleaseAlertSubscriptions(artist: {
     account_type?: string | null;
     verified_artist?: boolean | null;
   }): boolean {
     return artist.account_type === "artist" && artist.verified_artist === true;
-    // TODO(paid-plans): require active artist subscription when billing launches.
   }
 
   async hasArtistReleaseAlert(userId: string, artistId: string): Promise<boolean> {
@@ -1968,7 +1975,7 @@ export class DatabaseStorage implements IStorage {
     if (!artist) {
       throw new Error("ARTIST_NOT_FOUND");
     }
-    if (!this.isArtistProfileEligibleForReleaseAlerts(artist)) {
+    if (!this.isArtistOpenForReleaseAlertSubscriptions(artist)) {
       throw new Error("ARTIST_NOT_VERIFIED");
     }
     try {
@@ -1994,7 +2001,7 @@ export class DatabaseStorage implements IStorage {
       const subscriber = await this.getUser(subscriberUserId);
       const rawUsername = subscriber?.username?.trim() || "Someone";
       const username = rawUsername.replace(/^@+/, "");
-      const message = `@${username} turned on Release Alerts.`;
+      const message = `@${username} wants to hear your future releases.`;
       await this.createNotification({
         artistId,
         triggeredBy: subscriberUserId,
@@ -2764,6 +2771,44 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("[getReleasesDropDayBannerCandidates] Error:", error);
       return [];
+    }
+  }
+
+  async getSavedReleaseLikeTimestamps(userId: string): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (!userId) return map;
+    try {
+      const result = await db.execute(sql`
+        SELECT r2.id AS release_id, MIN(pl.created_at) AS saved_at
+        FROM releases r2
+        JOIN release_posts rp ON rp.release_id = r2.id
+        JOIN posts p ON p.id = rp.post_id
+        JOIN post_likes pl ON pl.post_id = p.id
+        WHERE pl.user_id = ${userId}
+          AND p.is_verified_artist = true
+          AND p.artist_verified_by IS NOT NULL
+          AND r2.artist_id = p.artist_verified_by
+          AND r2.is_public = true
+        GROUP BY r2.id
+      `);
+      for (const row of (result as any).rows || []) {
+        const releaseId = row.release_id != null ? String(row.release_id) : "";
+        const savedAt = row.saved_at;
+        if (!releaseId || savedAt == null) continue;
+        const iso =
+          savedAt instanceof Date
+            ? savedAt.toISOString()
+            : typeof savedAt === "string"
+              ? new Date(savedAt).toISOString()
+              : null;
+        if (iso && !Number.isNaN(new Date(iso).getTime())) {
+          map.set(releaseId, iso);
+        }
+      }
+      return map;
+    } catch (error) {
+      console.error("[getSavedReleaseLikeTimestamps] Error:", error);
+      return map;
     }
   }
 

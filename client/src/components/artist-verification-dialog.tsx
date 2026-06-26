@@ -577,19 +577,19 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                 {attachOptions.map((rel) => (
                   <div
                     key={rel.id}
-                    className="flex items-center gap-3 rounded-lg border border-white/15 bg-black/15 p-3 transition-colors hover:bg-white/10"
+                    className="flex min-w-0 items-start gap-3 rounded-lg border border-white/15 bg-black/15 p-3 transition-colors hover:bg-white/10"
                   >
-                    <RadioGroupItem value={rel.id} id={rel.id} />
-                    <Label htmlFor={rel.id} className="flex-1 cursor-pointer flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-md bg-black/25">
+                    <RadioGroupItem value={rel.id} id={rel.id} className="mt-0.5 shrink-0" />
+                    <Label htmlFor={rel.id} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-black/25">
                         {rel.artwork_url ? (
-                          <img src={rel.artwork_url} alt="" className="w-full h-full object-cover" />
+                          <img src={rel.artwork_url} alt="" className="h-full w-full object-cover" />
                         ) : (
                           <span className="text-xs text-white/60">No artwork</span>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate text-sm font-medium text-white">{rel.title}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-medium leading-snug text-white line-clamp-2">{rel.title}</p>
                         {(rel.release_date || rel.is_coming_soon) && (
                           <p className="mt-0.5 text-xs text-white/65">
                             {rel.release_date
@@ -602,16 +602,17 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                   </div>
                 ))}
               </RadioGroup>
-              <div className="flex justify-end gap-2 border-t border-white/15 pt-4">
+              <div className="flex flex-col-reverse gap-2 border-t border-white/15 pt-4 sm:flex-row sm:justify-end">
                 <Button
                   variant="outline"
                   onClick={handleClose}
-                  className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                  className="w-full border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white sm:w-auto"
                   data-testid="button-attach-skip"
                 >
                   Skip
                 </Button>
                 <Button
+                  className="w-full sm:w-auto"
                   onClick={() => attachMutation.mutate()}
                   disabled={!selectedReleaseId || attachMutation.isPending}
                   data-testid="button-attach-confirm"

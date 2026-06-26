@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { Heart, MessageCircle, Bookmark, Send, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, Edit2, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Send, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -30,9 +30,7 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
-import { formatReleaseTitleLine } from "@/lib/release-display";
-import { formatDate } from "@/pages/release-tracker";
-import { isReleaseUpcoming } from "@/lib/release-status";
+import { ReleasePreviewCard } from "./release-preview-card";
 import { getGenreChipStyle, getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
@@ -42,7 +40,7 @@ import { RandomDiceButton } from "@/components/random-dice-button";
 import { playInteractionLight } from "@/lib/haptic";
 import { sharePost } from "@/lib/post-share";
 import { appendReleaseDetailFromFeedParam } from "@/lib/release-detail-navigation";
-import { invalidateAfterAttachedReleaseSaveStateChanged } from "@/lib/release-cache";
+import { invalidateAfterAttachedReleaseSaveStateChanged, type ReleaseDetailRecord } from "@/lib/release-cache";
 import {
   dubhubVideoDebugEnabled,
   dubhubVideoDebugLog,
@@ -239,6 +237,10 @@ interface VideoCardProps {
   requestOpenComments?: boolean;
   onOpenCommentsRequestHandled?: () => void;
   moderatorPreview?: boolean;
+  /** Fullscreen clip overlay (Release Detail): raise comments drawer above overlay. */
+  clipViewerOverlay?: boolean;
+  /** Release attached-posts gallery: Home-style show more / show less (not Moderator). */
+  galleryMetadataExpand?: boolean;
   /** Home swipe decoder prewarm (v1): inactive buffer/decode only — no play(), feature-flagged in Home. */
   decoderPrewarm?: boolean;
   /** Home feed: bumped after foreground return / session restore to retry play() when still paused. */
@@ -284,6 +286,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.requestOpenComments === next.requestOpenComments &&
     prev.onOpenCommentsRequestHandled === next.onOpenCommentsRequestHandled &&
     prev.moderatorPreview === next.moderatorPreview &&
+    prev.clipViewerOverlay === next.clipViewerOverlay &&
+    prev.galleryMetadataExpand === next.galleryMetadataExpand &&
     prev.decoderPrewarm === next.decoderPrewarm &&
     prev.playbackRecoveryEpoch === next.playbackRecoveryEpoch
   );
@@ -312,6 +316,8 @@ function VideoCardInner({
   requestOpenComments = false,
   onOpenCommentsRequestHandled,
   moderatorPreview = false,
+  clipViewerOverlay = false,
+  galleryMetadataExpand = false,
   decoderPrewarm = false,
   playbackRecoveryEpoch,
 }: VideoCardProps) {
@@ -345,14 +351,6 @@ function VideoCardInner({
   const [hasLiked, setHasLiked] = useState(post.hasLiked || false);
   const [likes, setLikes] = useState(post.likes);
 
-  const postOwnerId =
-    (post as any).user_id ?? post.userId ?? post.user?.id ?? null;
-  const isPostUploader = !!contextUser?.id && postOwnerId === contextUser.id;
-
-  const isPostIdentified =
-    post.verificationStatus === "identified" ||
-    post.verificationStatus === "community" ||
-    post.verificationStatus === "community_approved";
   const isReleaseOwner =
     !!contextUser?.id &&
     !!releasePreview?.ownerArtistId &&
@@ -375,6 +373,10 @@ function VideoCardInner({
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportMenuOpen, setReportMenuOpen] = useState(false);
+  const [clipViewerOverlayCollapsed, setClipViewerOverlayCollapsed] = useState(false);
+  useEffect(() => {
+    setClipViewerOverlayCollapsed(false);
+  }, [post.id]);
   const [artistSelfTagHintSeen, setArtistSelfTagHintSeen] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -807,11 +809,14 @@ function VideoCardInner({
     typeof window !== "undefined" &&
     (process.env.NODE_ENV === "development" || (Capacitor.isNativePlatform() && dubhubVideoDebugEnabled()));
 
+  /** Feed swipe / delete handoff visual state for index 0 before `activePostId` commits. */
+  const shouldPlayOnActivate = homeFeedPosterFallback || (clipViewerOverlay && embeddedFeed);
+
   /** Feed swipe / delete handoff: ensure `isPlayingRef` allows play() after inactive→active without tab focus. */
   const prevIsActiveForFeedRef = useRef(false);
   const playbackRecoveryAttemptedEpochRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!homeFeedPosterFallback || embeddedFeed) {
+    if (!shouldPlayOnActivate) {
       prevIsActiveForFeedRef.current = isActive;
       return;
     }
@@ -820,7 +825,7 @@ function VideoCardInner({
     if (becameActive) {
       setIsPlaying(true);
     }
-  }, [isActive, homeFeedPosterFallback, embeddedFeed, post.id, mediaEpoch, isMinimalBootMode]);
+  }, [isActive, shouldPlayOnActivate, post.id, mediaEpoch, isMinimalBootMode]);
 
   /** Home lifecycle recovery: one play() retry per epoch when the active card stayed paused after restore/foreground. */
   useEffect(() => {
@@ -1721,15 +1726,17 @@ function VideoCardInner({
       return;
     }
     // If no poster exists, show a visual placeholder immediately to avoid a dark/blank snap handoff.
-    if (!(homeFeedPosterFallback && !!displayPosterUrl)) {
+    if (!(homeFeedPosterFallback && !!displayPosterUrl) && !(clipViewerOverlay && !!displayPosterUrl)) {
       setShowLoadingFallback(true);
       return;
     }
     const t = window.setTimeout(() => setShowLoadingFallback(true), 160);
     return () => window.clearTimeout(t);
-  }, [displayPosterUrl, homeFeedPosterFallback, isActive, pendingForceTopCard, isVideoReady, post.id]);
+  }, [clipViewerOverlay, displayPosterUrl, homeFeedPosterFallback, isActive, pendingForceTopCard, isVideoReady, post.id]);
 
-  const hasPosterBackedFallback = homeFeedPosterFallback && !!displayPosterUrl;
+  const hasPosterBackedFallback =
+    (homeFeedPosterFallback && !!displayPosterUrl) ||
+    (clipViewerOverlay && !!displayPosterUrl);
   const forceTopImmediateFallbackVisible = pendingForceTopCard && !isVideoReady;
   const effectiveShowLoadingFallback = showLoadingFallback || forceTopImmediateFallbackVisible;
   // Keep force-top explicit, but restore poster guard for normal active scrolling.
@@ -1915,6 +1922,13 @@ function VideoCardInner({
       }
 
       if (releasePreview?.id && contextUser?.id) {
+        if (data.isLiked) {
+          queryClient.setQueryData<ReleaseDetailRecord>(["/api/releases", releasePreview.id], (old) =>
+            old
+              ? { ...old, viewerSavedRelease: true }
+              : ({ id: releasePreview.id, viewerSavedRelease: true } as ReleaseDetailRecord),
+          );
+        }
         invalidateAfterAttachedReleaseSaveStateChanged(queryClient, {
           releaseId: releasePreview.id,
           userId: contextUser.id,
@@ -1966,14 +1980,28 @@ function VideoCardInner({
   });
 
   const handleShare = async () => {
-    const result = await sharePost(post.id);
-    if (result === "copied") {
-      toast({
-        title: "Link Copied",
-        description: "Post link copied to clipboard",
-      });
-    } else if (result === "failed") {
-      toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
+    if (clipViewerOverlay) {
+      suppressVideoToggleUntilRef.current = Date.now() + 500;
+    }
+    try {
+      const result = await sharePost(post.id);
+      if (result === "copied") {
+        toast({
+          title: "Link Copied",
+          description: "Post link copied to clipboard",
+        });
+      } else if (result === "failed") {
+        toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
+      }
+    } finally {
+      if (clipViewerOverlay) {
+        requestAnimationFrame(() => {
+          suppressVideoToggleUntilRef.current = 0;
+          if (typeof document !== "undefined") {
+            (document.activeElement as HTMLElement | null)?.blur?.();
+          }
+        });
+      }
     }
   };
 
@@ -2155,8 +2183,11 @@ function VideoCardInner({
   const genreChip = getGenreChipStyle(post.genre);
   const likeSaveNoteColor = genreChip.bgColor || DUB_HUB_ACCENT;
   const statusBadgeEl = getStatusBadge();
-  const overlayDensityControl = typeof onFeedOverlayCollapsedChange === "function";
-  const overlayCollapsed = overlayDensityControl && feedOverlayCollapsed;
+  const overlayDensityControl =
+    typeof onFeedOverlayCollapsedChange === "function" || galleryMetadataExpand;
+  const overlayCollapsed = galleryMetadataExpand
+    ? clipViewerOverlayCollapsed
+    : overlayDensityControl && feedOverlayCollapsed;
 
   const scrubHitRef = useRef<HTMLDivElement>(null);
   const applyScrubFromClientX = useCallback((clientX: number, video: HTMLVideoElement) => {
@@ -2852,7 +2883,11 @@ function VideoCardInner({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      onFeedOverlayCollapsedChange?.(!overlayCollapsed);
+                      if (galleryMetadataExpand) {
+                        setClipViewerOverlayCollapsed(!overlayCollapsed);
+                      } else {
+                        onFeedOverlayCollapsedChange?.(!overlayCollapsed);
+                      }
                     }}
                   >
                     {overlayCollapsed ? "Show more" : "Show less"}
@@ -2915,69 +2950,11 @@ function VideoCardInner({
                     aria-hidden={overlayCollapsed}
                   >
                     {releasePreview ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigateToReleasePreview(releasePreview.id);
-                        }}
-                        className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
-                      >
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted sm:h-12 sm:w-12">
-                          {releasePreview.artworkUrl ? (
-                            <img src={releasePreview.artworkUrl} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <Music className="h-5 w-5 text-gray-500 sm:h-6 sm:w-6" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1 overflow-visible">
-                          <p className="line-clamp-2 text-[11px] font-medium leading-snug text-white sm:text-xs">
-                            {formatReleaseTitleLine(
-                              releasePreview.ownerUsername,
-                              releasePreview.title,
-                              releasePreview.collaborators
-                            )}
-                          </p>
-                          <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                            {releasePreview.isComingSoon
-                              ? "Coming soon..."
-                              : releasePreview.releaseDate
-                                ? formatDate(releasePreview.releaseDate)
-                                : ""}
-                            <span
-                              className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px] ${
-                                isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                                  ? "bg-amber-500/20 text-amber-400"
-                                  : "bg-green-500/20 text-green-600 dark:text-green-400"
-                              }`}
-                            >
-                              {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                                ? "Upcoming"
-                                : "Released"}
-                            </span>
-                          </p>
-                          <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
-                            {isReleaseOwner ? (
-                              <>
-                                <Edit2 className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-                                <span>Edit release</span>
-                              </>
-                            ) : isPostUploader && isPostIdentified ? (
-                              <>
-                                <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
-                                <span className="line-clamp-3">Saved to your Releases</span>
-                              </>
-                            ) : hasLiked ? (
-                              <>
-                                <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
-                                <span>In your Releases</span>
-                              </>
-                            ) : (
-                              <span className="line-clamp-3">Like to add this track to your Releases</span>
-                            )}
-                          </p>
-                        </div>
-                      </button>
+                      <ReleasePreviewCard
+                        releasePreview={releasePreview}
+                        isReleaseOwner={isReleaseOwner}
+                        onNavigate={navigateToReleasePreview}
+                      />
                     ) : null}
                   </div>
                 </div>
@@ -3025,69 +3002,11 @@ function VideoCardInner({
               </div>
 
               {releasePreview && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateToReleasePreview(releasePreview.id);
-                  }}
-                  className="pointer-events-auto mt-2 flex min-h-0 w-full min-w-0 items-start gap-2.5 rounded-lg bg-black/45 p-2.5 text-left backdrop-blur-sm transition-colors hover:bg-black/55 sm:mt-3 sm:gap-3 sm:p-3"
-                >
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted sm:h-12 sm:w-12">
-                    {releasePreview.artworkUrl ? (
-                      <img src={releasePreview.artworkUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <Music className="h-5 w-5 text-gray-500 sm:h-6 sm:w-6" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1 overflow-visible">
-                    <p className="line-clamp-2 text-[11px] font-medium leading-snug text-white sm:text-xs">
-                      {formatReleaseTitleLine(
-                        releasePreview.ownerUsername,
-                        releasePreview.title,
-                        releasePreview.collaborators
-                      )}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                      {releasePreview.isComingSoon
-                        ? "Coming soon..."
-                        : releasePreview.releaseDate
-                          ? formatDate(releasePreview.releaseDate)
-                          : ""}
-                      <span
-                        className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px] ${
-                          isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                            ? "bg-amber-500/20 text-amber-400"
-                            : "bg-green-500/20 text-green-600 dark:text-green-400"
-                        }`}
-                      >
-                        {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                          ? "Upcoming"
-                          : "Released"}
-                      </span>
-                    </p>
-                    <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
-                      {isReleaseOwner ? (
-                        <>
-                          <Edit2 className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-                          <span>Edit release</span>
-                        </>
-                      ) : isPostUploader && isPostIdentified ? (
-                        <>
-                          <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
-                          <span className="line-clamp-3">Saved to your Releases</span>
-                        </>
-                      ) : hasLiked ? (
-                        <>
-                          <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-400" />
-                          <span>In your Releases</span>
-                        </>
-                      ) : (
-                        <span className="line-clamp-3">Like to add this track to your Releases</span>
-                      )}
-                    </p>
-                  </div>
-                </button>
+                <ReleasePreviewCard
+                  releasePreview={releasePreview}
+                  isReleaseOwner={isReleaseOwner}
+                  onNavigate={navigateToReleasePreview}
+                />
               )}
             </>
           )}
@@ -3262,6 +3181,7 @@ function VideoCardInner({
         <CommentsModal
           post={commentsPost}
           isOpen={showComments}
+          elevatedStack={clipViewerOverlay}
           onCommentCountDelta={(delta) => setCommentCountBump((n) => n + delta)}
           onClose={() => {
             if (debugComments) {

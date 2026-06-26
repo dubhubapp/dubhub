@@ -566,7 +566,7 @@ export default function PublicProfile() {
                         </div>
                       )}
                     </div>
-                    {genreChip && genrePillStyle ? (
+                    {genreChip && genrePillStyle && !showArtistReleaseAlerts ? (
                       <div
                         className="flex w-full max-w-[5.5rem] flex-col items-center gap-1 text-center"
                         data-testid="public-profile-fav-genre"
@@ -607,6 +607,29 @@ export default function PublicProfile() {
                   </div>
                 </div>
 
+                {showArtistReleaseAlerts && profileId ? (
+                  <div
+                    className="mb-4 flex items-end gap-2"
+                    data-testid="artist-release-alerts-control"
+                  >
+                    {genreChip && genrePillStyle ? (
+                      <div
+                        className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
+                        data-testid="public-profile-fav-genre"
+                      >
+                        <span className="text-[10px] font-medium leading-none text-white/60">Fav genre</span>
+                        <span
+                          className={PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS}
+                          style={genrePillStyle as CSSProperties}
+                        >
+                          <span className="truncate">{genreChip.label}</span>
+                        </span>
+                      </div>
+                    ) : null}
+                    <ArtistReleaseAlertsButton artistId={profileId} className="min-w-0 flex-1" />
+                  </div>
+                ) : null}
+
                 {statsReady ? (
                   <div
                     className={cn("grid gap-1", isVerifiedArtist ? "grid-cols-4" : "grid-cols-5")}
@@ -635,10 +658,6 @@ export default function PublicProfile() {
                 )}
               </div>
             </section>
-
-            {showArtistReleaseAlerts && profileId ? (
-              <ArtistReleaseAlertsButton artistId={profileId} />
-            ) : null}
 
             <div className={PUBLIC_PROFILE_SECTION_GAP_CLASS}>
               {statsReady && repTrust ? (
@@ -713,6 +732,7 @@ export default function PublicProfile() {
                         upcoming={upcomingSaved}
                         released={releasedSaved}
                         onOpen={openRelease}
+                        showSavedAtLabels
                       />
                     ) : (
                       <p className="text-sm text-gray-400">No saved releases yet.</p>

@@ -541,9 +541,10 @@ async function fetchPublicCommunityOverviewStats(
 }
 
 async function buildPublicSavedReleasesPayload(userId: string) {
-  const [upcoming, released] = await Promise.all([
+  const [upcoming, released, savedAtByReleaseId] = await Promise.all([
     storage.getReleasesFeed(userId, "upcoming", "saved"),
     storage.getReleasesFeed(userId, "past", "saved"),
+    storage.getSavedReleaseLikeTimestamps(userId),
   ]);
   const mapWithLinksAndArtwork = async (rows: any[]) =>
     Promise.all(
@@ -551,10 +552,12 @@ async function buildPublicSavedReleasesPayload(userId: string) {
         .filter((r) => r.isPublic !== false)
         .map(async (r: any) => {
           const links = await storage.getReleaseLinks(r.id);
+          const savedAt = savedAtByReleaseId.get(String(r.id)) ?? null;
           return {
             ...r,
             artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
             links: Array.isArray(links) ? links : [],
+            ...(savedAt ? { savedAt } : {}),
           };
         }),
     );

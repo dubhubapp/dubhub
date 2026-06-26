@@ -59,7 +59,7 @@ import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { findCommentInTree } from "@/lib/comment-selection";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
@@ -79,6 +79,8 @@ interface CommentsModalProps {
   onClose: () => void;
   /** Local feed count offset (e.g. Random mode post not in query cache). */
   onCommentCountDelta?: (delta: number) => void;
+  /** Raise drawer above fullscreen clip overlays (z-[100]). */
+  elevatedStack?: boolean;
 }
 
 function patchPostInFeedCaches(
@@ -185,7 +187,14 @@ function computeCommentsSheetMaxPxWithoutVisualViewport(): number {
   return Math.min(preferredCap, visibleBudget);
 }
 
-export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: CommentsModalProps) {
+export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elevatedStack = false }: CommentsModalProps) {
+  const drawerStackZ = elevatedStack ? "z-[110]" : "z-[60]";
+  const reportDialogStackZ = elevatedStack ? "z-[120]" : "z-[70]";
+  const alertDialogStackZ = elevatedStack ? "z-[120]" : "z-[80]";
+  const commentActionsDropdownClass = elevatedStack
+    ? "z-[120] min-w-[10rem] max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
+    : COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS;
+
   const closeCommittedRef = useRef(false);
   const drawerContentRef = useRef<HTMLDivElement | null>(null);
   const savedDrawerTouchActionRef = useRef<string | null>(null);
@@ -1381,7 +1390,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
           if (!open) setDeleteConfirmCommentId(null);
         }}
       >
-        <AlertDialogContent className="z-[80] w-[calc(100vw-2rem)] max-w-sm">
+        <AlertDialogContent className={cn(alertDialogStackZ, "w-[calc(100vw-2rem)] max-w-sm")}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete comment?</AlertDialogTitle>
             <AlertDialogDescription>Any replies will stay visible.</AlertDialogDescription>
@@ -1409,7 +1418,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
         postId={post.id}
         commentId={reportingComment?.id}
         reportedUserId={reportingComment?.userId}
-        dialogStackClassName="z-[70]"
+        dialogStackClassName={reportDialogStackZ}
       />
       <Drawer
         open={isOpen}
@@ -1422,8 +1431,11 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
       >
       <DrawerContent
         ref={drawerContentRef}
-        overlayClassName="z-[60] bg-transparent"
-        className="bottom-0 z-[60] mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md"
+        overlayClassName={cn(drawerStackZ, "bg-transparent")}
+        className={cn(
+          "bottom-0 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md",
+          drawerStackZ,
+        )}
         style={
           commentsSheetMaxPx != null
             ? {
@@ -1458,7 +1470,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
               <DropdownMenuContent
                 align="end"
                 sideOffset={6}
-                className="z-[70] min-w-[10rem] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground"
+                className={cn(commentActionsDropdownClass, "max-w-none")}
               >
                 <DropdownMenuItem
                   className="cursor-pointer text-sm text-gray-800 focus:bg-gray-100 focus:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900 dark:text-popover-foreground dark:focus:bg-muted dark:focus:text-foreground dark:data-[highlighted]:bg-muted dark:data-[highlighted]:text-foreground"
@@ -1911,7 +1923,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                             sideOffset={6}
                             alignOffset={-4}
                             collisionPadding={16}
-                            className={COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS}
+                            className={commentActionsDropdownClass}
                           >
                             {isOwnComment ? (
                               <DropdownMenuItem
@@ -2168,7 +2180,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta }: Co
                                     sideOffset={6}
                                     alignOffset={-4}
                                     collisionPadding={16}
-                                    className={COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS}
+                                    className={commentActionsDropdownClass}
                                   >
                                     {isOwnReply ? (
                                       <DropdownMenuItem

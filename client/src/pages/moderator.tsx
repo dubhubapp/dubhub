@@ -30,7 +30,8 @@ import {
 import { ApiRequestError, serializeQueryError } from "@/lib/apiDiagnostics";
 import { useToast } from "@/hooks/use-toast";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
-import { VideoCard } from "@/components/video-card";
+import { PostClipViewerOverlay } from "@/components/post-clip-viewer-overlay";
+import { normalizePostForPreview } from "@/lib/normalize-post-for-preview";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
 import { CorrectGenreDialog } from "@/components/correct-genre-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
@@ -150,8 +151,6 @@ export default function ModeratorPage() {
   const [selectedPost, setSelectedPost] = useState<PostWithUser | null>(null);
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [postForComments, setPostForComments] = useState<PostWithUser | null>(null);
-  const [isPreviewMuted, setIsPreviewMuted] = useState(true);
-  const [isPostPreviewLoading, setIsPostPreviewLoading] = useState(false);
   const [moderationDialogOpen, setModerationDialogOpen] = useState(false);
   const [selectedReportForModeration, setSelectedReportForModeration] = useState<{
     reportId: string;
@@ -603,51 +602,18 @@ export default function ModeratorPage() {
   const unresolvedReportsCount = reportedContent.filter(
     (r: { status?: string }) => r.status === "open" || r.status === "under_review"
   ).length;
-  const normalizePostForPreview = (post: any): PostWithUser | null => {
-    if (!post || !post.id) return null;
-    const normalizedVideoUrl = post.videoUrl || post.video_url || null;
-    const normalizedUser =
-      post.user ??
-      (post.username
-        ? {
-            id: post.userId || post.user_id || "unknown",
-            username: post.username,
-            profileImageUrl: post.profileImageUrl || post.profile_image_url || null,
-            verified_artist: Boolean(post.verified_artist),
-          }
-        : null);
-    if (!normalizedUser) return null;
-    return {
-      ...post,
-      videoUrl: normalizedVideoUrl,
-      user: normalizedUser,
-      likes: typeof post.likes === "number" ? post.likes : 0,
-      hasLiked: Boolean(post.hasLiked),
-      verificationStatus: post.verificationStatus || post.verification_status || "unidentified",
-    } as PostWithUser;
-  };
-  const openPostPreviewModal = (rawPost: any) => {
-    setIsPostPreviewLoading(true);
-    setIsPreviewMuted(true);
+  const openPostPreviewModal = (rawPost: unknown) => {
     const normalizedPost = normalizePostForPreview(rawPost);
     if (process.env.NODE_ENV !== "production") {
+      const post = rawPost as { id?: string; videoUrl?: string; video_url?: string } | null;
       console.log("[Moderator] Open preview modal", {
-        postId: rawPost?.id ?? null,
-        hasVideoUrl: Boolean(rawPost?.videoUrl || rawPost?.video_url),
+        postId: post?.id ?? null,
+        hasVideoUrl: Boolean(post?.videoUrl || post?.video_url),
         modalOpened: Boolean(normalizedPost),
       });
     }
     setPostForComments(normalizedPost);
-    setIsPostPreviewLoading(false);
   };
-  useEffect(() => {
-    if (!postForComments) return;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [postForComments]);
 
   return (
     <div className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}>
@@ -1650,52 +1616,14 @@ export default function ModeratorPage() {
       </Dialog>
 
       {/* Full-screen pending post preview overlay */}
-      {postForComments && (
-        <div
-          className="fixed inset-0 z-[100] h-[100dvh] w-screen bg-black"
-          data-testid="moderator-fullscreen-preview"
-        >
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setPostForComments(null);
-              setIsPreviewMuted(true);
-              setIsPostPreviewLoading(false);
-            }}
-            className="absolute right-3 top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] z-[110] border-white/20 bg-black/60 text-white hover:bg-black/80"
-            data-testid="button-close-moderator-preview"
-          >
-            <XCircle className="mr-1 h-4 w-4" />
-            Close
-          </Button>
-          <div className="relative h-full min-h-0 w-full">
-            {isPostPreviewLoading ? (
-              <div className="flex h-full w-full items-center justify-center bg-black/80">
-                <VinylLoader label="Loading video..." />
-              </div>
-            ) : postForComments.videoUrl && postForComments.user ? (
-              <div className="relative h-full min-h-0 w-full">
-                <VideoCard
-                  post={postForComments}
-                  embeddedFeed
-                  moderatorPreview
-                  isActive
-                  isMuted={isPreviewMuted}
-                  onToggleMute={() => setIsPreviewMuted((prev) => !prev)}
-                />
-              </div>
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-black px-6 text-center text-white">
-                <FileText className="h-7 w-7 text-muted-foreground" />
-                <p className="text-sm font-medium">Video unavailable</p>
-                <p className="text-xs text-muted-foreground">This post is missing a playable video source.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {postForComments ? (
+        <PostClipViewerOverlay
+          postId={postForComments.id}
+          initialPost={postForComments}
+          onClose={() => setPostForComments(null)}
+          testId="moderator-fullscreen-preview"
+        />
+      ) : null}
     </div>
   );
 }

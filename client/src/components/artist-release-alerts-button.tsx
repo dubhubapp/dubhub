@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, BellRing } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Bell, Check } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ export function artistReleaseAlertQueryKey(artistId: string) {
 
 export function ArtistReleaseAlertsButton({ artistId, className }: ArtistReleaseAlertsButtonProps) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data, isLoading, isError } = useQuery<ArtistReleaseAlertResponse>({
     queryKey: artistReleaseAlertQueryKey(artistId),
@@ -59,6 +60,9 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
     },
     onSuccess: (result) => {
       setEnabled(!!result.enabled);
+      if (result.enabled) {
+        toast({ title: "You'll be notified when this artist releases new music." });
+      }
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: artistReleaseAlertQueryKey(artistId) });
@@ -87,6 +91,9 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
     },
     onSuccess: (result) => {
       setEnabled(!!result.enabled);
+      if (!result.enabled) {
+        toast({ title: "Release Alerts turned off." });
+      }
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: artistReleaseAlertQueryKey(artistId) });
@@ -110,30 +117,34 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
   }
 
   return (
-    <div className={cn("space-y-1", className)} data-testid="artist-release-alerts-control">
-      <Button
-        type="button"
-        variant={enabled ? "secondary" : "outline"}
-        size="sm"
-        className={cn(
-          "ios-press h-9 w-full border-white/20 bg-black/30 text-white hover:bg-black/45",
-          enabled && "border-primary/40 bg-primary/15 text-primary hover:bg-primary/20",
-        )}
-        onClick={handleClick}
-        disabled={isLoading || pending}
-        aria-pressed={enabled}
-        data-testid="button-artist-release-alerts"
-      >
-        {enabled ? (
-          <BellRing className="mr-2 h-4 w-4 shrink-0" aria-hidden />
-        ) : (
-          <Bell className="mr-2 h-4 w-4 shrink-0" aria-hidden />
-        )}
-        {enabled ? "Alerts On" : "Release Alerts"}
-      </Button>
-      <p className="text-center text-[11px] leading-snug text-white/55">
-        Get notified when this artist releases new music.
-      </p>
-    </div>
+    <button
+      type="button"
+      className={cn(
+        "ios-press inline-flex min-h-[1.625rem] w-full items-center justify-center gap-1 rounded px-2.5 py-1 text-[10px] font-semibold leading-none ring-1 backdrop-blur-md transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]",
+        enabled
+          ? "border border-green-500/40 bg-green-500/[0.06] text-white ring-green-500/35 hover:bg-green-500/[0.1]"
+          : "border border-white/15 bg-black/40 text-white/90 ring-white/20 hover:bg-black/50",
+        (isLoading || pending) && "pointer-events-none opacity-70",
+        className,
+      )}
+      onClick={handleClick}
+      disabled={isLoading || pending}
+      aria-pressed={enabled}
+      data-testid="button-artist-release-alerts"
+    >
+      {enabled ? (
+        <Check className="h-3 w-3 shrink-0 text-green-400" aria-hidden strokeWidth={2.5} />
+      ) : (
+        <Bell className="h-3 w-3 shrink-0 text-white/85" aria-hidden />
+      )}
+      {enabled ? (
+        <span className="whitespace-nowrap">Release Alerts On</span>
+      ) : (
+        <>
+          <span className="hidden whitespace-nowrap min-[400px]:inline">Turn on Future Release Alerts</span>
+          <span className="whitespace-nowrap min-[400px]:hidden">Turn on Release Alerts</span>
+        </>
+      )}
+    </button>
   );
 }

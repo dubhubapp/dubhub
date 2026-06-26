@@ -27,6 +27,7 @@ import {
   type InAppNotificationBadgeKind,
 } from "@/lib/in-app-notification-banner-icons";
 import { formatUsernameDisplay } from "@/lib/utils";
+import { invalidateArtistReleaseAlertsAudience } from "@/lib/artist-release-alerts-cache";
 
 const AUTO_DISMISS_MS = 5000;
 const SUMMARY_THRESHOLD = 3;
@@ -194,7 +195,7 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
     case "release_alert_enabled":
       return {
         title: "Release Alerts",
-        description: n.message || "Someone turned on Release Alerts.",
+        description: n.message || "Someone wants to hear your future releases.",
       };
     case "release_announce":
       return {
@@ -396,6 +397,15 @@ export function useInAppNotificationToasts({
     }
     if (newlyArrived.length === 0) return;
 
+    if (
+      userType === "artist" &&
+      newlyArrived.some(
+        (n) => getEffectiveNotificationType(notificationRowFields(n)) === "release_alert_enabled",
+      )
+    ) {
+      invalidateArtistReleaseAlertsAudience(queryClient);
+    }
+
     const candidates = newlyArrived.filter(
       (n) =>
         isAllowedNotification(n, notificationPrefs, userType) &&
@@ -422,6 +432,7 @@ export function useInAppNotificationToasts({
     suppressPushPrompt,
     presentPayload,
     clearDismissTimer,
+    queryClient,
   ]);
 
   return {

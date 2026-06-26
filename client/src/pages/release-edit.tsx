@@ -1,9 +1,15 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Upload, Plus, Trash2, Search, UserPlus, ImageOff } from "lucide-react";
+import { ArrowLeft, Upload, Plus, Trash2, UserPlus, ImageOff, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +27,6 @@ import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
-import { isLikelyStaticImagePreviewUrl, resolveMediaUrl } from "@/lib/media-url";
 import { playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { SwipeBackPage } from "@/components/swipe-back-page";
@@ -30,54 +35,10 @@ import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 import { SEARCH_INPUT_KEYBOARD_PROPS } from "@/lib/form-search-input";
 import { ReleaseStatusFields } from "@/components/release-status-fields";
 import { resolveReleaseDetailBackPath } from "@/lib/release-detail-navigation";
-
-function EligiblePostPreview({ src }: { src: string | null }) {
-  const [failed, setFailed] = useState(false);
-  const useImage = !!src && isLikelyStaticImagePreviewUrl(src);
-  const shouldShowMedia = !!src && !failed;
-  const showFallback = !src || failed;
-
-  return (
-    <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-muted relative">
-      {shouldShowMedia && useImage ? (
-        <img
-          src={src ?? undefined}
-          alt=""
-          className="w-full h-full object-cover pointer-events-none"
-          onError={() => setFailed(true)}
-        />
-      ) : null}
-      {shouldShowMedia && !useImage ? (
-        <video
-          src={src ?? undefined}
-          muted
-          playsInline
-          preload="auto"
-          disablePictureInPicture
-          className="w-full h-full object-cover pointer-events-none"
-          onLoadedData={(e) => {
-            const el = e.currentTarget;
-            try {
-              if (el.currentTime < 0.05) el.currentTime = 0.05;
-              el.pause();
-            } catch {
-              // no-op
-            }
-          }}
-          onError={() => setFailed(true)}
-        />
-      ) : null}
-      {showFallback ? (
-        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-          <div className="flex flex-col items-center gap-1">
-            <ImageOff className="h-4 w-4" />
-            <span className="text-[10px] font-medium">No preview</span>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+import {
+  ReleaseAttachPostsSection,
+  type EligiblePostForAttach,
+} from "@/components/release-attach-posts-section";
 
 export default function ReleaseEdit() {
   const [, params] = useRoute("/releases/:id/edit");
@@ -104,6 +65,7 @@ export default function ReleaseEdit() {
   const [collabSearch, setCollabSearch] = useState("");
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [releaseMenuOpen, setReleaseMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -209,25 +171,8 @@ export default function ReleaseEdit() {
 
   const attachedSet = new Set((release?.postIds as string[]) || []);
 
-  type EligiblePost = {
-    id: string;
-    video_url?: string;
-    videoUrl?: string;
-    thumbnail_url?: string;
-    thumbnailUrl?: string;
-    dj_name?: string;
-    title?: string;
-    verified_comment_body?: string;
-    created_at?: string;
-  };
-
-  const getEligiblePostPreviewUrl = (post: EligiblePost) => {
-    const thumb = post.thumbnailUrl ?? post.thumbnail_url ?? null;
-    return resolveMediaUrl(thumb) ?? resolveMediaUrl(post.videoUrl ?? post.video_url);
-  };
-
   const filteredEligiblePosts = useMemo(() => {
-    const posts = (eligiblePosts as EligiblePost[]) || [];
+    const posts = (eligiblePosts as EligiblePostForAttach[]) || [];
     if (!searchTerm.trim()) return posts;
     const q = searchTerm.trim().toLowerCase();
     return posts.filter(
@@ -464,10 +409,44 @@ export default function ReleaseEdit() {
         }}
       >
       <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto min-w-0 w-full">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back to Releases
-        </Button>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" className="ios-press -ml-1" onClick={handleBack}>
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back to Releases
+          </Button>
+          {isOwner ? (
+            <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ios-press h-9 w-9 shrink-0"
+                  aria-label="Release options"
+                  data-testid="button-release-edit-menu"
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[12rem]">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  disabled={saving}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setReleaseMenuOpen(false);
+                    requestAnimationFrame(() => setShowDeleteModal(true));
+                  }}
+                  data-testid="menu-delete-release"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Release
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div className="h-9 w-9 shrink-0" aria-hidden />
+          )}
+        </div>
         <h1 className="text-xl font-bold mb-4">
           {isOwner ? "Edit release" : "Manage attachments"}
         </h1>
@@ -706,91 +685,24 @@ export default function ReleaseEdit() {
         </section>
         )}
 
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-2">Attach posts</h2>
-          {isReleaseLocked && (
-            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-              This release is live. You can add more posts; posts already attached can’t be removed.
-            </p>
-          )}
-          <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-            Only attach posts that you have artist-verified. Attaching incorrect posts may result in a ban.
-          </p>
-          <p className="text-xs text-muted-foreground mb-2">
-            Selected posts will be attached when you save changes.
-          </p>
+        <ReleaseAttachPostsSection
+          eligiblePosts={(eligiblePosts as EligiblePostForAttach[]) || []}
+          filteredEligiblePosts={filteredEligiblePosts}
+          selectedPostIds={selectedPostIds}
+          onSelectedPostIdsChange={setSelectedPostIds}
+          searchTerm={searchTerm}
+          onSearchTermChange={setSearchTerm}
+          helperText="Selected posts will be attached when you save changes."
+          lockedNotice={
+            isReleaseLocked
+              ? "This release is live. You can add more posts; posts already attached can’t be removed."
+              : undefined
+          }
+          isToggleDisabled={(postId) => isReleaseLocked && attachedSet.has(postId)}
+          detachAllDisabled={isReleaseLocked}
+        />
 
-          <div className="relative mb-3">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by DJ, title, or verified comment..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8"
-              {...SEARCH_INPUT_KEYBOARD_PROPS}
-            />
-          </div>
-
-          <div className="grid gap-3 max-h-80 overflow-y-auto">
-            {filteredEligiblePosts.map((p: EligiblePost) => (
-              <label
-                key={p.id}
-                className={`flex gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                  selectedPostIds.includes(p.id)
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50 bg-muted/30"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedPostIds.includes(p.id)}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    if (e.target.checked) setSelectedPostIds((s) => [...s, p.id]);
-                    else setSelectedPostIds((s) => s.filter((id) => id !== p.id));
-                  }}
-                  disabled={isReleaseLocked && attachedSet.has(p.id)}
-                  className="mt-1"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex gap-3">
-                    <EligiblePostPreview src={getEligiblePostPreviewUrl(p)} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground">
-                        {p.dj_name || "DJ unknown"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                        {p.verified_comment_body || "No verified comment found"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
-          {eligiblePosts.length === 0 && <p className="text-sm text-muted-foreground py-4">No eligible posts (artist-verified by you).</p>}
-          {eligiblePosts.length > 0 && filteredEligiblePosts.length === 0 && (
-            <p className="text-sm text-muted-foreground py-2">No posts match your search.</p>
-          )}
-
-          <div className="flex items-center gap-2 mt-3">
-            <span className="text-sm text-muted-foreground">
-              Selected ({selectedPostIds.length})
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setSelectedPostIds([]);
-              }}
-              disabled={selectedPostIds.length === 0 || isReleaseLocked}
-            >
-              Detach all
-            </Button>
-          </div>
-        </section>
-
-        <div className="pt-6 pb-8 space-y-3">
+        <div className="pt-6 pb-8">
           <Button
             className="w-full"
             size="lg"
@@ -799,18 +711,6 @@ export default function ReleaseEdit() {
           >
             {saving ? "Saving…" : "Save Changes"}
           </Button>
-          {isOwner && (
-            <Button
-              variant="destructive"
-              className="w-full"
-              size="lg"
-              onClick={() => setShowDeleteModal(true)}
-              disabled={saving}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Release
-            </Button>
-          )}
         </div>
 
         <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
