@@ -25,8 +25,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "./release-tracker";
-import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
-import { GoldVerifiedTick } from "@/components/verified-artist";
+import { sanitizeReleaseText } from "@/lib/release-display";
 import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
@@ -46,6 +45,8 @@ import { ReleaseAttachedClips, ReleaseAttachedClipsSkeleton } from "@/components
 import { ReleaseActivitySection } from "@/components/release-activity-section";
 import { ReleaseAttachedPostsGallery } from "@/components/release-attached-posts-gallery";
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
+import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
+import { ReleaseDetailArtistByline } from "@/components/release-detail-artist-byline";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
 import { shareRelease } from "@/lib/release-share";
 
@@ -199,6 +200,16 @@ export default function ReleaseDetail() {
       }
     }
   }, [isPending, isFetching, error, release, id, toast]);
+
+  const openArtistProfile = useCallback(
+    (username: string) => {
+      const trimmed = username.trim().replace(/^@+/, "");
+      if (!trimmed) return;
+      markPublicProfileEnterAnimation();
+      navigate(`/profile/${encodeURIComponent(trimmed)}`);
+    },
+    [navigate],
+  );
 
   if (!id || id === "new") {
     navigate("/releases");
@@ -387,10 +398,12 @@ export default function ReleaseDetail() {
             )}
           </div>
           <div className="flex-1 min-w-0 overflow-hidden">
-            <p className="text-sm font-medium leading-snug break-words">
-              {formatReleaseByline(releaseData.artistUsername, releaseData.collaborators)}
-              <GoldVerifiedTick className="ml-0.5 inline h-3 w-3 align-[-0.1em] text-[#FFD700]" glow="inline" />
-            </p>
+            <ReleaseDetailArtistByline
+              ownerUsername={releaseData.artistUsername}
+              collaborators={releaseData.collaborators}
+              onArtistPress={openArtistProfile}
+              className="break-words"
+            />
             <h1 className="mt-0.5 text-xl font-bold leading-tight break-words whitespace-normal">
               {sanitizeReleaseText(releaseData.title)}
             </h1>

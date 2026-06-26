@@ -1,4 +1,5 @@
 import { evaluatePushPreferenceGate } from "@shared/push-notification-preferences";
+import { ARTIST_IDENTIFIED_POST_MESSAGE, formatReleaseAnnounceMessage } from "@shared/notification-messages";
 import { sendApnsNotification } from "./apns";
 import { storage } from "../storage";
 
@@ -153,7 +154,7 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
     case "artist_identified_post":
       return {
         title: "Track identified ✅",
-        body: "Your post has been identified by the artist.",
+        body: ARTIST_IDENTIFIED_POST_MESSAGE,
       };
     case "release_attached_to_liked_or_uploaded_post":
       return {
@@ -196,11 +197,11 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       };
     }
     case "release_announce": {
-      const artist = toMention(payload.artistUsername) ?? "Artist";
-      const title = payload.releaseTitle.trim() || "Release";
+      const artistUsername = String(payload.artistUsername ?? "").trim() || "Artist";
+      const releaseTitle = payload.releaseTitle.trim() || "a release";
       return {
-        title: "Release announced 📣",
-        body: `${artist} announced ${title}.`,
+        title: "New release",
+        body: formatReleaseAnnounceMessage(artistUsername, releaseTitle),
       };
     }
     case "collab_invite": {
@@ -235,7 +236,7 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
     case "moderator_report_opened":
       return {
         title: "New report ⚠️",
-        body: "A new report needs review.ing",
+        body: "A new report needs review.",
       };
   }
 }

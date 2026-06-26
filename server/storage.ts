@@ -14,6 +14,7 @@ import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
 import { mapPostThumbnailUrl } from "./postThumbnailUrl";
+import { formatReleaseAnnounceMessage } from "@shared/notification-messages";
 
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
@@ -3502,13 +3503,7 @@ export class DatabaseStorage implements IStorage {
       const artistProfile = await this.getUser(artistId);
       const artistUsername = artistProfile?.username ?? "Artist";
       const releaseTitle = r.title ?? "Release";
-      const releaseDate = r.release_date ? new Date(r.release_date) : null;
-      const now = new Date();
-      const isFuture = releaseDate && releaseDate > now;
-      const releaseDateStr = releaseDate ? releaseDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
-      const message = isFuture
-        ? `${artistUsername} announced ${releaseTitle} (releases on ${releaseDateStr})`
-        : `${artistUsername} released ${releaseTitle}`;
+      const message = formatReleaseAnnounceMessage(artistUsername, releaseTitle);
       const firstPostId = postIds[0] ?? null;
       for (const recipientId of recipientIds) {
         if (!recipientId) continue;
@@ -4102,7 +4097,7 @@ export class DatabaseStorage implements IStorage {
           triggeredBy: artistId,
           postId: null,
           releaseId,
-          message: `@${collabUsername} rejected your collaboration invite for ${releaseTitle}`,
+          message: `@${collabUsername} declined your collaboration invite for ${releaseTitle}`,
           notificationType: "collab_reject",
         } as any);
         void import("./push/pushSend").then(({ sendPushToUser }) =>

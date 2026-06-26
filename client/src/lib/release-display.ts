@@ -46,6 +46,42 @@ export function formatReleaseByline(
   return parts.length > 1 ? parts.join(" & ") : parts[0];
 }
 
+export type ReleaseBylineSegment = {
+  /** Raw username for navigation (no leading @). */
+  username: string;
+  /** Display label matching formatReleaseByline. */
+  label: string;
+};
+
+/** Structured owner + accepted collaborators for tappable Release Detail bylines. */
+export function getReleaseBylineSegments(
+  ownerUsername: string,
+  collaborators?: CollaboratorLike[] | null,
+): { owner: ReleaseBylineSegment; collaborators: ReleaseBylineSegment[] } {
+  const ownerNav = sanitizeReleaseText(ownerUsername).replace(/^@+/, "").trim();
+  const ownerDisp = formatUsernameDisplay(ownerUsername);
+  const ownerLabel = ownerDisp
+    ? sanitizeReleaseText(ownerDisp)
+    : ownerNav
+      ? `@${ownerNav}`
+      : "@";
+
+  const accepted = (collaborators || []).filter((c) => c.status === "ACCEPTED");
+  const collabSegments: ReleaseBylineSegment[] = [];
+  for (const c of accepted) {
+    const nav = sanitizeReleaseText(c.username ?? "").replace(/^@+/, "").trim();
+    if (!nav) continue;
+    const seg = formatUsernameDisplay(c.username);
+    const label = seg ? sanitizeReleaseText(seg) : `@${nav}`;
+    collabSegments.push({ username: nav, label });
+  }
+
+  return {
+    owner: { username: ownerNav || sanitizeReleaseText(ownerUsername), label: ownerLabel },
+    collaborators: collabSegments,
+  };
+}
+
 /** Compute display title line: "@owner & @collab1 — title" */
 export function formatReleaseTitleLine(
   ownerUsername: string,

@@ -7,6 +7,7 @@ import {
   isModeratorQueueNotification,
   type NotificationType,
 } from "@shared/notification-types";
+import { ARTIST_IDENTIFIED_POST_MESSAGE } from "@shared/notification-messages";
 import { apiRequest } from "@/lib/queryClient";
 import {
   isNotificationVisibleByUserPreferences,
@@ -174,7 +175,7 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
     case "artist_identified_post":
       return {
         title: "Track identified",
-        description: "An artist identified your track",
+        description: ARTIST_IDENTIFIED_POST_MESSAGE,
       };
     case "release_day":
       return {
@@ -199,8 +200,8 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
       };
     case "release_announce":
       return {
-        title: "Release update",
-        description: n.message || "A release you follow was updated",
+        title: "New release",
+        description: n.message || "An artist just announced a release.",
       };
     default:
       return { title: "Notification", description: n.message };

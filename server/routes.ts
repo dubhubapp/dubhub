@@ -26,6 +26,10 @@ import {
   isCommentDeletionBlockedByVerification,
   isDeletedCommentBody,
 } from "@shared/deleted-comment";
+import {
+  ARTIST_IDENTIFIED_POST_MESSAGE,
+  COMMUNITY_ID_CONFIRMED_MESSAGE,
+} from "@shared/notification-messages";
 import { insertCommentSchema, patchUserNotificationPreferencesSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { db } from "./db";
@@ -3088,7 +3092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             artistId: postOwnerId,
             triggeredBy: artistId,
             postId,
-            message: "An artist identified your track.",
+            message: ARTIST_IDENTIFIED_POST_MESSAGE,
             notificationType: "artist_identified_post",
           });
           void sendPushToUser(postOwnerId, {
@@ -3601,6 +3605,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         INSERT INTO moderator_actions (post_id, moderator_id, action, created_at)
         VALUES (${postId}, ${moderatorId}, 'community_approved', NOW())
       `);
+
+      const commentUserId = comment.user_id as string | undefined;
+      if (commentUserId) {
+        try {
+          const patchResult = await db.execute(sql`
+            UPDATE notifications
+            SET message = ${COMMUNITY_ID_CONFIRMED_MESSAGE},
+                notification_type = 'id_verification_feedback'
+            WHERE artist_id = ${commentUserId}
+              AND post_id = ${postId}
+              AND created_at > NOW() - INTERVAL '10 seconds'
+              AND message ILIKE '%community identified%'
+            RETURNING id
+          `);
+          const patched = ((patchResult as { rows?: unknown[] }).rows ?? []).length;
+          if (patched === 0) {
+            await storage.createNotification({
+              artistId: commentUserId,
+              triggeredBy: moderatorId,
+              postId,
+              message: COMMUNITY_ID_CONFIRMED_MESSAGE,
+              notificationType: "id_verification_feedback",
+            });
+          }
+        } catch (notifyErr) {
+          console.error("[moderator/community-approve] Failed to upsert id_verification_feedback notification:", notifyErr);
+        }
+      }
 
       if (eligiblePending) {
         await clearPostModeratorAssignment(postId);

@@ -31,6 +31,7 @@ import { ProfileRepOverview } from "@/components/profile-rep-overview";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
+import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
 import { VideoCard } from "@/components/video-card";
@@ -216,8 +217,35 @@ function getGenreChipColors(genre: string) {
 const PROFILE_ACTIVITY_CARD_CLASS =
   "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
 
+/** Banner key-stat row placeholder — matches `PublicProfileKeyStatsSkeleton` layout (5 columns). */
+function ProfileKeyStatsSkeleton() {
+  return (
+    <div className="grid grid-cols-5 gap-1" aria-hidden data-testid="profile-key-stats-skeleton">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="flex flex-col items-center gap-1">
+          <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
+          <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
+          <DubHubSkeletonBar tone="faint" className="h-2.5 w-10" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Rep card placeholder — matches public-profile rep skeleton. */
+function ProfileRepOverviewSkeleton() {
+  return (
+    <div className="space-y-2" aria-busy="true" data-testid="profile-rep-skeleton">
+      <DubHubSkeletonBar tone="default" className="h-4 w-28" />
+      <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
+      <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
+    </div>
+  );
+}
+
 type ProfileCommunityActivitySectionProps = {
   userOverviewItems: StatsCardItem[];
+  overviewStatsLoading: boolean;
   showActivityGenres: boolean;
   onToggleGenres: () => void;
   identifiedGenresLoading: boolean;
@@ -228,6 +256,7 @@ type ProfileCommunityActivitySectionProps = {
 
 function ProfileCommunityActivitySection({
   userOverviewItems,
+  overviewStatsLoading,
   showActivityGenres,
   onToggleGenres,
   identifiedGenresLoading,
@@ -279,7 +308,11 @@ function ProfileCommunityActivitySection({
                 />
               ) : null}
             </div>
-            <span className="text-sm font-semibold tabular-nums">{value}</span>
+            {overviewStatsLoading ? (
+              <DubHubSkeletonBar tone="mid" className="h-4 w-10 shrink-0" aria-hidden />
+            ) : (
+              <span className="text-sm font-semibold tabular-nums">{value}</span>
+            )}
           </div>
         ))}
       </div>
@@ -367,6 +400,21 @@ function ProfileCommunityActivitySection({
       ) : null}
     </>
   );
+}
+
+/** Avoid "@user @user commented…" when the stored message already includes the actor mention. */
+function stripLeadingUsernameMention(
+  message: string,
+  username: string | null | undefined,
+): string {
+  const trimmed = message.trim();
+  if (!trimmed || !username?.trim()) return message;
+  const displayUser = formatUsernameDisplay(username);
+  if (!displayUser) return message;
+  const escaped = displayUser.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^${escaped}\\s+`, "i");
+  if (!pattern.test(trimmed)) return message;
+  return trimmed.replace(pattern, "").trimStart();
 }
 
 /** Shared placeholder for profile/notification post preview tiles (no stored thumbnail yet). */
@@ -2194,13 +2242,7 @@ export default function UserProfile() {
     );
   }
 
-  if (statsLoading || reputationLoading) {
-    return (
-      <div className="flex-1 bg-background flex items-center justify-center">
-        <VinylLoader label="Loading profile..." labelClassName="text-gray-400" />
-      </div>
-    );
-  }
+  const profileOverviewStatsLoading = statsLoading || reputationLoading;
 
   // User data from current user context - ONLY use real data from Supabase
   // NO mock/fallback data
@@ -2452,15 +2494,24 @@ export default function UserProfile() {
                     </button>
                   </div>
                   {/* Rep tier badge under avatar */}
-                  <div
-                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2.5 py-1 backdrop-blur-sm"
-                    data-testid="profile-rep-badge"
-                  >
-                    <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
-                    <span className="text-xs font-semibold text-accent">
-                      {repTrustForProfile.displayName}
-                    </span>
-                  </div>
+                  {reputationLoading ? (
+                    <DubHubSkeletonBar
+                      tone="faint"
+                      className="h-6 w-[5.5rem] rounded-full"
+                      aria-hidden
+                      data-testid="profile-rep-badge-skeleton"
+                    />
+                  ) : (
+                    <div
+                      className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2.5 py-1 backdrop-blur-sm"
+                      data-testid="profile-rep-badge"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
+                      <span className="text-xs font-semibold text-accent">
+                        {repTrustForProfile.displayName}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="min-w-0 flex-1 pt-1">
                   <div className="flex items-center gap-1.5">
@@ -2484,17 +2535,21 @@ export default function UserProfile() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
-                {keyStatRow.map(({ label, value, Icon, tone }) => (
-                  <div key={label} className="flex flex-col items-center gap-1 text-center">
-                    <Icon className={`w-4 h-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`} />
-                    <span className={`text-base font-bold leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`}>
-                      {value}
-                    </span>
-                    <span className="text-[10px] leading-tight text-gray-300/90">{label}</span>
-                  </div>
-                ))}
-              </div>
+              {profileOverviewStatsLoading ? (
+                <ProfileKeyStatsSkeleton />
+              ) : (
+                <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
+                  {keyStatRow.map(({ label, value, Icon, tone }) => (
+                    <div key={label} className="flex flex-col items-center gap-1 text-center">
+                      <Icon className={`w-4 h-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`} />
+                      <span className={`text-base font-bold leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`}>
+                        {value}
+                      </span>
+                      <span className="text-[10px] leading-tight text-gray-300/90">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 
@@ -2636,6 +2691,7 @@ export default function UserProfile() {
                   ) : (
                     <ProfileCommunityActivitySection
                       userOverviewItems={userOverviewItems}
+                      overviewStatsLoading={profileOverviewStatsLoading}
                       showActivityGenres={showActivityGenres}
                       onToggleGenres={() => setShowActivityGenres((prev) => !prev)}
                       identifiedGenresLoading={identifiedGenresLoading}
@@ -2649,6 +2705,7 @@ export default function UserProfile() {
                 <div className={PROFILE_ACTIVITY_CARD_CLASS} data-testid="your-activity-list">
                   <ProfileCommunityActivitySection
                     userOverviewItems={userOverviewItems}
+                    overviewStatsLoading={profileOverviewStatsLoading}
                     showActivityGenres={showActivityGenres}
                     onToggleGenres={() => setShowActivityGenres((prev) => !prev)}
                     identifiedGenresLoading={identifiedGenresLoading}
@@ -2662,15 +2719,19 @@ export default function UserProfile() {
           {/* Rep (trust tier) */}
           <div>
             <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-              <ProfileRepOverview
-                trust={repTrustForProfile}
-                communityTopPercent={karmaData?.communityTopPercent}
-                genreBarColorHex={repBarGenreChip?.bgColor}
-                showSectionHeader
-                showHelp
-                helpContent={PROFILE_HELP.reputation}
-                percentileVariant="self"
-              />
+              {reputationLoading ? (
+                <ProfileRepOverviewSkeleton />
+              ) : (
+                <ProfileRepOverview
+                  trust={repTrustForProfile}
+                  communityTopPercent={karmaData?.communityTopPercent}
+                  genreBarColorHex={repBarGenreChip?.bgColor}
+                  showSectionHeader
+                  showHelp
+                  helpContent={PROFILE_HELP.reputation}
+                  percentileVariant="self"
+                />
+              )}
             </div>
           </div>
 
@@ -3067,7 +3128,10 @@ export default function UserProfile() {
                                     : "Someone"}
                                 </span>
                                 {" "}
-                                {notification.message}
+                                {stripLeadingUsernameMention(
+                                  notification.message ?? "",
+                                  notification.triggeredByUser?.username,
+                                )}
                               </>
                             )}
                           </p>

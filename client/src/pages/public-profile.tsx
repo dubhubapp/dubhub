@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Calendar, Check, Heart, MessageCircle, Target, Upload, User } from "lucide-react";
+import { ArrowLeft, Check, Heart, MessageCircle, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { GoldVerifiedTick } from "@/components/verified-artist";
@@ -184,20 +184,6 @@ function PublicProfileKeyStatsSkeleton({ columns = 5 }: { columns?: 4 | 5 }) {
   );
 }
 
-function PublicProfileSecondaryKeyStatsSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-1" aria-hidden>
-      {[0, 1].map((i) => (
-        <div key={i} className="flex flex-col items-center gap-1">
-          <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
-          <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
-          <DubHubSkeletonBar tone="faint" className="h-2.5 w-14" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
   return (
     <SwipeBackPage onBack={onBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
@@ -240,9 +226,8 @@ function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
               <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
               <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
             </div>
-            <PublicProfileSecondaryKeyStatsSkeleton />
             <div className="space-y-2" aria-hidden>
-              <DubHubSkeletonBar tone="default" className="h-4 w-28" />
+              <DubHubSkeletonBar tone="default" className="h-4 w-36" />
               <PublicArtistReleasesSkeleton />
             </div>
           </div>
@@ -453,12 +438,6 @@ export default function PublicProfile() {
   const idsValue = statsReady ? Number(light.correct_ids).toLocaleString() : "—";
   const likesValue = statsReady ? Number(light.likesGiven).toLocaleString() : "—";
   const commentsValue = statsReady ? Number(light.commentsWritten).toLocaleString() : "—";
-  const accuracyValue = communityOverview
-    ? `${communityOverview.accuracyPercent}%`
-    : "—";
-  const releasesSavedValue = communityOverview
-    ? communityOverview.releasesSaved.toLocaleString()
-    : "—";
   const artistIdsValue = communityOverview ? communityOverview.artistIds.toLocaleString() : "—";
 
   const reputationRaw = light?.reputation ?? profile.reputation ?? profile.karma;
@@ -483,6 +462,8 @@ export default function PublicProfile() {
   const upcomingSaved = savedReleases?.upcoming ?? [];
   const releasedSaved = savedReleases?.released ?? [];
   const hasAnySavedReleases = upcomingSaved.length > 0 || releasedSaved.length > 0;
+  const savedReleasesCount =
+    savedReleases != null ? upcomingSaved.length + releasedSaved.length : null;
 
   const showArtistReleaseAlerts =
     isAuthenticated &&
@@ -646,10 +627,10 @@ export default function PublicProfile() {
                     />
                     {!isVerifiedArtist ? (
                       <PublicProfileKeyStat
-                        label="Accuracy"
-                        value={accuracyValue}
-                        icon={Target}
-                        tone="text-violet-300"
+                        label="Artist IDs"
+                        value={artistIdsValue}
+                        icon={PublicArtistIdsStatIcon}
+                        tone="text-amber-300"
                       />
                     ) : null}
                   </div>
@@ -706,42 +687,27 @@ export default function PublicProfile() {
                 {/* Reserved layout slot for a future paid release-alerts CTA — not implemented in Phase B */}
               </section>
             ) : (
-              <>
-                {communityOverview ? (
-                  <div className="grid grid-cols-2 gap-1" data-testid="public-profile-secondary-stats">
-                    <PublicProfileKeyStat
-                      label="Releases Saved"
-                      value={releasesSavedValue}
-                      icon={Calendar}
-                      tone="text-indigo-300"
+              <section className="space-y-4" data-testid="public-profile-saved-releases">
+                <h2 className="text-sm font-semibold text-white">
+                  {savedReleasesCount !== null
+                    ? `Saved Releases (${savedReleasesCount})`
+                    : "Saved Releases"}
+                </h2>
+                {savedReleases ? (
+                  hasAnySavedReleases ? (
+                    <PublicArtistDiscography
+                      upcoming={upcomingSaved}
+                      released={releasedSaved}
+                      onOpen={openRelease}
+                      showSavedAtLabels
                     />
-                    <PublicProfileKeyStat
-                      label="Artist IDs"
-                      value={artistIdsValue}
-                      icon={PublicArtistIdsStatIcon}
-                      tone="text-amber-300"
-                    />
-                  </div>
-                ) : null}
-
-                <section className="space-y-4" data-testid="public-profile-saved-releases">
-                  <h2 className="text-sm font-semibold text-white">Saved Releases</h2>
-                  {savedReleases ? (
-                    hasAnySavedReleases ? (
-                      <PublicArtistDiscography
-                        upcoming={upcomingSaved}
-                        released={releasedSaved}
-                        onOpen={openRelease}
-                        showSavedAtLabels
-                      />
-                    ) : (
-                      <p className="text-sm text-gray-400">No saved releases yet.</p>
-                    )
                   ) : (
-                    <PublicArtistReleasesSkeleton />
-                  )}
-                </section>
-              </>
+                    <p className="text-sm text-gray-400">No saved releases yet.</p>
+                  )
+                ) : (
+                  <PublicArtistReleasesSkeleton />
+                )}
+              </section>
             )}
             </div>
           </div>

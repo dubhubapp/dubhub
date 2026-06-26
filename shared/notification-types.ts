@@ -104,12 +104,16 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
 
   // --- Identity (ID confirm by artist vs mod/community feedback) ---
   if (lowerMessage.includes("identified your track")) return "artist_identified_post";
+  if (lowerMessage.includes("the artist confirmed your id")) return "artist_identified_post";
+  if (lowerMessage.includes("you got it right")) return "artist_identified_post";
+  if (lowerMessage.includes("your id was confirmed by the community")) return "id_verification_feedback";
   if (lowerMessage.includes("confirmed your track id")) return "id_verification_feedback";
 
   // --- Collaboration ---
   if (lowerMessage.includes("invited you as a collaborator")) return "collab_invite";
   if (lowerMessage.includes("accepted your collaboration invite")) return "collab_accept";
   if (lowerMessage.includes("rejected your collaboration invite")) return "collab_reject";
+  if (lowerMessage.includes("declined your collaboration invite")) return "collab_reject";
 
   // --- Moderator queue (prefix / exact production templates) ---
   if (rawMessage.startsWith("New post report:")) return "moderator_post_report";
@@ -127,6 +131,7 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
   if (lowerMessage.includes("wants to hear your future releases")) return "release_alert_enabled";
   if (lowerMessage.includes("turned on release alerts")) return "release_alert_enabled";
   if (lowerMessage.includes("announced a new release")) return "artist_release_alert";
+  if (lowerMessage.includes("just announced")) return "release_announce";
   if (lowerMessage.includes("that tune you've been waiting for")) return "release_attached";
   if (lowerMessage.includes("announced")) return "release_announce";
   // Manual notifyReleaseLikers uses release_announce even when copy says "released …"
