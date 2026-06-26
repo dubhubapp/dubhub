@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { ArrowLeft, ExternalLink, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Share2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -407,13 +407,12 @@ export default function ReleaseDetail() {
               {showShareRelease ? (
                 <button
                   type="button"
-                  className="inline-flex shrink-0 items-center justify-center gap-1 rounded bg-muted/80 font-medium leading-none text-muted-foreground ios-press min-h-[1.375rem] px-2 py-0.5 text-xs hover:bg-muted"
+                  className="inline-flex shrink-0 items-center justify-center rounded bg-muted/80 font-medium leading-none text-muted-foreground ios-press min-h-[1.375rem] min-w-[1.375rem] px-1.5 py-0.5 hover:bg-muted"
                   onClick={() => void handleShareRelease()}
                   aria-label="Share release"
                   data-testid="button-share-release"
                 >
-                  <Share2 className="h-3 w-3 shrink-0" aria-hidden />
-                  Share
+                  <Send className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 </button>
               ) : null}
             </div>
