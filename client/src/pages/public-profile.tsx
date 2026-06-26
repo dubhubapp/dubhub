@@ -26,6 +26,7 @@ import { prefetchReleaseDetail } from "@/lib/release-cache";
 import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-navigation";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { ArtistReleaseAlertsButton } from "@/components/artist-release-alerts-button";
+import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
 
 type PublicReleasesResponse = {
   upcoming: ReleaseFeedCardData[];
@@ -472,6 +473,13 @@ export default function PublicProfile() {
     Boolean(currentUser?.id) &&
     currentUser?.id !== profileId;
 
+  const isShareableVerifiedArtist =
+    profile.verified_artist === true &&
+    profile.account_type === "artist" &&
+    Boolean(profile.username?.trim());
+
+  const showArtistProfileActions = isShareableVerifiedArtist || showArtistReleaseAlerts;
+
   return (
     <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
       <div
@@ -588,12 +596,12 @@ export default function PublicProfile() {
                   </div>
                 </div>
 
-                {showArtistReleaseAlerts && profileId ? (
+                {showArtistProfileActions ? (
                   <div
                     className="mb-4 flex items-end gap-2"
-                    data-testid="artist-release-alerts-control"
+                    data-testid="artist-profile-actions"
                   >
-                    {genreChip && genrePillStyle ? (
+                    {genreChip && genrePillStyle && showArtistReleaseAlerts ? (
                       <div
                         className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
                         data-testid="public-profile-fav-genre"
@@ -607,7 +615,12 @@ export default function PublicProfile() {
                         </span>
                       </div>
                     ) : null}
-                    <ArtistReleaseAlertsButton artistId={profileId} className="min-w-0 flex-1" />
+                    {isShareableVerifiedArtist && profile.username ? (
+                      <ArtistProfileShareButton username={profile.username} variant="onDark" />
+                    ) : null}
+                    {showArtistReleaseAlerts && profileId ? (
+                      <ArtistReleaseAlertsButton artistId={profileId} className="min-w-0 flex-1" />
+                    ) : null}
                   </div>
                 ) : null}
 

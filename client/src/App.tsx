@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { App as CapacitorApp } from "@capacitor/app";
+import { resolveUniversalLinkDubhubRootRoute } from "@/lib/universal-app-url";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -153,8 +154,6 @@ function App() {
   const [profileGateBanner, setProfileGateBanner] = useState<string | null>(null);
 
   useEffect(() => {
-    const DUBHUB_UNIVERSAL_HOSTS = new Set(["dubhub.uk", "www.dubhub.uk"]);
-
     const toAuthCallbackRoute = (incomingUrl: string): string | null => {
       try {
         const parsed = new URL(incomingUrl);
@@ -171,37 +170,6 @@ function App() {
       }
     };
 
-    /** HTTPS Universal Links on dubhub.uk root path; never /auth-callback (browser-only). */
-    const toUniversalLinkDubhubRootRoute = (incomingUrl: string): string | null => {
-      try {
-        const parsed = new URL(incomingUrl);
-        if (parsed.protocol !== "https:") return null;
-        const host = parsed.hostname.toLowerCase();
-        if (!DUBHUB_UNIVERSAL_HOSTS.has(host)) return null;
-
-        const rawPath = parsed.pathname || "/";
-        const normPath = rawPath.length > 1 && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
-        if (normPath.toLowerCase() === "/auth-callback" || normPath.toLowerCase().startsWith("/auth-callback/")) {
-          return null;
-        }
-        if (normPath !== "/") return null;
-
-        const releaseId = parsed.searchParams.get("release");
-        if (releaseId != null && releaseId.trim() !== "") {
-          return `/releases/${encodeURIComponent(releaseId.trim())}`;
-        }
-
-        const postId = parsed.searchParams.get("post");
-        if (postId != null && postId.trim() !== "") {
-          return `/?post=${encodeURIComponent(postId.trim())}`;
-        }
-
-        return null;
-      } catch {
-        return null;
-      }
-    };
-
     const logAppUrlResolution = (source: "launch-url" | "app-url-open", incoming: string, route: string | null) => {
       console.log(`[dubhub] ${source}`, { incoming, route: route ?? null });
     };
@@ -209,7 +177,7 @@ function App() {
     const resolveIncomingUniversalAppUrl = (incomingUrl: string): string | null => {
       const authRoute = toAuthCallbackRoute(incomingUrl);
       if (authRoute) return authRoute;
-      return toUniversalLinkDubhubRootRoute(incomingUrl);
+      return resolveUniversalLinkDubhubRootRoute(incomingUrl);
     };
 
     const toWebFallbackAuthCallbackRoute = (): string | null => {

@@ -28,6 +28,7 @@ import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
+import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
@@ -2532,6 +2533,11 @@ export default function UserProfile() {
                   <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
                     {userData.joinedDateLine}
                   </p>
+                  {verifiedArtist && userType === "artist" && userData.username ? (
+                    <div className="mt-2">
+                      <ArtistProfileShareButton username={userData.username} variant="onDark" />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

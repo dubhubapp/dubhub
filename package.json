@@ -13,6 +13,7 @@
     "build:cap-debug": "VITE_CAP_DEBUG=1 vite build",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
+    "test": "tsx --test server/*.test.ts client/src/lib/*.test.ts",
     "db:push": "drizzle-kit push",
     "postinstall": "patch-package"
   },
