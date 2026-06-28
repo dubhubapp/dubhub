@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, MessageSquare, Moon, Settings as SettingsIcon, Volume2 } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, KeyRound, LogOut, MessageSquare, Moon, Settings as SettingsIcon, Volume2, MessageCircleQuestion } from "lucide-react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -40,9 +40,23 @@ const FEEDBACK_CATEGORIES = [
   { label: "Performance", value: "performance" },
   { label: "Notifications", value: "notifications" },
   { label: "Account / Verification", value: "account_verification" },
+  { label: "Submit a question for your favourite artist", value: "artist_question_suggestion" },
   { label: "Other", value: "other" },
 ] as const;
 type FeedbackCategoryValue = (typeof FEEDBACK_CATEGORIES)[number]["value"];
+
+const DEFAULT_FEEDBACK_PLACEHOLDER =
+  "Found a bug? Have an idea? Tell us what happened or what you'd love to see in dub hub.";
+
+const FEEDBACK_CATEGORY_COPY: Partial<
+  Record<FeedbackCategoryValue, { placeholder: string; helper?: string }>
+> = {
+  artist_question_suggestion: {
+    placeholder: "What would you ask your favourite artist?",
+    helper:
+      "Send us a question you'd love artists to answer on their profile. If it's good, we might add it to the question bank.",
+  },
+};
 type PushPrefField = keyof PushNotificationPreferencesPatch;
 
 function PushPrefSwitchRow({
@@ -532,6 +546,25 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               </div>
             </div>
 
+            {verifiedArtist ? (
+              <Button
+                variant="ghost"
+                type="button"
+                className="w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+                onClick={() => navigate("/settings/artist-questions")}
+                data-testid="button-artist-questions-settings"
+              >
+                <div className="flex items-center space-x-3 min-w-0">
+                  <MessageCircleQuestion className="w-5 h-5 text-gray-400 shrink-0" />
+                  <div className="min-w-0 text-left">
+                    <span className="text-sm block">Artist Questions</span>
+                    <span className="text-xs text-muted-foreground block">Manage your public answers</span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+              </Button>
+            ) : null}
+
             <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md">
               <div className="flex items-start gap-3">
                 <MessageSquare className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
@@ -560,6 +593,11 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   ))}
                 </SelectContent>
               </Select>
+              {FEEDBACK_CATEGORY_COPY[feedbackCategory]?.helper ? (
+                <p className="text-xs text-muted-foreground leading-relaxed" data-testid="feedback-category-helper">
+                  {FEEDBACK_CATEGORY_COPY[feedbackCategory]?.helper}
+                </p>
+              ) : null}
               <Textarea
                 value={feedbackBody}
                 onChange={(event) => {
@@ -567,7 +605,9 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   if (feedbackStatus) setFeedbackStatus(null);
                 }}
                 maxLength={INPUT_LIMITS.feedbackBody}
-                placeholder="Found a bug? Have an idea? Tell us what happened or what you'd love to see in dub hub."
+                placeholder={
+                  FEEDBACK_CATEGORY_COPY[feedbackCategory]?.placeholder ?? DEFAULT_FEEDBACK_PLACEHOLDER
+                }
                 className="min-h-[96px]"
                 data-testid="textarea-feedback"
               />

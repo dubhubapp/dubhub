@@ -5321,6 +5321,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notifications: "notifications",
         account_verification: "account_verification",
         "account / verification": "account_verification",
+        artist_question_suggestion: "artist_question_suggestion",
+        "submit a question for your favourite artist": "artist_question_suggestion",
         other: "other",
       };
       const category = categoryAliasToCanonical[normalizedCategoryInput];
@@ -5328,7 +5330,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const appVersion = rawAppVersion.trim() || "unknown";
       const rawPlatform = typeof req.body?.platform === "string" ? req.body.platform : "";
       const platform = rawPlatform.trim().toLowerCase();
-      const allowedCategories = new Set(["ux", "bug", "feature_request", "performance", "notifications", "account_verification", "other"]);
+      const allowedCategories = new Set([
+        "ux",
+        "bug",
+        "feature_request",
+        "performance",
+        "notifications",
+        "account_verification",
+        "artist_question_suggestion",
+        "other",
+      ]);
 
       if (!feedback) {
         return res.status(400).json({ message: "Feedback cannot be empty" });
