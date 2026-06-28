@@ -7,6 +7,13 @@ import { registerArtistProfileSharePreviewRoutes } from "./artistProfileSharePre
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { toPublicArtistProfileQuestionAnswers } from "@shared/artist-profile-questions";
+import {
+  buildArtistProfileQuestionsState,
+  requireVerifiedArtistAccount,
+  validateArtistProfileAnswerInput,
+  validateArtistProfileQuestionSlug,
+} from "./artistProfileQuestions";
 import { extractMentionUsernames } from "@shared/mentionParsing";
 import {
   MAX_CLIP_DURATION_SECONDS,
@@ -1623,11 +1630,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let publicReleases: { upcoming: any[]; released: any[] } | undefined;
       const isVerifiedArtistProfile = user.verified_artist === true && user.account_type === "artist";
+      let publicProfileQuestionAnswers: import("@shared/schema").PublicArtistProfileQuestionAnswer[] | undefined;
       if (isVerifiedArtistProfile) {
         try {
           publicReleases = await buildPublicReleasesPayload(user.id);
         } catch (releasesErr) {
           console.error("[/api/user/profile/:username] publicReleases:", releasesErr);
+        }
+        try {
+          const answerRecords = await storage.getArtistProfileQuestionAnswers(user.id);
+          const publicAnswers = toPublicArtistProfileQuestionAnswers(answerRecords);
+          if (publicAnswers.length > 0) {
+            publicProfileQuestionAnswers = publicAnswers;
+          }
+        } catch (answersErr) {
+          console.error("[/api/user/profile/:username] publicProfileQuestionAnswers:", answersErr);
         }
       }
 
@@ -1654,6 +1671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         karma: reputation,
         ...(publicLight !== undefined ? { publicLight } : {}),
         ...(publicReleases !== undefined ? { publicReleases } : {}),
+        ...(publicProfileQuestionAnswers !== undefined ? { publicProfileQuestionAnswers } : {}),
         ...(publicCommunityOverview !== undefined ? { publicCommunityOverview } : {}),
         ...(publicSavedReleases !== undefined ? { publicSavedReleases } : {}),
       };
@@ -2827,6 +2845,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/artists/me/release-alerts-audience] GET Error:", error);
       res.status(500).json({ message: "Failed to get release alerts audience" });
+    }
+  });
+
+  app.get("/api/artists/me/profile-questions", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const gate = requireVerifiedArtistAccount(req.dbUser);
+      if (!gate.ok) return res.status(gate.status).json({ message: gate.message });
+
+      const answers = await storage.getArtistProfileQuestionAnswers(req.dbUser!.id);
+      res.json(buildArtistProfileQuestionsState(answers));
+    } catch (error) {
+      console.error("[/api/artists/me/profile-questions] GET Error:", error);
+      res.status(500).json({ message: "Failed to get profile questions" });
+    }
+  });
+
+  app.put("/api/artists/me/profile-questions/:questionSlug", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const gate = requireVerifiedArtistAccount(req.dbUser);
+      if (!gate.ok) return res.status(gate.status).json({ message: gate.message });
+
+      const validated = validateArtistProfileAnswerInput(req.params.questionSlug, req.body?.answer);
+      if (!validated.ok) return res.status(validated.status).json({ message: validated.message });
+
+      const saved = await storage.upsertArtistProfileQuestionAnswer(
+        req.dbUser!.id,
+        validated.questionSlug,
+        validated.answer,
+      );
+      res.json(saved);
+    } catch (error) {
+      console.error("[/api/artists/me/profile-questions/:questionSlug] PUT Error:", error);
+      res.status(500).json({ message: "Failed to save answer" });
+    }
+  });
+
+  app.delete("/api/artists/me/profile-questions/:questionSlug", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const gate = requireVerifiedArtistAccount(req.dbUser);
+      if (!gate.ok) return res.status(gate.status).json({ message: gate.message });
+
+      const slugCheck = validateArtistProfileQuestionSlug(req.params.questionSlug);
+      if (!slugCheck.ok) {
+        return res.status(slugCheck.status).json({ message: slugCheck.message });
+      }
+
+      const deleted = await storage.deleteArtistProfileQuestionAnswer(req.dbUser!.id, slugCheck.questionSlug);
+      if (!deleted) {
+        return res.status(404).json({ message: "Answer not found" });
+      }
+      res.json({ deleted: true });
+    } catch (error) {
+      console.error("[/api/artists/me/profile-questions/:questionSlug] DELETE Error:", error);
+      res.status(500).json({ message: "Failed to delete answer" });
     }
   });
 

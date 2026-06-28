@@ -29,6 +29,7 @@ import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/sche
 import { deriveTrustLevel } from "@shared/trust-level";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
 import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
+import { ArtistProfileQuestionsManage } from "@/components/artist-profile-questions-manage";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
@@ -2740,6 +2741,10 @@ export default function UserProfile() {
               )}
             </div>
           </div>
+
+          {verifiedArtist && userType === "artist" ? (
+            <ArtistProfileQuestionsManage />
+          ) : null}
 
           {/* Settings */}
           <div>

@@ -206,6 +206,25 @@ export const artistReleaseAlerts = pgTable(
   }),
 );
 
+/** Verified artist Q&A — one answer per official question slug. Backend API only. */
+export const artistProfileQuestionAnswers = pgTable(
+  "artist_profile_question_answers",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    artistId: varchar("artist_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+    questionSlug: text("question_slug").notNull(),
+    answer: text("answer").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    artistQuestionUnique: unique("artist_profile_question_answers_artist_slug_unique").on(
+      table.artistId,
+      table.questionSlug,
+    ),
+  }),
+);
+
 // Notifications - actual database schema uses artist_id, triggered_by
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -408,6 +427,7 @@ export type ReleasePost = typeof releasePosts.$inferSelect;
 export type UserPushToken = typeof userPushTokens.$inferSelect;
 export type UserNotificationPreferences = typeof userNotificationPreferences.$inferSelect;
 export type PatchUserNotificationPreferences = z.infer<typeof patchUserNotificationPreferencesSchema>;
+export type ArtistProfileQuestionAnswer = typeof artistProfileQuestionAnswers.$inferSelect;
 export type Interaction = typeof interactions.$inferSelect;
 export type Achievement = typeof achievements.$inferSelect;
 
@@ -482,6 +502,14 @@ export type PublicCommunityOverviewStats = {
   releasesSaved: number;
   /** Own uploads artist-confirmed only. */
   artistIds: number;
+};
+
+/** Public verified-artist profile Q&A (newest first). */
+export type PublicArtistProfileQuestionAnswer = {
+  questionSlug: string;
+  question: string;
+  answer: string;
+  updatedAt: string;
 };
 
 // NotificationWithUser - updated to use Post instead of Track

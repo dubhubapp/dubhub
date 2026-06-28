@@ -237,6 +237,15 @@ export interface IStorage {
   enableArtistReleaseAlert(userId: string, artistId: string): Promise<{ created: boolean }>;
   disableArtistReleaseAlert(userId: string, artistId: string): Promise<void>;
   countArtistReleaseAlertsForArtist(artistId: string): Promise<number>;
+
+  // Artist profile Q&A
+  getArtistProfileQuestionAnswers(artistId: string): Promise<import("@shared/artist-profile-questions").ArtistProfileQuestionAnswerRecord[]>;
+  upsertArtistProfileQuestionAnswer(
+    artistId: string,
+    questionSlug: string,
+    answer: string,
+  ): Promise<import("@shared/artist-profile-questions").ArtistProfileQuestionAnswerRecord>;
+  deleteArtistProfileQuestionAnswer(artistId: string, questionSlug: string): Promise<boolean>;
 }
 
 /** API-facing push preference shape (defaults when no DB row). */
@@ -2040,6 +2049,67 @@ export class DatabaseStorage implements IStorage {
       `);
     } catch (error) {
       console.error("[disableArtistReleaseAlert] Error:", error);
+      throw error;
+    }
+  }
+
+  async getArtistProfileQuestionAnswers(
+    artistId: string,
+  ): Promise<import("@shared/artist-profile-questions").ArtistProfileQuestionAnswerRecord[]> {
+    if (!artistId) return [];
+    try {
+      const result = await db.execute(sql`
+        SELECT question_slug, answer, created_at, updated_at
+        FROM artist_profile_question_answers
+        WHERE artist_id = ${artistId}
+        ORDER BY updated_at DESC
+      `);
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => ({
+        questionSlug: String(row.question_slug),
+        answer: String(row.answer),
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+      }));
+    } catch (error) {
+      console.error("[getArtistProfileQuestionAnswers] Error:", error);
+      return [];
+    }
+  }
+
+  async upsertArtistProfileQuestionAnswer(
+    artistId: string,
+    questionSlug: string,
+    answer: string,
+  ): Promise<import("@shared/artist-profile-questions").ArtistProfileQuestionAnswerRecord> {
+    const result = await db.execute(sql`
+      INSERT INTO artist_profile_question_answers (artist_id, question_slug, answer, created_at, updated_at)
+      VALUES (${artistId}, ${questionSlug}, ${answer}, NOW(), NOW())
+      ON CONFLICT (artist_id, question_slug)
+      DO UPDATE SET answer = EXCLUDED.answer, updated_at = NOW()
+      RETURNING question_slug, answer, created_at, updated_at
+    `);
+    const row = (result as any).rows?.[0];
+    if (!row) throw new Error("Failed to save artist profile question answer");
+    return {
+      questionSlug: String(row.question_slug),
+      answer: String(row.answer),
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    };
+  }
+
+  async deleteArtistProfileQuestionAnswer(artistId: string, questionSlug: string): Promise<boolean> {
+    if (!artistId || !questionSlug) return false;
+    try {
+      const result = await db.execute(sql`
+        DELETE FROM artist_profile_question_answers
+        WHERE artist_id = ${artistId} AND question_slug = ${questionSlug}
+        RETURNING id
+      `);
+      return ((result as any).rows || []).length > 0;
+    } catch (error) {
+      console.error("[deleteArtistProfileQuestionAnswer] Error:", error);
       throw error;
     }
   }

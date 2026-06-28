@@ -27,6 +27,8 @@ import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-naviga
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { ArtistReleaseAlertsButton } from "@/components/artist-release-alerts-button";
 import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
+import { ArtistProfileQuestionsPublic } from "@/components/artist-profile-questions-public";
+import type { PublicArtistProfileQuestionAnswer } from "@shared/schema";
 
 type PublicReleasesResponse = {
   upcoming: ReleaseFeedCardData[];
@@ -49,6 +51,7 @@ type PublicProfileResponse = {
   publicReleases?: PublicReleasesResponse;
   publicCommunityOverview?: PublicCommunityOverviewStats;
   publicSavedReleases?: PublicReleasesResponse;
+  publicProfileQuestionAnswers?: PublicArtistProfileQuestionAnswer[];
 };
 
 const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
@@ -722,6 +725,16 @@ export default function PublicProfile() {
                 )}
               </section>
             )}
+
+            {isVerifiedArtist &&
+            profile.publicProfileQuestionAnswers &&
+            profile.publicProfileQuestionAnswers.length > 0 &&
+            profile.username ? (
+              <ArtistProfileQuestionsPublic
+                answers={profile.publicProfileQuestionAnswers}
+                username={profile.username}
+              />
+            ) : null}
             </div>
           </div>
         </div>

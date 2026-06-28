@@ -14,6 +14,8 @@ export const INPUT_LIMITS = {
   releaseTitle: 100,
   /** Settings feedback text */
   feedbackBody: 1000,
+  /** Verified artist profile Q&A answer */
+  artistProfileAnswer: 280,
 } as const;
 
 export type InputLimitKey = keyof typeof INPUT_LIMITS;
