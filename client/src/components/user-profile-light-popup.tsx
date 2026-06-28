@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import { stashProfileReturnReopenComments, markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
+import {
+  normalizePublicProfileResponse,
+  publicProfileQueryKey,
+  type PublicProfileResponse,
+} from "@/lib/public-profile-query";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
@@ -15,6 +20,7 @@ import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { playInteractionLight } from "@/lib/haptic";
+import { prefetchArtistReleaseAlertStatus } from "@/components/artist-release-alerts-button";
 
 /** Slightly snappier than before so the shell reads as instant after tap. */
 const POPUP_OPEN_MS = 110;
@@ -136,7 +142,8 @@ type ProfilePopupUser = {
 
 export function useUserProfileLightPopup(options?: LightPopupOptions) {
   const [, navigate] = useLocation();
-  const { username: viewerUsername } = useUser();
+  const queryClient = useQueryClient();
+  const { username: viewerUsername, currentUser, isAuthenticated } = useUser();
   const [selectedUser, setSelectedUser] = useState<ProfilePopupUser | null>(null);
   const [showUserPopup, setShowUserPopup] = useState(false);
   const [popupAnchor, setPopupAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -182,6 +189,23 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
           merged.profileImage = merged.profileImage ?? artist.profileImage ?? artist.avatar_url ?? null;
         }
 
+        const cacheUsername = (merged.username ?? trimmed).trim();
+        queryClient.setQueryData(
+          publicProfileQueryKey(cacheUsername),
+          normalizePublicProfileResponse(userData as PublicProfileResponse),
+        );
+
+        const artistId = userData.id?.trim();
+        if (
+          isAuthenticated &&
+          currentUser?.id &&
+          artistId &&
+          userData.verified_artist === true &&
+          currentUser.id !== artistId
+        ) {
+          prefetchArtistReleaseAlertStatus(queryClient, artistId);
+        }
+
         setSelectedUser(merged);
       } catch (error) {
         console.error("Failed to fetch user:", error);
@@ -207,7 +231,7 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
         );
       }
     },
-    [verifiedArtists],
+    [queryClient, verifiedArtists, isAuthenticated, currentUser?.id],
   );
 
   const closePopup = useCallback(() => setShowUserPopup(false), []);

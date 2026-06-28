@@ -36,14 +36,23 @@ export function groupReleasedReleasesByYear(releases: ReleaseFeedCardData[]): Di
   }));
 }
 
+/** First visible row(s) in the 2-column grid — eager load, bounded bandwidth. */
+const DISCOGRAPHY_EAGER_ARTWORK_TILE_LIMIT = 4;
+/** Top row artwork gets higher fetch priority within the eager set. */
+const DISCOGRAPHY_HIGH_PRIORITY_ARTWORK_TILE_LIMIT = 2;
+
+type DiscographyArtworkLoadPriority = "high" | "eager" | "lazy";
+
 function PublicArtistDiscographyTile({
   release,
   onOpen,
   showSavedAtLabels,
+  artworkLoadPriority,
 }: {
   release: ReleaseFeedCardData;
   onOpen: () => void;
   showSavedAtLabels?: boolean;
+  artworkLoadPriority: DiscographyArtworkLoadPriority;
 }) {
   const { title, artworkUrl } = normalizeReleaseCardFields(release);
   const displayTitle = title || "Untitled release";
@@ -65,7 +74,8 @@ function PublicArtistDiscographyTile({
             src={artworkUrl}
             alt=""
             className="h-full w-full object-cover"
-            loading="lazy"
+            loading={artworkLoadPriority === "lazy" ? "lazy" : "eager"}
+            fetchPriority={artworkLoadPriority === "high" ? "high" : undefined}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-black/30">
@@ -114,6 +124,15 @@ export function PublicArtistDiscography({
   showSavedAtLabels,
 }: PublicArtistDiscographyProps) {
   const yearGroups = groupReleasedReleasesByYear(released);
+  let artworkTileIndex = 0;
+
+  const artworkLoadPriorityForNextTile = (): DiscographyArtworkLoadPriority => {
+    const index = artworkTileIndex;
+    artworkTileIndex += 1;
+    if (index < DISCOGRAPHY_HIGH_PRIORITY_ARTWORK_TILE_LIMIT) return "high";
+    if (index < DISCOGRAPHY_EAGER_ARTWORK_TILE_LIMIT) return "eager";
+    return "lazy";
+  };
 
   return (
     <div className="space-y-5" data-testid="public-artist-discography">
@@ -129,6 +148,7 @@ export function PublicArtistDiscography({
                 release={release}
                 onOpen={() => onOpen(release)}
                 showSavedAtLabels={showSavedAtLabels}
+                artworkLoadPriority={artworkLoadPriorityForNextTile()}
               />
             ))}
           </DiscographyGrid>
@@ -147,6 +167,7 @@ export function PublicArtistDiscography({
                 release={release}
                 onOpen={() => onOpen(release)}
                 showSavedAtLabels={showSavedAtLabels}
+                artworkLoadPriority={artworkLoadPriorityForNextTile()}
               />
             ))}
           </DiscographyGrid>

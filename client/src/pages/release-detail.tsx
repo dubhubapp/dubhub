@@ -32,8 +32,8 @@ import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
 import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
-import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { ReleaseDetailSkeleton } from "@/components/release-detail-skeleton";
 import {
   fetchReleaseById,
   findReleaseInFeedCaches,
@@ -256,14 +256,6 @@ export default function ReleaseDetail() {
     navigate(releasesBackUrl);
   };
 
-  if (isPending && !release) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <VinylLoader />
-      </div>
-    );
-  }
-
   if (!isPending && !isFetching && (error || !release)) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4">
@@ -276,11 +268,7 @@ export default function ReleaseDetail() {
   }
 
   if (!release) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <VinylLoader />
-      </div>
-    );
+    return <ReleaseDetailSkeleton onBack={handleBack} />;
   }
 
   const releaseData = release;

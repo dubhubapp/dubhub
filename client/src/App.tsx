@@ -33,6 +33,7 @@ import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
 import Leaderboard from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
+import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
 import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
 import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
@@ -753,6 +754,7 @@ function App() {
               <Route path="/leaderboard" component={Leaderboard} />
               <Route path="/profile/:username" component={PublicProfile} />
               <Route path="/profile" component={UserProfile} />
+              <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
               <Route path="/settings" component={SettingsWithSignOut} />
               <Route path="/moderator" component={ModeratorPage} />
               <Route component={NotFound} />

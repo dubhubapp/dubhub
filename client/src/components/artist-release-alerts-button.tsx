@@ -1,10 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Bell, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 
-type ArtistReleaseAlertResponse = {
+const RELEASE_ALERTS_BUTTON_CLASS =
+  "inline-flex min-h-[1.625rem] w-full items-center justify-center gap-1 rounded px-2.5 py-1 text-[10px] font-semibold leading-none ring-1 backdrop-blur-md transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]";
+
+export type ArtistReleaseAlertResponse = {
   enabled: boolean;
 };
 
@@ -17,6 +20,23 @@ export function artistReleaseAlertQueryKey(artistId: string) {
   return ["/api/artists", artistId, "release-alert"] as const;
 }
 
+export async function fetchArtistReleaseAlertStatus(artistId: string): Promise<ArtistReleaseAlertResponse> {
+  const res = await apiRequest("GET", `/api/artists/${encodeURIComponent(artistId)}/release-alert`);
+  if (!res.ok) {
+    throw new Error("Failed to load release alert status");
+  }
+  return res.json();
+}
+
+export function prefetchArtistReleaseAlertStatus(queryClient: QueryClient, artistId: string): void {
+  const trimmedArtistId = artistId.trim();
+  if (!trimmedArtistId) return;
+  void queryClient.prefetchQuery({
+    queryKey: artistReleaseAlertQueryKey(trimmedArtistId),
+    queryFn: () => fetchArtistReleaseAlertStatus(trimmedArtistId),
+  });
+}
+
 export function ArtistReleaseAlertsButton({ artistId, className }: ArtistReleaseAlertsButtonProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -25,13 +45,7 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
     queryKey: artistReleaseAlertQueryKey(artistId),
     enabled: Boolean(artistId),
     retry: false,
-    queryFn: async () => {
-      const res = await apiRequest("GET", `/api/artists/${encodeURIComponent(artistId)}/release-alert`);
-      if (!res.ok) {
-        throw new Error("Failed to load release alert status");
-      }
-      return res.json();
-    },
+    queryFn: () => fetchArtistReleaseAlertStatus(artistId),
   });
 
   const setEnabled = (enabled: boolean) => {
@@ -116,19 +130,39 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
     return null;
   }
 
+  if (isLoading) {
+    return (
+      <div
+        className={cn(
+          RELEASE_ALERTS_BUTTON_CLASS,
+          "pointer-events-none border border-white/15 bg-black/40 ring-white/20",
+          className,
+        )}
+        aria-busy="true"
+        aria-label="Loading release alerts"
+        data-testid="button-artist-release-alerts"
+      >
+        <span
+          className="h-2.5 w-[min(100%,9.75rem)] max-w-full animate-pulse rounded-sm bg-white/14"
+          aria-hidden
+        />
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       className={cn(
-        "ios-press inline-flex min-h-[1.625rem] w-full items-center justify-center gap-1 rounded px-2.5 py-1 text-[10px] font-semibold leading-none ring-1 backdrop-blur-md transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]",
+        RELEASE_ALERTS_BUTTON_CLASS,
         enabled
-          ? "border border-green-500/40 bg-green-500/[0.06] text-white ring-green-500/35 hover:bg-green-500/[0.1]"
-          : "border border-white/15 bg-black/40 text-white/90 ring-white/20 hover:bg-black/50",
-        (isLoading || pending) && "pointer-events-none opacity-70",
+          ? "ios-press border border-green-500/40 bg-green-500/[0.06] text-white ring-green-500/35 hover:bg-green-500/[0.1]"
+          : "ios-press border border-white/15 bg-black/40 text-white/90 ring-white/20 hover:bg-black/50",
+        pending && "pointer-events-none opacity-70",
         className,
       )}
       onClick={handleClick}
-      disabled={isLoading || pending}
+      disabled={pending}
       aria-pressed={enabled}
       data-testid="button-artist-release-alerts"
     >

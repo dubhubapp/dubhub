@@ -29,8 +29,8 @@ import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/sche
 import { deriveTrustLevel } from "@shared/trust-level";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
 import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
-import { ArtistProfileQuestionsManage } from "@/components/artist-profile-questions-manage";
-import { getGenreChipStyle } from "@/lib/genre-styles";
+import { ArtistProfileQuestionsPrompt } from "@/components/artist-profile-questions-prompt";
+import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
@@ -218,6 +218,10 @@ function getGenreChipColors(genre: string) {
 
 const PROFILE_ACTIVITY_CARD_CLASS =
   "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
+
+/** Matches public profile fav-genre pill footprint. */
+const OWNER_PROFILE_GENRE_VALUE_PILL_CLASS =
+  "inline-flex min-h-[1.625rem] w-full max-w-[5.5rem] items-center justify-center rounded px-2 py-1 text-[10px] font-semibold leading-none ring-1 ring-white/15";
 
 /** Banner key-stat row placeholder — matches `PublicProfileKeyStatsSkeleton` layout (5 columns). */
 function ProfileKeyStatsSkeleton() {
@@ -643,6 +647,7 @@ export default function UserProfile() {
   const [isExportingCroppedBanner, setIsExportingCroppedBanner] = useState(false);
   const [bannerImageReady, setBannerImageReady] = useState(false);
   const [bannerImageFailed, setBannerImageFailed] = useState(false);
+  const [isBannerMenuOpen, setIsBannerMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
   const likesViewerRef = useRef<HTMLDivElement | null>(null);
@@ -933,6 +938,10 @@ export default function UserProfile() {
     return deriveTrustLevel(Number.isFinite(s) ? s : 0);
   }, [userReputation?.reputation]);
 
+  const ownerArtistGenrePillStyle = repBarGenreChip
+    ? (getGenreGlowPillStyle(repBarGenreChip.bgColor, repBarGenreChip.textClass) as CSSProperties)
+    : null;
+
   const hasAnyArtistImpact =
     !!artistStats &&
     (
@@ -1125,8 +1134,9 @@ export default function UserProfile() {
     };
   }, [bannerUrl]);
 
-  const showBannerDefaultGradient = !bannerUrl || bannerImageFailed || !bannerImageReady;
-  const showUploadedBannerImage = Boolean(bannerUrl) && !bannerImageFailed;
+  const hasProfileBanner = Boolean(bannerUrl?.trim());
+  const showBannerDefaultGradient = !hasProfileBanner || bannerImageFailed || !bannerImageReady;
+  const showUploadedBannerImage = hasProfileBanner && !bannerImageFailed;
 
   const profileImageMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -1239,6 +1249,7 @@ export default function UserProfile() {
     },
     onSuccess: (data) => {
       updateProfileBanner(data.url);
+      setIsBannerMenuOpen(false);
       toast({
         title: "Banner Updated",
         description: "Your profile banner has been updated successfully.",
@@ -1286,6 +1297,7 @@ export default function UserProfile() {
     },
     onSuccess: () => {
       updateProfileBanner(null);
+      setIsBannerMenuOpen(false);
       toast({
         title: "Banner Removed",
         description: "Your profile banner has been removed.",
@@ -1306,7 +1318,10 @@ export default function UserProfile() {
   };
 
   const handleBannerImagePick = () => {
-    bannerFileInputRef.current?.click();
+    setIsBannerMenuOpen(false);
+    requestAnimationFrame(() => {
+      bannerFileInputRef.current?.click();
+    });
   };
 
   const markNotificationAsReadMutation = useMutation({
@@ -2122,6 +2137,7 @@ export default function UserProfile() {
       setBannerCrop({ x: 0, y: 0 });
       setBannerZoom(1);
       setBannerCroppedAreaPixels(null);
+      setIsBannerMenuOpen(false);
       setIsBannerCropDialogOpen(true);
     }
     event.target.value = "";
@@ -2430,7 +2446,7 @@ export default function UserProfile() {
               aria-hidden
             />
 
-            <DropdownMenu>
+            <DropdownMenu open={isBannerMenuOpen} onOpenChange={setIsBannerMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -2441,7 +2457,11 @@ export default function UserProfile() {
                   <ImageIcon className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[10rem]">
+              <DropdownMenuContent
+                align="end"
+                className="min-w-[10rem]"
+                key={hasProfileBanner ? "profile-banner-set" : "profile-banner-empty"}
+              >
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
@@ -2449,12 +2469,13 @@ export default function UserProfile() {
                   }}
                   data-testid="menu-change-profile-banner"
                 >
-                  Change banner
+                  {hasProfileBanner ? "Change banner" : "Add banner"}
                 </DropdownMenuItem>
-                {bannerUrl ? (
+                {hasProfileBanner ? (
                   <DropdownMenuItem
                     onSelect={(e) => {
                       e.preventDefault();
+                      setIsBannerMenuOpen(false);
                       removeProfileBannerMutation.mutate();
                     }}
                     disabled={removeProfileBannerMutation.isPending}
@@ -2495,25 +2516,27 @@ export default function UserProfile() {
                       <Camera className="w-4 h-4 text-black" />
                     </button>
                   </div>
-                  {/* Rep tier badge under avatar */}
-                  {reputationLoading ? (
-                    <DubHubSkeletonBar
-                      tone="faint"
-                      className="h-6 w-[5.5rem] rounded-full"
-                      aria-hidden
-                      data-testid="profile-rep-badge-skeleton"
-                    />
-                  ) : (
-                    <div
-                      className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2.5 py-1 backdrop-blur-sm"
-                      data-testid="profile-rep-badge"
-                    >
-                      <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
-                      <span className="text-xs font-semibold text-accent">
-                        {repTrustForProfile.displayName}
-                      </span>
-                    </div>
-                  )}
+                  {/* Rep tier badge under avatar — community owners only; artists use fav genre in actions row */}
+                  {!(verifiedArtist && userType === "artist") ? (
+                    reputationLoading ? (
+                      <DubHubSkeletonBar
+                        tone="faint"
+                        className="h-6 w-[5.5rem] rounded-full"
+                        aria-hidden
+                        data-testid="profile-rep-badge-skeleton"
+                      />
+                    ) : (
+                      <div
+                        className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2.5 py-1 backdrop-blur-sm"
+                        data-testid="profile-rep-badge"
+                      >
+                        <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
+                        <span className="text-xs font-semibold text-accent">
+                          {repTrustForProfile.displayName}
+                        </span>
+                      </div>
+                    )
+                  ) : null}
                 </div>
                 <div className="min-w-0 flex-1 pt-1">
                   <div className="flex items-center gap-1.5">
@@ -2534,13 +2557,35 @@ export default function UserProfile() {
                   <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
                     {userData.joinedDateLine}
                   </p>
-                  {verifiedArtist && userType === "artist" && userData.username ? (
-                    <div className="mt-2">
-                      <ArtistProfileShareButton username={userData.username} variant="onDark" />
-                    </div>
-                  ) : null}
                 </div>
               </div>
+
+              {verifiedArtist && userType === "artist" && userData.username ? (
+                <div
+                  className="mb-4 flex items-end gap-2"
+                  data-testid="artist-profile-actions"
+                >
+                  {repBarGenreChip && ownerArtistGenrePillStyle ? (
+                    <div
+                      className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
+                      data-testid="owner-profile-fav-genre"
+                    >
+                      <span className="text-[10px] font-medium leading-none text-white/60">Fav genre</span>
+                      <span
+                        className={OWNER_PROFILE_GENRE_VALUE_PILL_CLASS}
+                        style={ownerArtistGenrePillStyle}
+                      >
+                        <span className="truncate">{repBarGenreChip.label}</span>
+                      </span>
+                    </div>
+                  ) : null}
+                  <ArtistProfileShareButton
+                    username={userData.username}
+                    variant="onDark"
+                    shareLabel="Share Profile"
+                  />
+                </div>
+              ) : null}
 
               {profileOverviewStatsLoading ? (
                 <ProfileKeyStatsSkeleton />
@@ -2694,6 +2739,10 @@ export default function UserProfile() {
                           Your impact stats will grow as tracks are confirmed and clips get linked to your releases.
                         </p>
                       ) : null}
+                      <p className="mt-4 text-[11px] leading-relaxed text-gray-500">
+                        Only you can see your Artist Impact. Other artists and community members can&apos;t view
+                        these stats.
+                      </p>
                     </>
                   ) : (
                     <ProfileCommunityActivitySection
@@ -2742,8 +2791,11 @@ export default function UserProfile() {
             </div>
           </div>
 
-          {verifiedArtist && userType === "artist" ? (
-            <ArtistProfileQuestionsManage />
+          {verifiedArtist && userType === "artist" && currentUser?.id ? (
+            <ArtistProfileQuestionsPrompt
+              artistId={currentUser.id}
+              profileTabActive={activeTab === "profile"}
+            />
           ) : null}
 
           {/* Settings */}

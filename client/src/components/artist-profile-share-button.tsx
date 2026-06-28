@@ -8,12 +8,15 @@ type ArtistProfileShareButtonProps = {
   className?: string;
   /** Banner header on public/own profile — matches Release Alerts contrast. */
   variant?: "onDark" | "muted";
+  /** Defaults to "Share"; pass "Share Profile" for owner artist header actions. */
+  shareLabel?: string;
 };
 
 export function ArtistProfileShareButton({
   username,
   className,
   variant = "muted",
+  shareLabel = "Share",
 }: ArtistProfileShareButtonProps) {
   const { toast } = useToast();
 
@@ -44,11 +47,18 @@ export function ArtistProfileShareButton({
         className,
       )}
       onClick={() => void handleShare()}
-      aria-label="Share artist profile"
+      aria-label={shareLabel === "Share" ? "Share artist profile" : shareLabel}
       data-testid="button-share-artist-profile"
     >
       <Send className="h-3 w-3 shrink-0" aria-hidden />
-      <span className="hidden min-[380px]:inline whitespace-nowrap">Share</span>
+      <span
+        className={cn(
+          "whitespace-nowrap",
+          shareLabel !== "Share" ? "inline" : "hidden min-[380px]:inline",
+        )}
+      >
+        {shareLabel}
+      </span>
     </button>
   );
 }

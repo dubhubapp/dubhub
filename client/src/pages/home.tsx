@@ -35,6 +35,7 @@ import {
 import { feedPageRowItems, flattenInfiniteQueryFeedPages } from "@/lib/feed-infinite-pages";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import { HomeFeedInitialSkeleton } from "@/components/home-feed-initial-skeleton";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import {
   HINT_COMMENTS_CLOSED_EVENT,
@@ -2964,11 +2965,7 @@ export default function Home() {
   }
 
   if (isInitialFeedLoad) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-background pt-[env(safe-area-inset-top,0px)]">
-        <VinylLoader label="Loading posts..." />
-      </div>
-    );
+    return <HomeFeedInitialSkeleton />;
   }
 
   if (isError) {

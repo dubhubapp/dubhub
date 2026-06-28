@@ -14,7 +14,6 @@ import { formatJoinedDateLine } from "@/lib/joined-date";
 import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
-import type { PublicCommunityOverviewStats, PublicLightProfileStats } from "@shared/schema";
 import { consumePublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
 import {
@@ -28,31 +27,12 @@ import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-
 import { ArtistReleaseAlertsButton } from "@/components/artist-release-alerts-button";
 import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
 import { ArtistProfileQuestionsPublic } from "@/components/artist-profile-questions-public";
-import type { PublicArtistProfileQuestionAnswer } from "@shared/schema";
-
-type PublicReleasesResponse = {
-  upcoming: ReleaseFeedCardData[];
-  released: ReleaseFeedCardData[];
-};
-
-type PublicProfileResponse = {
-  id?: string;
-  username?: string;
-  avatar_url?: string | null;
-  banner_url?: string | null;
-  account_type?: string;
-  verified_artist?: boolean;
-  moderator?: boolean;
-  created_at?: string;
-  reputation?: number;
-  correct_ids?: number;
-  karma?: number;
-  publicLight?: PublicLightProfileStats;
-  publicReleases?: PublicReleasesResponse;
-  publicCommunityOverview?: PublicCommunityOverviewStats;
-  publicSavedReleases?: PublicReleasesResponse;
-  publicProfileQuestionAnswers?: PublicArtistProfileQuestionAnswer[];
-};
+import {
+  normalizePublicProfileResponse,
+  publicProfileQueryKey,
+  type PublicProfileResponse,
+  type PublicReleasesResponse,
+} from "@/lib/public-profile-query";
 
 const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
   background: `linear-gradient(to bottom, rgba(15,19,36,0) 0%, rgba(15,19,36,0.65) 45%, rgba(15,19,36,0.92) 72%, var(--dark) 86%, var(--dark) 100%)`,
@@ -72,36 +52,6 @@ const PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS =
 
 /** Equal vertical rhythm: stats → rep → releases */
 const PUBLIC_PROFILE_SECTION_GAP_CLASS = "flex flex-col gap-5";
-
-function normalizePublicProfileResponse(data: PublicProfileResponse): PublicProfileResponse {
-  const overview = data.publicCommunityOverview
-    ? {
-        accuracyPercent: Math.max(0, Math.min(100, Number(data.publicCommunityOverview.accuracyPercent ?? 0))),
-        releasesSaved: Number(data.publicCommunityOverview.releasesSaved ?? 0),
-        artistIds: Number(data.publicCommunityOverview.artistIds ?? 0),
-      }
-    : undefined;
-
-  const light = data.publicLight;
-  if (!light) {
-    return overview ? { ...data, publicCommunityOverview: overview } : data;
-  }
-  return {
-    ...data,
-    publicCommunityOverview: overview,
-    publicLight: {
-      ...light,
-      posts: Number(light.posts ?? 0),
-      correct_ids: Number(light.correct_ids ?? data.correct_ids ?? 0),
-      reputation: Number(light.reputation ?? data.reputation ?? data.karma ?? 0),
-      likesOnPosts: Number(light.likesOnPosts ?? 0),
-      commentsOnPosts: Number(light.commentsOnPosts ?? 0),
-      likesGiven: Number(light.likesGiven ?? 0),
-      commentsWritten: Number(light.commentsWritten ?? 0),
-      topGenreKey: light.topGenreKey ?? null,
-    },
-  };
-}
 
 function PublicArtistIdsStatIcon({ className }: { className?: string }) {
   return (
@@ -274,7 +224,7 @@ export default function PublicProfile() {
   }, [routeUsername, routeNormalized, viewerNormalized, navigate]);
 
   const { data: profile, isLoading, isError } = useQuery<PublicProfileResponse>({
-    queryKey: ["/api/user/profile", routeUsername],
+    queryKey: publicProfileQueryKey(routeUsername),
     enabled: routeUsername.length > 0 && routeNormalized !== viewerNormalized,
     retry: false,
     staleTime: 0,
