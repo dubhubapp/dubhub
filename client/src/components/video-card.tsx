@@ -76,6 +76,20 @@ const HOLD_2X_DELAY_MS = 400;
 const HOLD_2X_MOVE_CANCEL_PX = 22;
 /** If vertical movement dominates and exceeds this (px), treat as feed scroll — cancel 2× (no preventDefault on touch). */
 const HOLD_2X_SCROLL_CANCEL_DY_PX = 14;
+/** Home double-tap like: max ms between taps; also delays single-tap play/pause until window closes. */
+const DOUBLE_TAP_INTERVAL_MS = 260;
+/** Home double-tap like: max finger movement (px) between taps — cancels double-tap and restarts single-tap. */
+const DOUBLE_TAP_MOVE_MAX_PX = 14;
+/** Centre-heart burst lifetime (matches tailwind `double-tap-heart-pop`). */
+const DOUBLE_TAP_HEART_MS = 640;
+/** Selectors for controls that must not trigger video tap / double-tap like. */
+const VIDEO_AREA_INTERACTIVE_SELECTOR =
+  "button, a, input, textarea, select, label, [role='button'], [role='slider'], [data-video-action-rail], [data-feed-2x-hold-zone], [data-radix-popper-content-wrapper], [data-release-preview-card]";
+
+function isVideoAreaInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(VIDEO_AREA_INTERACTIVE_SELECTOR);
+}
 const ARTIST_SELF_TAG_HINT_DISMISSED_EVENT = "dubhub:hint:artist-self-tag-dismissed";
 
 /** Lucide-aligned post metadata icons: same box, stroke 2 @ 24px, `currentColor`. */
@@ -245,6 +259,8 @@ interface VideoCardProps {
   decoderPrewarm?: boolean;
   /** Home feed: bumped after foreground return / session restore to retry play() when still paused. */
   playbackRecoveryEpoch?: number;
+  /** Home feed only: Instagram-style double-tap to like on the video area (single-tap play/pause unchanged in spirit). */
+  enableDoubleTapLike?: boolean;
 }
 
 function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolean {
@@ -289,7 +305,8 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     prev.clipViewerOverlay === next.clipViewerOverlay &&
     prev.galleryMetadataExpand === next.galleryMetadataExpand &&
     prev.decoderPrewarm === next.decoderPrewarm &&
-    prev.playbackRecoveryEpoch === next.playbackRecoveryEpoch
+    prev.playbackRecoveryEpoch === next.playbackRecoveryEpoch &&
+    prev.enableDoubleTapLike === next.enableDoubleTapLike
   );
 }
 
@@ -320,6 +337,7 @@ function VideoCardInner({
   galleryMetadataExpand = false,
   decoderPrewarm = false,
   playbackRecoveryEpoch,
+  enableDoubleTapLike = false,
 }: VideoCardProps) {
   const [, navigate] = useLocation();
   const releasePreview = (post as any).releasePreview as {
@@ -496,6 +514,15 @@ function VideoCardInner({
   const [likeSaveNoteBurstKey, setLikeSaveNoteBurstKey] = useState<number | null>(null);
   const likeSaveNoteBurstTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  /** Home double-tap like: pending single-tap play/pause timer and last tap sample. */
+  const videoSingleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoLastTapRef = useRef<{ time: number; clientX: number; clientY: number } | null>(null);
+  const doubleTapHeartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [doubleTapHeartBurst, setDoubleTapHeartBurst] = useState<{
+    key: number;
+    x: number;
+    y: number;
+  } | null>(null);
   /** Blocks the next video tap-to-pause after report menu dismiss (outside tap bleeds through). */
   const suppressVideoToggleUntilRef = useRef(0);
   const hasPlayedArtistSelfTagHintAppearRef = useRef(false);
@@ -1839,6 +1866,38 @@ function VideoCardInner({
     sendLikeToggleIfNeeded();
   };
 
+  const clearVideoSingleTapTimer = useCallback(() => {
+    if (videoSingleTapTimerRef.current != null) {
+      clearTimeout(videoSingleTapTimerRef.current);
+      videoSingleTapTimerRef.current = null;
+    }
+  }, []);
+
+  const toggleVideoPlayPause = useCallback(() => {
+    if (Date.now() < suppressVideoToggleUntilRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      void video.play();
+      setIsPlaying(true);
+    } else {
+      video.pause();
+      setIsPlaying(false);
+    }
+  }, []);
+
+  const showDoubleTapHeartBurst = useCallback((x: number, y: number) => {
+    const key = Date.now();
+    setDoubleTapHeartBurst({ key, x, y });
+    if (doubleTapHeartTimerRef.current != null) {
+      clearTimeout(doubleTapHeartTimerRef.current);
+    }
+    doubleTapHeartTimerRef.current = setTimeout(() => {
+      setDoubleTapHeartBurst(null);
+      doubleTapHeartTimerRef.current = null;
+    }, DOUBLE_TAP_HEART_MS);
+  }, []);
+
   const tryTriggerLikeSaveNoteBurst = useCallback(() => {
     if (!releasePreview) return;
     if (likeSaveNoteBurstTimerRef.current != null) return;
@@ -1849,6 +1908,90 @@ function VideoCardInner({
       likeSaveNoteBurstTimerRef.current = null;
     }, LIKE_SAVE_NOTE_BURST_MS);
   }, [releasePreview]);
+
+  const handleLikePress = useCallback(() => {
+    const nextLiked = !desiredLikedRef.current;
+    playInteractionLight();
+    if (nextLiked && releasePreview) {
+      tryTriggerLikeSaveNoteBurst();
+    }
+    applyOptimisticLikeIntent(nextLiked);
+  }, [releasePreview, tryTriggerLikeSaveNoteBurst]);
+
+  const handleDoubleTapLike = useCallback(
+    (stageX: number, stageY: number) => {
+      const alreadyLiked = desiredLikedRef.current;
+      showDoubleTapHeartBurst(stageX, stageY);
+      if (!alreadyLiked) {
+        playInteractionLight();
+        if (releasePreview) {
+          tryTriggerLikeSaveNoteBurst();
+        }
+        applyOptimisticLikeIntent(true);
+      }
+    },
+    [releasePreview, showDoubleTapHeartBurst, tryTriggerLikeSaveNoteBurst],
+  );
+
+  const onVideoStagePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!enableDoubleTapLike || !isActiveRef.current) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (isVideoAreaInteractiveTarget(e.target)) return;
+      if (scrubbingRef.current) return;
+      if (Date.now() < suppressVideoToggleUntilRef.current) return;
+
+      const stage = videoStageRef.current;
+      if (!stage) return;
+
+      const now = Date.now();
+      const last = videoLastTapRef.current;
+
+      if (
+        last &&
+        now - last.time <= DOUBLE_TAP_INTERVAL_MS &&
+        Math.hypot(e.clientX - last.clientX, e.clientY - last.clientY) <= DOUBLE_TAP_MOVE_MAX_PX
+      ) {
+        clearVideoSingleTapTimer();
+        videoLastTapRef.current = null;
+        suppressVideoToggleUntilRef.current = now + 450;
+        const rect = stage.getBoundingClientRect();
+        const stageX = (e.clientX + last.clientX) / 2 - rect.left;
+        const stageY = (e.clientY + last.clientY) / 2 - rect.top;
+        handleDoubleTapLike(stageX, stageY);
+        return;
+      }
+
+      if (last && now - last.time <= DOUBLE_TAP_INTERVAL_MS) {
+        clearVideoSingleTapTimer();
+      }
+
+      videoLastTapRef.current = { time: now, clientX: e.clientX, clientY: e.clientY };
+      clearVideoSingleTapTimer();
+      videoSingleTapTimerRef.current = setTimeout(() => {
+        videoSingleTapTimerRef.current = null;
+        videoLastTapRef.current = null;
+        toggleVideoPlayPause();
+      }, DOUBLE_TAP_INTERVAL_MS);
+    },
+    [clearVideoSingleTapTimer, enableDoubleTapLike, handleDoubleTapLike, toggleVideoPlayPause],
+  );
+
+  useEffect(() => {
+    if (isActive) return;
+    clearVideoSingleTapTimer();
+    videoLastTapRef.current = null;
+  }, [clearVideoSingleTapTimer, isActive]);
+
+  useEffect(() => {
+    return () => {
+      clearVideoSingleTapTimer();
+      if (doubleTapHeartTimerRef.current != null) {
+        clearTimeout(doubleTapHeartTimerRef.current);
+        doubleTapHeartTimerRef.current = null;
+      }
+    };
+  }, [clearVideoSingleTapTimer]);
 
   useEffect(() => {
     return () => {
@@ -2283,6 +2426,7 @@ function VideoCardInner({
           homeFeedPosterFallback ? "bg-zinc-950" : "bg-black"
         }`}
         data-container-bg-class={homeFeedPosterFallback ? "bg-zinc-950" : "bg-black"}
+        onPointerUp={enableDoubleTapLike ? onVideoStagePointerUp : undefined}
       >
         {displayPosterUrl ? (
           <img
@@ -2350,21 +2494,28 @@ function VideoCardInner({
           }}
           onClick={(e) => {
             e.preventDefault();
+            if (enableDoubleTapLike) {
+              return;
+            }
             if (Date.now() < suppressVideoToggleUntilRef.current) {
               return;
             }
-            const video = videoRef.current;
-            if (video) {
-              if (video.paused) {
-                video.play();
-                setIsPlaying(true);
-              } else {
-                video.pause();
-                setIsPlaying(false);
-              }
-            }
+            toggleVideoPlayPause();
           }}
         />
+        {doubleTapHeartBurst ? (
+          <div
+            key={doubleTapHeartBurst.key}
+            className="pointer-events-none absolute z-[14] -translate-x-1/2 -translate-y-1/2"
+            style={{ left: doubleTapHeartBurst.x, top: doubleTapHeartBurst.y }}
+            aria-hidden
+          >
+            <Heart
+              className="h-[4.5rem] w-[4.5rem] fill-red-500 text-red-500 drop-shadow-[0_2px_16px_rgba(0,0,0,0.45)] motion-safe:animate-double-tap-heart-pop motion-reduce:opacity-90"
+              strokeWidth={1.5}
+            />
+          </div>
+        ) : null}
         {overlayVisible ? (
           <div
             data-overlay-visible-node="1"
@@ -2609,14 +2760,7 @@ function VideoCardInner({
                 <button
                   type="button"
                   className={railBtn}
-                  onClick={() => {
-                    const nextLiked = !desiredLikedRef.current;
-                    playInteractionLight();
-                    if (nextLiked && releasePreview) {
-                      tryTriggerLikeSaveNoteBurst();
-                    }
-                    applyOptimisticLikeIntent(nextLiked);
-                  }}
+                  onClick={handleLikePress}
                 >
                   <div className={railIconWrap}>
                     <Heart className={`h-7 w-7 ${hasLiked ? "fill-red-500 text-red-500" : "text-white"}`} />

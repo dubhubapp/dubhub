@@ -29,6 +29,7 @@ import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/sche
 import { deriveTrustLevel } from "@shared/trust-level";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
 import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
+import { ImageLightbox } from "@/components/image-lightbox";
 import { ArtistProfileQuestionsPrompt } from "@/components/artist-profile-questions-prompt";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
@@ -632,6 +633,7 @@ export default function UserProfile() {
   const [profileViewerMuted, setProfileViewerMuted] = useState(true);
   const toggleProfileViewerMute = useCallback(() => setProfileViewerMuted((m) => !m), []);
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+  const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
   const [pendingAvatarFileName, setPendingAvatarFileName] = useState<string | null>(null);
   const [pendingAvatarSrc, setPendingAvatarSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -2273,6 +2275,13 @@ export default function UserProfile() {
     joinedDateLine: formatJoinedDateLine(currentUser?.memberSince),
   };
   const isDefaultProfileAvatar = isDefaultAvatarUrl(userData.profileImage);
+  const canExpandProfileAvatar = Boolean(userData.profileImage && !isDefaultProfileAvatar);
+  const profileAvatarImgClassName = `avatar-media w-20 h-20 rounded-full border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
+    verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+  }`;
+  const profileAvatarLightboxAlt = userData.username
+    ? `Profile photo for ${formatUsernameDisplay(userData.username)}`
+    : "Profile photo";
 
   const progressPercentage = (userData.currentXP / userData.nextLevelXP) * 100;
 
@@ -2492,13 +2501,28 @@ export default function UserProfile() {
                 <div className="flex shrink-0 flex-col items-center gap-2">
                   <div className="relative">
                     {userData.profileImage ? (
-                      <img
-                        src={userData.profileImage}
-                        alt="Profile"
-                        className={`avatar-media w-20 h-20 rounded-full border-2 ${isDefaultProfileAvatar ? "avatar-default-media" : ""} ${
-                          verifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                        }`}
-                      />
+                      canExpandProfileAvatar ? (
+                        <button
+                          type="button"
+                          className="ios-press block overflow-hidden rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          onClick={() => setAvatarLightboxOpen(true)}
+                          aria-label={`View ${profileAvatarLightboxAlt}`}
+                          data-testid="button-own-profile-avatar"
+                        >
+                          <img
+                            src={userData.profileImage}
+                            alt="Profile"
+                            className={profileAvatarImgClassName}
+                            draggable={false}
+                          />
+                        </button>
+                      ) : (
+                        <img
+                          src={userData.profileImage}
+                          alt="Profile"
+                          className={profileAvatarImgClassName}
+                        />
+                      )
                     ) : (
                       <div
                         className={`avatar-shell w-20 h-20 border-2 ${
@@ -3357,6 +3381,16 @@ export default function UserProfile() {
             accept="image/*"
             style={{ display: "none" }}
           />
+          {canExpandProfileAvatar && userData.profileImage ? (
+            <ImageLightbox
+              open={avatarLightboxOpen}
+              onOpenChange={setAvatarLightboxOpen}
+              imageUrl={userData.profileImage}
+              imageAlt={profileAvatarLightboxAlt}
+              closeAriaLabel="Close profile photo viewer"
+              closeTestId="button-close-own-profile-avatar-lightbox"
+            />
+          ) : null}
         </div>
       </div>
     </div>

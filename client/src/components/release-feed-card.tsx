@@ -2,7 +2,7 @@ import { ExternalLink, Music } from "lucide-react";
 import { ReleaseStatusPill } from "@/components/release-status-pill";
 import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
-import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
+import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ export type ReleaseFeedCardData = {
   artworkUrl: string | null;
   artistUsername: string;
   isComingSoon?: boolean;
-  links?: { id: string; platform: string; url: string }[];
+  links?: { id: string; platform: string; url: string; linkType?: string | null }[];
   collaborators?: { username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   /** Earliest like timestamp when saved via attached-post like (public community profiles only). */
@@ -147,11 +147,13 @@ export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCa
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded bg-muted p-1 text-xs hover:bg-muted/80"
-                title={getPlatformLabel(link.platform)}
+                title={getLinkCtaLabel(link.platform, upcoming, link.linkType)}
                 onClick={(e) => e.stopPropagation()}
               >
                 <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                <span className="max-w-[10rem] truncate">{getLinkCtaLabel(link.platform, upcoming)}</span>
+                <span className="max-w-[12rem] truncate">
+                  {getLinkCtaLabel(link.platform, upcoming, link.linkType)}
+                </span>
                 <ExternalLink className="h-3 w-3" />
               </a>
             ))}

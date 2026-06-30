@@ -3051,6 +3051,7 @@ export default function Home() {
               shouldLoadVideo={true}
               videoPreload="auto"
               homeFeedPosterFallback
+              enableDoubleTapLike
               onToggleMute={toggleFeedMute}
               feedOverlayCollapsed={isFeedOverlayCollapsed}
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
@@ -3258,6 +3259,7 @@ export default function Home() {
                 activePostId !== post.id
               }
               homeFeedPosterFallback
+              enableDoubleTapLike
               onToggleMute={toggleFeedMute}
               feedOverlayCollapsed={isFeedOverlayCollapsed}
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}

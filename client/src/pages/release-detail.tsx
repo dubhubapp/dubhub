@@ -26,7 +26,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "./release-tracker";
 import { sanitizeReleaseText } from "@/lib/release-display";
-import { getPlatformLabel, sortLinksByPlatform } from "@/lib/platforms";
+import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
@@ -47,6 +47,7 @@ import { ReleaseAttachedPostsGallery } from "@/components/release-attached-posts
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
 import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { ReleaseDetailArtistByline } from "@/components/release-detail-artist-byline";
+import { ReleaseArtworkLightbox } from "@/components/release-artwork-lightbox";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
 import { shareRelease } from "@/lib/release-share";
 
@@ -160,6 +161,7 @@ export default function ReleaseDetail() {
   const [removeSavedDialogOpen, setRemoveSavedDialogOpen] = useState(false);
   const [releaseMenuOpen, setReleaseMenuOpen] = useState(false);
   const [galleryInitialPostId, setGalleryInitialPostId] = useState<string | null>(null);
+  const [artworkLightboxOpen, setArtworkLightboxOpen] = useState(false);
 
   const removeSavedMutation = useMutation({
     mutationFn: async () => {
@@ -306,7 +308,7 @@ export default function ReleaseDetail() {
 
   return (
     <SwipeBackPage
-      enabled={!galleryInitialPostId}
+      enabled={!galleryInitialPostId && !artworkLightboxOpen}
       onBack={handleBack}
       className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
     >
@@ -380,7 +382,20 @@ export default function ReleaseDetail() {
         <div className="mb-6 flex min-w-0 gap-4 overflow-hidden">
           <div className="w-32 h-32 rounded-xl bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
             {releaseData.artworkUrl ? (
-              <img src={releaseData.artworkUrl} alt="" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                className="ios-press h-full w-full overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                onClick={() => setArtworkLightboxOpen(true)}
+                aria-label={`View artwork for ${sanitizeReleaseText(releaseData.title) || "release"}`}
+                data-testid="button-release-detail-artwork"
+              >
+                <img
+                  src={releaseData.artworkUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                />
+              </button>
             ) : (
               <span className="text-4xl text-muted-foreground">🎵</span>
             )}
@@ -428,7 +443,6 @@ export default function ReleaseDetail() {
 
         {releaseData.links && releaseData.links.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Links</h2>
             <div className="flex min-w-0 flex-wrap gap-2">
               {sortLinksByPlatform((releaseData.links as ReleaseLink[]) || []).map((link) => (
                 <a
@@ -439,8 +453,9 @@ export default function ReleaseDetail() {
                   className="ios-press ios-press-soft inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-sm hover:bg-muted/80"
                 >
                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                  <span className="truncate">{getPlatformLabel(link.platform)}</span>
-                  <span className="truncate text-primary">{getLinkCtaLabel(link.platform, upcoming)}</span>
+                  <span className="truncate text-primary">
+                    {getLinkCtaLabel(link.platform, upcoming, link.linkType)}
+                  </span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               ))}
@@ -540,6 +555,15 @@ export default function ReleaseDetail() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      {releaseData.artworkUrl ? (
+        <ReleaseArtworkLightbox
+          open={artworkLightboxOpen}
+          onOpenChange={setArtworkLightboxOpen}
+          artworkUrl={releaseData.artworkUrl}
+          title={sanitizeReleaseText(releaseData.title)}
+        />
+      ) : null}
 
       {galleryInitialPostId && hasFullDetail && releaseData.attachedClips?.length ? (
         <ReleaseAttachedPostsGallery

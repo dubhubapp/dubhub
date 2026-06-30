@@ -128,7 +128,11 @@ export function getPlatformIcon(platform: string): string {
 /** True if platform uses asset URL (render img), false if emoji (render span) */
 export function isPlatformAssetUrl(platform: string): boolean {
   const icon = getPlatformIcon(platform);
-  return icon.startsWith("/") || icon.startsWith("http");
+  return (
+    icon.startsWith("/") ||
+    icon.startsWith("http") ||
+    icon.startsWith("data:image/")
+  );
 }
 
 export const PLATFORM_OPTIONS = PLATFORM_LIST.map((value) => ({

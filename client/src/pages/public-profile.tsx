@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { ArrowLeft, Check, Heart, MessageCircle, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { ImageLightbox } from "@/components/image-lightbox";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { GoldVerifiedTick } from "@/components/verified-artist";
 import { apiRequest } from "@/lib/queryClient";
@@ -203,6 +204,7 @@ export default function PublicProfile() {
   const [playEnterAnimation, setPlayEnterAnimation] = useState(() => consumePublicProfileEnterAnimation());
   const [bannerImageReady, setBannerImageReady] = useState(false);
   const [bannerImageFailed, setBannerImageFailed] = useState(false);
+  const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
 
   const routeUsername = useMemo(() => {
     const raw = params?.username ?? "";
@@ -406,6 +408,13 @@ export default function PublicProfile() {
     profile.account_type ?? (isVerifiedArtist ? "artist" : "user"),
   );
   const avatarIsDefault = avatarSrc ? isDefaultAvatarUrl(avatarSrc) : false;
+  const canExpandAvatar = Boolean(avatarSrc && !avatarIsDefault);
+  const avatarImgClassName = `avatar-media h-20 w-20 rounded-full border-2 ${
+    avatarIsDefault ? "avatar-default-media" : ""
+  } ${isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"}`;
+  const avatarLightboxAlt = profile.username
+    ? `Profile photo for ${formatUsernameDisplay(profile.username)}`
+    : "Profile photo";
   const joinedDateLine = formatJoinedDateLine(profile.created_at);
 
   const upcomingReleases = publicReleases?.upcoming ?? [];
@@ -434,7 +443,7 @@ export default function PublicProfile() {
   const showArtistProfileActions = isShareableVerifiedArtist || showArtistReleaseAlerts;
 
   return (
-    <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage enabled={!avatarLightboxOpen} onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
       <div
         className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS, enterMotionClass)}
         onAnimationEnd={() => setPlayEnterAnimation(false)}
@@ -491,13 +500,19 @@ export default function PublicProfile() {
                   <div className="flex shrink-0 flex-col items-center gap-2">
                     <div className="relative">
                       {avatarSrc ? (
-                        <img
-                          src={avatarSrc}
-                          alt=""
-                          className={`avatar-media h-20 w-20 rounded-full border-2 ${
-                            avatarIsDefault ? "avatar-default-media" : ""
-                          } ${isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"}`}
-                        />
+                        canExpandAvatar ? (
+                          <button
+                            type="button"
+                            className="ios-press block overflow-hidden rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            onClick={() => setAvatarLightboxOpen(true)}
+                            aria-label={`View ${avatarLightboxAlt}`}
+                            data-testid="button-public-profile-avatar"
+                          >
+                            <img src={avatarSrc} alt="" className={avatarImgClassName} draggable={false} />
+                          </button>
+                        ) : (
+                          <img src={avatarSrc} alt="" className={avatarImgClassName} />
+                        )
                       ) : (
                         <div
                           className={`avatar-shell h-20 w-20 border-2 ${
@@ -688,6 +703,16 @@ export default function PublicProfile() {
             </div>
           </div>
         </div>
+      {canExpandAvatar && avatarSrc ? (
+        <ImageLightbox
+          open={avatarLightboxOpen}
+          onOpenChange={setAvatarLightboxOpen}
+          imageUrl={avatarSrc}
+          imageAlt={avatarLightboxAlt}
+          closeAriaLabel="Close profile photo viewer"
+          closeTestId="button-close-profile-avatar-lightbox"
+        />
+      ) : null}
     </SwipeBackPage>
   );
 }

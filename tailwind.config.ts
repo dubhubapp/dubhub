@@ -228,6 +228,13 @@ export default {
           "48%": { opacity: "1", transform: "translate(6px, -16px) scale(0.96)" },
           "100%": { opacity: "0", transform: "translate(12px, -40px) scale(0.65)" },
         },
+        /** Home double-tap like: brief centre-heart pop (transform/opacity only). */
+        "double-tap-heart-pop": {
+          "0%": { opacity: "0", transform: "scale(0.35)" },
+          "18%": { opacity: "1", transform: "scale(1.12)" },
+          "42%": { opacity: "1", transform: "scale(0.96)" },
+          "100%": { opacity: "0", transform: "scale(1.08)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -248,6 +255,7 @@ export default {
         "like-save-note-rise-a": "like-save-note-rise-a 0.92s cubic-bezier(0.22, 1, 0.36, 1) both",
         "like-save-note-rise-b": "like-save-note-rise-b 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both",
         "like-save-note-rise-c": "like-save-note-rise-c 0.98s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both",
+        "double-tap-heart-pop": "double-tap-heart-pop 0.62s cubic-bezier(0.22, 1, 0.36, 1) both",
       },
     },
   },
