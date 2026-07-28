@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey, unique, date } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, primaryKey, unique, date, uuid, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { INPUT_LIMITS } from "./input-limits";
@@ -179,6 +179,58 @@ export const DEFAULT_USER_NOTIFICATION_PREFERENCES = Object.freeze({
   releaseUpdatesPush: true,
   devicePushAlerts: true,
 });
+
+/**
+ * Backend-owned current subscription snapshot.
+ * Step 3 stores only the latest trusted RevenueCat/local facts per user+environment.
+ * Derived lifecycle/access remains in server code.
+ */
+export const artistSubscriptionSnapshots = pgTable(
+  "artist_subscription_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => profiles.id as any, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerEnvironment: text("provider_environment").notNull(),
+    providerAppUserId: text("provider_app_user_id").notNull(),
+    entitlementIdentifier: text("entitlement_identifier").notNull(),
+    productIdentifier: text("product_identifier"),
+    store: text("store"),
+    ownershipType: text("ownership_type"),
+    storeSubscriptionIdentifier: text("store_subscription_identifier"),
+    isEntitlementActive: boolean("is_entitlement_active").notNull().default(false),
+    willRenew: boolean("will_renew"),
+    hasBillingIssue: boolean("has_billing_issue").notNull().default(false),
+    isInGracePeriod: boolean("is_in_grace_period").notNull().default(false),
+    isRefunded: boolean("is_refunded").notNull().default(false),
+    isRevoked: boolean("is_revoked").notNull().default(false),
+    unsubscribeDetected: boolean("unsubscribe_detected").notNull().default(false),
+    originalPurchasedAt: timestamp("original_purchased_at", { withTimezone: true }),
+    latestPurchasedAt: timestamp("latest_purchased_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    providerEventAt: timestamp("provider_event_at", { withTimezone: true }),
+    lastWebhookAt: timestamp("last_webhook_at", { withTimezone: true }),
+    lastRestReconciledAt: timestamp("last_rest_reconciled_at", { withTimezone: true }),
+    lastSuccessfulVerificationAt: timestamp("last_successful_verification_at", { withTimezone: true }),
+    staleAfterAt: timestamp("stale_after_at", { withTimezone: true }),
+    rawProviderPayload: jsonb("raw_provider_payload"),
+    overrideType: text("override_type"),
+    overrideStartsAt: timestamp("override_starts_at", { withTimezone: true }),
+    overrideEndsAt: timestamp("override_ends_at", { withTimezone: true }),
+    overrideReason: text("override_reason"),
+    overrideActor: text("override_actor"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userProviderEnvironmentUnique: unique(
+      "artist_subscription_snapshots_user_provider_env_unique",
+    ).on(table.userId, table.provider, table.providerEnvironment),
+    providerLookupIdx: index(
+      "artist_subscription_snapshots_provider_app_user_env_idx",
+    ).on(table.provider, table.providerAppUserId, table.providerEnvironment),
+  }),
+);
 
 export const patchUserNotificationPreferencesSchema = z
   .object({
@@ -427,6 +479,7 @@ export type ReleasePost = typeof releasePosts.$inferSelect;
 export type UserPushToken = typeof userPushTokens.$inferSelect;
 export type UserNotificationPreferences = typeof userNotificationPreferences.$inferSelect;
 export type PatchUserNotificationPreferences = z.infer<typeof patchUserNotificationPreferencesSchema>;
+export type ArtistSubscriptionSnapshot = typeof artistSubscriptionSnapshots.$inferSelect;
 export type ArtistProfileQuestionAnswer = typeof artistProfileQuestionAnswers.$inferSelect;
 export type Interaction = typeof interactions.$inferSelect;
 export type Achievement = typeof achievements.$inferSelect;

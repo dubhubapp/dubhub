@@ -50,6 +50,7 @@ import path from "path";
 import fs from "fs";
 import { getPlatformTrendMetrics } from "./internalAnalytics";
 import { sendPushToUser } from "./push/pushSend";
+import { registerSubscriptionStatusRoutes } from "./subscription-status-routes";
 import {
   buildCompressOnlyArgs,
   extractPostThumbnail,
@@ -701,6 +702,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPostSharePreviewRoutes(app);
   registerReleaseSharePreviewRoutes(app);
   registerArtistProfileSharePreviewRoutes(app);
+  registerSubscriptionStatusRoutes(app);
   // Serve video files from processed directory
   app.use('/videos', express.static(path.join(process.cwd(), 'processed')));
   app.use('/images', express.static(path.join(process.cwd(), 'processed')));
