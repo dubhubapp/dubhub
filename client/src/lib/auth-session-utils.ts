@@ -1,4 +1,5 @@
 import { queryClient } from "./queryClient";
+import { quarantineRevenueCatIdentity } from "./revenuecat-identity";
 import { supabase } from "./supabaseClient";
 
 /** Set by auth callback after email verification; AuthPage shows a one-shot banner. */
@@ -94,6 +95,7 @@ export function clearDubhubAuthLocalMarkers(): void {
 export async function hardResetLocalAuthState(options?: {
   clearSessionStorage?: boolean;
 }): Promise<void> {
+  quarantineRevenueCatIdentity("hard_reset_local_auth");
   try {
     await supabase.auth.signOut();
   } catch {

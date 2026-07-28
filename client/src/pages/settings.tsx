@@ -30,6 +30,11 @@ import {
   requestPushPermissionAndRegister,
   unregisterPushAndDeactivate,
 } from "@/lib/push-notifications";
+import {
+  getRevenueCatIdentityDebugSnapshot,
+  revenueCatIdentityDiagnosticsEnabled,
+  type RevenueCatIdentityDebugSnapshot,
+} from "@/lib/revenuecat-identity";
 
 const THEME_TRANSITION_CLASS = "theme-transitioning";
 const THEME_TRANSITION_MS = 180;
@@ -135,6 +140,10 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [feedbackStatus, setFeedbackStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackAppVersion, setFeedbackAppVersion] = useState("unknown");
+  const [rcIdentitySnapshot, setRcIdentitySnapshot] = useState<RevenueCatIdentityDebugSnapshot | null>(
+    null,
+  );
+  const showRcIdentityDiagnostics = revenueCatIdentityDiagnosticsEnabled();
   useIosKeyboardResizeNone(true);
 
   useEffect(() => {
@@ -213,6 +222,19 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!showRcIdentityDiagnostics) {
+      setRcIdentitySnapshot(null);
+      return;
+    }
+    const refresh = () => {
+      setRcIdentitySnapshot(getRevenueCatIdentityDebugSnapshot());
+    };
+    refresh();
+    const id = window.setInterval(refresh, 1500);
+    return () => window.clearInterval(id);
+  }, [showRcIdentityDiagnostics, isAuthenticated]);
 
   const applyPushPrefPatch = async (patch: PushNotificationPreferencesPatch): Promise<boolean> => {
     const patchKey = Object.keys(patch)[0] as PushPrefField | undefined;
@@ -689,6 +711,34 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </Button>
+
+            {showRcIdentityDiagnostics && rcIdentitySnapshot && (
+              <div
+                className="w-full rounded-xl border border-amber-400/30 bg-amber-950/30 p-4 space-y-1.5 text-xs font-mono text-amber-100/90"
+                data-testid="revenuecat-identity-diagnostics"
+              >
+                <p className="text-sm font-sans font-medium text-amber-100 mb-2">
+                  RevenueCat identity (dev)
+                </p>
+                <p>platform: {rcIdentitySnapshot.platform}</p>
+                <p>isNative: {String(rcIdentitySnapshot.isNative)}</p>
+                <p>configuredOnce: {String(rcIdentitySnapshot.configuredOnce)}</p>
+                <p>configureCount: {rcIdentitySnapshot.configureCount}</p>
+                <p>loginCount: {rcIdentitySnapshot.loginCount}</p>
+                <p>quarantined: {String(rcIdentitySnapshot.quarantined)}</p>
+                <p>generation: {rcIdentitySnapshot.identityGeneration}</p>
+                <p>lastTransition: {rcIdentitySnapshot.lastTransition}</p>
+                <p>supabaseUserId: {rcIdentitySnapshot.supabaseUserId ?? "null"}</p>
+                <p>revenueCatAppUserId: {rcIdentitySnapshot.revenueCatAppUserId ?? "null"}</p>
+                <p>idsMatch: {String(rcIdentitySnapshot.idsMatch)}</p>
+                <p>isAnonymousId: {String(rcIdentitySnapshot.isAnonymousId)}</p>
+                <p>customerInfoOk: {String(rcIdentitySnapshot.customerInfoOk)}</p>
+                <p>customerInfoError: {rcIdentitySnapshot.customerInfoError ?? "null"}</p>
+                <p>activeEntitlementCount: {rcIdentitySnapshot.activeEntitlementCount}</p>
+                <p>publicApiKeyPresent: {String(rcIdentitySnapshot.publicApiKeyPresent)}</p>
+                <p>purchaseApisEnabled: {String(rcIdentitySnapshot.purchaseApisEnabled)}</p>
+              </div>
+            )}
 
             <Button
               variant="ghost"

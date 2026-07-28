@@ -71,6 +71,7 @@ import {
   isSessionUserStillActive,
   shouldDeferSignOutForAuthCallback,
 } from "@/lib/auth-session-utils";
+import { quarantineRevenueCatIdentity } from "@/lib/revenuecat-identity";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -533,6 +534,7 @@ function App() {
           });
       } else if (event === 'SIGNED_OUT') {
         resetSilentPushRegistrationSession();
+        quarantineRevenueCatIdentity("supabase_signed_out");
         setIsAuthenticated(false);
         setUserRole('user');
         setIsHomeFeedReady(false);
@@ -595,6 +597,8 @@ function App() {
     // Best-effort: deactivate current push token for this user.
     void deactivateCurrentPushToken();
     resetSilentPushRegistrationSession();
+    // Step 2: clear RC CustomerInfo from app state immediately; do not call Purchases.logOut().
+    quarantineRevenueCatIdentity("app_sign_out");
 
     const {
       data: { session },

@@ -9,6 +9,7 @@ import {
   resetSilentPushRegistrationSession,
   syncPushTokenIfPermissionGranted,
 } from "@/lib/push-notifications";
+import { ensureRevenueCatIdentified } from "@/lib/revenuecat-identity";
 
 interface SupabaseProfile {
   id: string;
@@ -179,6 +180,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading || !isAuthenticated || !currentUser?.id) return;
     void syncPushTokenIfPermissionGranted(currentUser.id);
+  }, [isLoading, isAuthenticated, currentUser?.id]);
+
+  // Step 2: RevenueCat identity proof — configure/logIn only after known Supabase UUID.
+  useEffect(() => {
+    if (isLoading || !isAuthenticated || !currentUser?.id) return;
+    void ensureRevenueCatIdentified(currentUser.id);
   }, [isLoading, isAuthenticated, currentUser?.id]);
 
   // Warm browser cache for profile banner before the user opens Profile.
