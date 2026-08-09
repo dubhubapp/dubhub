@@ -85,6 +85,24 @@ export function playSuccessNotification(): void {
   }
 }
 
+/** Warning notification — pending / needs-attention outcomes. Native-only; silent if unavailable. */
+export function playWarningNotification(): void {
+  try {
+    void Haptics.notification({ type: NotificationType.Warning }).catch(() => {});
+  } catch {
+    /* unavailable */
+  }
+}
+
+/** Error notification — actionable store/restore failures. Native-only; silent if unavailable. */
+export function playErrorNotification(): void {
+  try {
+    void Haptics.notification({ type: NotificationType.Error }).catch(() => {});
+  } catch {
+    /* unavailable */
+  }
+}
+
 /** Theme / appearance toggle: crisp, light (same as other light impacts). */
 export function playThemeToggleHaptic(): void {
   playInteractionLight();

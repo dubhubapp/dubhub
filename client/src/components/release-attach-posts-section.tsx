@@ -11,6 +11,11 @@ import { apiRequest } from "@/lib/queryClient";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
 import type { PostWithUser } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import {
+  ATTACHMENT_LIMIT_CARD_COPY,
+  resolveAttachmentLimitCardCopy,
+} from "@/lib/release-attachment-limit";
+import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
 
 export type EligiblePostForAttach = {
   id: string;
@@ -62,6 +67,16 @@ type ReleaseAttachPostsSectionProps = {
   lockedNotice?: string;
   isToggleDisabled?: (postId: string) => boolean;
   detachAllDisabled?: boolean;
+  /** When set, free artists cannot select beyond this many posts (null = unlimited). */
+  maxSelectable?: number | null;
+  /**
+   * Server (edit) or selection (create) attachment usage for limit card copy.
+   * `used` must not be clamped to `limit` — over-limit displays as e.g. "4 of 3".
+   */
+  attachmentUsage?: { used: number; limit: number } | null;
+  attachmentLimitNotice?: string | null;
+  onUpgradeClick?: () => void;
+  showUpgradeCta?: boolean;
 };
 
 export function ReleaseAttachPostsSection({
@@ -75,6 +90,11 @@ export function ReleaseAttachPostsSection({
   lockedNotice,
   isToggleDisabled,
   detachAllDisabled = false,
+  maxSelectable = null,
+  attachmentUsage = null,
+  attachmentLimitNotice = null,
+  onUpgradeClick,
+  showUpgradeCta = false,
 }: ReleaseAttachPostsSectionProps) {
   const queryClient = useQueryClient();
   const [galleryInitialPostId, setGalleryInitialPostId] = useState<string | null>(null);
@@ -109,19 +129,46 @@ export function ReleaseAttachPostsSection({
   );
 
   const selectedSet = useMemo(() => new Set(selectedPostIds), [selectedPostIds]);
+  const atFreeLimit =
+    typeof maxSelectable === "number" && selectedPostIds.length >= maxSelectable;
+
+  const limitCardCopy = useMemo(() => {
+    if (!attachmentUsage) return null;
+    return resolveAttachmentLimitCardCopy(attachmentUsage);
+  }, [attachmentUsage]);
+
+  const showLimitTitle =
+    !!limitCardCopy &&
+    (atFreeLimit ||
+      (attachmentUsage != null && attachmentUsage.used >= attachmentUsage.limit));
+
+  const limitCardBody =
+    showLimitTitle && limitCardCopy
+      ? limitCardCopy.body
+      : (attachmentLimitNotice ?? ATTACHMENT_LIMIT_CARD_COPY.body);
 
   const togglePost = useCallback(
     (postId: string) => {
       if (isToggleDisabled?.(postId)) return;
-      onSelectedPostIdsChange((prev) =>
-        prev.includes(postId) ? prev.filter((id) => id !== postId) : [...prev, postId],
-      );
+      onSelectedPostIdsChange((prev) => {
+        if (prev.includes(postId)) return prev.filter((id) => id !== postId);
+        if (typeof maxSelectable === "number" && prev.length >= maxSelectable) {
+          return prev;
+        }
+        return [...prev, postId];
+      });
     },
-    [isToggleDisabled, onSelectedPostIdsChange],
+    [isToggleDisabled, maxSelectable, onSelectedPostIdsChange],
   );
 
   const handleDetachAll = () => {
     onSelectedPostIdsChange([]);
+  };
+
+  const selectionDisabledFor = (postId: string) => {
+    if (isToggleDisabled?.(postId)) return true;
+    if (!selectedSet.has(postId) && atFreeLimit) return true;
+    return false;
   };
 
   return (
@@ -132,6 +179,45 @@ export function ReleaseAttachPostsSection({
       ) : null}
       <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">{ATTACH_POSTS_WARNING_COPY}</p>
       <p className="text-xs text-muted-foreground mb-2">{helperText}</p>
+
+      {attachmentLimitNotice || showUpgradeCta ? (
+        <div
+          className="mb-3 rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] space-y-1.5"
+          data-testid="release-attachment-limit-notice"
+          role="status"
+        >
+          {showLimitTitle && limitCardCopy ? (
+            <p
+              className="text-sm font-semibold text-foreground"
+              data-testid="release-attachment-limit-title"
+            >
+              {limitCardCopy.title}
+            </p>
+          ) : null}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {limitCardBody}
+          </p>
+          {showUpgradeCta && onUpgradeClick ? (
+            <div className="pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-white/15 bg-black/20"
+                onClick={onUpgradeClick}
+                data-testid="release-attachment-upgrade"
+              >
+                {ATTACHMENT_LIMIT_CARD_COPY.ctaLabel}
+              </Button>
+              {!isVerifiedArtistToolsPaywallEnabled() ? (
+                <p className="mt-1 text-[10px] text-muted-foreground/80">
+                  {ATTACHMENT_LIMIT_CARD_COPY.ctaHint}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="relative mb-3">
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -159,7 +245,7 @@ export function ReleaseAttachPostsSection({
             const clip = clipById.get(post.id);
             if (!clip) return null;
             const isSelected = selectedSet.has(post.id);
-            const selectionDisabled = isToggleDisabled?.(post.id);
+            const selectionDisabled = selectionDisabledFor(post.id);
             return (
               <ReleaseAttachedClipCard
                 key={post.id}
@@ -175,7 +261,10 @@ export function ReleaseAttachPostsSection({
       )}
 
       <div className="flex items-center gap-2 mt-3">
-        <span className="text-sm text-muted-foreground">Selected ({selectedPostIds.length})</span>
+        <span className="text-sm text-muted-foreground">
+          Selected ({selectedPostIds.length}
+          {typeof maxSelectable === "number" ? ` / ${maxSelectable}` : ""})
+        </span>
         <Button
           size="sm"
           type="button"
@@ -196,7 +285,7 @@ export function ReleaseAttachPostsSection({
           selection={{
             selectedPostIds,
             onTogglePost: togglePost,
-            isToggleDisabled,
+            isToggleDisabled: selectionDisabledFor,
           }}
         />
       ) : null}

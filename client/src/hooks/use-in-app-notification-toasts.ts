@@ -7,7 +7,11 @@ import {
   isModeratorQueueNotification,
   type NotificationType,
 } from "@shared/notification-types";
-import { ARTIST_IDENTIFIED_POST_MESSAGE } from "@shared/notification-messages";
+import {
+  COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
+  TRACK_ID_CONFIRMED_TITLE,
+  TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
+} from "@shared/notification-messages";
 import { apiRequest } from "@/lib/queryClient";
 import {
   isNotificationVisibleByUserPreferences,
@@ -29,6 +33,12 @@ import {
 } from "@/lib/in-app-notification-banner-icons";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { invalidateArtistReleaseAlertsAudience } from "@/lib/artist-release-alerts-cache";
+import { resolveAvatarUrlForProfile } from "@/lib/default-avatar";
+import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
+import {
+  formatReleaseAlertEnabledArtistCopy,
+  resolveViewerReleaseAlertDeliveryEnabled,
+} from "@/lib/release-alert-enabled-artist-copy";
 
 const AUTO_DISMISS_MS = 5000;
 const SUMMARY_THRESHOLD = 3;
@@ -38,6 +48,8 @@ const TOASTABLE_TYPES = new Set<NotificationType>([
   "comment_on_post",
   "artist_tag_comment",
   "artist_identified_post",
+  "community_identified_post",
+  "track_identified",
   "release_attached",
   "artist_release_alert",
   "release_alert_enabled",
@@ -50,6 +62,8 @@ const TYPE_PRIORITY: Partial<Record<NotificationType, number>> = {
   artist_tag_comment: 2,
   comment_on_post: 3,
   artist_identified_post: 4,
+  community_identified_post: 4,
+  track_identified: 4,
   release_day: 5,
   artist_release_alert: 6,
   release_attached: 7,
@@ -66,6 +80,8 @@ export type InAppNotificationBannerPayload = {
   route: string;
   avatarUrl: string | null;
   badgeKind: InAppNotificationBadgeKind;
+  /** Person notifications (e.g. release_alert_enabled): circular avatar, no type badge. */
+  avatarPresentation?: "person" | "media";
   notificationIds: string[];
 };
 
@@ -151,7 +167,10 @@ function shouldSuppressNotification(
   return false;
 }
 
-function getBannerCopy(n: NotificationWithUser): { title: string; description: string } {
+function getBannerCopy(
+  n: NotificationWithUser,
+  viewerDeliveryEnabled?: boolean | null,
+): { title: string; description: string } {
   const type = getEffectiveNotificationType(notificationRowFields(n));
   const username = n.triggeredByUser?.username?.trim();
   const displayUser = username ? formatUsernameDisplay(username) : null;
@@ -174,8 +193,18 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
       };
     case "artist_identified_post":
       return {
-        title: "Track identified",
-        description: ARTIST_IDENTIFIED_POST_MESSAGE,
+        title: TRACK_ID_CONFIRMED_TITLE,
+        description: n.message || "The artist just confirmed the track you uploaded.",
+      };
+    case "community_identified_post":
+      return {
+        title: TRACK_ID_CONFIRMED_TITLE,
+        description: n.message || COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
+      };
+    case "track_identified":
+      return {
+        title: TRACK_ID_CONFIRMED_TITLE,
+        description: n.message || TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
       };
     case "release_day":
       return {
@@ -193,11 +222,16 @@ function getBannerCopy(n: NotificationWithUser): { title: string; description: s
         title: "New Release",
         description: n.message || "An artist announced a new release.",
       };
-    case "release_alert_enabled":
+    case "release_alert_enabled": {
+      const artistCopy = formatReleaseAlertEnabledArtistCopy({
+        listenerUsername: username,
+        deliveryEnabled: viewerDeliveryEnabled,
+      });
       return {
-        title: "Release Alerts",
-        description: n.message || "Someone wants to hear your future releases.",
+        title: artistCopy.title,
+        description: artistCopy.body,
       };
+    }
     case "release_announce":
       return {
         title: "New release",
@@ -219,14 +253,30 @@ function pickHighestPriority(notifications: NotificationWithUser[]): Notificatio
   })[0];
 }
 
-function buildPayloadFromNotifications(notifications: NotificationWithUser[]): InAppNotificationBannerPayload {
+function actorAvatarUrl(n: NotificationWithUser | undefined): string | null {
+  if (!n?.triggeredByUser) return null;
+  const actor = n.triggeredByUser as {
+    avatarUrl?: string | null;
+    avatar_url?: string | null;
+    account_type?: string | null;
+  };
+  return resolveAvatarUrlForProfile(
+    actor.avatarUrl ?? actor.avatar_url ?? null,
+    actor.account_type ?? "user",
+  );
+}
+
+function buildPayloadFromNotifications(
+  notifications: NotificationWithUser[],
+  viewerDeliveryEnabled?: boolean | null,
+): InAppNotificationBannerPayload {
   if (notifications.length >= SUMMARY_THRESHOLD) {
     return {
       key: `summary-${notifications.map((n) => n.id).join("-")}`,
       title: `${notifications.length} new notifications`,
       description: "Tap to view your notifications",
       route: "/profile",
-      avatarUrl: notifications[0]?.triggeredByUser?.avatar_url ?? null,
+      avatarUrl: actorAvatarUrl(notifications[0]),
       badgeKind: "summary",
       notificationIds: notifications.map((n) => n.id),
     };
@@ -252,18 +302,30 @@ function buildPayloadFromNotifications(notifications: NotificationWithUser[]): I
   }
 
   const chosen = pickHighestPriority(notifications);
-  const copy = getBannerCopy(chosen);
+  const copy = getBannerCopy(chosen, viewerDeliveryEnabled);
   const chosenType = getEffectiveNotificationType(notificationRowFields(chosen));
+  const preferActorAvatar = chosenType === "release_alert_enabled";
+  const postThumb =
+    (chosen.post as { thumbnailUrl?: string | null; thumbnail_url?: string | null } | null | undefined)
+      ?.thumbnailUrl ??
+    (chosen.post as { thumbnail_url?: string | null } | null | undefined)?.thumbnail_url ??
+    null;
+  const preferPostThumb =
+    chosenType === "track_identified" ||
+    chosenType === "artist_identified_post" ||
+    chosenType === "community_identified_post";
   return {
     key: chosen.id,
     title: copy.title,
     description: copy.description,
     route: getNotificationTapRoute(chosen),
-    avatarUrl:
-      chosen.release?.artworkUrl ??
-      chosen.triggeredByUser?.avatar_url ??
-      null,
+    avatarUrl: preferActorAvatar
+      ? actorAvatarUrl(chosen)
+      : preferPostThumb
+        ? postThumb ?? actorAvatarUrl(chosen)
+        : chosen.release?.artworkUrl ?? actorAvatarUrl(chosen),
     badgeKind: notificationTypeToBadgeKind(chosenType),
+    avatarPresentation: preferActorAvatar ? "person" : "media",
     notificationIds: [chosen.id],
   };
 }
@@ -277,6 +339,14 @@ export function useInAppNotificationToasts({
 }: UseInAppNotificationToastsOptions) {
   const queryClient = useQueryClient();
   const notificationPrefs = useNotificationPreferences();
+  const artistSubscription = useAuthoritativeSubscriptionStatus({
+    enabled: userType === "artist",
+  });
+  const releaseAlertDeliveryEnabled = resolveViewerReleaseAlertDeliveryEnabled({
+    loading: artistSubscription.loading,
+    hasError: artistSubscription.error != null,
+    selection: artistSubscription.selection,
+  });
   const [banner, setBanner] = useState<InAppNotificationBannerPayload | null>(null);
 
   const baselineSeededRef = useRef(false);
@@ -358,7 +428,9 @@ export function useInAppNotificationToasts({
     clearDismissTimer();
     pendingQueueRef.current = [];
     setBanner(null);
-    navigate(route);
+    if (route) {
+      navigate(route);
+    }
   }, [banner, clearDismissTimer, markNotificationsRead]);
 
   useEffect(() => {
@@ -420,7 +492,7 @@ export function useInAppNotificationToasts({
       toastedIdsRef.current.add(n.id);
     }
 
-    const payload = buildPayloadFromNotifications(candidates);
+    const payload = buildPayloadFromNotifications(candidates, releaseAlertDeliveryEnabled);
     presentPayload(payload);
   }, [
     navNotifications,
@@ -434,6 +506,7 @@ export function useInAppNotificationToasts({
     presentPayload,
     clearDismissTimer,
     queryClient,
+    releaseAlertDeliveryEnabled,
   ]);
 
   return {

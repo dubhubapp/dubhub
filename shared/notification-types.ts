@@ -9,6 +9,8 @@ export const NOTIFICATION_TYPES = [
   "reply_to_comment",
   "artist_tag_comment",
   "artist_identified_post",
+  "community_identified_post",
+  "track_identified",
   "release_attached",
   "artist_release_alert",
   "release_alert_enabled",
@@ -46,6 +48,8 @@ const PREFERENCE_BUCKET_BY_TYPE: Partial<Record<NotificationType, NotificationPr
 /** Types that must always be delivered (no user toggle). */
 export const ALWAYS_ON_NOTIFICATION_TYPES = new Set<NotificationType>([
   "artist_identified_post",
+  "community_identified_post",
+  "track_identified",
   "collab_invite",
   "collab_accept",
   "collab_reject",
@@ -103,6 +107,11 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
   if (lowerMessage.includes("commented on your post")) return "comment_on_post";
 
   // --- Identity (ID confirm by artist vs mod/community feedback) ---
+  if (lowerMessage.includes("you finally found it")) return "track_identified";
+  if (lowerMessage.includes("that track you saved has been identified")) return "track_identified";
+  if (lowerMessage.includes("that track you saved has now been identified")) return "track_identified";
+  if (lowerMessage.includes("identified by the community")) return "community_identified_post";
+  if (lowerMessage.includes("just confirmed the track you uploaded")) return "artist_identified_post";
   if (lowerMessage.includes("identified your track")) return "artist_identified_post";
   if (lowerMessage.includes("the artist confirmed your id")) return "artist_identified_post";
   if (lowerMessage.includes("you got it right")) return "artist_identified_post";
@@ -129,6 +138,7 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
   // --- Releases (message patterns; release_id not required for template match) ---
   if (lowerMessage.includes("release added:")) return "release_attached";
   if (lowerMessage.includes("wants to hear your future releases")) return "release_alert_enabled";
+  if (lowerMessage.includes("is waiting for your next release")) return "release_alert_enabled";
   if (lowerMessage.includes("turned on release alerts")) return "release_alert_enabled";
   if (lowerMessage.includes("announced a new release")) return "artist_release_alert";
   if (lowerMessage.includes("just announced")) return "release_announce";
@@ -238,6 +248,10 @@ export function notificationTypeToGroupKind(type: NotificationType): Notificatio
     case "moderator_report_resolved":
       return "moderator_event";
     case "artist_identified_post":
+    case "community_identified_post":
+    case "track_identified":
+      // Keep Track ID milestones independent from release_attached / release_event grouping.
+      return "single";
     case "id_verification_feedback":
     case "collab_invite":
       return "release_event";

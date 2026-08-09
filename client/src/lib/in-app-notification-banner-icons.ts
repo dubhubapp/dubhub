@@ -19,6 +19,8 @@ export type InAppNotificationBadgeKind =
   | "reply_to_comment"
   | "artist_tag_comment"
   | "artist_identified_post"
+  | "community_identified_post"
+  | "track_identified"
   | "release_attached"
   | "artist_release_alert"
   | "release_alert_enabled"
@@ -32,6 +34,8 @@ const TOASTABLE_BADGE_KINDS = new Set<InAppNotificationBadgeKind>([
   "reply_to_comment",
   "artist_tag_comment",
   "artist_identified_post",
+  "community_identified_post",
+  "track_identified",
   "release_attached",
   "artist_release_alert",
   "release_alert_enabled",
@@ -56,6 +60,8 @@ const BADGE_ICON_BY_KIND: Record<InAppNotificationBadgeKind, BadgeIconConfig> = 
   reply_to_comment: { Icon: Reply, color: DUBHUB_TEAL },
   artist_tag_comment: { Icon: AtSign, color: DUBHUB_TEAL },
   artist_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
+  community_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
+  track_identified: { Icon: CheckCircle, color: VERIFIED_GOLD },
   release_attached: { Icon: CalendarDays, color: DUBHUB_TEAL },
   artist_release_alert: { Icon: Disc3, color: DUBHUB_TEAL },
   release_alert_enabled: { Icon: Bell, color: DUBHUB_TEAL },

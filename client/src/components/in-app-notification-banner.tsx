@@ -3,6 +3,7 @@ import {
   getInAppNotificationBadgeIcon,
   type InAppNotificationBadgeKind,
 } from "@/lib/in-app-notification-banner-icons";
+import { getReleaseAlertEnabledThumbnailPresentation } from "@/lib/release-alert-enabled-thumbnail";
 import { useUser } from "@/lib/user-context";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -16,33 +17,55 @@ type InAppNotificationBannerHostProps = {
 function InAppNotificationThumbnail({
   avatarUrl,
   badgeKind,
+  avatarPresentation = "media",
 }: {
   avatarUrl: string | null;
   badgeKind: InAppNotificationBadgeKind;
+  avatarPresentation?: "person" | "media";
 }) {
+  const isPerson = avatarPresentation === "person";
+  const personPresentation = isPerson ? getReleaseAlertEnabledThumbnailPresentation() : null;
   const { Icon, color } = getInAppNotificationBadgeIcon(badgeKind);
 
   return (
-    <div className="relative mt-0.5 h-9 w-9 shrink-0">
-      <div className="h-full w-full overflow-hidden rounded-lg border border-white/10 bg-white/8 ring-1 ring-[#4ae9df]/20">
+    <div
+      className="relative mt-0.5 h-9 w-9 shrink-0"
+      data-avatar-shape={isPerson ? personPresentation?.shape : "rounded"}
+      data-bell-overlay={isPerson && personPresentation ? String(personPresentation.showBellOverlay) : "true"}
+    >
+      <div
+        className={
+          isPerson && personPresentation
+            ? personPresentation.bannerFrameClassName
+            : "h-full w-full overflow-hidden rounded-lg border border-white/10 bg-white/8 ring-1 ring-[#4ae9df]/20"
+        }
+      >
         {avatarUrl ? (
-          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+          <img
+            src={avatarUrl}
+            alt=""
+            className={
+              isPerson ? "avatar-media h-full w-full rounded-full object-cover" : "h-full w-full object-cover"
+            }
+          />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-white/70">
             <Bell className="h-4 w-4" aria-hidden />
           </div>
         )}
       </div>
-      <div
-        className={cn(
-          "absolute -bottom-1 -right-1 z-10 flex h-[21px] w-[21px] items-center justify-center rounded-full",
-          "border border-[#4ae9df]/45 bg-[#0f1324]/92 supports-[backdrop-filter]:bg-[#0f1324]/88 backdrop-blur-sm",
-          "shadow-[0_2px_8px_rgba(0,0,0,0.45)]",
-        )}
-        aria-hidden
-      >
-        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} strokeWidth={2.25} />
-      </div>
+      {!isPerson && (
+        <div
+          className={cn(
+            "absolute -bottom-1 -right-1 z-10 flex h-[21px] w-[21px] items-center justify-center rounded-full",
+            "border border-[#4ae9df]/45 bg-[#0f1324]/92 supports-[backdrop-filter]:bg-[#0f1324]/88 backdrop-blur-sm",
+            "shadow-[0_2px_8px_rgba(0,0,0,0.45)]",
+          )}
+          aria-hidden
+        >
+          <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} strokeWidth={2.25} />
+        </div>
+      )}
     </div>
   );
 }
@@ -52,6 +75,7 @@ function InAppNotificationBannerView({
   description,
   avatarUrl,
   badgeKind,
+  avatarPresentation,
   onTap,
   onDismiss,
 }: {
@@ -59,6 +83,7 @@ function InAppNotificationBannerView({
   description: string;
   avatarUrl: string | null;
   badgeKind: InAppNotificationBadgeKind;
+  avatarPresentation?: "person" | "media";
   onTap: () => void;
   onDismiss: () => void;
 }) {
@@ -83,7 +108,11 @@ function InAppNotificationBannerView({
           onClick={onTap}
           className="flex min-w-0 flex-1 items-start gap-3 text-left"
         >
-          <InAppNotificationThumbnail avatarUrl={avatarUrl} badgeKind={badgeKind} />
+          <InAppNotificationThumbnail
+            avatarUrl={avatarUrl}
+            badgeKind={badgeKind}
+            avatarPresentation={avatarPresentation}
+          />
           <div className="min-w-0 flex-1 pt-0.5">
             <p className="truncate text-sm font-semibold text-white">{title}</p>
             <p className="line-clamp-2 text-xs leading-snug text-white/72">{description}</p>
@@ -127,6 +156,7 @@ export function InAppNotificationBannerHost({
       description={banner.description}
       avatarUrl={banner.avatarUrl}
       badgeKind={banner.badgeKind}
+      avatarPresentation={banner.avatarPresentation}
       onTap={handleBannerTap}
       onDismiss={dismissBanner}
     />

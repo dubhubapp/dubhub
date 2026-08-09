@@ -1,5 +1,11 @@
+import {
+  COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
+  TRACK_ID_CONFIRMED_TITLE,
+  TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
+  formatArtistIdentifiedPostMessage,
+  formatReleaseAnnounceMessage,
+} from "@shared/notification-messages";
 import { evaluatePushPreferenceGate } from "@shared/push-notification-preferences";
-import { ARTIST_IDENTIFIED_POST_MESSAGE, formatReleaseAnnounceMessage } from "@shared/notification-messages";
 import { sendApnsNotification } from "./apns";
 import { storage } from "../storage";
 
@@ -13,6 +19,8 @@ type PushEventName =
   | "reply_to_comment"
   | "artist_tag_comment"
   | "artist_identified_post"
+  | "community_identified_post"
+  | "track_identified"
   | "release_attached_to_liked_or_uploaded_post"
   | "artist_release_alert"
   | "release_day_out_today"
@@ -56,6 +64,21 @@ interface ArtistIdentifiedPayload extends BaseEventPayload {
   postId: string;
   artistId: string;
   verifiedCommentId: string;
+  artistUsername?: string | null;
+}
+
+interface CommunityIdentifiedPayload extends BaseEventPayload {
+  type: "community_identified_post";
+  notificationId: string;
+  postId: string;
+  actorUserId: string;
+}
+
+interface TrackIdentifiedPayload extends BaseEventPayload {
+  type: "track_identified";
+  notificationId: string;
+  postId: string;
+  actorUserId: string;
 }
 
 interface ReleaseAttachedPayload extends BaseEventPayload {
@@ -126,6 +149,8 @@ type EventPayload =
   | ReplyToCommentPayload
   | ArtistTagCommentPayload
   | ArtistIdentifiedPayload
+  | CommunityIdentifiedPayload
+  | TrackIdentifiedPayload
   | ReleaseAttachedPayload
   | ArtistReleaseAlertPayload
   | ReleaseDayOutPayload
@@ -153,12 +178,22 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       };
     case "artist_identified_post":
       return {
-        title: "Track identified ✅",
-        body: ARTIST_IDENTIFIED_POST_MESSAGE,
+        title: TRACK_ID_CONFIRMED_TITLE,
+        body: formatArtistIdentifiedPostMessage(payload.artistUsername),
+      };
+    case "community_identified_post":
+      return {
+        title: TRACK_ID_CONFIRMED_TITLE,
+        body: COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
+      };
+    case "track_identified":
+      return {
+        title: TRACK_ID_CONFIRMED_TITLE,
+        body: TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
       };
     case "release_attached_to_liked_or_uploaded_post":
       return {
-        title: "Release added",
+        title: "🪩 Release added",
         body: "That tune you've been waiting for? It's finally got a release date.",
       };
     case "artist_release_alert": {
@@ -169,7 +204,7 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
           ? `${artist} announced a new release: ${title}`
           : `${artist} announced a new release.`;
       return {
-        title: "New Release",
+        title: "🔔 New Release",
         body,
       };
     }
@@ -200,7 +235,7 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       const artistUsername = String(payload.artistUsername ?? "").trim() || "Artist";
       const releaseTitle = payload.releaseTitle.trim() || "a release";
       return {
-        title: "New release",
+        title: "🗓️ New Release",
         body: formatReleaseAnnounceMessage(artistUsername, releaseTitle),
       };
     }
@@ -224,7 +259,7 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       const actor = toMention(payload.actorUsername) ?? "Someone";
       const title = payload.releaseTitle.trim() || "your release";
       return {
-        title: "Collaboration declined",
+        title: "❌ Collaboration Declined",
         body: `${actor} declined your collaboration invite for ${title}.`,
       };
     }

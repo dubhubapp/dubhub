@@ -65,6 +65,8 @@ export function evaluatePushPreferenceGate(
       }
       break;
     case "artist_identified_post":
+    case "community_identified_post":
+    case "track_identified":
     case "collab_invite":
     case "collab_accept":
     case "collab_reject":

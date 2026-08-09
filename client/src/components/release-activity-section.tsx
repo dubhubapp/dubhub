@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { Heart, MessageCircle, Radio, Users } from "lucide-react";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
+import { buildReleaseAfterFirstPostCopy } from "@/lib/release-activity-copy";
 import { cn } from "@/lib/utils";
 
 export type ReleaseActivityStats = {
@@ -51,7 +52,13 @@ type ReleaseActivitySectionProps = {
   firstPostLabel: string | null;
   latestPostLabel: string | null;
   announcedAfterLabel: string | null;
+  /** Preformatted duration between first post and release date (unchanged math). */
   releasedAfterLabel: string | null;
+  /**
+   * Same upcoming signal as the release status pill.
+   * Future → “Releasing … after first post”; today/past → “Released …”.
+   */
+  releaseAfterIsUpcoming?: boolean;
 };
 
 export function ReleaseActivitySection({
@@ -61,9 +68,14 @@ export function ReleaseActivitySection({
   latestPostLabel,
   announcedAfterLabel,
   releasedAfterLabel,
+  releaseAfterIsUpcoming = false,
 }: ReleaseActivitySectionProps) {
+  const releaseAfterFirstPostLine = buildReleaseAfterFirstPostCopy({
+    durationLabel: releasedAfterLabel,
+    isUpcoming: releaseAfterIsUpcoming,
+  });
   const hasTimeline =
-    firstPostLabel || latestPostLabel || announcedAfterLabel || releasedAfterLabel;
+    firstPostLabel || latestPostLabel || announcedAfterLabel || releaseAfterFirstPostLine;
 
   return (
     <section className="mb-6" data-testid="release-activity-section">
@@ -106,8 +118,10 @@ export function ReleaseActivitySection({
               {announcedAfterLabel ? (
                 <p>Announced {announcedAfterLabel} after first post</p>
               ) : null}
-              {releasedAfterLabel ? (
-                <p>Released {releasedAfterLabel} after first post</p>
+              {releaseAfterFirstPostLine ? (
+                <p data-testid="release-activity-release-after-first-post">
+                  {releaseAfterFirstPostLine}
+                </p>
               ) : null}
             </div>
           ) : null}

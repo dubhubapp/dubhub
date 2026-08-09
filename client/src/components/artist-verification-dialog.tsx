@@ -22,6 +22,11 @@ import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from
 import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
 import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
+import { ApiRequestError } from "@/lib/apiDiagnostics";
+import {
+  ATTACHMENT_LIMIT_TOAST,
+  isFreeAttachmentLimitReachedError,
+} from "@/lib/release-attachment-limit";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -171,8 +176,28 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     },
     onError: (error: Error & { body?: { code?: string; message?: string } }) => {
       const body = (error as any)?.body;
-      const code = body?.code;
+      let code = body?.code as string | undefined;
       let description = body?.message || error.message || "Failed to attach post to release.";
+      if (error instanceof ApiRequestError && error.responseBody) {
+        try {
+          const parsed = JSON.parse(error.responseBody) as {
+            code?: string;
+            message?: string;
+          };
+          code = parsed.code ?? code;
+          description = parsed.message || description;
+        } catch {
+          // keep defaults
+        }
+      }
+      if (isFreeAttachmentLimitReachedError(error) || code === "FREE_ATTACHMENT_LIMIT_REACHED") {
+        toast({
+          title: ATTACHMENT_LIMIT_TOAST.title,
+          description: ATTACHMENT_LIMIT_TOAST.body,
+          variant: "destructive",
+        });
+        return;
+      }
       if (code === "POST_ALREADY_ATTACHED") {
         description = "This post is already attached to another release.";
       } else if (code === "RELEASE_LOCKED") {

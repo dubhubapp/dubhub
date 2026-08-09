@@ -1,43 +1,63 @@
 import { formatReleaseCardDate } from "@/components/release-feed-card";
 import { isReleaseUpcoming } from "@/lib/release-status";
+import {
+  RELEASE_COMING_SOON_LABEL,
+  RELEASE_RELEASED_LABEL,
+  resolveReleaseStatusPillPresentation,
+} from "@/lib/release-status-pill";
 import { cn } from "@/lib/utils";
 
-export const RELEASE_COMING_SOON_LABEL = "Coming Soon";
-export const RELEASE_RELEASED_LABEL = "Released";
+export {
+  RELEASE_COMING_SOON_LABEL,
+  RELEASE_RELEASED_LABEL,
+  RELEASE_STATUS_PILL_BASE_CLASS,
+  RELEASE_STATUS_PILL_SIZE_CLASS,
+  RELEASE_COMING_SOON_PILL_CLASS,
+  RELEASE_RELEASED_PILL_CLASS,
+  RELEASE_PAUSED_PILL_CLASS,
+  resolveReleaseStatusPillPresentation,
+} from "@/lib/release-status-pill";
 
 type ReleaseStatusPillProps = {
   isComingSoon?: boolean;
   releaseDate?: string | null;
   /** When set, overrides computed upcoming/released state. */
   upcoming?: boolean;
+  /** Subscription-suspended — distinct neutral pill, same dimensions as Coming Soon. */
+  paused?: boolean;
   className?: string;
   size?: "default" | "compact";
+  "data-testid"?: string;
 };
 
 export function ReleaseStatusPill({
   isComingSoon,
   releaseDate,
   upcoming,
+  paused = false,
   className,
   size = "default",
+  "data-testid": dataTestId,
 }: ReleaseStatusPillProps) {
-  const isUpcomingState = upcoming ?? isReleaseUpcoming(isComingSoon, releaseDate);
-  const label = isUpcomingState ? RELEASE_COMING_SOON_LABEL : RELEASE_RELEASED_LABEL;
+  const presentation = resolveReleaseStatusPillPresentation({
+    paused,
+    isComingSoon,
+    releaseDate,
+    upcoming,
+    size,
+  });
 
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded font-medium leading-none",
-        size === "compact"
-          ? "min-h-[1.125rem] px-1.5 py-0.5 text-[10px]"
-          : "min-h-[1.375rem] px-2 py-0.5 text-xs",
-        isUpcomingState
-          ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-          : "bg-green-500/20 text-green-600 dark:text-green-400",
+        presentation.baseClass,
+        presentation.sizeClass,
+        presentation.toneClass,
         className,
       )}
+      data-testid={dataTestId ?? `badge-release-status-${presentation.variant}`}
     >
-      {label}
+      {presentation.label}
     </span>
   );
 }

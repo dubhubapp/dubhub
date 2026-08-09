@@ -6,9 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/user-context";
 import { apiRequest } from "@/lib/queryClient";
+import { ApiRequestError } from "@/lib/apiDiagnostics";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
-import { PLATFORM_OPTIONS, normalizePlatformForApi, sortLinksByPlatform } from "@/lib/platforms";
+import { scheduleHomeWidgetRefreshAfterAuth } from "@/lib/home-widget-refresh";
+import {
+  availablePlatformOptions,
+  draftHasDuplicatePlatforms,
+  getPlatformLabel,
+  normalizePlatformForApi,
+  sortLinksByPlatform,
+} from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
@@ -22,6 +30,54 @@ import {
   ReleaseAttachPostsSection,
   type EligiblePostForAttach,
 } from "@/components/release-attach-posts-section";
+import { ReleaseCreationCapacityCard } from "@/components/release-creation-capacity-card";
+import {
+  RELEASE_CREATION_CAPACITY_QUERY_KEY,
+  RELEASE_LIMIT_REACHED_TOAST,
+  UPGRADE_PLACEHOLDER_HINT,
+  isFreeReleaseLimitReachedError,
+  parseReleaseCreationCapacity,
+  resolveReleaseCapacityCardCopy,
+} from "@/lib/release-creation-capacity";
+import {
+  ATTACHMENT_ALLOWANCE_QUERY_KEY,
+  ATTACHMENT_LIMIT_TOAST,
+  ATTACHMENT_NEAR_LIMIT_HINT,
+  isFreeAttachmentLimitReachedError,
+  maxSelectableAttachments,
+  parseAttachmentAllowance,
+} from "@/lib/release-attachment-limit";
+import { PlatformIcon } from "@/components/PlatformIcon";
+import { ReleaseLinkPlatformPicker } from "@/components/release-link-platform-picker";
+import {
+  ReleaseLinkTypeSelect,
+  buildLinkTypeOptions,
+} from "@/components/release-link-type-select";
+import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
+import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
+import {
+  FREE_RELEASE_LINK_LIMIT,
+  LINK_ALLOWANCE_QUERY_KEY,
+  LINK_LIMIT_CARD_COPY,
+  LINK_LIMIT_TOAST,
+  LISTENING_LINK_FUTURE_GUIDANCE,
+  PAID_LINK_TYPE_TOAST,
+  INVALID_RELEASE_LINK_TYPE_TOAST,
+  canAddLinkToDraft,
+  isFreeLinkLimitReachedError,
+  isInvalidReleaseLinkTypeError,
+  isPaidLinkTypeRequiredError,
+  isPaidOnlyReleaseLink,
+  parseLinkAllowance,
+  resolveLinkLimitCardCopy,
+} from "@/lib/release-link-limit";
+import { isReleaseUpcoming } from "@/lib/release-status";
+import {
+  type CanonicalLinkPurpose,
+  defaultPurposeForNewDraft,
+  purposeOptionLabel,
+  supportedPurposesForPlatform,
+} from "@shared/release-link-platforms";
 
 export default function ReleaseCreate() {
   const [, navigate] = useLocation();
@@ -37,6 +93,8 @@ export default function ReleaseCreate() {
   const [uploading, setUploading] = useState(false);
   const [linkPlatform, setLinkPlatform] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [linkPurpose, setLinkPurpose] = useState<CanonicalLinkPurpose>("listen");
+  const [purposeTouched, setPurposeTouched] = useState(false);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [draftLinks, setDraftLinks] = useState<
@@ -53,6 +111,112 @@ export default function ReleaseCreate() {
     enabled: true,
     scrollContainerRef,
   });
+
+  const capacityQuery = useQuery({
+    queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY],
+    enabled: !!currentUser?.id && userType === "artist",
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/releases/creation-capacity");
+      const json = await res.json();
+      const parsed = parseReleaseCreationCapacity(json);
+      if (!parsed) throw new Error("Invalid release capacity response");
+      return parsed;
+    },
+  });
+
+  const capacityCopy = capacityQuery.data
+    ? resolveReleaseCapacityCardCopy(capacityQuery.data)
+    : null;
+  const createLocked =
+    capacityQuery.data != null && capacityQuery.data.canCreate === false;
+
+  const handleUpgrade = (source: "release_limit" | "attachment_limit" | "link_limit") => {
+    requestVerifiedArtistToolsUpgrade(toast, { source });
+  };
+
+  const attachmentAllowanceQuery = useQuery({
+    queryKey: [...ATTACHMENT_ALLOWANCE_QUERY_KEY],
+    enabled: !!currentUser?.id && userType === "artist",
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/artists/me/release-attachment-allowance");
+      const json = await res.json();
+      const parsed = parseAttachmentAllowance(json);
+      if (!parsed) throw new Error("Invalid attachment allowance response");
+      return parsed;
+    },
+  });
+
+  const linkAllowanceQuery = useQuery({
+    queryKey: [...LINK_ALLOWANCE_QUERY_KEY],
+    enabled: !!currentUser?.id && userType === "artist",
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/artists/me/release-link-allowance");
+      const json = await res.json();
+      const parsed = parseLinkAllowance(json);
+      if (!parsed) throw new Error("Invalid link allowance response");
+      return parsed;
+    },
+  });
+
+  const attachmentMaxSelectable = attachmentAllowanceQuery.data
+    ? maxSelectableAttachments({
+        unlimited: attachmentAllowanceQuery.data.unlimited,
+        limit: attachmentAllowanceQuery.data.limit,
+      })
+    : null;
+  const showAttachmentUpgrade =
+    attachmentAllowanceQuery.data != null &&
+    attachmentAllowanceQuery.data.unlimited === false &&
+    selectedPostIds.length >= (attachmentAllowanceQuery.data.limit ?? 3);
+
+  const linkUnlimited = linkAllowanceQuery.data?.unlimited === true;
+  const canAddDraftLink = canAddLinkToDraft({
+    unlimited: linkAllowanceQuery.data?.unlimited ?? false,
+    draftCount: draftLinks.length,
+    limit: linkAllowanceQuery.data?.limit ?? FREE_RELEASE_LINK_LIMIT,
+  });
+  const linkCardCopy = resolveLinkLimitCardCopy({
+    unlimited: linkUnlimited,
+    used: draftLinks.length,
+    limit: linkAllowanceQuery.data?.limit ?? FREE_RELEASE_LINK_LIMIT,
+  });
+  const showLinkUpgrade =
+    linkAllowanceQuery.data != null &&
+    linkAllowanceQuery.data.unlimited === false &&
+    draftLinks.length >= (linkAllowanceQuery.data.limit ?? FREE_RELEASE_LINK_LIMIT);
+  const releaseIsUpcoming = isReleaseUpcoming(comingSoon, releaseDate || null);
+  const showFutureListenGuidance =
+    !linkUnlimited &&
+    releaseIsUpcoming &&
+    draftLinks.some((l) => !isPaidOnlyReleaseLink(l.platform, l.linkType));
+  const platformChoices = useMemo(
+    () => availablePlatformOptions(draftLinks.map((l) => l.platform)),
+    [draftLinks],
+  );
+  const linkTypeOptions = useMemo(() => {
+    if (!linkPlatform) return [];
+    return buildLinkTypeOptions({
+      platform: linkPlatform,
+      supported: supportedPurposesForPlatform(linkPlatform),
+      unlimited: linkUnlimited,
+    });
+  }, [linkPlatform, linkUnlimited]);
+
+  const applyPlatformDefaultPurpose = (platform: string) => {
+    const next = defaultPurposeForNewDraft({
+      platform,
+      isUpcoming: releaseIsUpcoming,
+      unlimited: linkUnlimited,
+    });
+    setLinkPurpose(next);
+    setPurposeTouched(false);
+  };
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
@@ -142,6 +306,15 @@ export default function ReleaseCreate() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
+      if (data.code === "FREE_ATTACHMENT_LIMIT_REACHED") {
+        toast({
+          title: ATTACHMENT_LIMIT_TOAST.title,
+          description: ATTACHMENT_LIMIT_TOAST.body,
+          variant: "destructive",
+        });
+        void queryClient.invalidateQueries({ queryKey: [...ATTACHMENT_ALLOWANCE_QUERY_KEY] });
+        throw new Error(ATTACHMENT_LIMIT_TOAST.body);
+      }
       toast({
         title: "Attach failed",
         description: data.message || "Failed to attach posts",
@@ -153,6 +326,7 @@ export default function ReleaseCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (createLocked) return;
     releaseCreateHapticFiredRef.current = false;
     if (!title.trim()) {
       toast({ title: "Title is required", variant: "destructive" });
@@ -167,6 +341,14 @@ export default function ReleaseCreate() {
     }
     if (!comingSoon && !releaseDate) {
       toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
+      return;
+    }
+    if (draftHasDuplicatePlatforms(draftLinks)) {
+      toast({
+        title: "Duplicate platforms",
+        description: "Each platform can only be added once per release.",
+        variant: "destructive",
+      });
       return;
     }
     setSaving(true);
@@ -217,6 +399,7 @@ export default function ReleaseCreate() {
             description: "You can retry inviting from the release edit page.",
             variant: "destructive",
           });
+          void queryClient.invalidateQueries({ queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY] });
           navigate(`/releases/${releaseId}/edit`);
           return;
         }
@@ -242,6 +425,7 @@ export default function ReleaseCreate() {
       }
 
       await queryClient.removeQueries({ queryKey: ["/api/releases/feed"] });
+      await queryClient.invalidateQueries({ queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY] });
       if (process.env.NODE_ENV === "development") {
         console.log("[ReleaseCreate] Success: created release", releaseId, "removed feed cache");
       }
@@ -251,12 +435,63 @@ export default function ReleaseCreate() {
         releaseCreateHapticFiredRef.current = true;
       }
       toast({ title: "Release created" });
+      scheduleHomeWidgetRefreshAfterAuth();
       navigate("/releases");
     } catch (error) {
       console.error("[ReleaseCreate] Create failed", error);
+      if (isFreeReleaseLimitReachedError(error)) {
+        // Preserve entered form data; never surface raw 403 / JSON / codes.
+        toast({
+          title: RELEASE_LIMIT_REACHED_TOAST.title,
+          description: RELEASE_LIMIT_REACHED_TOAST.body,
+          variant: "destructive",
+        });
+        void queryClient.invalidateQueries({ queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY] });
+        return;
+      }
+      if (isFreeLinkLimitReachedError(error)) {
+        toast({
+          title: LINK_LIMIT_TOAST.title,
+          description: LINK_LIMIT_TOAST.body,
+          variant: "destructive",
+        });
+        void queryClient.invalidateQueries({ queryKey: [...LINK_ALLOWANCE_QUERY_KEY] });
+        return;
+      }
+      if (isPaidLinkTypeRequiredError(error)) {
+        toast({
+          title: PAID_LINK_TYPE_TOAST.title,
+          description: PAID_LINK_TYPE_TOAST.body,
+          variant: "destructive",
+        });
+        void queryClient.invalidateQueries({ queryKey: [...LINK_ALLOWANCE_QUERY_KEY] });
+        return;
+      }
+      if (isInvalidReleaseLinkTypeError(error)) {
+        toast({
+          title: INVALID_RELEASE_LINK_TYPE_TOAST.title,
+          description: INVALID_RELEASE_LINK_TYPE_TOAST.body,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (isFreeAttachmentLimitReachedError(error)) {
+        toast({
+          title: ATTACHMENT_LIMIT_TOAST.title,
+          description: ATTACHMENT_LIMIT_TOAST.body,
+          variant: "destructive",
+        });
+        void queryClient.invalidateQueries({ queryKey: [...ATTACHMENT_ALLOWANCE_QUERY_KEY] });
+        return;
+      }
       toast({
         title: "Failed to create release",
-        description: error instanceof Error ? error.message : "Unknown error",
+        description:
+          error instanceof ApiRequestError
+            ? "Something went wrong. Please try again."
+            : error instanceof Error
+              ? error.message
+              : "Unknown error",
         variant: "destructive",
       });
     } finally {
@@ -296,6 +531,14 @@ export default function ReleaseCreate() {
           Back
         </Button>
         <h1 className="text-xl font-bold mb-4">Add Release</h1>
+
+        <div className="mb-6">
+          <ReleaseCreationCapacityCard
+            loading={capacityQuery.isLoading}
+            copy={capacityCopy}
+            onUpgradeClick={() => handleUpgrade("release_limit")}
+          />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="space-y-4">
@@ -431,11 +674,67 @@ export default function ReleaseCreate() {
 
           <section className="space-y-3">
             <h2 className="text-sm font-medium text-muted-foreground">Links</h2>
+            {linkAllowanceQuery.data ? (
+              <div
+                className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] space-y-1.5"
+                data-testid="release-link-limit-notice"
+                role="status"
+              >
+                <p
+                  className="text-sm font-semibold text-foreground"
+                  data-testid="release-link-limit-title"
+                >
+                  {linkCardCopy.title}
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {linkCardCopy.body}
+                </p>
+                {showLinkUpgrade ? (
+                  <div className="pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-white/15 bg-black/20"
+                      onClick={() => handleUpgrade("link_limit")}
+                      data-testid="release-link-upgrade"
+                    >
+                      {LINK_LIMIT_CARD_COPY.ctaLabel}
+                    </Button>
+                    {!isVerifiedArtistToolsPaywallEnabled() ? (
+                      <p className="mt-1 text-[10px] text-muted-foreground/80">
+                        {LINK_LIMIT_CARD_COPY.ctaHint}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {showFutureListenGuidance ? (
+              <div
+                className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1"
+                data-testid="release-listening-link-future-guidance"
+                role="status"
+              >
+                <p className="text-sm font-semibold text-foreground">
+                  {LISTENING_LINK_FUTURE_GUIDANCE.title}
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {LISTENING_LINK_FUTURE_GUIDANCE.body}
+                </p>
+              </div>
+            ) : null}
             <div className="space-y-2">
               {sortLinksByPlatform(draftLinks).map((l) => (
                 <div key={`${l.platform}-${l.url}`} className="flex items-center gap-2">
+                  <PlatformIcon platform={l.platform} />
                   <span className="text-sm">
-                    {PLATFORM_OPTIONS.find((p) => p.value === l.platform)?.label ?? l.platform.replace("_", " ")}
+                    {getPlatformLabel(l.platform)}
+                    {l.linkType ? (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        ({purposeOptionLabel(l.platform, (l.linkType as CanonicalLinkPurpose) || "listen")})
+                      </span>
+                    ) : null}
                   </span>
                   <a
                     href={l.url}
@@ -459,39 +758,96 @@ export default function ReleaseCreate() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-2">
-              <select
+            <div className="flex flex-wrap gap-2 items-end">
+              <ReleaseLinkPlatformPicker
                 value={linkPlatform}
-                onChange={(e) => setLinkPlatform(e.target.value)}
-                className="border rounded px-2 py-1.5 text-sm bg-background"
-              >
-                <option value="">Platform</option>
-                {PLATFORM_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+                options={platformChoices}
+                disabled={!canAddDraftLink}
+                data-testid="release-link-platform-picker"
+                onChange={(nextPlatform) => {
+                  setLinkPlatform(nextPlatform);
+                  if (
+                    !purposeTouched ||
+                    !supportedPurposesForPlatform(nextPlatform).includes(linkPurpose)
+                  ) {
+                    applyPlatformDefaultPurpose(nextPlatform);
+                  }
+                }}
+              />
+              {linkPlatform && linkTypeOptions.length > 0 ? (
+                <ReleaseLinkTypeSelect
+                  platform={linkPlatform}
+                  value={linkPurpose}
+                  options={linkTypeOptions}
+                  disabled={!canAddDraftLink}
+                  onChange={(next) => {
+                    setLinkPurpose(next);
+                    setPurposeTouched(true);
+                  }}
+                  onLockedSelect={(requested) => {
+                    requestVerifiedArtistToolsUpgrade(toast, {
+                      source: "release_link_presave",
+                      platform: linkPlatform,
+                      requestedLinkType: requested,
+                    });
+                  }}
+                />
+              ) : null}
               <Input
                 placeholder="URL"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
-                className="flex-1"
+                className="flex-1 min-w-[8rem]"
                 onKeyDown={preventEnterFormSubmit}
+                disabled={!canAddDraftLink}
               />
               <Button
                 size="sm"
                 type="button"
                 onClick={() => {
                   if (!linkPlatform || !linkUrl.trim()) return;
+                  if (!canAddDraftLink) {
+                    toast({
+                      title: LINK_LIMIT_TOAST.title,
+                      description: LINK_LIMIT_TOAST.body,
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  if (draftLinks.some((l) => normalizePlatformForApi(l.platform) === normalizePlatformForApi(linkPlatform))) {
+                    toast({
+                      title: "Platform already added",
+                      description: "Each platform can only be added once per release.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
+                  const purpose = unlocked.includes(linkPurpose)
+                    ? linkPurpose
+                    : (unlocked[0] ?? "listen");
+                  if (isPaidOnlyReleaseLink(linkPlatform, purpose)) {
+                    requestVerifiedArtistToolsUpgrade(toast, {
+                      source: "release_link_presave",
+                      platform: linkPlatform,
+                      requestedLinkType: purpose,
+                    });
+                    return;
+                  }
                   setDraftLinks((links) => [
                     ...links,
-                    { platform: linkPlatform, url: linkUrl.trim(), linkType: null },
+                    {
+                      platform: linkPlatform,
+                      url: linkUrl.trim(),
+                      linkType: purpose === "listen" ? null : purpose,
+                    },
                   ]);
                   setLinkPlatform("");
                   setLinkUrl("");
+                  setLinkPurpose("listen");
+                  setPurposeTouched(false);
                 }}
-                disabled={!linkPlatform || !linkUrl.trim()}
+                disabled={!linkPlatform || !linkUrl.trim() || !canAddDraftLink}
               >
                 <Plus className="w-4 h-4" />
               </Button>
@@ -506,12 +862,60 @@ export default function ReleaseCreate() {
             searchTerm={searchTerm}
             onSearchTermChange={setSearchTerm}
             helperText="Selected posts will be attached when you create this release."
+            maxSelectable={attachmentMaxSelectable}
+            attachmentUsage={
+              attachmentAllowanceQuery.data && !attachmentAllowanceQuery.data.unlimited
+                ? {
+                    used: selectedPostIds.length,
+                    limit: attachmentAllowanceQuery.data.limit,
+                  }
+                : null
+            }
+            attachmentLimitNotice={
+              attachmentAllowanceQuery.data && !attachmentAllowanceQuery.data.unlimited
+                ? ATTACHMENT_NEAR_LIMIT_HINT
+                : null
+            }
+            showUpgradeCta={showAttachmentUpgrade}
+            onUpgradeClick={() => handleUpgrade("attachment_limit")}
           />
 
-          <div className="pt-2 pb-8">
-            <Button type="submit" disabled={saving} className="w-full">
-              {saving ? "Creating…" : "Create Release"}
-            </Button>
+          <div className="pt-2 pb-8 space-y-2">
+            {createLocked ? (
+              <>
+                <Button
+                  type="button"
+                  disabled
+                  className="w-full"
+                  data-testid="release-create-submit-locked"
+                >
+                  Create Release
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleUpgrade("release_limit")}
+                  data-testid="release-create-upgrade-locked"
+                >
+                  Upgrade
+                </Button>
+                {!isVerifiedArtistToolsPaywallEnabled() ? (
+                  <p className="text-[10px] text-center text-muted-foreground">
+                    {UPGRADE_PLACEHOLDER_HINT}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <Button
+                type="submit"
+                disabled={saving || capacityQuery.isLoading}
+                className="w-full"
+                data-testid="release-create-submit"
+              >
+                {saving ? "Creating…" : "Create Release"}
+              </Button>
+            )}
           </div>
         </form>
       </div>

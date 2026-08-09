@@ -1,7 +1,6 @@
 /**
  * Platform config: brand logo assets and labels for release links.
- * Store in DB as lowercase snake_case. Display uses brand-correct capitalization.
- * Backwards compat: "youtube" -> display as YouTube Music, treat as youtube_music in UI.
+ * Selectable list excludes Juno (ceased trading). Legacy Juno rows still display.
  */
 
 import SpotifyIcon from "@/assets/platforms/spotify.svg?url";
@@ -14,61 +13,41 @@ import TidalIcon from "@/assets/platforms/tidal.svg?url";
 import YouTubeMusicIcon from "@/assets/platforms/youtube_music.png?url";
 import JunoIcon from "@/assets/platforms/juno.png?url";
 import BandcampIcon from "@/assets/platforms/bandcamp.png?url";
-
-export const PRESAVE_PLATFORMS = new Set([
-  "spotify",
-  "apple_music",
-  "beatport",
-  "deezer",
-  "amazon_music",
-  "tidal",
-  "youtube_music",
-  "youtube", // legacy
-  "juno",
-]);
+import {
+  SELECTABLE_RELEASE_LINK_PLATFORM_IDS,
+  getPlatformDisplayName,
+  normalizeReleaseLinkPlatformId,
+} from "@shared/release-link-platforms";
 
 export const SOUNDCLOUD = "soundcloud";
 
-/** Canonical display order for release links (exact order in UI) */
-export const PLATFORM_ORDER = [
-  "spotify",
-  "apple_music",
-  "soundcloud",
-  "beatport",
-  "bandcamp",
-  "juno",
-  "deezer",
-  "amazon_music",
-  "tidal",
-  "youtube_music",
-  "free_download",
-  "dub_pack",
-  "other",
-] as const;
+/** Selectable platforms only (no Juno). */
+export const PLATFORM_ORDER = SELECTABLE_RELEASE_LINK_PLATFORM_IDS;
 
 export const PLATFORM_LIST = [...PLATFORM_ORDER];
 
 export type PlatformValue = (typeof PLATFORM_LIST)[number];
 
+/** Display labels including legacy Juno for historical rows. */
 export const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
-  apple: "Apple Music", // legacy
+  apple: "Apple Music",
   apple_music: "Apple Music",
   beatport: "Beatport",
   deezer: "Deezer",
   amazon_music: "Amazon Music",
   tidal: "TIDAL",
-  youtube: "YouTube Music", // legacy
+  youtube: "YouTube Music",
   youtube_music: "YouTube Music",
   soundcloud: "SoundCloud",
-  juno: "Juno",
+  juno: "Juno Download",
   bandcamp: "Bandcamp",
   free_download: "Free Download",
   dub_pack: "Dub Pack",
   other: "Other",
 };
 
-/** Brand logo URLs or emoji for non-brand types */
+/** Brand logo URLs — legacy Juno icon retained for historical display only. */
 export const PLATFORM_ICONS: Record<string, string> = {
   spotify: SpotifyIcon,
   apple: AppleMusicIcon,
@@ -82,50 +61,42 @@ export const PLATFORM_ICONS: Record<string, string> = {
   youtube_music: YouTubeMusicIcon,
   juno: JunoIcon,
   bandcamp: BandcampIcon,
-  free_download: "⬇️",
-  dub_pack: "📦",
-  other: "🔗",
 };
 
-/** Sort links by PLATFORM_ORDER (unknowns at end) */
+/** Sort links by selectable order; legacy/unknowns at end. */
 export function sortLinksByPlatform<T extends { platform: string }>(links: T[]): T[] {
   return [...links].sort((a, b) => {
-    const ia = PLATFORM_ORDER.indexOf(a.platform as (typeof PLATFORM_ORDER)[number]);
-    const ib = PLATFORM_ORDER.indexOf(b.platform as (typeof PLATFORM_ORDER)[number]);
+    const ia = (PLATFORM_ORDER as readonly string[]).indexOf(
+      normalizeReleaseLinkPlatformId(a.platform),
+    );
+    const ib = (PLATFORM_ORDER as readonly string[]).indexOf(
+      normalizeReleaseLinkPlatformId(b.platform),
+    );
     const ai = ia === -1 ? 999 : ia;
     const bi = ib === -1 ? 999 : ib;
     return ai - bi;
   });
 }
 
-/** Normalize platform for API: youtube -> youtube_music, apple -> apple_music, trim+lowercase */
 export function normalizePlatformForApi(platform: string): string {
-  const s = String(platform).trim().toLowerCase();
-  if (s === "youtube") return "youtube_music";
-  if (s === "apple") return "apple_music";
-  return s;
+  return normalizeReleaseLinkPlatformId(platform);
 }
 
-/** Normalize platform for display: youtube -> youtube_music */
 export function platformDisplayKey(platform: string): string {
-  if (platform === "youtube") return "youtube_music";
-  if (platform === "apple") return "apple_music";
-  return platform;
+  return normalizeReleaseLinkPlatformId(platform);
 }
 
-/** Get label for platform (with backwards compat) */
 export function getPlatformLabel(platform: string): string {
   const key = platformDisplayKey(platform);
-  return PLATFORM_LABELS[key] ?? PLATFORM_LABELS[platform] ?? platform.replace(/_/g, " ");
+  return PLATFORM_LABELS[key] ?? getPlatformDisplayName(platform);
 }
 
-/** Get icon for platform (URL string or emoji) */
+/** Asset URL when available; empty string means use Lucide fallback. */
 export function getPlatformIcon(platform: string): string {
   const key = platformDisplayKey(platform);
-  return PLATFORM_ICONS[key] ?? PLATFORM_ICONS[platform] ?? "🔗";
+  return PLATFORM_ICONS[key] ?? PLATFORM_ICONS[platform] ?? "";
 }
 
-/** True if platform uses asset URL (render img), false if emoji (render span) */
 export function isPlatformAssetUrl(platform: string): boolean {
   const icon = getPlatformIcon(platform);
   return (
@@ -135,7 +106,31 @@ export function isPlatformAssetUrl(platform: string): boolean {
   );
 }
 
+/** Selectable options for Add Link dropdowns (excludes Juno). */
 export const PLATFORM_OPTIONS = PLATFORM_LIST.map((value) => ({
   value,
   label: getPlatformLabel(value),
 }));
+
+/** Platforms still available after excluding those already in the draft. */
+export function availablePlatformOptions(selectedPlatforms: string[]): {
+  value: string;
+  label: string;
+}[] {
+  const selected = new Set(
+    selectedPlatforms.map((p) => normalizeReleaseLinkPlatformId(p)),
+  );
+  return PLATFORM_OPTIONS.filter((p) => !selected.has(p.value));
+}
+
+export function draftHasDuplicatePlatforms(
+  links: { platform: string }[],
+): boolean {
+  const seen = new Set<string>();
+  for (const link of links) {
+    const p = normalizeReleaseLinkPlatformId(link.platform);
+    if (seen.has(p)) return true;
+    seen.add(p);
+  }
+  return false;
+}

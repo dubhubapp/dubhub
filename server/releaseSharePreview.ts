@@ -25,7 +25,7 @@ function normalizeReleaseId(raw: unknown): string | null {
   return id;
 }
 
-function buildCanonicalReleaseShareUrl(releaseId: string): string {
+export function buildCanonicalReleaseShareUrl(releaseId: string): string {
   return `${DUBHUB_PUBLIC_SHARE_ORIGIN}/?release=${encodeURIComponent(releaseId)}`;
 }
 
@@ -110,7 +110,7 @@ async function sendSharePreviewForReleaseId(
   try {
     const release = await storage.getRelease(releaseId);
 
-    if (!release || release.isPublic !== true) {
+    if (!release || release.isPublic !== true || release.subscriptionSuspendedAt) {
       sendSharePreviewHtml(
         res,
         buildSharePreviewHtml({ ...genericMeta, ogUrl: buildCanonicalReleaseShareUrl(releaseId) }),

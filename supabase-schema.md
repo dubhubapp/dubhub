@@ -133,11 +133,21 @@ Cursor must NOT infer, rename, or “standardise” columns without explicitly a
 | read         | boolean     | YES      | false             | Read flag                          |
 | created_at   | timestamptz | YES      | now()             | Created                            |
 | release_id   | uuid        | YES      | –                 | Related release (FK → releases.id) |
+| notification_type | text | YES | – | Notification discriminator, including `community_identified_post`, `track_identified`, `release_alert_enabled` and `artist_release_alert` |
 
 ⚠️ **Important:** Notifications use:
 - `artist_id` → recipient  
 - `triggered_by` → actor  
 NOT `user_id` or `from_user_id`.
+
+⚠️ **Release Alerts notification behaviour:**
+- `release_alert_enabled`
+  - Recipient: `artist_id`
+  - Actor/listener: `triggered_by`
+  - Created only once per listener–artist pair.
+  - Permanent deduplication is enforced through `artist_release_alert_demand_notifications`.
+- Historical duplicate cards created before the marker migration may remain visible.
+- Notification history must not be used as the live Release Alerts audience count.
 
 ---
 
@@ -259,19 +269,31 @@ NOT `user_id` or `from_user_id`.
 ---
 
 ## releases
-| Column                  | Type        | Nullable | Default           | Notes                                            |
-| ----------------------- | ----------- | -------- | ----------------- | ------------------------------------------------ |
-| id                      | uuid        | NO       | gen_random_uuid() | Primary key                                      |
-| artist_id               | uuid        | NO       | –                 | FK → profiles.id (owner)                         |
-| title                   | text        | NO       | –                 | Release title                                    |
-| release_date            | timestamptz | YES      | –                 | Release date/time (nullable when coming soon)    |
-| artwork_url             | text        | YES      | –                 | Artwork path/URL (release-artworks bucket)       |
-| notified_at             | timestamptz | YES      | –                 | When announcement notifications were sent        |
-| created_at              | timestamptz | YES      | now()             | Created                                          |
-| updated_at              | timestamptz | YES      | now()             | Updated                                          |
-| release_day_notified_at | timestamptz | YES      | –                 | When release-day morning notifications were sent |
-| is_public               | boolean     | NO       | false             | Public visibility flag                           |
-| is_coming_soon          | boolean     | NO       | false             | True when release has no confirmed date yet      |
+| Column                          | Type        | Nullable | Default           | Notes                                            |
+| -------------------------------- | ----------- | -------- | ----------------- | ------------------------------------------------ |
+| id                               | uuid        | NO       | gen_random_uuid() | Primary key                                      |
+| artist_id                        | uuid        | NO       | –                 | FK → profiles.id (owner)                         |
+| title                            | text        | NO       | –                 | Release title                                    |
+| release_date                     | timestamptz | YES      | –                 | Release date/time (nullable when coming soon)    |
+| artwork_url                      | text        | YES      | –                 | Artwork path/URL (release-artworks bucket)       |
+| notified_at                      | timestamptz | YES      | –                 | When announcement notifications were sent        |
+| created_at                       | timestamptz | YES      | now()             | Created                                          |
+| updated_at                       | timestamptz | YES      | now()             | Updated                                          |
+| release_day_notified_at          | timestamptz | YES      | –                 | When release-day morning notifications were sent |
+| is_public                        | boolean     | NO       | false             | Public visibility flag                           |
+| is_coming_soon                   | boolean     | NO       | false             | True when release has no confirmed date yet      |
+| subscription_suspended_at        | timestamptz | YES      | –                 | When set, this future release is subscription-suspended — separate from `is_public` (a release can be `is_public = true` and still suspended). Reversible on resubscribe. Past releases are never newly suspended; no release data is deleted. |
+| subscription_suspension_reason   | text        | YES      | –                 | Machine reason for suspension, e.g. `over_free_future_allowance`. Not a billing/provider field. |
+
+Note: Deletion: Hard delete. Release history for subscription enforcement is preserved in artist_release_creation_ledger.
+
+Note: `supabase/migrations/20260802120000_release_subscription_suspension.sql` only adds the two suspension columns (both default NULL) — it does not suspend or backfill any existing rows. Existing releases remain unaffected until the reconcile job runs with enforcement enabled.
+
+**Indexes:**
+
+- `releases_artist_subscription_suspended_idx`
+  - Partial index on `(artist_id)`
+  - Applies where `subscription_suspended_at IS NOT NULL`
 
 ---
 
@@ -416,6 +438,8 @@ Notes:
 Push notification system (v1):
 - `comment_on_post`
 - `artist_identified_post`
+- `community_identified_post`
+- `track_identified`
 - `release_attached_to_liked_or_uploaded_post`
 
 ### Indexes
@@ -436,3 +460,273 @@ Push notification system (v1):
   - Client should not query this table directly
 - Hardening note:
   - Enable RLS and add backend-safe policies after v1/v1.5 push notification testing is complete
+
+  ---
+
+  ## artist_release_alerts
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | uuid | NO | `gen_random_uuid()` | Primary key |
+| user_id | uuid | NO | – | Listener; FK → `profiles.id` ON DELETE CASCADE |
+| artist_id | uuid | NO | – | Artist; FK → `profiles.id` ON DELETE CASCADE |
+| created_at | timestamptz | NO | `now()` | Time Release Alerts were enabled |
+
+**Primary key:**
+- `id`
+
+**Constraints:**
+- `UNIQUE (user_id, artist_id)`
+- `CHECK (user_id <> artist_id)`
+
+**Foreign keys:**
+- `user_id` → `profiles.id` ON DELETE CASCADE
+- `artist_id` → `profiles.id` ON DELETE CASCADE
+
+**Indexes:**
+- `idx_artist_release_alerts_user_id` on `(user_id)`
+- `idx_artist_release_alerts_artist_id` on `(artist_id)`
+
+**Notes:**
+- Stores current active Release Alerts membership only.
+- One active row is allowed per listener–artist pair.
+- Enabling Release Alerts inserts a row.
+- Disabling Release Alerts deletes the row.
+- The live artist audience count is calculated from this table.
+- First-ever artist demand-notification history is stored separately in `artist_release_alert_demand_notifications`.
+- Deleting and later recreating a membership row must not create another first-enable artist notification when the permanent marker already exists.
+- Listener opt-in remains free and separate from the artist’s subscription state.
+
+---
+
+  ## artist_subscription_snapshots
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| user_id | uuid | NO | – | FK → profiles.id; subscription subject |
+| provider | text | NO | – | Subscription provider, currently `revenuecat` |
+| provider_environment | text | NO | – | `sandbox` or `production` |
+| provider_app_user_id | text | YES | – | RevenueCat App User ID; expected to match the stable Supabase UUID |
+| entitlement_identifier | text | NO | – | Currently `verified_artist_tools` |
+| product_identifier | text | YES | – | App Store product identifier |
+| store | text | YES | – | Store reported by RevenueCat, normally App Store |
+| ownership_type | text | YES | – | RevenueCat ownership classification |
+| store_subscription_identifier | text | YES | – | Store subscription/transaction identifier where available |
+| is_entitlement_active | boolean | NO | false | Raw provider entitlement-active state |
+| will_renew | boolean | YES | – | Whether the subscription is expected to renew |
+| has_billing_issue | boolean | NO | false | Provider reports a billing issue |
+| is_in_grace_period | boolean | NO | false | Subscription is inside a valid billing grace period |
+| is_refunded | boolean | NO | false | Purchase has been refunded |
+| is_revoked | boolean | NO | false | Entitlement has been revoked |
+| unsubscribe_detected | boolean | NO | false | Cancellation/non-renewal has been detected |
+| original_purchased_at | timestamptz | YES | – | Original purchase timestamp |
+| latest_purchased_at | timestamptz | YES | – | Most recent purchase or renewal timestamp |
+| expires_at | timestamptz | YES | – | Current entitlement access-through timestamp |
+| provider_event_at | timestamptz | YES | – | Timestamp of the latest provider event represented by the snapshot |
+| last_webhook_at | timestamptz | YES | – | Latest RevenueCat webhook ingestion timestamp |
+| created_at | timestamptz | NO | now() | Created |
+| updated_at | timestamptz | NO | now() | Last updated |
+
+**Constraints and indexes:**
+- Unique index on:
+  - `user_id`
+  - `provider`
+  - `provider_environment`
+  - `entitlement_identifier`
+- `user_id` references `profiles.id`.
+- Subscription identity uses the stable Supabase profile UUID.
+
+**RLS:** Enabled.
+
+**Access model:**
+- Backend-only subscription bookkeeping.
+- No direct anonymous or authenticated client access should be granted.
+- Backend service-role access is used for reconciliation and entitlement checks.
+
+⚠️ **Important:**
+- Sandbox and production snapshots must remain isolated.
+- The server must select the correct environment before evaluating access.
+- The canonical entitlement identifier is `verified_artist_tools`.
+- Raw snapshot fields must not be exposed directly to public profile clients.
+- Public features may receive narrow derived values such as `deliveryEnabled`, but never billing state, expiry, product or lifecycle details.
+- Cancellation does not immediately remove access when `expires_at` remains in the future.
+- Valid grace-period access remains available.
+- Refund or revocation removes new paid-tool access once confirmed.
+- Stale, missing or unknown entitlement states fail closed for paid functionality.
+
+---
+
+## artist_release_alert_demand_notifications
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| listener_id | uuid | NO | – | FK → profiles.id ON DELETE CASCADE; listener who enabled Release Alerts |
+| artist_id | uuid | NO | – | FK → profiles.id ON DELETE CASCADE; artist receiving the demand signal |
+| first_enabled_at | timestamptz | NO | now() | First known time the listener generated a demand notification for this artist |
+
+**Primary key:**
+- `(listener_id, artist_id)`
+
+**Constraints:**
+- `CHECK (listener_id <> artist_id)`
+- Both foreign keys use `ON DELETE CASCADE`.
+
+**Indexes:**
+- No additional indexes.
+- The composite primary key covers the unique marker lookup.
+
+**RLS:** Enabled.
+
+**Access model:**
+- Backend-only bookkeeping table.
+- No direct anonymous or authenticated client policies.
+- Backend service role inserts and reads markers.
+
+⚠️ **Important:**
+- This table is a permanent first-enable marker.
+- It is separate from active Release Alerts membership.
+- Turning alerts off deletes the corresponding row from `artist_release_alerts` but does **not** delete this marker.
+- Turning alerts back on restores audience membership but must not create another `release_alert_enabled` notification for the same listener–artist pair.
+- Different listeners may each generate one demand notification per artist.
+- The marker must not be used to calculate the live Release Alerts audience count.
+- Live audience count continues to use `artist_release_alerts`.
+- Marker claim and artist notification creation occur in the same backend transaction.
+- If notification creation fails, the transaction rolls back so a retry can still deliver the first notification.
+
+**Historical backfill:**
+- Existing markers were backfilled from distinct historical `release_alert_enabled` notifications.
+- Mapping:
+  - `notifications.triggered_by` → `listener_id`
+  - `notifications.artist_id` → `artist_id`
+- The earliest matching notification `created_at` becomes `first_enabled_at`.
+- Existing notification cards were not deleted or rewritten.
+- Active Release Alert memberships with no historical notification were not automatically marked, preserving recovery of a genuinely undelivered first notification.
+
+---
+
+### artist_release_creation_ledger
+
+Purpose:
+Authoritative release creation history used to enforce the Verified Artist free release allowance. Rows survive release deletion so artists cannot bypass the rolling release limit by creating and deleting releases.
+
+Columns
+
+| Column | Type | Notes |
+|--------|------|------|
+| id | uuid | Primary key |
+| artist_id | uuid | FK → profiles(id), ON DELETE CASCADE |
+| release_id | uuid | Unique identifier of the created release (no FK so history survives release deletion) |
+| created_at | timestamptz | Creation timestamp used for rolling 12-month counting |
+
+Indexes
+
+- UNIQUE (release_id)
+- INDEX (artist_id, created_at)
+
+Row Level Security
+
+- Enabled
+- Backend/service-role only
+- No client access
+
+Notes
+
+- No historical backfill was performed.
+- The ledger becomes authoritative from the subscription enforcement cutover.
+- Existing pre-launch test releases are intentionally excluded.
+
+---
+
+## release_attached_notification_markers
+
+Purpose:
+
+Permanent per-release, per-post and per-recipient delivery markers for
+`release_attached` notifications.
+
+The table allows newly attached posts to notify their own uploader and savers
+without renotifying audiences for posts that were already attached.
+
+It also prevents detach → reattach from repeatedly notifying the same audience.
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| release_id | uuid | NO | – | Release associated with the notification marker. Intentionally has no FK so the marker survives hard release deletion. |
+| post_id | uuid | NO | – | Newly attached post associated with the marker. Intentionally has no FK so the marker survives hard post deletion. |
+| recipient_id | uuid | NO | – | Notification recipient; FK → `profiles.id` ON DELETE CASCADE |
+| created_at | timestamptz | NO | `now()` | Time the marker was created |
+
+**Primary key:**
+
+- `(release_id, post_id, recipient_id)`
+
+**Foreign keys:**
+
+- `recipient_id` → `profiles.id` ON DELETE CASCADE
+- No foreign key on `release_id`
+- No foreign key on `post_id`
+
+**Indexes:**
+
+- No additional indexes currently required.
+- The composite primary key supports marker claims and duplicate prevention.
+
+**RLS:**
+
+- Enabled
+- Backend/service-role only
+- No direct anonymous or authenticated client policies
+
+### Notification behaviour
+
+When a post is newly attached to a release:
+
+- the backend identifies eligible recipients from that specific post;
+- eligible recipients include the uploader and current likers/savers;
+- account type does not affect eligibility;
+- the release owner is excluded according to the existing notification convention;
+- a marker is claimed for each `(release_id, post_id, recipient_id)` combination;
+- a `release_attached` notification is created only when the marker claim succeeds;
+- marker creation and notification insertion must occur atomically;
+- if notification insertion fails, the marker transaction rolls back so a retry remains possible.
+
+### Detach and reattach behaviour
+
+- Removing an attached post does not remove marker rows.
+- Removing a post creates no notification.
+- Reattaching the same post to the same release does not notify a previously marked recipient again.
+- A different newly attached post may notify its own eligible audience once.
+- Audiences belonging only to previously attached posts must not receive another notification.
+
+### Historical data
+
+- No historical backfill was performed.
+- Existing pre-cutover notification and attachment data is treated as disposable beta/test data.
+- This marker table becomes authoritative from the implementation cutover onward.
+- Application code must not infer historical markers from old `notifications.post_id` values because those values did not always identify the qualifying attached post accurately.
+
+---
+
+### Recent migrations
+
+- Subscription snapshot migration:
+  - Added `public.artist_subscription_snapshots`
+  - RLS enabled
+  - Unique snapshot identity per user, provider, environment and entitlement
+
+- `20260729220000_artist_release_alert_demand_notifications.sql`
+  - Added `public.artist_release_alert_demand_notifications`
+  - Enabled RLS
+  - Added composite primary key `(listener_id, artist_id)`
+  - Added self-alert check
+  - Added idempotent historical backfill from `release_alert_enabled` notifications
+
+  - `release_attached_notification_markers`
+  - Added permanent notification-delivery markers keyed by:
+    - `release_id`
+    - `post_id`
+    - `recipient_id`
+  - Enabled RLS
+  - Backend/service-role only
+  - No foreign keys on release or post IDs so markers survive hard deletion
+  - No historical backfill

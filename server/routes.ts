@@ -35,12 +35,13 @@ import {
   isDeletedCommentBody,
 } from "@shared/deleted-comment";
 import {
-  ARTIST_IDENTIFIED_POST_MESSAGE,
   COMMUNITY_ID_CONFIRMED_MESSAGE,
+  COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
+  formatArtistIdentifiedPostMessage,
 } from "@shared/notification-messages";
 import { insertCommentSchema, patchUserNotificationPreferencesSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import multer from "multer";
@@ -51,6 +52,34 @@ import fs from "fs";
 import { getPlatformTrendMetrics } from "./internalAnalytics";
 import { sendPushToUser } from "./push/pushSend";
 import { registerSubscriptionStatusRoutes } from "./subscription-status-routes";
+import { registerHomeWidgetRoutes } from "./home-widget-routes";
+import { subscriptionStatusRepository } from "./subscription-status-repository";
+import { canArtistDeliverReleaseAlerts } from "./artist-release-alert-delivery";
+import { canArtistUsePaidTools } from "./artist-paid-tool-access";
+import { handlePostArtistReleaseAlert } from "./post-artist-release-alert";
+import { isFreeReleaseLimitReachedError } from "./release-creation-limit";
+import { getReleaseCreationCapacity } from "./release-creation-capacity";
+import {
+  getArtistAttachmentAllowance,
+  getReleaseAttachmentCapacity,
+} from "./attach-posts-with-limit";
+import { isFreeAttachmentLimitReachedError } from "./release-attachment-limit";
+import {
+  getArtistLinkAllowance,
+  getReleaseLinkCapacity,
+  replaceReleasePrimaryLink,
+  upsertReleaseLinkWithLimit,
+} from "./upsert-release-link-with-limit";
+import {
+  isAcceptedReleaseLinkPlatform,
+  isApprovedReleaseLinkPlatform,
+  isFreeLinkLimitReachedError,
+  isInvalidReleaseLinkTypeError,
+  isPaidLinkTypeRequiredError,
+  normalizeReleaseLinkPlatform,
+} from "./release-link-limit";
+import { isFreeReleaseSubscriptionSuspendedError } from "./future-release-suspension";
+import { getFutureReleaseCapacity } from "./future-release-capacity";
 import {
   buildCompressOnlyArgs,
   extractPostThumbnail,
@@ -703,6 +732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerReleaseSharePreviewRoutes(app);
   registerArtistProfileSharePreviewRoutes(app);
   registerSubscriptionStatusRoutes(app);
+  registerHomeWidgetRoutes(app);
   // Serve video files from processed directory
   app.use('/videos', express.static(path.join(process.cwd(), 'processed')));
   app.use('/images', express.static(path.join(process.cwd(), 'processed')));
@@ -2802,7 +2832,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
       }
       const enabled = await storage.hasArtistReleaseAlert(req.dbUser.id, artistId);
-      res.json({ enabled });
+      let deliveryEnabled = false;
+      try {
+        deliveryEnabled =
+          (await canArtistDeliverReleaseAlerts(artistId, {
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+          })) === true;
+      } catch {
+        deliveryEnabled = false;
+      }
+      res.json({ enabled, deliveryEnabled });
     } catch (error) {
       console.error("[/api/artists/:artistId/release-alert] GET Error:", error);
       res.status(500).json({ message: "Failed to get release alert status" });
@@ -2810,30 +2849,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/artists/:artistId/release-alert", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
-    try {
-      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
-      const artistId = req.params.artistId;
-      if (req.dbUser.id === artistId) {
-        return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
-      }
-      try {
-        const { created } = await storage.enableArtistReleaseAlert(req.dbUser.id, artistId);
-        res.json({ enabled: true, created });
-      } catch (err) {
-        const code = err instanceof Error ? err.message : "";
-        if (code === "ARTIST_NOT_FOUND" || code === "ARTIST_NOT_VERIFIED") {
-          return res.status(404).json({ message: "Artist not found" });
-        }
-        if (code === "SELF_ALERT_NOT_ALLOWED") {
-          return res.status(400).json({ message: "Cannot enable release alerts for yourself" });
-        }
-        throw err;
-      }
-      res.json({ enabled: true });
-    } catch (error) {
-      console.error("[/api/artists/:artistId/release-alert] POST Error:", error);
-      res.status(500).json({ message: "Failed to enable release alerts" });
-    }
+    await handlePostArtistReleaseAlert(
+      req,
+      res,
+      (userId, artistId) => storage.enableArtistReleaseAlert(userId, artistId),
+      (artistId) =>
+        canArtistDeliverReleaseAlerts(artistId, {
+          getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+        }),
+    );
   });
 
   app.get("/api/artists/me/release-alerts-audience", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
@@ -2841,6 +2865,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (req.dbUser.account_type !== "artist" || !req.dbUser.verified_artist) {
         return res.status(403).json({ message: "Verified artist access only" });
+      }
+      const paid = await canArtistUsePaidTools(req.dbUser.id, {
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      if (!paid) {
+        return res.status(403).json({
+          code: "PAID_ARTIST_TOOL_REQUIRED",
+          message: "Verified Artist Tools required",
+        });
       }
       const count = await storage.countArtistReleaseAlertsForArtist(req.dbUser.id);
       res.json({ count });
@@ -3001,15 +3034,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const comment = commentRows[0];
       
-      // Update post with community verification
-      await db.execute(sql`
+      // Atomic first unidentified → community claim. Repeated submits / already-
+      // identified posts must not overwrite or re-notify.
+      const claimResult = await db.execute(sql`
         UPDATE posts
         SET is_verified_community = true,
             verification_status = 'community',
             verified_comment_id = ${commentId},
             verified_by = ${comment.user_id}
         WHERE id = ${postId}
+          AND COALESCE(NULLIF(TRIM(verification_status), ''), 'unverified') = 'unverified'
+        RETURNING id
       `);
+      const isFirstListenerVisibleIdentification =
+        (((claimResult as { rows?: unknown[] }).rows || []).length > 0);
+
+      if (!isFirstListenerVisibleIdentification) {
+        return res.json({
+          message: "Post verified by community",
+          idempotent: true,
+        });
+      }
 
       // Notify all moderators that a community verification now needs review
       await db.execute(sql`
@@ -3027,6 +3072,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
 
       fanOutModeratorPushCommunityVerification(postId, userId);
+
+      // Uploader notification: community identification (Variant A).
+      // userId is the post owner (only owners may community-verify).
+      try {
+        const uploaderNotif = await storage.createNotification({
+          artistId: userId,
+          triggeredBy: userId,
+          postId,
+          message: COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
+          notificationType: "community_identified_post",
+        });
+        void sendPushToUser(userId, {
+          type: "community_identified_post",
+          notificationId: uploaderNotif.id,
+          postId,
+          actorUserId: userId,
+        });
+      } catch (uploaderNotifyErr) {
+        console.error(
+          "[community-verify] Failed to create community_identified_post notification:",
+          uploaderNotifyErr,
+        );
+      }
+
+      // Listener fan-out: savers only. Always exclude the uploader (even if they liked).
+      try {
+        await storage.notifyTrackIdentifiedLikers({
+          postId,
+          actorUserId: userId,
+          isFirstListenerVisibleIdentification: true,
+          excludeRecipientIds: [userId],
+        });
+      } catch (likerNotifyErr) {
+        console.error("[community-verify] Failed to fan-out track_identified:", likerNotifyErr);
+      }
 
       res.json({ message: "Post verified by community" });
     } catch (error) {
@@ -3123,7 +3203,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const artistComment = await storage.createComment(postId, artistId, body, null);
       const artistCommentId = artistComment?.id;
 
-      await db.execute(sql`
+      // Atomic first unidentified → identified claim (direct artist ID).
+      // Community/identified posts take the takeover path without listener re-fan-out.
+      const claimResult = await db.execute(sql`
         UPDATE posts
         SET is_verified_artist = true,
             artist_verified_by = ${artistId},
@@ -3133,7 +3215,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
             denied_at = NULL,
             verification_status = 'identified'
         WHERE id = ${postId}
+          AND COALESCE(NULLIF(TRIM(verification_status), ''), 'unverified') = 'unverified'
+        RETURNING id
       `);
+      const isFirstListenerVisibleIdentification =
+        (((claimResult as { rows?: unknown[] }).rows || []).length > 0);
+
+      if (!isFirstListenerVisibleIdentification) {
+        const takeoverResult = await db.execute(sql`
+          UPDATE posts
+          SET is_verified_artist = true,
+              artist_verified_by = ${artistId},
+              verified_comment_id = ${commentId},
+              denied_by_artist = false,
+              denied_at = NULL,
+              verification_status = 'identified'
+          WHERE id = ${postId}
+            AND COALESCE(is_verified_artist, false) = false
+          RETURNING id
+        `);
+        if (((takeoverResult as { rows?: unknown[] }).rows || []).length === 0) {
+          return res.status(400).json({
+            code: "ARTIST_ALREADY_VERIFIED",
+            message: "This post has already been verified by an artist.",
+          });
+        }
+      }
 
       if (process.env.NODE_ENV === "development") {
         console.log("[artist-confirm]", {
@@ -3141,6 +3248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           selectedCommentId: commentId,
           insertedArtistCommentId: artistCommentId,
           updatedVerifiedCommentId: commentId,
+          isFirstListenerVisibleIdentification,
         });
       }
 
@@ -3158,17 +3266,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Notify the post uploader that their track was identified by an artist.
+      // Sent on first direct confirm AND on later artist takeover after community ID
+      // (additional milestone). Savers are not re-notified on takeover.
+      const excludeFromLikerFanOut: string[] = [artistId];
       try {
         const postOwnerId =
           (post as any).userId ?? (post as any)?.user?.id ?? undefined;
         if (!postOwnerId) {
           console.warn("[artist-confirm] missing post owner id; skip notification", { postId });
         } else if (postOwnerId !== artistId) {
-          const notif = await storage.createNotification({
+          excludeFromLikerFanOut.push(postOwnerId);
+          const artistMessage = formatArtistIdentifiedPostMessage(profile.username);
+          await storage.createNotification({
             artistId: postOwnerId,
             triggeredBy: artistId,
             postId,
-            message: ARTIST_IDENTIFIED_POST_MESSAGE,
+            message: artistMessage,
             notificationType: "artist_identified_post",
           });
           void sendPushToUser(postOwnerId, {
@@ -3176,10 +3289,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             postId,
             artistId,
             verifiedCommentId: commentId,
+            artistUsername: profile.username,
           });
         }
       } catch (notifyErr) {
         console.error("[artist-confirm] Failed to create artist_identified_post notification:", notifyErr);
+      }
+
+      // Listener fan-out only on unidentified → identified (not community takeover).
+      // Uploader is always excluded from saver copy.
+      try {
+        await storage.notifyTrackIdentifiedLikers({
+          postId,
+          actorUserId: artistId,
+          isFirstListenerVisibleIdentification,
+          excludeRecipientIds: excludeFromLikerFanOut,
+        });
+      } catch (likerNotifyErr) {
+        console.error("[artist-confirm] Failed to fan-out track_identified:", likerNotifyErr);
       }
 
       res.json({
@@ -3559,7 +3686,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("[karma] Failed to award confirmed-id karma (moderator confirm):", karmaErr);
       }
       
-      // Note: Notification to commenter is handled by the database trigger on moderator_actions
+      // Note: Notification to commenter is handled by the database trigger on moderator_actions.
+      // Listener track_identified already fired at community-verify (unidentified → community).
+      // community → identified must not send a second liker notification.
       
       res.json({ message: "Verification confirmed" });
     } catch (error) {
@@ -5646,6 +5775,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Must be registered before /api/releases/:id
+  app.get("/api/releases/creation-capacity", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist") {
+        return res.status(403).json({ message: "Artists only" });
+      }
+      if (!req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artists only" });
+      }
+      const capacity = await getReleaseCreationCapacity(req.dbUser.id, {
+        pool,
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      res.json(capacity);
+    } catch (error) {
+      console.error("[/api/releases/creation-capacity] Error:", error);
+      res.status(500).json({ message: "Failed to get release creation capacity" });
+    }
+  });
+
+  app.get("/api/artists/me/future-release-capacity", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist") {
+        return res.status(403).json({ message: "Artists only" });
+      }
+      if (!req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artists only" });
+      }
+      const capacity = await getFutureReleaseCapacity(req.dbUser.id, {
+        pool,
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      res.json(capacity);
+    } catch (error) {
+      console.error("[/api/artists/me/future-release-capacity] Error:", error);
+      res.status(500).json({ message: "Failed to get future release capacity" });
+    }
+  });
+
+  app.get("/api/artists/me/release-attachment-allowance", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist") {
+        return res.status(403).json({ message: "Artists only" });
+      }
+      if (!req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artists only" });
+      }
+      const allowance = await getArtistAttachmentAllowance(req.dbUser.id, {
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      res.json(allowance);
+    } catch (error) {
+      console.error("[/api/artists/me/release-attachment-allowance] Error:", error);
+      res.status(500).json({ message: "Failed to get attachment allowance" });
+    }
+  });
+
+  app.get("/api/artists/me/release-link-allowance", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (req.dbUser.account_type !== "artist") {
+        return res.status(403).json({ message: "Artists only" });
+      }
+      if (!req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artists only" });
+      }
+      const allowance = await getArtistLinkAllowance(req.dbUser.id, {
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      res.json(allowance);
+    } catch (error) {
+      console.error("[/api/artists/me/release-link-allowance] Error:", error);
+      res.status(500).json({ message: "Failed to get link allowance" });
+    }
+  });
+
   app.get("/api/releases/:id", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const release = await storage.getRelease(req.params.id);
@@ -5658,6 +5866,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const artworkPath = release.artworkUrl || null;
       const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
+
+      if (release.subscriptionSuspendedAt && !isOwner && !isCollab) {
+        // Was public, now subscription-suspended: fans get a stable "paused" payload
+        // instead of 404 so shared links keep resolving.
+        return res.json({
+          id: release.id,
+          title: release.title,
+          artworkUrl,
+          artworkPath,
+          artistId: release.artistId,
+          artistUsername: release.artistUsername,
+          releaseDate: release.releaseDate,
+          isComingSoon: release.isComingSoon,
+          isPublic: true,
+          subscriptionSuspended: true,
+          availability: "subscription_paused",
+          message: "This release isn't currently available.",
+          links: [],
+          postIds: [],
+          attachedClips: [],
+          collaborators: [],
+        });
+      }
+
       let viewerSavedRelease = false;
       let viewerSavedReleaseRemoveBlocked = false;
       if (userId && !isOwner) {
@@ -5674,6 +5906,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         viewerSavedRelease,
         viewerSavedReleaseRemoveBlocked,
         attachedClips,
+        ...(release.subscriptionSuspendedAt ? { subscriptionPaused: true } : {}),
       });
     } catch (error) {
       console.error("[/api/releases/:id] Error:", error);
@@ -5777,6 +6010,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
+      // Defense-in-depth: auth middleware already blocks unverified artists from authenticated APIs.
+      if (!req.dbUser.verified_artist) {
+        return res.status(403).json({ message: "Verified artists only" });
+      }
       const { title, release_date, artwork_url, is_coming_soon } = req.body;
       const coming = !!is_coming_soon;
       const titleTrim = String(title ?? "").trim();
@@ -5804,6 +6041,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
       res.status(201).json({ ...release, artworkUrl });
     } catch (error) {
+      if (isFreeReleaseLimitReachedError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
       console.error("[/api/releases] Error:", error);
       res.status(500).json({ message: "Failed to create release" });
     }
@@ -5847,14 +6087,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const RELEASE_LINK_PLATFORMS = ['spotify', 'apple_music', 'soundcloud', 'beatport', 'bandcamp', 'juno', 'deezer', 'amazon_music', 'tidal', 'youtube_music', 'free_download', 'dub_pack', 'other'] as const;
-  function normalizePlatformForDb(raw: string): string {
-    const s = String(raw).trim().toLowerCase();
-    if (s === 'youtube') return 'youtube_music';
-    if (s === 'apple') return 'apple_music';
-    return s;
-  }
-
   app.post("/api/releases/:id/links", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
@@ -5863,19 +6095,142 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Not your release" });
       const { platform, url, link_type } = req.body;
       if (!platform || !url) return res.status(400).json({ message: "platform and url are required" });
-      const normalized = normalizePlatformForDb(platform);
-      if (!RELEASE_LINK_PLATFORMS.includes(normalized as typeof RELEASE_LINK_PLATFORMS[number])) {
+      const normalized = normalizeReleaseLinkPlatform(platform);
+      const selectableAllowed = [
+        "spotify",
+        "apple_music",
+        "soundcloud",
+        "beatport",
+        "bandcamp",
+        "deezer",
+        "amazon_music",
+        "tidal",
+        "youtube_music",
+        "free_download",
+        "dub_pack",
+        "other",
+      ];
+      if (!isAcceptedReleaseLinkPlatform(normalized)) {
         return res.status(400).json({
           message: "Invalid platform",
-          allowed: [...RELEASE_LINK_PLATFORMS],
+          allowed: selectableAllowed,
         });
       }
-      await storage.upsertReleaseLink(req.params.id, normalized, String(url).trim(), link_type?.trim() || null);
-      const links = await storage.getReleaseLinks(req.params.id);
+      if (!isApprovedReleaseLinkPlatform(normalized)) {
+        // Legacy platforms (e.g. juno) may only UPDATE an existing row — never insert.
+        const existingLinks = await storage.getReleaseLinks(req.params.id);
+        const hasExisting = existingLinks.some(
+          (l: { platform?: string }) =>
+            normalizeReleaseLinkPlatform(String(l.platform ?? "")) === normalized,
+        );
+        if (!hasExisting) {
+          return res.status(400).json({
+            message: "Invalid platform",
+            allowed: selectableAllowed,
+          });
+        }
+      }
+      const links = await upsertReleaseLinkWithLimit(
+        req.params.id,
+        {
+          platform: normalized,
+          url: String(url).trim(),
+          linkType: link_type?.trim() || null,
+        },
+        {
+          pool,
+          getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+        },
+      );
       res.json(links);
     } catch (error) {
+      if (isInvalidReleaseLinkTypeError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+      if (isFreeLinkLimitReachedError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+      if (isPaidLinkTypeRequiredError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
       console.error("[/api/releases/:id/links] Error:", error);
       res.status(500).json({ message: "Failed to upsert link" });
+    }
+  });
+
+  app.post("/api/releases/:id/links/replace", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Not your release" });
+      const { from_platform, platform, url, link_type } = req.body;
+      if (!from_platform || !platform || !url) {
+        return res.status(400).json({
+          message: "from_platform, platform and url are required",
+        });
+      }
+      const fromNormalized = normalizeReleaseLinkPlatform(from_platform);
+      const normalized = normalizeReleaseLinkPlatform(platform);
+      // Source may be legacy (e.g. Juno); replacement target must be newly selectable.
+      if (
+        !isAcceptedReleaseLinkPlatform(fromNormalized) ||
+        !isApprovedReleaseLinkPlatform(normalized)
+      ) {
+        return res.status(400).json({ message: "Invalid platform" });
+      }
+      const links = await replaceReleasePrimaryLink(
+        req.params.id,
+        {
+          fromPlatform: fromNormalized,
+          platform: normalized,
+          url: String(url).trim(),
+          linkType: link_type?.trim() || null,
+        },
+        {
+          pool,
+          getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+        },
+      );
+      res.json(links);
+    } catch (error) {
+      if (isInvalidReleaseLinkTypeError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+      if (isFreeLinkLimitReachedError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+      if (isPaidLinkTypeRequiredError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+      if (error instanceof Error && error.message === "Source link not found") {
+        return res.status(404).json({ message: "Source link not found" });
+      }
+      if (error instanceof Error && error.message === "Target platform already exists") {
+        return res.status(409).json({ message: "Target platform already exists" });
+      }
+      console.error("[/api/releases/:id/links/replace] Error:", error);
+      res.status(500).json({ message: "Failed to replace link" });
+    }
+  });
+
+  app.get("/api/releases/:id/link-capacity", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      if (release.artistId !== req.dbUser.id) {
+        return res.status(403).json({ message: "Not your release" });
+      }
+      const capacity = await getReleaseLinkCapacity(req.params.id, {
+        pool,
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      if (!capacity) return res.status(404).json({ message: "Release not found" });
+      res.json(capacity);
+    } catch (error) {
+      console.error("[/api/releases/:id/link-capacity] Error:", error);
+      res.status(500).json({ message: "Failed to get link capacity" });
     }
   });
 
@@ -5885,7 +6240,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const release = await storage.getRelease(req.params.id);
       if (!release) return res.status(404).json({ message: "Release not found" });
       if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Not your release" });
-      await storage.deleteReleaseLink(req.params.id, req.params.platform);
+      const platform = normalizeReleaseLinkPlatform(req.params.platform);
+      await storage.deleteReleaseLink(req.params.id, platform);
       res.json({ ok: true });
     } catch (error) {
       console.error("[/api/releases/:id/links/:platform] DELETE Error:", error);
@@ -5912,13 +6268,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rejected,
         });
       }
-      if (attached.length > 0) {
+      // Per-post release_attached is driven by newlyAttached + markers (not notified_at).
+      if (newlyAttached.length > 0 && release.isPublic) {
+        await storage.notifyNewlyAttachedPostAudience(req.params.id, newlyAttached);
+      }
+      // Release-level paid artist_release_alert + notified_at (once); also covers
+      // first-public fan-out for posts attached while the release was private.
+      if (attached.length > 0 || newlyAttached.length > 0) {
         await storage.maybeNotifyReleasePublic(req.params.id);
       }
       res.json({ attached, rejected });
     } catch (error) {
+      if (isFreeAttachmentLimitReachedError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
       console.error("[/api/releases/:id/attach-posts] Error:", error);
       res.status(500).json({ message: "Failed to attach posts" });
+    }
+  });
+
+  app.get("/api/releases/:id/attachment-capacity", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const release = await storage.getRelease(req.params.id);
+      if (!release) return res.status(404).json({ message: "Release not found" });
+      const canManage = await storage.canManageRelease(req.params.id, req.dbUser.id);
+      if (!canManage) return res.status(403).json({ message: "Not authorized to manage this release" });
+      const capacity = await getReleaseAttachmentCapacity(req.params.id, {
+        pool,
+        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+      });
+      if (!capacity) return res.status(404).json({ message: "Release not found" });
+      res.json(capacity);
+    } catch (error) {
+      console.error("[/api/releases/:id/attachment-capacity] Error:", error);
+      res.status(500).json({ message: "Failed to get attachment capacity" });
     }
   });
 
@@ -6052,6 +6436,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ok) return res.status(400).json({ message: "Already notified or no likers" });
       res.json({ message: "Notifications sent" });
     } catch (error) {
+      if (isFreeReleaseSubscriptionSuspendedError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
       console.error("[/api/releases/:id/notify-likers] Error:", error);
       res.status(500).json({ message: "Failed to notify likers" });
     }

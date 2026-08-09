@@ -100,6 +100,12 @@ function resolvePushTapRoute(payload: Record<string, unknown>): string {
   if (type === "artist_identified_post" && postId && postId.length > 0) {
     return `/?post=${encodeURIComponent(postId)}`;
   }
+  if (type === "community_identified_post" && postId && postId.length > 0) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
+  if (type === "track_identified" && postId && postId.length > 0) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
   if (type === "moderator_community_verification_pending") {
     return "/moderator?tab=pending";
   }

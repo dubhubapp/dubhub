@@ -26,6 +26,9 @@ import {
   isReleaseCardUpcoming,
   type ReleaseFeedCardData,
 } from "@/components/release-feed-card";
+import { shouldShowSavedReleaseCountdownIndicator } from "@/lib/home-widget-countdown-icon";
+import { isHomeReleaseWidgetSelectionEnabled } from "@/lib/home-widget-selection-flag";
+import { readHomeWidgetSelectedReleaseId } from "@/lib/home-widget-selection-store";
 
 export type ReleaseFeedItem = ReleaseFeedCardData & {
   notifiedAt: string | null;
@@ -125,7 +128,7 @@ function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
 }
 
 export default function ReleaseTracker() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
   const isArtist = userType === "artist";
@@ -283,6 +286,15 @@ export default function ReleaseTracker() {
     [standardDatedFeed]
   );
 
+  const countdownFlagEnabled =
+    isHomeReleaseWidgetSelectionEnabled() && effectiveScope === "saved";
+  const selectedCountdownReleaseId = useMemo(() => {
+    if (!countdownFlagEnabled || !currentUser?.id) return null;
+    return readHomeWidgetSelectedReleaseId(currentUser.id);
+    // Re-read when returning from Release Detail so the status indicator updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- location is an intentional refresh key
+  }, [countdownFlagEnabled, currentUser?.id, location]);
+
   const renderReleaseCard = (r: ReleaseFeedItem, opts?: { featured?: boolean }) => {
     const savedOutToday = isSavedReleaseOutTodayInList(r, effectiveScope, currentUser?.id);
     const releaseDayHighlight = isReleaseDayHighlight(r);
@@ -298,6 +310,11 @@ export default function ReleaseTracker() {
           isOwnerReleaseDay,
           releaseDayHighlight,
         }}
+        showCountdownSelectedIndicator={shouldShowSavedReleaseCountdownIndicator({
+          flagEnabled: countdownFlagEnabled,
+          selectedReleaseId: selectedCountdownReleaseId,
+          cardReleaseId: r.id,
+        })}
       />
     );
   };

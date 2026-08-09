@@ -84,6 +84,7 @@ function PublicArtistDiscographyTile({
         )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-1.5 pb-1.5 pt-6">
           <ReleaseStatusPill
+            paused={!!release.subscriptionSuspendedAt}
             isComingSoon={release.isComingSoon}
             releaseDate={release.releaseDate}
             upcoming={upcoming}

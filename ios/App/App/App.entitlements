@@ -9,5 +9,9 @@
 		<string>applinks:dubhub.uk</string>
 		<string>applinks:www.dubhub.uk</string>
 	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.uk.dubhub.app</string>
+	</array>
 </dict>
 </plist>

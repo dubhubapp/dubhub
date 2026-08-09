@@ -9,6 +9,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider } from "@/lib/user-context";
 import { SubmitClipProvider } from "@/lib/submit-clip-context";
 import { SubmitClipDrawer } from "@/components/submit-clip-drawer";
+import { VerifiedArtistToolsPaywallHost } from "@/components/verified-artist-tools-paywall-host";
+import { LifetimeGiftAnnouncementHost } from "@/components/lifetime-gift-announcement-host";
+import { HomeWidgetRefreshHost } from "@/components/home-widget-refresh-host";
+import { HomeWidgetSetupGuideHost } from "@/components/home-widget-setup-guide-host";
 import { ConditionalBottomNavigation } from "@/components/conditional-bottom-navigation";
 import { ReleaseDropDayBanner } from "@/components/release-drop-day-banner";
 import { InAppNotificationBannerHost } from "@/components/in-app-notification-banner";
@@ -72,6 +76,7 @@ import {
   shouldDeferSignOutForAuthCallback,
 } from "@/lib/auth-session-utils";
 import { quarantineRevenueCatIdentity } from "@/lib/revenuecat-identity";
+import { clearHomeWidgetOnLogout } from "@/lib/home-widget-session";
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -535,6 +540,7 @@ function App() {
       } else if (event === 'SIGNED_OUT') {
         resetSilentPushRegistrationSession();
         quarantineRevenueCatIdentity("supabase_signed_out");
+        void clearHomeWidgetOnLogout(null);
         setIsAuthenticated(false);
         setUserRole('user');
         setIsHomeFeedReady(false);
@@ -604,6 +610,9 @@ function App() {
       data: { session },
     } = await supabase.auth.getSession();
     const signingOutUserId = session?.user?.id ?? null;
+
+    // Clear shared widget payload before tearing down auth UI; keep per-user selection.
+    await clearHomeWidgetOnLogout(signingOutUserId);
 
     // Sign out from Supabase
     await supabase.auth.signOut();
@@ -765,6 +774,10 @@ function App() {
             </Switch>
             </AuthenticatedMainShell>
             <SubmitClipDrawer />
+            <VerifiedArtistToolsPaywallHost />
+            <LifetimeGiftAnnouncementHost />
+            <HomeWidgetRefreshHost />
+            <HomeWidgetSetupGuideHost />
             <ConditionalBottomNavigation />
             <InAppNotificationBannerHost
               suppressOnboardingModal={firstLoginOnboarding.open}

@@ -3,13 +3,24 @@ import { Bell, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { releaseAlertsEnableToastCopy } from "@/lib/release-alerts-enable-toast";
 
 const RELEASE_ALERTS_BUTTON_CLASS =
   "inline-flex min-h-[1.625rem] w-full items-center justify-center gap-1 rounded px-2.5 py-1 text-[10px] font-semibold leading-none ring-1 backdrop-blur-md transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]";
 
 export type ArtistReleaseAlertResponse = {
   enabled: boolean;
+  /** Present on GET/POST; treat missing as false (fail closed for toast copy). */
+  deliveryEnabled?: boolean;
+  created?: boolean;
 };
+
+export {
+  RELEASE_ALERTS_ON_TOAST_TITLE,
+  RELEASE_ALERTS_DELIVERY_ENABLED_TOAST_BODY,
+  RELEASE_ALERTS_DELIVERY_PENDING_TOAST_BODY,
+  releaseAlertsEnableToastCopy,
+} from "@/lib/release-alerts-enable-toast";
 
 type ArtistReleaseAlertsButtonProps = {
   artistId: string;
@@ -48,8 +59,12 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
     queryFn: () => fetchArtistReleaseAlertStatus(artistId),
   });
 
-  const setEnabled = (enabled: boolean) => {
-    queryClient.setQueryData<ArtistReleaseAlertResponse>(artistReleaseAlertQueryKey(artistId), { enabled });
+  const setEnabled = (enabled: boolean, deliveryEnabled?: boolean) => {
+    queryClient.setQueryData<ArtistReleaseAlertResponse>(artistReleaseAlertQueryKey(artistId), (prev) => ({
+      enabled,
+      deliveryEnabled:
+        typeof deliveryEnabled === "boolean" ? deliveryEnabled : prev?.deliveryEnabled,
+    }));
   };
 
   const enableMutation = useMutation({
@@ -73,9 +88,10 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
       }
     },
     onSuccess: (result) => {
-      setEnabled(!!result.enabled);
+      setEnabled(!!result.enabled, result.deliveryEnabled === true);
       if (result.enabled) {
-        toast({ title: "You'll be notified when this artist releases new music." });
+        const copy = releaseAlertsEnableToastCopy(result.deliveryEnabled);
+        toast({ title: copy.title, description: copy.description });
       }
     },
     onSettled: () => {

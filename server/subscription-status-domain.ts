@@ -98,11 +98,36 @@ function hasFutureAccessWindow(
   return parsed.getTime() > now.getTime() - SUBSCRIPTION_CLOCK_SKEW_MS;
 }
 
+/**
+ * Narrow lifetime-active candidacy from stored snapshot facts.
+ * Schema uses isRefunded/isRevoked booleans (no separate refundedAt/revokedAt columns).
+ */
+export function isLifetimeActiveCandidate(
+  snapshot: ArtistSubscriptionSnapshot,
+): boolean {
+  if (snapshot.isEntitlementActive !== true) return false;
+  if (snapshot.expiresAt != null) return false;
+  if (!snapshot.productIdentifier?.trim()) return false;
+  if (!snapshot.store?.trim()) return false;
+  if (snapshot.isRefunded) return false;
+  if (snapshot.isRevoked) return false;
+  // Contradictory timing: grace/billing without an expiry window.
+  if (snapshot.isInGracePeriod) return false;
+  if (snapshot.hasBillingIssue) return false;
+  if (!parseDate(snapshot.lastSuccessfulVerificationAt)) return false;
+  if (!parseDate(snapshot.staleAfterAt)) return false;
+  return true;
+}
+
 function hasRequiredTimingFacts(snapshot: ArtistSubscriptionSnapshot): boolean {
   const lastVerifiedAt = parseDate(snapshot.lastSuccessfulVerificationAt);
   const staleAfterAt = parseDate(snapshot.staleAfterAt);
   if (!lastVerifiedAt || !staleAfterAt) return false;
   if (staleAfterAt.getTime() < lastVerifiedAt.getTime()) return false;
+
+  if (isLifetimeActiveCandidate(snapshot)) {
+    return true;
+  }
 
   const expiryRequired =
     snapshot.isEntitlementActive ||
@@ -110,6 +135,11 @@ function hasRequiredTimingFacts(snapshot: ArtistSubscriptionSnapshot): boolean {
     snapshot.isInGracePeriod;
 
   if (expiryRequired && !parseDate(snapshot.expiresAt)) {
+    // Lifetime rows that were refunded/revoked still need classification;
+    // paid access is denied by the refunded/revoked branches.
+    if (snapshot.isRefunded || snapshot.isRevoked) {
+      return true;
+    }
     return false;
   }
 
@@ -129,6 +159,34 @@ export function getSnapshotFreshness(
   return "fresh";
 }
 
+/**
+ * Authoritative provider verification with no commerce history for this environment.
+ * Partially populated rows must not match (remain unknown / other branches).
+ *
+ * Schema booleans stand in for the provider timestamp fields named in product policy
+ * (unsubscribeDetectedAt, billingIssueDetectedAt, etc. are not separate columns).
+ */
+export function isVerifiedEmptySnapshot(
+  snapshot: ArtistSubscriptionSnapshot,
+): boolean {
+  if (snapshot.isEntitlementActive !== false) return false;
+  if (snapshot.productIdentifier != null) return false;
+  if (snapshot.store != null) return false;
+  if (snapshot.ownershipType != null) return false;
+  if (snapshot.storeSubscriptionIdentifier != null) return false;
+  if (parseDate(snapshot.originalPurchasedAt)) return false;
+  if (parseDate(snapshot.latestPurchasedAt)) return false;
+  if (parseDate(snapshot.expiresAt)) return false;
+  if (snapshot.unsubscribeDetected !== false) return false;
+  if (snapshot.hasBillingIssue !== false) return false;
+  if (snapshot.isInGracePeriod !== false) return false;
+  if (snapshot.isRefunded !== false) return false;
+  if (snapshot.isRevoked !== false) return false;
+  if (!parseDate(snapshot.lastSuccessfulVerificationAt)) return false;
+  if (!parseDate(snapshot.staleAfterAt)) return false;
+  return true;
+}
+
 export function mapProviderSnapshotToLifecycle(
   snapshot: ArtistSubscriptionSnapshot | null | undefined,
   now: Date,
@@ -140,10 +198,20 @@ export function mapProviderSnapshotToLifecycle(
   if (freshness === "unknown") return "unknown";
   if (freshness === "stale") return "stale";
 
+  // Fresh verified-empty: provider confirmed no commerce history in this environment.
+  if (isVerifiedEmptySnapshot(snapshot)) {
+    return "never_subscribed";
+  }
+
   if (snapshot.isRevoked) return "revoked";
   if (snapshot.isRefunded) return "refunded";
   if (snapshot.isInGracePeriod) return "grace_period";
   if (snapshot.hasBillingIssue) return "billing_issue";
+
+  // Lifetime: active entitlement + explicit null expiry + product/store facts.
+  if (isLifetimeActiveCandidate(snapshot) && freshness === "fresh") {
+    return "active";
+  }
 
   const renewalDisabled =
     snapshot.unsubscribeDetected || snapshot.willRenew === false;
@@ -186,6 +254,18 @@ function getBasePaidAccessFromLifecycle(
   const expiresAt = toIsoString(snapshot.expiresAt);
   switch (lifecycle) {
     case "active":
+      if (isLifetimeActiveCandidate(snapshot) && snapshot.expiresAt == null) {
+        return {
+          hasPaidToolAccess: true,
+          accessThrough: null,
+          source: "provider",
+        };
+      }
+      return {
+        hasPaidToolAccess: hasFutureAccessWindow(snapshot.expiresAt, now),
+        accessThrough: expiresAt,
+        source: "provider",
+      };
     case "cancelled_but_active_until_expiry":
     case "grace_period":
       return {

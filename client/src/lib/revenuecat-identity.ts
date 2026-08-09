@@ -4,11 +4,22 @@
  * - Configure once per process with a known Supabase UUID (never anonymous).
  * - Later account changes use logIn(uuid); never call Purchases.logOut().
  * - Logout quarantines in-memory state and blocks any future purchase APIs.
- * - No purchases, restore, offerings, or server sync in this module.
+ * - No production paywall or feature gating in this module.
+ * - Offerings / purchase diagnostics live in separate DEV helpers that call
+ *   assertRevenueCatPurchaseApisEnabled() before SDK purchase/read APIs.
+ * - Provider (Apple vs Test Store) is selected at compile/build time. Changing
+ *   provider requires a rebuild and app relaunch because configure runs once.
  */
 
 import { Capacitor } from "@capacitor/core";
 import { LOG_LEVEL, Purchases } from "@revenuecat/purchases-capacitor";
+import {
+  getViteRevenueCatProviderEnv,
+  resolveRevenueCatSdkApiKey,
+  type AppBuildChannel,
+  type RevenueCatProviderKind,
+  type RevenueCatProviderSelection,
+} from "./revenuecat-provider";
 
 export const RC_IDENTITY_DIAG_TAG = "[DubHub][RevenueCat][identity]";
 
@@ -37,9 +48,14 @@ export type RevenueCatIdentityDebugSnapshot = {
   customerInfoOk: boolean;
   customerInfoError: string | null;
   activeEntitlementCount: number;
+  /** True when the selected provider's public SDK key is present (never logs the key). */
   publicApiKeyPresent: boolean;
+  /** Compile-time selected provider: Apple App Store or RevenueCat Test Store. */
+  provider: RevenueCatProviderKind;
+  /** Explicit VITE_APP_BUILD_CHANNEL (not Vite DEV/PROD). */
+  buildChannel: AppBuildChannel | null;
+  providerSelectionError: string | null;
 };
-
 type InternalState = {
   configuredOnce: boolean;
   configureCount: number;
@@ -101,9 +117,8 @@ function diagLog(message: string, payload?: Record<string, unknown>): void {
   }
 }
 
-function readPublicApiKey(): string | null {
-  const raw = String(import.meta.env.VITE_REVENUECAT_IOS_PUBLIC_API_KEY ?? "").trim();
-  return raw.length > 0 ? raw : null;
+function selectProviderApiKey(): RevenueCatProviderSelection {
+  return resolveRevenueCatSdkApiKey(getViteRevenueCatProviderEnv());
 }
 
 function isAnonymousAppUserId(appUserId: string | null | undefined): boolean {
@@ -160,6 +175,19 @@ export function getRevenueCatIdentityDebugSnapshot(): RevenueCatIdentityDebugSna
     supabaseUserId === revenueCatAppUserId &&
     !isAnonymousAppUserId(revenueCatAppUserId);
 
+  let providerSelection: RevenueCatProviderSelection;
+  try {
+    providerSelection = selectProviderApiKey();
+  } catch (error) {
+    providerSelection = {
+      provider: "apple",
+      apiKey: null,
+      apiKeyPresent: false,
+      error: error instanceof Error ? error.message : String(error),
+      buildChannel: null,
+    };
+  }
+
   return {
     platform: (() => {
       try {
@@ -184,7 +212,10 @@ export function getRevenueCatIdentityDebugSnapshot(): RevenueCatIdentityDebugSna
     customerInfoOk: state.customerInfoOk,
     customerInfoError: state.customerInfoError,
     activeEntitlementCount: state.activeEntitlementCount,
-    publicApiKeyPresent: !!readPublicApiKey(),
+    publicApiKeyPresent: providerSelection.apiKeyPresent,
+    provider: providerSelection.provider,
+    buildChannel: providerSelection.buildChannel,
+    providerSelectionError: providerSelection.error,
   };
 }
 
@@ -270,13 +301,29 @@ export async function ensureRevenueCatIdentified(supabaseUserId: string): Promis
     return;
   }
 
-  const apiKey = readPublicApiKey();
-  if (!apiKey) {
+  let providerSelection: RevenueCatProviderSelection;
+  try {
+    providerSelection = selectProviderApiKey();
+  } catch (error) {
     state.lastTransition = "error";
-    state.customerInfoError = "missing_public_api_key";
+    state.customerInfoError = error instanceof Error ? error.message : String(error);
     state.customerInfoOk = false;
     state.purchaseApisEnabled = false;
-    diagLog("missing_public_api_key");
+    diagLog("provider_selection_failed", {
+      message: state.customerInfoError,
+    });
+    return;
+  }
+
+  if (!providerSelection.apiKey) {
+    state.lastTransition = "error";
+    state.customerInfoError = providerSelection.error ?? "missing_public_api_key";
+    state.customerInfoOk = false;
+    state.purchaseApisEnabled = false;
+    diagLog("missing_public_api_key", {
+      provider: providerSelection.provider,
+      error: providerSelection.error,
+    });
     return;
   }
 
@@ -297,7 +344,7 @@ export async function ensureRevenueCatIdentified(supabaseUserId: string): Promis
         await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
       }
       await Purchases.configure({
-        apiKey,
+        apiKey: providerSelection.apiKey,
         appUserID: uuid,
       });
       if (generation !== state.identityGeneration) return;
@@ -307,6 +354,7 @@ export async function ensureRevenueCatIdentified(supabaseUserId: string): Promis
       diagLog("configure", {
         configureCount: state.configureCount,
         identityGeneration: generation,
+        provider: providerSelection.provider,
       });
     } else if (state.identifiedUuid !== uuid) {
       await Purchases.logIn({ appUserID: uuid });

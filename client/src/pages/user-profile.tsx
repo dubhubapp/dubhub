@@ -18,12 +18,16 @@ import { hardResetLocalAuthState } from "@/lib/auth-session-utils";
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
 import { exportCroppedAvatar } from "@/lib/avatar-crop";
 import { exportCroppedBanner } from "@/lib/banner-crop";
-import { isDefaultAvatarUrl } from "@/lib/default-avatar";
+import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
+import { getReleaseAlertEnabledThumbnailPresentation } from "@/lib/release-alert-enabled-thumbnail";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidateArtistReleaseAlertsAudience } from "@/lib/artist-release-alerts-cache";
+import { ReleaseAlertsAudienceGateRow } from "@/components/release-alerts-audience-gate";
+import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
 import {
-  ARTIST_RELEASE_ALERTS_AUDIENCE_QUERY_KEY,
-  invalidateArtistReleaseAlertsAudience,
-} from "@/lib/artist-release-alerts-cache";
+  formatReleaseAlertEnabledArtistCopy,
+  resolveViewerReleaseAlertDeliveryEnabled,
+} from "@/lib/release-alert-enabled-artist-copy";
 import { useUser } from "@/lib/user-context";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
@@ -50,6 +54,8 @@ import {
   isModeratorQueueNotification,
   type NotificationGroupKind,
 } from "@shared/notification-types";
+import { buildNotificationListGroupKey } from "@/lib/notification-grouping";
+import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { ARTIST_BETA_ARTIST_TOOLS_MESSAGE } from "@/lib/artist-beta-copy";
@@ -601,6 +607,14 @@ export default function UserProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage, bannerUrl, username, updateProfileImage, updateProfileBanner, currentUser, verifiedArtist, isModerator, userType } = useUser();
+  const artistSubscription = useAuthoritativeSubscriptionStatus({
+    enabled: userType === "artist",
+  });
+  const releaseAlertDeliveryEnabled = resolveViewerReleaseAlertDeliveryEnabled({
+    loading: artistSubscription.loading,
+    hasError: artistSubscription.error != null,
+    selection: artistSubscription.selection,
+  });
   const [activeTab, setActiveTab] = useState("profile");
 
   useEffect(() => {
@@ -676,19 +690,6 @@ export default function UserProfile() {
     queryKey: ["/api/artists", currentUser?.id, "stats"],
     enabled: !!currentUser?.id && userType === "artist",
     retry: false,
-  });
-
-  const { data: releaseAlertsAudience } = useQuery<{ count: number }>({
-    queryKey: [...ARTIST_RELEASE_ALERTS_AUDIENCE_QUERY_KEY],
-    enabled: !!currentUser?.id && userType === "artist" && verifiedArtist,
-    retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/artists/me/release-alerts-audience");
-      if (!res.ok) throw new Error("Failed to load release alerts audience");
-      return res.json();
-    },
   });
 
   // Karma system
@@ -954,8 +955,7 @@ export default function UserProfile() {
       artistStats.totalLikesAcrossPosts > 0 ||
       artistStats.totalCommentsAcrossPosts > 0 ||
       artistStats.uniqueUploaders > 0 ||
-      artistStats.collaborations > 0 ||
-      (verifiedArtist && releaseAlertsAudience != null && releaseAlertsAudience.count > 0)
+      artistStats.collaborations > 0
     );
 
   const artistImpactItems: StatsCardItem[] = artistStats
@@ -1016,18 +1016,6 @@ export default function UserProfile() {
           toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
           info: PROFILE_HELP.artistCollaborations,
         },
-        ...(verifiedArtist && releaseAlertsAudience != null
-          ? [
-              {
-                label: "Release Alerts",
-                value: releaseAlertsAudience.count.toLocaleString(),
-                Icon: Bell,
-                toneClassName:
-                  "border-[#4ae9df]/35 bg-[#4ae9df]/5 text-[#4ae9df] [&_svg]:drop-shadow-[0_0_6px_rgba(74,233,223,0.35)]",
-                info: PROFILE_HELP.artistReleaseAlerts,
-              } satisfies StatsCardItem,
-            ]
-          : []),
       ]
     : [];
 
@@ -1451,17 +1439,13 @@ export default function UserProfile() {
   const getNotificationGroupKey = (n: NotificationWithUser) => {
     const kind = getNotificationKind(n);
     const releaseId = (n as any).releaseId ?? (n as any).release_id ?? n.release?.id ?? null;
-    const contextId = n.postId ?? releaseId ?? `misc:${n.id}`;
-    const created = new Date(n.createdAt as any).getTime();
-    const bucket = Number.isFinite(created) ? Math.floor(created / GROUP_WINDOW_MS) : 0;
-    const canGroup =
-      kind === "post_like" ||
-      kind === "post_owner_comment" ||
-      kind === "post_comment_reply" ||
-      kind === "artist_tag_comment" ||
-      kind === "release_event" ||
-      kind === "system_event";
-    return canGroup ? `${kind}:${contextId}:${bucket}` : `single:${n.id}`;
+    return buildNotificationListGroupKey({
+      id: n.id,
+      kind,
+      postId: n.postId,
+      releaseId,
+      createdAt: n.createdAt as any,
+    }, GROUP_WINDOW_MS);
   };
 
   const countGrouped = (items: NotificationWithUser[]) => {
@@ -1972,6 +1956,17 @@ export default function UserProfile() {
     if (!notification.read) {
       markNotificationAsReadMutation.mutate(notification.id);
     }
+
+    const effectiveType = getEffectiveNotificationType(notificationRowFields(notification));
+    if (effectiveType === "release_alert_enabled") {
+      const username = notification.triggeredByUser?.username?.trim();
+      if (username) {
+        markPublicProfileEnterAnimation();
+        navigate(`/profile/${encodeURIComponent(username)}`);
+      }
+      return;
+    }
+
     // Navigate to release detail when release_id is present, else to post
     const releaseId = (notification as any).releaseId ?? (notification as any).release_id ?? notification.release?.id;
     if (releaseId) {
@@ -2736,9 +2731,6 @@ export default function UserProfile() {
                           <div
                             key={label}
                             className="flex items-center justify-between py-2.5"
-                            {...(label === "Release Alerts"
-                              ? { "data-testid": "artist-release-alerts-audience" }
-                              : {})}
                           >
                             <div className="flex items-center gap-2.5">
                               <Icon className="w-4 h-4 shrink-0 text-gray-400" />
@@ -2757,6 +2749,10 @@ export default function UserProfile() {
                             <span className="text-sm font-semibold tabular-nums">{value}</span>
                           </div>
                         ))}
+                        <ReleaseAlertsAudienceGateRow
+                          enabled={verifiedArtist}
+                          info={PROFILE_HELP.artistReleaseAlerts}
+                        />
                       </div>
                       {!hasAnyArtistImpact ? (
                         <p className="text-xs text-gray-400 mt-3 text-center">
@@ -3157,6 +3153,9 @@ export default function UserProfile() {
                     const isRejection = isCollaboratorRejection(notification);
                     const isCollabResponse = isCollaboratorResponse(notification);
                     const isRelease = isReleaseNotification(notification);
+                    const isReleaseAlertEnabled =
+                      getEffectiveNotificationType(notificationRowFields(notification)) ===
+                      "release_alert_enabled";
                     const summaryText = getGroupedNotificationMessage(group);
                     const baseClass = "flex gap-3 p-3 rounded-lg border transition-colors cursor-pointer";
                     const styleClass = isCollabResponse
@@ -3171,7 +3170,7 @@ export default function UserProfile() {
                         ? !hasUnread
                           ? "border-amber-400/50 bg-amber-500/10 hover:bg-amber-500/15"
                           : "border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-400/30"
-                      : !hasUnread
+                        : !hasUnread
                         ? "border-gray-700 bg-surface hover:bg-gray-800"
                         : "border-primary/30 bg-primary/10 hover:bg-primary/20";
                       return (
@@ -3181,7 +3180,34 @@ export default function UserProfile() {
                           onClick={() => handleGroupedNotificationClick(group)}
                           data-testid={`notification-${notification.id}`}
                         >
-                        {/* Thumbnail: release artwork takes precedence, then post snapshot preview. */}
+                        {/* Thumbnail: release artwork → post preview; release_alert_enabled uses circular listener avatar. */}
+                        {isReleaseAlertEnabled ? (
+                          (() => {
+                            const presentation = getReleaseAlertEnabledThumbnailPresentation();
+                            const actor = notification.triggeredByUser as
+                              | { avatarUrl?: string | null; avatar_url?: string | null; account_type?: string | null }
+                              | undefined;
+                            const rawAvatar = actor?.avatarUrl ?? actor?.avatar_url ?? null;
+                            const avatarSrc = resolveAvatarUrlForProfile(
+                              rawAvatar,
+                              actor?.account_type ?? "user",
+                            );
+                            return (
+                              <div
+                                className={presentation.listContainerClassName}
+                                data-testid="release-alert-enabled-avatar"
+                                data-avatar-shape={presentation.shape}
+                                data-bell-overlay={presentation.showBellOverlay ? "true" : "false"}
+                              >
+                                <img
+                                  src={avatarSrc ?? undefined}
+                                  alt=""
+                                  className={presentation.listImageClassName}
+                                />
+                              </div>
+                            );
+                          })()
+                        ) : (
                         <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
                           {(() => {
                             const releaseArtworkSrc = resolveMediaUrl(notification.release?.artworkUrl ?? null);
@@ -3197,9 +3223,35 @@ export default function UserProfile() {
                             );
                           })()}
                         </div>
+                        )}
 
                         {/* Notification Content: tag and acceptance include @username in message */}
                         <div className="flex-1 min-w-0">
+                          {isReleaseAlertEnabled ? (
+                            (() => {
+                              const artistCopy = formatReleaseAlertEnabledArtistCopy({
+                                listenerUsername: notification.triggeredByUser?.username,
+                                deliveryEnabled: releaseAlertDeliveryEnabled,
+                              });
+                              return (
+                                <>
+                                  <p className="text-sm font-medium text-foreground">{artistCopy.title}</p>
+                                  <p className="text-sm text-foreground mt-0.5">
+                                    <span className="font-semibold">
+                                      {notification.triggeredByUser?.username
+                                        ? formatUsernameDisplay(notification.triggeredByUser.username)
+                                        : "Someone"}
+                                    </span>
+                                    {" "}
+                                    {stripLeadingUsernameMention(
+                                      artistCopy.body,
+                                      notification.triggeredByUser?.username,
+                                    )}
+                                  </p>
+                                </>
+                              );
+                            })()
+                          ) : (
                           <p
                             className={`text-sm whitespace-pre-line ${isCollabResponse || isRelease ? "font-medium text-foreground" : "text-foreground"}`}
                           >
@@ -3222,6 +3274,7 @@ export default function UserProfile() {
                               </>
                             )}
                           </p>
+                          )}
                           <p className="text-xs text-muted-foreground mt-1">
                             {formatTimeAgo(notification.createdAt)}
                           </p>

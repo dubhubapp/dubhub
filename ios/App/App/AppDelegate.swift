@@ -1114,6 +1114,8 @@ class DubHubBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(DubHubVideoEditorPlugin())
+        bridge?.registerPluginInstance(HomeWidgetBridgePlugin())
         NSLog("[DubHub][NativeVideoEditor] plugin registered in DubHubBridgeViewController")
+        NSLog("[DubHub][HomeWidgetBridge] plugin registered in DubHubBridgeViewController")
     }
 }

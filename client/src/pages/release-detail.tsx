@@ -24,11 +24,12 @@ import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
+import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
 import { formatDate } from "./release-tracker";
 import { sanitizeReleaseText } from "@/lib/release-display";
 import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
-import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
+import { getLinkCtaLabel, getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
 import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
@@ -49,7 +50,33 @@ import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return
 import { ReleaseDetailArtistByline } from "@/components/release-detail-artist-byline";
 import { ReleaseArtworkLightbox } from "@/components/release-artwork-lightbox";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
+import { ReleaseSavedToReleasesStatus } from "@/components/release-saved-to-releases-status";
+import { shouldShowViewerSavedReleaseStatus } from "@/lib/release-saved-status";
+import { HomeWidgetSelectionButton } from "@/components/home-widget-selection-button";
+import { isHomeReleaseWidgetSelectionEnabled } from "@/lib/home-widget-selection-flag";
+import { ReleaseArtworkThumb } from "@/components/release-artwork-thumb";
+import { scheduleHomeWidgetRefreshAfterAuth } from "@/lib/home-widget-refresh";
+import {
+  clearHomeWidgetReleaseSelection,
+  getCurrentHomeWidgetSelectedReleaseId,
+} from "@/lib/home-widget-selection";
+import {
+  RELEASE_DETAIL_ARTWORK_SIZE_CLASS,
+  RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS,
+  RELEASE_DETAIL_HEADER_ACTION_ICON_CLASS,
+  RELEASE_DETAIL_METADATA_MIN_HEIGHT_CLASS,
+  RELEASE_DETAIL_SHARE_ACTION_CLASS,
+} from "@/lib/release-detail-secondary-action";
 import { shareRelease } from "@/lib/release-share";
+import { cn } from "@/lib/utils";
+import {
+  RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY,
+  RELEASE_SUBSCRIPTION_PAUSED_PUBLIC_COPY,
+  RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA,
+  shouldShowOwnerSubscriptionPausedBanner,
+  shouldShowPublicSubscriptionPausedState,
+  isPersistedReleaseSubscriptionSuspended,
+} from "@/lib/release-subscription-paused";
 
 type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
 type ReleaseStats = {
@@ -129,6 +156,31 @@ export default function ReleaseDetail() {
 
   const hasFullDetail = hasFullReleaseDetail(release, isPlaceholderData);
 
+  useEffect(() => {
+    if (!currentUser?.id || !id || !hasFullDetail || !release) return;
+    if (getCurrentHomeWidgetSelectedReleaseId(currentUser.id) !== id) return;
+    scheduleHomeWidgetRefreshAfterAuth();
+  }, [currentUser?.id, hasFullDetail, id, release?.updatedAt, release?.releaseDate, release?.artworkUrl, release?.viewerSavedRelease]);
+
+  const isOwner = !!(release && currentUser?.id && release.artistId === currentUser.id);
+  const myCollab = hasFullDetail
+    ? release?.collaborators?.find((c) => c.artistId === currentUser?.id)
+    : undefined;
+  const isPendingCollab = myCollab?.status === "PENDING";
+  const isAcceptedCollab = !!(hasFullDetail && myCollab?.status === "ACCEPTED");
+  const canManage =
+    isOwner ||
+    isAcceptedCollab ||
+    (release?.collaboratorStatus === "ACCEPTED" && !hasFullDetail);
+
+  /** Public paused payload only — do not treat owner/collab suspended detail as unavailable. */
+  const isPausedPublicPayload = shouldShowPublicSubscriptionPausedState({
+    hasFullDetail,
+    isOwner,
+    isAcceptedCollaborator: isAcceptedCollab,
+    release,
+  });
+
   const { data: stats, isPending: isStatsPending, isFetching: isStatsFetching } = useQuery<ReleaseStats>({
     queryKey: ["/api/releases", id, "stats"],
     queryFn: async () => {
@@ -141,22 +193,11 @@ export default function ReleaseDetail() {
       }
       return res.json();
     },
-    enabled: !!id && id !== "new",
+    enabled: !!id && id !== "new" && !isPausedPublicPayload,
     retry: false,
   });
 
   const isStatsLoading = !stats && (isStatsPending || isStatsFetching);
-
-  const isOwner = release && currentUser?.id && release.artistId === currentUser.id;
-  const myCollab = hasFullDetail
-    ? release?.collaborators?.find((c) => c.artistId === currentUser?.id)
-    : undefined;
-  const isPendingCollab = myCollab?.status === "PENDING";
-  const isAcceptedCollab = hasFullDetail && myCollab?.status === "ACCEPTED";
-  const canManage =
-    isOwner ||
-    isAcceptedCollab ||
-    (release?.collaboratorStatus === "ACCEPTED" && !hasFullDetail);
 
   const [removeSavedDialogOpen, setRemoveSavedDialogOpen] = useState(false);
   const [releaseMenuOpen, setReleaseMenuOpen] = useState(false);
@@ -176,6 +217,15 @@ export default function ReleaseDetail() {
         userId: currentUser?.id,
         username: currentUser?.username,
       });
+      if (
+        currentUser?.id &&
+        id &&
+        getCurrentHomeWidgetSelectedReleaseId(currentUser.id) === id
+      ) {
+        void clearHomeWidgetReleaseSelection({ userId: currentUser.id });
+      } else {
+        scheduleHomeWidgetRefreshAfterAuth();
+      }
     },
     onError: (error: unknown) => {
       const detail = getApiRequestErrorDetail(error);
@@ -294,6 +344,11 @@ export default function ReleaseDetail() {
     !isOwner &&
     !!releaseData.viewerSavedRelease &&
     !!releaseData.viewerSavedReleaseRemoveBlocked;
+  const showSavedToReleasesStatus = shouldShowViewerSavedReleaseStatus({
+    hasFullDetail,
+    isOwner: !!isOwner,
+    viewerSavedRelease: releaseData.viewerSavedRelease,
+  });
   const firstPostLabel = formatMonthYear(stats?.firstClipAt ?? null);
   const latestPostLabel = formatMonthYear(stats?.latestClipAt ?? null);
   const announcedAfterLabel =
@@ -304,7 +359,27 @@ export default function ReleaseDetail() {
     stats?.daysToRelease !== null && stats?.daysToRelease !== undefined
       ? formatDurationBetween(stats?.firstClipAt, releaseData?.releaseDate, stats.daysToRelease)
       : null;
-  const showShareRelease = hasFullDetail && releaseData.isPublic === true;
+  const showShareRelease =
+    hasFullDetail &&
+    releaseData.isPublic === true &&
+    !isPersistedReleaseSubscriptionSuspended(releaseData);
+  const showCountdownSelection =
+    isHomeReleaseWidgetSelectionEnabled() &&
+    hasFullDetail &&
+    !isOwner &&
+    !!releaseData.viewerSavedRelease;
+  const isSubscriptionPausedPublic = shouldShowPublicSubscriptionPausedState({
+    hasFullDetail,
+    isOwner: !!isOwner,
+    isAcceptedCollaborator: !!isAcceptedCollab,
+    release: releaseData,
+  });
+  const isSubscriptionPausedOwner = shouldShowOwnerSubscriptionPausedBanner({
+    hasFullDetail,
+    isOwner: !!isOwner,
+    isAcceptedCollaborator: !!isAcceptedCollab,
+    release: releaseData,
+  });
 
   return (
     <SwipeBackPage
@@ -318,37 +393,46 @@ export default function ReleaseDetail() {
             <ArrowLeft className="w-4 h-4 mr-1" />
             Back
           </Button>
-          {showRemoveSavedRelease ? (
-            <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="ios-press h-9 w-9 shrink-0"
-                  aria-label="Release options"
-                  data-testid="button-release-detail-menu"
-                >
-                  <MoreHorizontal className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[12rem]">
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    setReleaseMenuOpen(false);
-                    requestAnimationFrame(() => setRemoveSavedDialogOpen(true));
-                  }}
-                  data-testid="menu-remove-saved-release"
-                >
-                  <BookmarkMinus className="mr-2 h-4 w-4" />
-                  Remove from Saved Releases
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <div className="h-9 w-9 shrink-0" aria-hidden />
-          )}
+          <div className="flex min-w-0 items-center justify-end gap-2">
+            {showSavedToReleasesStatus ? (
+              <ReleaseSavedToReleasesStatus
+                hasFullDetail={hasFullDetail}
+                isOwner={!!isOwner}
+                viewerSavedRelease={releaseData.viewerSavedRelease}
+              />
+            ) : null}
+            {showRemoveSavedRelease ? (
+              <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ios-press h-9 w-9 shrink-0"
+                    aria-label="Release options"
+                    data-testid="button-release-detail-menu"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[12rem]">
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setReleaseMenuOpen(false);
+                      requestAnimationFrame(() => setRemoveSavedDialogOpen(true));
+                    }}
+                    data-testid="menu-remove-saved-release"
+                  >
+                    <BookmarkMinus className="mr-2 h-4 w-4" />
+                    Remove from Saved Releases
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : showSavedToReleasesStatus ? null : (
+              <div className="h-9 w-9 shrink-0" aria-hidden />
+            )}
+          </div>
         </div>
 
         {showRemoveSavedReleaseBlocked && (
@@ -379,61 +463,135 @@ export default function ReleaseDetail() {
           </div>
         )}
 
-        <div className="mb-6 flex min-w-0 gap-4 overflow-hidden">
-          <div className="w-32 h-32 rounded-xl bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-            {releaseData.artworkUrl ? (
-              <button
-                type="button"
-                className="ios-press h-full w-full overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                onClick={() => setArtworkLightboxOpen(true)}
-                aria-label={`View artwork for ${sanitizeReleaseText(releaseData.title) || "release"}`}
-                data-testid="button-release-detail-artwork"
-              >
-                <img
-                  src={releaseData.artworkUrl}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  draggable={false}
-                />
-              </button>
-            ) : (
-              <span className="text-4xl text-muted-foreground">🎵</span>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <ReleaseDetailArtistByline
-              ownerUsername={releaseData.artistUsername}
-              collaborators={releaseData.collaborators}
-              onArtistPress={openArtistProfile}
-              className="break-words"
-            />
-            <h1 className="mt-0.5 text-xl font-bold leading-tight break-words whitespace-normal">
-              {sanitizeReleaseText(releaseData.title)}
-            </h1>
-            <p className="text-sm mt-1">
-              {releaseStatusSubtitle(releaseData.isComingSoon, releaseData.releaseDate) ||
-                formatDate(releaseData.releaseDate)}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <ReleaseStatusPill
-                isComingSoon={releaseData.isComingSoon}
-                releaseDate={releaseData.releaseDate}
-                upcoming={upcoming}
-              />
-              {showShareRelease ? (
-                <button
-                  type="button"
-                  className="inline-flex shrink-0 items-center justify-center gap-1 rounded bg-muted/80 font-medium leading-none text-muted-foreground ios-press min-h-[1.375rem] px-2 py-0.5 text-xs hover:bg-muted"
-                  onClick={() => void handleShareRelease()}
-                  aria-label="Share release"
-                  data-testid="button-share-release"
-                >
-                  <Send className="h-3 w-3 shrink-0" aria-hidden />
-                  Share release
-                </button>
-              ) : null}
+        {isSubscriptionPausedOwner ? (
+          <div
+            className="mb-4 space-y-2 rounded-lg border border-white/10 bg-muted/40 px-3 py-2"
+            data-testid="banner-release-subscription-paused"
+            role="status"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <ReleaseStatusPill paused data-testid="badge-release-paused-banner" />
             </div>
-            {getBannerFromLinks(releaseData.links, upcoming) && (
+            <p className="text-sm text-muted-foreground">
+              {RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY}
+            </p>
+            {isOwner ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-white/15 bg-black/20"
+                onClick={() =>
+                  requestVerifiedArtistToolsUpgrade(toast, {
+                    source: "future_release_paused",
+                  })
+                }
+                data-testid="button-release-paused-upgrade"
+              >
+                {RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isSubscriptionPausedPublic ? (
+          <div
+            className="mb-4 rounded-lg border border-white/10 bg-black/30 px-3 py-3"
+            data-testid="banner-release-unavailable"
+            role="status"
+          >
+            <p className="text-sm text-muted-foreground">
+              {releaseData.message || RELEASE_SUBSCRIPTION_PAUSED_PUBLIC_COPY}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mb-6 flex min-w-0 items-start gap-4 overflow-hidden">
+          <ReleaseArtworkThumb
+            artworkUrl={releaseData.artworkUrl}
+            className={cn(RELEASE_DETAIL_ARTWORK_SIZE_CLASS, "flex-shrink-0 rounded-xl")}
+            iconClassName="h-12 w-12"
+            onOpen={
+              releaseData.artworkUrl
+                ? () => setArtworkLightboxOpen(true)
+                : undefined
+            }
+            openAriaLabel={`View artwork for ${sanitizeReleaseText(releaseData.title) || "release"}`}
+            testId="release-detail-artwork"
+          />
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div
+              className={cn(
+                "flex min-w-0 flex-col",
+                showCountdownSelection && RELEASE_DETAIL_METADATA_MIN_HEIGHT_CLASS,
+              )}
+              data-testid="release-detail-metadata-column"
+            >
+              <div className="min-w-0" data-testid="release-detail-header-top">
+                <ReleaseDetailArtistByline
+                  ownerUsername={releaseData.artistUsername}
+                  collaborators={releaseData.collaborators}
+                  onArtistPress={openArtistProfile}
+                  className="break-words"
+                />
+                <h1 className="mt-0.5 text-xl font-bold leading-tight break-words whitespace-normal">
+                  {sanitizeReleaseText(releaseData.title)}
+                </h1>
+                <p className="text-sm mt-1">
+                  {releaseStatusSubtitle(releaseData.isComingSoon, releaseData.releaseDate) ||
+                    formatDate(releaseData.releaseDate)}
+                </p>
+              </div>
+              <div
+                className={cn(
+                  "flex min-w-0 flex-col gap-0.5",
+                  showCountdownSelection ? "mt-auto" : "mt-2",
+                )}
+                data-testid="release-detail-header-actions"
+              >
+                <div
+                  className="flex flex-wrap items-center gap-1.5"
+                  data-testid="release-detail-status-row"
+                >
+                  <ReleaseStatusPill
+                    paused={isSubscriptionPausedPublic || isSubscriptionPausedOwner}
+                    isComingSoon={releaseData.isComingSoon}
+                    releaseDate={releaseData.releaseDate}
+                    upcoming={upcoming}
+                  />
+                  {showShareRelease ? (
+                    <button
+                      type="button"
+                      className={RELEASE_DETAIL_SHARE_ACTION_CLASS}
+                      onClick={() => void handleShareRelease()}
+                      aria-label="Share release"
+                      data-testid="button-share-release"
+                    >
+                      <Send
+                        className={cn(
+                          RELEASE_DETAIL_HEADER_ACTION_ICON_CLASS,
+                          "text-muted-foreground",
+                        )}
+                        aria-hidden
+                      />
+                      Share release
+                    </button>
+                  ) : null}
+                </div>
+                {showCountdownSelection ? (
+                  <div
+                    className={RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS}
+                    data-testid="release-detail-countdown-row"
+                  >
+                    <HomeWidgetSelectionButton
+                      release={releaseData}
+                      className="absolute bottom-0 left-0"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {!isSubscriptionPausedPublic && getBannerFromLinks(releaseData.links, upcoming) && (
               <p className="text-sm text-primary mt-2">
                 {getBannerFromLinks(releaseData.links, upcoming)}
               </p>
@@ -441,10 +599,15 @@ export default function ReleaseDetail() {
           </div>
         </div>
 
-        {releaseData.links && releaseData.links.length > 0 && (
+        {!isSubscriptionPausedPublic && releaseData.links && releaseData.links.length > 0 && (
           <div className="mb-6">
             <div className="flex min-w-0 flex-wrap gap-2">
-              {sortLinksByPlatform((releaseData.links as ReleaseLink[]) || []).map((link) => (
+              {sortLinksByPlatform(
+                filterPublicReleaseLinks((releaseData.links as ReleaseLink[]) || [], upcoming),
+              ).map((link) => {
+                const label = getLinkCtaLabel(link.platform, upcoming, link.linkType);
+                if (!label) return null;
+                return (
                 <a
                   key={link.id}
                   href={link.url}
@@ -454,29 +617,35 @@ export default function ReleaseDetail() {
                 >
                   <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
                   <span className="truncate text-primary">
-                    {getLinkCtaLabel(link.platform, upcoming, link.linkType)}
+                    {label}
                   </span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
-        {!hasFullDetail || releaseData.attachedClips === undefined ? (
-          <ReleaseAttachedClipsSkeleton />
-        ) : (
-          <ReleaseAttachedClips clips={releaseData.attachedClips} onOpenClip={openAttachedPost} />
-        )}
+        {!isSubscriptionPausedPublic ? (
+          !hasFullDetail || releaseData.attachedClips === undefined ? (
+            <ReleaseAttachedClipsSkeleton />
+          ) : (
+            <ReleaseAttachedClips clips={releaseData.attachedClips} onOpenClip={openAttachedPost} />
+          )
+        ) : null}
 
-        <ReleaseActivitySection
-          stats={stats}
-          isLoading={isStatsLoading}
-          firstPostLabel={firstPostLabel}
-          latestPostLabel={latestPostLabel}
-          announcedAfterLabel={announcedAfterLabel}
-          releasedAfterLabel={releasedAfterLabel}
-        />
+        {!isSubscriptionPausedPublic ? (
+          <ReleaseActivitySection
+            stats={stats}
+            isLoading={isStatsLoading}
+            firstPostLabel={firstPostLabel}
+            latestPostLabel={latestPostLabel}
+            announcedAfterLabel={announcedAfterLabel}
+            releasedAfterLabel={releasedAfterLabel}
+            releaseAfterIsUpcoming={upcoming}
+          />
+        ) : null}
 
         {isPendingCollab && isArtist && hasFullDetail && myCollab?.id && (
           <div className="mb-4 space-y-2">

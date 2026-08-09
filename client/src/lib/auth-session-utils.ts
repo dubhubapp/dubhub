@@ -1,5 +1,6 @@
 import { queryClient } from "./queryClient";
 import { quarantineRevenueCatIdentity } from "./revenuecat-identity";
+import { clearHomeWidgetOnHardReset } from "./home-widget-session";
 import { supabase } from "./supabaseClient";
 
 /** Set by auth callback after email verification; AuthPage shows a one-shot banner. */
@@ -95,6 +96,19 @@ export function clearDubhubAuthLocalMarkers(): void {
 export async function hardResetLocalAuthState(options?: {
   clearSessionStorage?: boolean;
 }): Promise<void> {
+  let userId: string | null = null;
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    userId = session?.user?.id ?? null;
+  } catch {
+    // ignore
+  }
+
+  // Clear shared widget payload and this user's selection before auth wipe.
+  await clearHomeWidgetOnHardReset(userId);
+
   quarantineRevenueCatIdentity("hard_reset_local_auth");
   try {
     await supabase.auth.signOut();

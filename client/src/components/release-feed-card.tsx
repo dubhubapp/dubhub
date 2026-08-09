@@ -1,10 +1,16 @@
-import { ExternalLink, Music } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { ReleaseStatusPill } from "@/components/release-status-pill";
+import { ReleaseArtworkThumb } from "@/components/release-artwork-thumb";
 import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
+import {
+  HomeWidgetCountdownIcon,
+  buildReleaseFeedCardAccessibilityLabel,
+} from "@/lib/home-widget-countdown-icon";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
 import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
-import { getLinkCtaLabel, getBannerFromLinks } from "@/lib/release-cta";
+import { getLinkCtaLabel, getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
+import { isPersistedReleaseSubscriptionSuspended } from "@/lib/release-subscription-paused";
 import { cn } from "@/lib/utils";
 
 export type ReleaseFeedCardData = {
@@ -20,6 +26,7 @@ export type ReleaseFeedCardData = {
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   /** Earliest like timestamp when saved via attached-post like (public community profiles only). */
   savedAt?: string | null;
+  subscriptionSuspendedAt?: string | null;
 };
 
 export type ReleaseFeedCardHighlight = {
@@ -69,13 +76,23 @@ export function isReleaseCardUpcoming(d: string | null) {
   return new Date(d) > new Date();
 }
 
+/**
+ * Status-only: when true, show a small top-right Countdown indicator.
+ * Configuration (add/remove) lives on Release Detail only.
+ */
 type ReleaseFeedCardProps = {
   release: ReleaseFeedCardData;
   onOpen: () => void;
   highlight?: ReleaseFeedCardHighlight;
+  showCountdownSelectedIndicator?: boolean;
 };
 
-export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCardProps) {
+export function ReleaseFeedCard({
+  release: r,
+  onOpen,
+  highlight,
+  showCountdownSelectedIndicator = false,
+}: ReleaseFeedCardProps) {
   const normalized = normalizeReleaseCardFields(r);
   const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
   const savedOutToday = !!highlight?.savedOutToday;
@@ -83,11 +100,18 @@ export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCa
   const isOwnerReleaseDay = !!highlight?.isOwnerReleaseDay;
   const featured = !!highlight?.featured;
   const upcoming = r.isComingSoon || isReleaseCardUpcoming(r.releaseDate);
+  const byline = formatReleaseByline(r.artistUsername, r.collaborators);
+  const accessibilityLabel = buildReleaseFeedCardAccessibilityLabel({
+    byline,
+    title: normalized.title,
+    countdownSelected: showCountdownSelectedIndicator,
+  });
 
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-label={accessibilityLabel}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -97,7 +121,7 @@ export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCa
       }}
       className={cn(
         RELEASE_CARD_BASE_CLASS,
-        "min-w-0 overflow-hidden",
+        "relative min-w-0 overflow-hidden",
         featured && "bg-transparent border-0 px-1 py-2 shadow-none hover:bg-transparent",
         !featured &&
           savedOutToday &&
@@ -111,17 +135,26 @@ export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCa
           !isOwnerReleaseDay &&
           "ring-1 ring-amber-500/35 shadow-[0_0_22px_-8px_rgba(245,158,11,0.3)] bg-amber-500/[0.06] border-amber-500/30",
       )}
+      data-countdown-selected={showCountdownSelectedIndicator ? "true" : "false"}
     >
-      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-        {normalized.artworkUrl ? (
-          <img src={normalized.artworkUrl} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <Music className="h-10 w-10 text-muted-foreground" />
-        )}
-      </div>
+      {showCountdownSelectedIndicator ? (
+        <span
+          className="pointer-events-none absolute right-2.5 top-2.5 z-[1] flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-accent shadow-sm ring-1 ring-white/10"
+          aria-hidden
+          data-testid={`release-countdown-selected-indicator-${r.id}`}
+        >
+          <HomeWidgetCountdownIcon className="h-3.5 w-3.5" strokeWidth={2} />
+        </span>
+      ) : null}
+      <ReleaseArtworkThumb
+        artworkUrl={normalized.artworkUrl}
+        className="h-20 w-20 shrink-0 rounded-lg"
+        iconClassName="h-10 w-10"
+        testId={`release-feed-artwork-${r.id}`}
+      />
       <div className="min-w-0 flex-1 overflow-hidden">
         <p className="min-w-0 truncate text-xs font-semibold leading-snug text-foreground">
-          {formatReleaseByline(r.artistUsername, r.collaborators)}
+          {byline}
         </p>
         {normalized.title ? (
           <p className="mt-0.5 line-clamp-2 min-w-0 break-all text-sm leading-snug text-foreground">
@@ -135,28 +168,37 @@ export function ReleaseFeedCard({ release: r, onOpen, highlight }: ReleaseFeedCa
           <p className="mt-1 text-xs text-primary">{getBannerFromLinks(r.links, upcoming)}</p>
         ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          <ReleaseStatusPill isComingSoon={r.isComingSoon} releaseDate={r.releaseDate} upcoming={upcoming} />
+          <ReleaseStatusPill
+            paused={isPersistedReleaseSubscriptionSuspended(r)}
+            isComingSoon={r.isComingSoon}
+            releaseDate={r.releaseDate}
+            upcoming={upcoming}
+          />
           {collabDisplay ? <span className={collabDisplay.className}>{collabDisplay.label}</span> : null}
         </div>
-        {r.links && r.links.length > 0 ? (
+        {!isPersistedReleaseSubscriptionSuspended(r) && r.links && r.links.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1">
-            {sortLinksByPlatform(r.links).map((link) => (
+            {sortLinksByPlatform(filterPublicReleaseLinks(r.links, upcoming)).map((link) => {
+              const label = getLinkCtaLabel(link.platform, upcoming, link.linkType);
+              if (!label) return null;
+              return (
               <a
                 key={link.id}
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded bg-muted p-1 text-xs hover:bg-muted/80"
-                title={getLinkCtaLabel(link.platform, upcoming, link.linkType)}
+                title={label}
                 onClick={(e) => e.stopPropagation()}
               >
                 <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
                 <span className="max-w-[12rem] truncate">
-                  {getLinkCtaLabel(link.platform, upcoming, link.linkType)}
+                  {label}
                 </span>
                 <ExternalLink className="h-3 w-3" />
               </a>
-            ))}
+              );
+            })}
           </div>
         ) : null}
       </div>

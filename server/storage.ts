@@ -14,20 +14,28 @@ import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
 import { mapPostThumbnailUrl } from "./postThumbnailUrl";
-import { formatReleaseAnnounceMessage } from "@shared/notification-messages";
+import { enableArtistReleaseAlertWithDemandDedup } from "./artist-release-alert-demand-enable";
+import {
+  canArtistDeliverReleaseAlerts,
+  resolveServerSubscriptionEnvironment,
+} from "./artist-release-alert-delivery";
+import { runMaybeNotifyReleasePublic } from "./maybe-notify-release-public";
+import { notifyNewlyAttachedPostAudience } from "./notify-newly-attached-post-audience";
+import { runNotifyReleaseLikers } from "./notify-release-likers";
+import {
+  runNotifyTrackIdentifiedLikers,
+  type NotifyTrackIdentifiedLikersResult,
+} from "./notify-track-identified-likers";
+import { subscriptionStatusRepository } from "./subscription-status-repository";
+import { createReleaseWithLimit } from "./create-release-with-limit";
+import { attachPostsWithLimit } from "./attach-posts-with-limit";
+import {
+  FreeReleaseSubscriptionSuspendedError,
+  isFreeReleaseSubscriptionSuspendedError,
+} from "./future-release-suspension";
 
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
-
-const RELEASE_ATTACHED_NOTIFICATION_MESSAGE =
-  "That tune you've been waiting for? It's finally got a release date.";
-
-function formatArtistReleaseAlertMessage(artistUsername: string, releaseTitle: string | null | undefined): string {
-  const mention = `@${artistUsername.trim() || "Artist"}`;
-  const title = typeof releaseTitle === "string" ? releaseTitle.trim() : "";
-  if (title.length > 0) return `${mention} announced a new release: ${title}`;
-  return `${mention} announced a new release.`;
-}
 
 /**
  * Releases tab `scope=saved`: public releases linked via artist-verified posts the user
@@ -35,7 +43,12 @@ function formatArtistReleaseAlertMessage(artistUsername: string, releaseTitle: s
  * Shared by feed queries and profile `releasesSaved` count — keep in sync.
  */
 function savedReleasesFeedWhereSql(userId: string) {
-  return sql`(r.is_public = true AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+  return sql`(r.is_public = true AND ${publicReleaseNotSuspendedSql()} AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+}
+
+/** Public discovery must exclude subscription-suspended releases. */
+function publicReleaseNotSuspendedSql() {
+  return sql`r.subscription_suspended_at IS NULL`;
 }
 
 type NotificationMediaSnapshot = {
@@ -77,6 +90,24 @@ function parseNotificationMessageWithMedia(
     return { message, media: null };
   }
 }
+
+export type HomeWidgetReleaseStorageRow = {
+  id: string;
+  artistId: string;
+  title: string;
+  artistName: string;
+  releaseDate: Date | string | null;
+  artworkUrl: string | null;
+  isPublic: boolean;
+  isComingSoon: boolean;
+  subscriptionSuspendedAt: Date | string | null;
+  createdAt: Date | string | null;
+};
+
+export type HomeWidgetListenerSelectionRow = {
+  release: HomeWidgetReleaseStorageRow | null;
+  isSaved: boolean;
+};
 
 export interface IStorage {
   // Users
@@ -143,6 +174,19 @@ export interface IStorage {
 
   // Notifications
   createNotification(notification: InsertNotification): Promise<Notification>;
+  /** Distinct current liker user IDs for a post (likes act as saves). */
+  getPostLikerIds(postId: string): Promise<string[]>;
+  /**
+   * Fan-out track_identified to current likers on first unidentified →
+   * listener-visible identification (`community` or `identified`).
+   * Callers must pass isFirstListenerVisibleIdentification from an atomic claim.
+   */
+  notifyTrackIdentifiedLikers(args: {
+    postId: string;
+    actorUserId: string;
+    isFirstListenerVisibleIdentification: boolean;
+    excludeRecipientIds?: string[];
+  }): Promise<NotifyTrackIdentifiedLikersResult>;
   getUserNotifications(
     userId: string,
     options?: { limit?: number; before?: string; beforeId?: string; after?: string; afterId?: string }
@@ -177,6 +221,13 @@ export interface IStorage {
   getUpcomingReleasesForArtist(artistId: string, excludePostId?: string): Promise<any[]>;
   /** Public releases owned by an artist (`is_public = true` only). */
   getPublicReleasesForArtist(artistId: string): Promise<{ upcoming: any[]; released: any[] }>;
+  /** Owner-only, dated, public, non-suspended candidates for the UTC home-widget domain. */
+  getHomeWidgetArtistReleaseCandidates(artistId: string): Promise<HomeWidgetReleaseStorageRow[]>;
+  /** Selected release plus canonical derived Saved Releases membership for this viewer. */
+  getHomeWidgetListenerSelection(
+    userId: string,
+    releaseId: string,
+  ): Promise<HomeWidgetListenerSelectionRow>;
   /** Earliest like timestamp per release (liked attached-post path only); omit upload-only saves. */
   getSavedReleaseLikeTimestamps(userId: string): Promise<Map<string, string>>;
   /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
@@ -192,16 +243,35 @@ export interface IStorage {
   /** Public clips attached to a release (feed-visible posts only), quality-ordered. */
   getAttachedClipsForRelease(releaseId: string): Promise<any[]>;
   getReleaseStats(releaseId: string): Promise<any | undefined>;
-  createRelease(data: { artistId: string; title: string; releaseDate: Date; artworkUrl?: string | null }): Promise<any>;
+  createRelease(data: {
+    artistId: string;
+    title: string;
+    releaseDate: Date | null;
+    artworkUrl?: string | null;
+    isComingSoon?: boolean;
+  }): Promise<any>;
   updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
   getReleaseLinks(releaseId: string): Promise<any[]>;
   upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void>;
   deleteReleaseLink(releaseId: string, platform: string): Promise<boolean>;
   getReleasePostIds(releaseId: string): Promise<string[]>;
-  attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ attached: string[]; rejected: string[] }>;
+  attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{
+    attached: string[];
+    newlyAttached: string[];
+    rejected: string[];
+    postAlreadyAttached?: string[];
+  }>;
   detachPostsFromRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }>;
   getEligiblePostsForArtist(artistId: string, currentReleaseId?: string): Promise<any[]>;
   notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean>;
+  /**
+   * Marker-backed release_attached for newly attached posts (public releases only).
+   * Independent of releases.notified_at.
+   */
+  notifyNewlyAttachedPostAudience(
+    releaseId: string,
+    newlyAttachedPostIds: string[],
+  ): Promise<void>;
   maybeNotifyReleasePublic(releaseId: string): Promise<void>;
   notifyReleaseDayLikers(): Promise<{
     count: number;
@@ -494,37 +564,37 @@ export class DatabaseStorage implements IStorage {
           } AS current_user_tagged_as_artist,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_id,
           (SELECT r.title FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_title,
           (SELECT r.artwork_url FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_artwork_url,
           (SELECT r.release_date FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_release_date,
           (SELECT pr2.username FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            JOIN profiles pr2 ON pr2.id = r.artist_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_username,
           (SELECT r.artist_id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
-           WHERE rc2.release_id = (SELECT rp.release_id FROM release_posts rp JOIN releases r ON r.id = rp.release_id WHERE rp.post_id = p.id AND r.is_public = true LIMIT 1)
+           WHERE rc2.release_id = (SELECT rp.release_id FROM release_posts rp JOIN releases r ON r.id = rp.release_id WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL LIMIT 1)
            AND rc2.status = 'ACCEPTED') AS rel_collaborators,
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr
@@ -724,37 +794,37 @@ export class DatabaseStorage implements IStorage {
           } AS current_user_tagged_as_artist,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_id,
           (SELECT r.title FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_title,
           (SELECT r.artwork_url FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_artwork_url,
           (SELECT r.release_date FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_release_date,
           (SELECT pr2.username FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            JOIN profiles pr2 ON pr2.id = r.artist_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_username,
           (SELECT r.artist_id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
-           WHERE rc2.release_id = (SELECT rp.release_id FROM release_posts rp JOIN releases r ON r.id = rp.release_id WHERE rp.post_id = p.id AND r.is_public = true LIMIT 1)
+           WHERE rc2.release_id = (SELECT rp.release_id FROM release_posts rp JOIN releases r ON r.id = rp.release_id WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL LIMIT 1)
            AND rc2.status = 'ACCEPTED') AS rel_collaborators,
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr
@@ -945,37 +1015,37 @@ export class DatabaseStorage implements IStorage {
           COALESCE(c_counts.comments_count, 0)  AS comments_count,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_id,
           (SELECT r.title FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_title,
           (SELECT r.artwork_url FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_artwork_url,
           (SELECT r.release_date FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_release_date,
           (SELECT pr2.username FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            JOIN profiles pr2 ON pr2.id = r.artist_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_username,
           (SELECT r.artist_id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
-           WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true LIMIT 1)
+           WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true AND r2.subscription_suspended_at IS NULL LIMIT 1)
            AND rc2.status = 'ACCEPTED') AS rel_collaborators,
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_is_coming_soon
         FROM post_likes pl
         JOIN posts p ON p.id = pl.post_id
@@ -1356,37 +1426,37 @@ export class DatabaseStorage implements IStorage {
           (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id) AS comments_count,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_id,
           (SELECT r.title FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_title,
           (SELECT r.artwork_url FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_artwork_url,
           (SELECT r.release_date FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_release_date,
           (SELECT pr2.username FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            JOIN profiles pr2 ON pr2.id = r.artist_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_username,
           (SELECT r.artist_id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
-           WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true LIMIT 1)
+           WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true AND r2.subscription_suspended_at IS NULL LIMIT 1)
            AND rc2.status = 'ACCEPTED') AS rel_collaborators,
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr ON pr.id = p.user_id
@@ -1476,37 +1546,37 @@ export class DatabaseStorage implements IStorage {
           } AS is_liked,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_id,
           (SELECT r.title FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_title,
           (SELECT r.artwork_url FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_artwork_url,
           (SELECT r.release_date FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_release_date,
           (SELECT pr2.username FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            JOIN profiles pr2 ON pr2.id = r.artist_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_username,
           (SELECT r.artist_id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_owner_artist_id,
           (SELECT json_agg(json_build_object('username', pc.username, 'status', rc2.status))
            FROM release_collaborators rc2
            JOIN profiles pc ON pc.id = rc2.artist_id
-           WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true LIMIT 1)
+           WHERE rc2.release_id = (SELECT rp2.release_id FROM release_posts rp2 JOIN releases r2 ON r2.id = rp2.release_id WHERE rp2.post_id = p.id AND r2.is_public = true AND r2.subscription_suspended_at IS NULL LIMIT 1)
            AND rc2.status = 'ACCEPTED') AS rel_collaborators,
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
-           WHERE rp.post_id = p.id AND r.is_public = true
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
            LIMIT 1) AS rel_is_coming_soon
         FROM posts p
         JOIN profiles pr ON pr.id = p.user_id
@@ -1732,6 +1802,93 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getPostLikerIds(postId: string): Promise<string[]> {
+    if (!postId) return [];
+    try {
+      const result = await db.execute(sql`
+        SELECT DISTINCT user_id
+        FROM post_likes
+        WHERE post_id = ${postId}
+          AND user_id IS NOT NULL
+      `);
+      const rows = (result as any).rows || [];
+      return rows
+        .map((row: { user_id?: string }) => row.user_id)
+        .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+    } catch (error) {
+      console.error("[getPostLikerIds] Error:", error);
+      return [];
+    }
+  }
+
+  private async hasTrackIdentifiedNotification(postId: string): Promise<boolean> {
+    if (!postId) return false;
+    try {
+      const result = await db.execute(sql`
+        SELECT 1
+        FROM notifications
+        WHERE post_id = ${postId}
+          AND notification_type = 'track_identified'
+        LIMIT 1
+      `);
+      return ((result as any).rows || []).length > 0;
+    } catch (error) {
+      console.error("[hasTrackIdentifiedNotification] Error:", error);
+      // Fail closed: avoid duplicate fan-out if we cannot verify.
+      return true;
+    }
+  }
+
+  async notifyTrackIdentifiedLikers(args: {
+    postId: string;
+    actorUserId: string;
+    isFirstListenerVisibleIdentification: boolean;
+    excludeRecipientIds?: string[];
+  }): Promise<NotifyTrackIdentifiedLikersResult> {
+    try {
+      return await runNotifyTrackIdentifiedLikers(
+        { postId: args.postId, actorUserId: args.actorUserId },
+        {
+          isFirstListenerVisibleIdentification: args.isFirstListenerVisibleIdentification,
+          getLikerIds: (id) => this.getPostLikerIds(id),
+          hasExistingTrackIdentifiedNotification: (id) => this.hasTrackIdentifiedNotification(id),
+          createNotification: async (input) => {
+            const notif = await this.createNotification({
+              artistId: input.recipientId,
+              triggeredBy: input.triggeredBy,
+              postId: input.postId,
+              message: input.message,
+              notificationType: input.notificationType,
+            } as any);
+            return { id: notif.id };
+          },
+          sendPush: ({ recipientId, postId, actorUserId, notificationId }) => {
+            void import("./push/pushSend").then(({ sendPushToUser }) =>
+              sendPushToUser(recipientId, {
+                type: "track_identified",
+                notificationId,
+                postId,
+                actorUserId,
+              }),
+            );
+          },
+          excludeRecipientIds: args.excludeRecipientIds,
+          log: (payload) => {
+            console.log("[notifyTrackIdentifiedLikers]", payload);
+          },
+        },
+      );
+    } catch (error) {
+      console.error("[notifyTrackIdentifiedLikers] Error:", error);
+      return {
+        outcome: "skipped_no_likers",
+        notificationCount: 0,
+        pushAttemptCount: 0,
+        recipientIds: [],
+      };
+    }
+  }
+
   async upsertUserPushToken(
     userId: string,
     opts: { token: string; platform: "ios"; environment: "sandbox" | "production" },
@@ -1941,23 +2098,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  /**
-   * Whether fans can subscribe to Release Alerts on this artist's profile.
-   * Requires a verified artist profile only — not paid/pro status.
-   *
-   * Release Alert subscriptions stay available for all verified artists.
-   * Future paid/pro logic should gate outbound delivery of Release Alert
-   * notifications, not the user's ability to enable alerts. Delivery
-   * entitlement should live in a separate server-side helper, e.g.
-   * canArtistDeliverReleaseAlertNotifications(artistId).
-   */
-  private isArtistOpenForReleaseAlertSubscriptions(artist: {
-    account_type?: string | null;
-    verified_artist?: boolean | null;
-  }): boolean {
-    return artist.account_type === "artist" && artist.verified_artist === true;
-  }
-
   async hasArtistReleaseAlert(userId: string, artistId: string): Promise<boolean> {
     if (!userId || !artistId) return false;
     try {
@@ -1974,54 +2114,60 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /**
+   * Enable Release Alerts membership and create at most one demand notification ever
+   * for this listener–artist pair (see artist_release_alert_demand_notifications).
+   * Opt-in remains free for verified artists; outbound delivery entitlement is separate.
+   */
   async enableArtistReleaseAlert(userId: string, artistId: string): Promise<{ created: boolean }> {
-    if (!userId || !artistId) {
-      throw new Error("INVALID_IDS");
-    }
-    if (userId === artistId) {
-      throw new Error("SELF_ALERT_NOT_ALLOWED");
-    }
-    const artist = await this.getUser(artistId);
-    if (!artist) {
-      throw new Error("ARTIST_NOT_FOUND");
-    }
-    if (!this.isArtistOpenForReleaseAlertSubscriptions(artist)) {
-      throw new Error("ARTIST_NOT_VERIFIED");
-    }
     try {
-      const insertResult = await db.execute(sql`
-        INSERT INTO artist_release_alerts (user_id, artist_id)
-        VALUES (${userId}, ${artistId})
-        ON CONFLICT (user_id, artist_id) DO NOTHING
-        RETURNING user_id
-      `);
-      const created = ((insertResult as any).rows || []).length > 0;
-      if (created) {
-        await this.notifyArtistReleaseAlertEnabled(userId, artistId);
-      }
-      return { created };
+      return await enableArtistReleaseAlertWithDemandDedup(userId, artistId, {
+        getArtist: (artistId) => this.getUser(artistId),
+        getListenerUsername: async (listenerId) => {
+          const listener = await this.getUser(listenerId);
+          return listener?.username;
+        },
+        runInTransaction: (fn) =>
+          db.transaction(async (tx) =>
+            fn({
+              insertMembership: async (listenerId, artistId) => {
+                const insertResult = await tx.execute(sql`
+                  INSERT INTO artist_release_alerts (user_id, artist_id)
+                  VALUES (${listenerId}, ${artistId})
+                  ON CONFLICT (user_id, artist_id) DO NOTHING
+                  RETURNING user_id
+                `);
+                return ((insertResult as any).rows || []).length > 0;
+              },
+              claimDemandMarker: async (listenerId, artistId) => {
+                const markerResult = await tx.execute(sql`
+                  INSERT INTO artist_release_alert_demand_notifications (listener_id, artist_id)
+                  VALUES (${listenerId}, ${artistId})
+                  ON CONFLICT (listener_id, artist_id) DO NOTHING
+                  RETURNING listener_id
+                `);
+                return ((markerResult as any).rows || []).length > 0;
+              },
+              insertDemandNotification: async ({ listenerId, artistId, message }) => {
+                const result = await tx.execute(sql`
+                  INSERT INTO notifications (
+                    artist_id, triggered_by, post_id, release_id, message, notification_type, read, created_at
+                  )
+                  VALUES (
+                    ${artistId}, ${listenerId}, NULL, NULL, ${message}, 'release_alert_enabled', false, NOW()
+                  )
+                  RETURNING id
+                `);
+                if (((result as any).rows || []).length === 0) {
+                  throw new Error("Failed to insert release_alert_enabled notification");
+                }
+              },
+            }),
+          ),
+      });
     } catch (error) {
       console.error("[enableArtistReleaseAlert] Error:", error);
       throw error;
-    }
-  }
-
-  private async notifyArtistReleaseAlertEnabled(subscriberUserId: string, artistId: string): Promise<void> {
-    try {
-      const subscriber = await this.getUser(subscriberUserId);
-      const rawUsername = subscriber?.username?.trim() || "Someone";
-      const username = rawUsername.replace(/^@+/, "");
-      const message = `@${username} wants to hear your future releases.`;
-      await this.createNotification({
-        artistId,
-        triggeredBy: subscriberUserId,
-        postId: null,
-        releaseId: null,
-        message,
-        notificationType: "release_alert_enabled",
-      } as any);
-    } catch (error) {
-      console.error("[notifyArtistReleaseAlertEnabled] Error:", error);
     }
   }
 
@@ -2713,7 +2859,7 @@ export class DatabaseStorage implements IStorage {
     try {
       if (v === "collaborations") {
         const result = await db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
                  pr.username AS artist_username, rc.status AS collaborator_status,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2738,7 +2884,7 @@ export class DatabaseStorage implements IStorage {
                ))`;
       const result = v === "upcoming"
         ? await db.execute(sql`
-            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
                    pr.username AS artist_username, rc.status AS collaborator_status,
                    (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                     FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2753,7 +2899,7 @@ export class DatabaseStorage implements IStorage {
             ORDER BY r.release_date ASC NULLS LAST
           `)
         : await db.execute(sql`
-            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
                    pr.username AS artist_username, rc.status AS collaborator_status,
                    (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                     FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2823,7 +2969,7 @@ export class DatabaseStorage implements IStorage {
       const viewerWhere = sql`(${savedWhere} OR ${myWhere})`;
       const result = await db.execute(sql`
         SELECT DISTINCT ON (r.id)
-          r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+          r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
           pr.username AS artist_username, rc.status AS collaborator_status,
           (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
            FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2859,7 +3005,7 @@ export class DatabaseStorage implements IStorage {
           AND p.is_verified_artist = true
           AND p.artist_verified_by IS NOT NULL
           AND r2.artist_id = p.artist_verified_by
-          AND r2.is_public = true
+          AND r2.is_public = true AND r2.subscription_suspended_at IS NULL
         GROUP BY r2.id
       `);
       for (const row of (result as any).rows || []) {
@@ -2891,7 +3037,7 @@ export class DatabaseStorage implements IStorage {
           SELECT 1
           FROM releases r
           WHERE r.id = ${releaseId}
-            AND r.is_public = true
+            AND r.is_public = true AND r.subscription_suspended_at IS NULL
             AND (
               EXISTS (
                 SELECT 1
@@ -3004,6 +3150,85 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  private mapHomeWidgetReleaseRow(row: any): HomeWidgetReleaseStorageRow {
+    const normalized = this.normalizeReleaseDisplayFields(row.title, row.artwork_url);
+    return {
+      id: String(row.id),
+      artistId: String(row.artist_id),
+      title: normalized.title,
+      artistName: String(row.artist_username ?? ""),
+      releaseDate: row.release_date ?? null,
+      artworkUrl: normalized.artworkUrl,
+      isPublic: row.is_public === true,
+      isComingSoon: row.is_coming_soon === true,
+      subscriptionSuspendedAt: row.subscription_suspended_at ?? null,
+      createdAt: row.created_at ?? null,
+    };
+  }
+
+  async getHomeWidgetArtistReleaseCandidates(
+    artistId: string,
+  ): Promise<HomeWidgetReleaseStorageRow[]> {
+    if (!artistId) return [];
+    const result = await db.execute(sql`
+      SELECT
+        r.id,
+        r.artist_id,
+        r.title,
+        r.release_date,
+        r.artwork_url,
+        r.is_public,
+        r.is_coming_soon,
+        r.subscription_suspended_at,
+        r.created_at,
+        pr.username AS artist_username
+      FROM releases r
+      JOIN profiles pr ON pr.id = r.artist_id
+      WHERE r.artist_id = ${artistId}
+        AND r.is_public = true
+        AND r.subscription_suspended_at IS NULL
+        AND r.release_date IS NOT NULL
+        AND (r.release_date AT TIME ZONE 'UTC')::date
+          >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+      ORDER BY r.release_date ASC, r.id ASC
+    `);
+    return ((result as any).rows || []).map((row: any) =>
+      this.mapHomeWidgetReleaseRow(row),
+    );
+  }
+
+  async getHomeWidgetListenerSelection(
+    userId: string,
+    releaseId: string,
+  ): Promise<HomeWidgetListenerSelectionRow> {
+    if (!userId || !releaseId) return { release: null, isSaved: false };
+    const savedWhere = savedReleasesFeedWhereSql(userId);
+    const result = await db.execute(sql`
+      SELECT
+        r.id,
+        r.artist_id,
+        r.title,
+        r.release_date,
+        r.artwork_url,
+        r.is_public,
+        r.is_coming_soon,
+        r.subscription_suspended_at,
+        r.created_at,
+        pr.username AS artist_username,
+        (${savedWhere}) AS viewer_saved
+      FROM releases r
+      JOIN profiles pr ON pr.id = r.artist_id
+      WHERE r.id = ${releaseId}
+      LIMIT 1
+    `);
+    const row = (result as any).rows?.[0];
+    if (!row) return { release: null, isSaved: false };
+    return {
+      release: this.mapHomeWidgetReleaseRow(row),
+      isSaved: row.viewer_saved === true,
+    };
+  }
+
   /**
    * Public, attach-eligible releases for the post-identification "attach to release" modal.
    * Only returns upcoming/coming-soon releases — past dated releases are excluded here
@@ -3022,7 +3247,7 @@ export class DatabaseStorage implements IStorage {
           r.is_coming_soon
         FROM releases r
         WHERE r.artist_id = ${artistId}
-          AND r.is_public = true
+          AND r.is_public = true AND r.subscription_suspended_at IS NULL
           AND (
             (r.release_date IS NULL AND r.is_coming_soon = true)
             OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
@@ -3056,14 +3281,14 @@ export class DatabaseStorage implements IStorage {
     try {
       const [upcomingResult, releasedResult] = await Promise.all([
         db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
                  pr.username AS artist_username,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
                   WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
           FROM releases r
           JOIN profiles pr ON pr.id = r.artist_id
-          WHERE r.artist_id = ${artistId} AND r.is_public = true
+          WHERE r.artist_id = ${artistId} AND r.is_public = true AND r.subscription_suspended_at IS NULL
             AND (
               (r.release_date IS NULL AND r.is_coming_soon = true)
               OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
@@ -3071,14 +3296,14 @@ export class DatabaseStorage implements IStorage {
           ORDER BY r.release_date ASC NULLS LAST
         `),
         db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
                  pr.username AS artist_username,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
                   WHERE rc2.release_id = r.id AND rc2.status = 'ACCEPTED') AS accepted_collaborators
           FROM releases r
           JOIN profiles pr ON pr.id = r.artist_id
-          WHERE r.artist_id = ${artistId} AND r.is_public = true
+          WHERE r.artist_id = ${artistId} AND r.is_public = true AND r.subscription_suspended_at IS NULL
             AND r.release_date IS NOT NULL
             AND ((r.release_date AT TIME ZONE 'UTC')::date < (NOW() AT TIME ZONE 'UTC')::date)
           ORDER BY r.release_date DESC NULLS LAST
@@ -3113,6 +3338,8 @@ export class DatabaseStorage implements IStorage {
         updatedAt: row.updated_at,
         isPublic: row.is_public ?? true,
         isComingSoon: row.is_coming_soon ?? false,
+        subscriptionSuspendedAt: row.subscription_suspended_at ?? null,
+        subscriptionSuspensionReason: row.subscription_suspension_reason ?? null,
         artistUsername: row.artist_username,
         collaboratorStatus: row.collaborator_status || null,
         collaborators: (collaborators || []).map((c: any) => ({ ...c, status: "ACCEPTED" })),
@@ -3184,6 +3411,8 @@ export class DatabaseStorage implements IStorage {
           r.updated_at,
           r.is_public,
           r.is_coming_soon,
+          r.subscription_suspended_at,
+          r.subscription_suspension_reason,
           pr.username AS artist_username
         FROM releases r
         JOIN profiles pr ON pr.id = r.artist_id
@@ -3208,6 +3437,8 @@ export class DatabaseStorage implements IStorage {
         updatedAt: row.updated_at,
         isPublic: row.is_public ?? true,
         isComingSoon: row.is_coming_soon ?? false,
+        subscriptionSuspendedAt: row.subscription_suspended_at ?? null,
+        subscriptionSuspensionReason: row.subscription_suspension_reason ?? null,
         artistUsername: row.artist_username,
         links,
         postIds,
@@ -3293,42 +3524,44 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createRelease(data: { artistId: string; title: string; releaseDate: Date | null; artworkUrl?: string | null; isComingSoon?: boolean }): Promise<any> {
-    const result = await db.execute(sql`
-      INSERT INTO releases (artist_id, title, release_date, artwork_url, is_public, is_coming_soon, created_at, updated_at)
-      VALUES (${data.artistId}, ${data.title}, ${data.releaseDate}, ${data.artworkUrl ?? null}, true, ${data.isComingSoon ?? false}, NOW(), NOW())
-      RETURNING *
-    `);
-    const rows = (result as any).rows || [];
-    if (rows.length === 0) throw new Error("Failed to create release");
-    const row = rows[0];
+  async createRelease(data: {
+    artistId: string;
+    title: string;
+    releaseDate: Date | null;
+    artworkUrl?: string | null;
+    isComingSoon?: boolean;
+  }): Promise<any> {
+    const release = await createReleaseWithLimit(data, {
+      pool,
+      getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+    });
 
     void logEvent({
       event_type: "release_created",
       user_id: data.artistId,
-      release_id: row.id,
+      release_id: release.id,
       metadata: {
-        is_coming_soon: row.is_coming_soon ?? false,
+        is_coming_soon: release.isComingSoon ?? data.isComingSoon ?? false,
       },
     });
 
-    if (row.is_public) {
+    if (release.isPublic !== false) {
       void logEvent({
         event_type: "release_published",
         user_id: data.artistId,
-        release_id: row.id,
+        release_id: release.id,
       });
     }
 
     return {
-      id: row.id,
-      artistId: row.artist_id,
-      title: row.title,
-      releaseDate: row.release_date,
-      artworkUrl: row.artwork_url,
-      notifiedAt: row.notified_at,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      id: release.id,
+      artistId: release.artistId,
+      title: release.title,
+      releaseDate: release.releaseDate,
+      artworkUrl: release.artworkUrl,
+      notifiedAt: release.notifiedAt,
+      createdAt: release.createdAt,
+      updatedAt: release.updatedAt,
     };
   }
 
@@ -3417,50 +3650,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{ attached: string[]; newlyAttached: string[]; rejected: string[]; postAlreadyAttached?: string[] }> {
-    const attached: string[] = [];
-    const newlyAttached: string[] = [];
-    const rejected: string[] = [];
-    const postAlreadyAttached: string[] = [];
-    for (const postId of postIds) {
-      const check = await db.execute(sql`
-        SELECT p.id FROM posts p
-        WHERE p.id = ${postId}
-          AND p.is_verified_artist = true
-          AND p.artist_verified_by = ${artistId}
-          AND (p.denied_by_artist IS NOT TRUE)
-          AND (p.verification_status IS NULL OR p.verification_status != 'unverified')
-      `);
-      const rows = (check as any).rows || [];
-      if (rows.length === 0) {
-        rejected.push(postId);
-        continue;
-      }
-      const existing = await db.execute(sql`
-        SELECT release_id FROM release_posts WHERE post_id = ${postId} LIMIT 1
-      `);
-      const existingRows = (existing as any).rows || [];
-      if (existingRows.length > 0 && existingRows[0].release_id !== releaseId) {
-        postAlreadyAttached.push(postId);
-        rejected.push(postId);
-        continue;
-      }
-      if (existingRows.length > 0 && existingRows[0].release_id === releaseId) {
-        attached.push(postId);
-        continue;
-      }
-      try {
-        await db.execute(sql`
-          INSERT INTO release_posts (release_id, post_id, created_at)
-          VALUES (${releaseId}, ${postId}, NOW())
-          ON CONFLICT (release_id, post_id) DO NOTHING
-        `);
-        attached.push(postId);
-        newlyAttached.push(postId);
-      } catch {
-        rejected.push(postId);
-      }
-    }
-    return { attached, newlyAttached, rejected, postAlreadyAttached: postAlreadyAttached.length > 0 ? postAlreadyAttached : undefined };
+    return attachPostsWithLimit(releaseId, artistId, postIds, {
+      pool,
+      getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+    });
   }
 
   /** Removing release–post links is blocked once the release date has passed; adding posts is always allowed (see attachPostsToRelease). */
@@ -3560,46 +3753,89 @@ export class DatabaseStorage implements IStorage {
 
   async notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean> {
     try {
-      const releaseResult = await db.execute(sql`
-        SELECT id, notified_at, artist_id, release_date, title FROM releases WHERE id = ${releaseId} AND artist_id = ${artistId} LIMIT 1
-      `);
-      const releaseRows = (releaseResult as any).rows || [];
-      if (releaseRows.length === 0) return false;
-      const r = releaseRows[0];
-      if (r.notified_at) return false;
-      const postIds = await this.getReleasePostIds(releaseId);
-      if (postIds.length === 0) return false;
-      const recipientIds = await this.getReleaseNotificationRecipientIds(releaseId, artistId);
-      const artistProfile = await this.getUser(artistId);
-      const artistUsername = artistProfile?.username ?? "Artist";
-      const releaseTitle = r.title ?? "Release";
-      const message = formatReleaseAnnounceMessage(artistUsername, releaseTitle);
-      const firstPostId = postIds[0] ?? null;
-      for (const recipientId of recipientIds) {
-        if (!recipientId) continue;
-        const notif = await this.createNotification({
-          artistId: recipientId,
-          triggeredBy: artistId,
-          postId: firstPostId,
-          releaseId,
-          message,
-          notificationType: "release_announce",
-        });
-        void import("./push/pushSend").then(({ sendPushToUser }) =>
-          sendPushToUser(recipientId, {
-            type: "release_announce",
-            notificationId: notif.id,
-            releaseId,
-            artistId,
-            artistUsername,
-            releaseTitle,
-            postId: firstPostId,
+      const envResolved = resolveServerSubscriptionEnvironment();
+      const outcome = await runNotifyReleaseLikers(releaseId, artistId, {
+        loadRelease: async (id, ownerId) => {
+          const releaseResult = await db.execute(sql`
+            SELECT id, notified_at, artist_id, release_date, title, is_public, subscription_suspended_at
+            FROM releases WHERE id = ${id} AND artist_id = ${ownerId} LIMIT 1
+          `);
+          const releaseRows = (releaseResult as any).rows || [];
+          if (releaseRows.length === 0) return null;
+          const r = releaseRows[0];
+          return {
+            id: r.id,
+            artistId: r.artist_id,
+            title: r.title ?? null,
+            notifiedAt: r.notified_at ?? null,
+            isPublic: !!r.is_public,
+            subscriptionSuspendedAt: r.subscription_suspended_at ?? null,
+          };
+        },
+        getPostIds: (id) => this.getReleasePostIds(id),
+        getFreeRecipientIds: (id, ownerId) =>
+          this.getReleaseAttachedRecipientIds(id, ownerId),
+        getAlertSubscriberIds: (ownerId) =>
+          this.getArtistReleaseAlertSubscriberIds(ownerId),
+        getArtistUsername: async (ownerId) => {
+          const artistProfile = await this.getUser(ownerId);
+          return artistProfile?.username ?? "Artist";
+        },
+        canArtistDeliverReleaseAlerts: (ownerId) =>
+          canArtistDeliverReleaseAlerts(ownerId, {
+            getSnapshotsForUser: (id) =>
+              subscriptionStatusRepository.getSnapshotsForUser(id),
           }),
-        );
+        providerEnvironment: envResolved.environment,
+        createNotification: async (input) => {
+          const notif = await this.createNotification({
+            artistId: input.recipientId,
+            triggeredBy: input.triggeredBy,
+            postId: input.postId,
+            releaseId: input.releaseId,
+            message: input.message,
+            notificationType: input.notificationType,
+          });
+          return { id: notif.id };
+        },
+        sendReleaseAnnouncePush: ({
+          recipientId,
+          notificationId,
+          releaseId: rid,
+          postId,
+          artistId: ownerId,
+          artistUsername,
+          releaseTitle,
+        }) => {
+          void import("./push/pushSend").then(({ sendPushToUser }) =>
+            sendPushToUser(recipientId, {
+              type: "release_announce",
+              notificationId,
+              releaseId: rid,
+              artistId: ownerId,
+              artistUsername,
+              releaseTitle,
+              postId,
+            }),
+          );
+        },
+        markNotified: async (id) => {
+          await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${id}`);
+        },
+        log: (payload) => {
+          console.log("[notifyReleaseLikers]", payload);
+        },
+      });
+      if (outcome === "skipped_suspended") {
+        throw new FreeReleaseSubscriptionSuspendedError();
       }
-      await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
-      return true;
+      return (
+        outcome === "delivered" ||
+        outcome === "skipped_ineligible_paid_audience" ||
+        outcome === "skipped_no_recipients"
+      );
     } catch (error) {
+      if (isFreeReleaseSubscriptionSuspendedError(error)) throw error;
       console.error("[notifyReleaseLikers] Error:", error);
       return false;
     }
@@ -3637,6 +3873,117 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
+   * Distinct uploader ∪ current likers for one post. Excludes release owner.
+   * Account type is not filtered.
+   */
+  private async getPostAttachedRecipientIds(
+    postId: string,
+    releaseOwnerId: string,
+  ): Promise<string[]> {
+    if (!postId || !releaseOwnerId) return [];
+    try {
+      const recipientsResult = await db.execute(sql`
+        SELECT DISTINCT user_id FROM (
+          SELECT pl.user_id
+          FROM post_likes pl
+          WHERE pl.post_id = ${postId} AND pl.user_id IS NOT NULL
+          UNION
+          SELECT p.user_id
+          FROM posts p
+          WHERE p.id = ${postId} AND p.user_id IS NOT NULL
+        ) sub
+        WHERE user_id IS NOT NULL AND user_id != ${releaseOwnerId}
+      `);
+      const rows = (recipientsResult as any).rows || [];
+      return rows.map((row: { user_id?: string }) => row.user_id).filter((id): id is string => !!id);
+    } catch (error) {
+      console.error("[getPostAttachedRecipientIds] Error:", error);
+      return [];
+    }
+  }
+
+  async notifyNewlyAttachedPostAudience(
+    releaseId: string,
+    newlyAttachedPostIds: string[],
+  ): Promise<void> {
+    try {
+      await notifyNewlyAttachedPostAudience(releaseId, newlyAttachedPostIds, {
+        loadRelease: async (id) => {
+          const releaseRow = await db.execute(sql`
+            SELECT id, artist_id, is_public, subscription_suspended_at
+            FROM releases WHERE id = ${id} LIMIT 1
+          `);
+          const rows = (releaseRow as any).rows || [];
+          if (rows.length === 0) return null;
+          const r = rows[0];
+          return {
+            id: r.id,
+            artistId: r.artist_id,
+            isPublic: !!r.is_public,
+            subscriptionSuspendedAt: r.subscription_suspended_at ?? null,
+          };
+        },
+        getPostRecipientIds: (postId, ownerId) =>
+          this.getPostAttachedRecipientIds(postId, ownerId),
+        runInTransaction: (fn) =>
+          db.transaction(async (tx) =>
+            fn({
+              claimMarker: async (rid, postId, recipientId) => {
+                const markerResult = await tx.execute(sql`
+                  INSERT INTO release_attached_notification_markers (
+                    release_id, post_id, recipient_id
+                  )
+                  VALUES (${rid}, ${postId}, ${recipientId})
+                  ON CONFLICT (release_id, post_id, recipient_id) DO NOTHING
+                  RETURNING recipient_id
+                `);
+                return ((markerResult as any).rows || []).length > 0;
+              },
+              insertReleaseAttachedNotification: async ({
+                recipientId,
+                triggeredBy,
+                postId,
+                releaseId: rid,
+                message,
+              }) => {
+                const result = await tx.execute(sql`
+                  INSERT INTO notifications (
+                    artist_id, triggered_by, post_id, release_id, message, notification_type, read, created_at
+                  )
+                  VALUES (
+                    ${recipientId}, ${triggeredBy}, ${postId}, ${rid}, ${message},
+                    'release_attached', false, NOW()
+                  )
+                  RETURNING id
+                `);
+                const rows = (result as any).rows || [];
+                if (rows.length === 0) {
+                  throw new Error("Failed to insert release_attached notification");
+                }
+                return { id: rows[0].id as string };
+              },
+            }),
+          ),
+        sendAttachedPush: ({ recipientId, releaseId: rid, postId, artistId }) => {
+          void import("./push/pushSend").then(({ sendPushToUser }) =>
+            sendPushToUser(recipientId, {
+              type: "release_attached_to_liked_or_uploaded_post",
+              releaseId: rid,
+              postId,
+              artistId,
+            }),
+          );
+        },
+        log: (payload) => {
+          console.log("[notifyNewlyAttachedPostAudience]", payload);
+        },
+      });
+    } catch (error) {
+      console.error("[notifyNewlyAttachedPostAudience] Error:", error);
+    }
+  }
+
+  /**
    * Users who enabled Release Alerts for this artist. Excludes release owner.
    */
   private async getArtistReleaseAlertSubscriberIds(artistId: string): Promise<string[]> {
@@ -3656,46 +4003,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
-   * Distinct recipient user IDs for release notifications.
-   * Likers + uploaders on attached posts ∪ artist_release_alerts subscribers.
-   * Excludes release owner. DISTINCT dedupes multi-source eligibility.
+   * Release-day free recipients: likers ∪ uploaders on attached posts. Excludes
+   * release owner. Does not include artist_release_alerts — those are paid-only
+   * and layered on separately, gated by canArtistDeliverReleaseAlerts.
+   * Identical shape to getReleaseAttachedRecipientIds — reused for that reason.
    */
-  private async getReleaseNotificationRecipientIds(
+  private async getReleaseDayFreeRecipientIds(
     releaseId: string,
     artistId: string,
   ): Promise<string[]> {
-    if (!releaseId || !artistId) return [];
-    try {
-      const recipientsResult = await db.execute(sql`
-        SELECT DISTINCT user_id FROM (
-          SELECT pl.user_id
-          FROM release_posts rp
-          JOIN post_likes pl ON pl.post_id = rp.post_id
-          WHERE rp.release_id = ${releaseId} AND pl.user_id IS NOT NULL
-          UNION
-          SELECT p.user_id
-          FROM release_posts rp
-          JOIN posts p ON p.id = rp.post_id
-          WHERE rp.release_id = ${releaseId} AND p.user_id IS NOT NULL
-          UNION
-          SELECT ara.user_id
-          FROM artist_release_alerts ara
-          WHERE ara.artist_id = ${artistId}
-        ) sub
-        WHERE user_id IS NOT NULL AND user_id != ${artistId}
-      `);
-      const rows = (recipientsResult as any).rows || [];
-      return rows.map((row: { user_id?: string }) => row.user_id).filter((id): id is string => !!id);
-    } catch (error) {
-      console.error("[getReleaseNotificationRecipientIds] Error:", error);
-      return [];
-    }
+    return this.getReleaseAttachedRecipientIds(releaseId, artistId);
   }
 
   /**
-   * Send initial public/confirmed announcement notification once per release.
-   * Triggered when is_public becomes true; uses notified_at to prevent duplicates.
-   * Attached-post recipients get release_attached; alert-only subscribers get artist_release_alert.
+   * Send initial public/confirmed announcement processing once per release.
+   * Triggered when is_public becomes true; uses notified_at for release-level
+   * artist_release_alert idempotency (not for later per-post release_attached).
+   * Free release_attached is marker-backed via notifyNewlyAttachedPostAudience.
+   * Alert-only subscribers get artist_release_alert when entitlement-eligible.
    * Users in both sets receive release_attached only (track-specific message takes priority).
    */
   private getReleaseStatus(isComingSoon: boolean, releaseDate: Date | null): "upcoming" | "released" {
@@ -3706,70 +4031,82 @@ export class DatabaseStorage implements IStorage {
 
   async maybeNotifyReleasePublic(releaseId: string): Promise<void> {
     try {
-      const releaseRow = await db.execute(sql`
-        SELECT id, artist_id, title, release_date, is_coming_soon, is_public, notified_at FROM releases WHERE id = ${releaseId} LIMIT 1
-      `);
-      const rows = (releaseRow as any).rows || [];
-      if (rows.length === 0) return;
-      const r = rows[0];
-      if (!r.is_public || r.notified_at) return;
-      const postIds = await this.getReleasePostIds(releaseId);
-      if (postIds.length === 0) return;
-      const attachedRecipientIds = await this.getReleaseAttachedRecipientIds(releaseId, r.artist_id);
-      const attachedSet = new Set(attachedRecipientIds);
-      const alertSubscriberIds = await this.getArtistReleaseAlertSubscriberIds(r.artist_id);
-      const alertOnlyRecipientIds = alertSubscriberIds.filter((id) => !attachedSet.has(id));
-      const ownerProfile = await this.getUser(r.artist_id);
-      const ownerUsername = ownerProfile?.username ?? "Artist";
-      const releaseTitle = r.title ?? "Release";
-      const attachedMessage = RELEASE_ATTACHED_NOTIFICATION_MESSAGE;
-      const alertMessage = formatArtistReleaseAlertMessage(ownerUsername, releaseTitle);
-      const firstPostId = postIds[0] ?? null;
-
-      for (const recipientId of attachedRecipientIds) {
-        if (!recipientId) continue;
-        const notif = await this.createNotification({
-          artistId: recipientId,
-          triggeredBy: r.artist_id,
-          postId: firstPostId,
-          releaseId,
-          message: attachedMessage,
-          notificationType: "release_attached",
-        } as any);
-        void import("./push/pushSend").then(({ sendPushToUser }) =>
-          sendPushToUser(recipientId, {
-            type: "release_attached_to_liked_or_uploaded_post",
-            releaseId,
-            postId: firstPostId,
+      const envResolved = resolveServerSubscriptionEnvironment();
+      await runMaybeNotifyReleasePublic(releaseId, {
+        loadRelease: async (id) => {
+          const releaseRow = await db.execute(sql`
+            SELECT id, artist_id, title, release_date, is_coming_soon, is_public, notified_at,
+                   subscription_suspended_at
+            FROM releases WHERE id = ${id} LIMIT 1
+          `);
+          const rows = (releaseRow as any).rows || [];
+          if (rows.length === 0) return null;
+          const r = rows[0];
+          return {
+            id: r.id,
             artistId: r.artist_id,
+            title: r.title ?? null,
+            isPublic: !!r.is_public,
+            notifiedAt: r.notified_at ?? null,
+            subscriptionSuspendedAt: r.subscription_suspended_at ?? null,
+          };
+        },
+        getPostIds: (id) => this.getReleasePostIds(id),
+        notifyNewlyAttachedPostAudience: (id, postIds) =>
+          this.notifyNewlyAttachedPostAudience(id, postIds),
+        getAttachedRecipientIds: (id, artistId) =>
+          this.getReleaseAttachedRecipientIds(id, artistId),
+        getAlertSubscriberIds: (artistId) =>
+          this.getArtistReleaseAlertSubscriberIds(artistId),
+        getOwnerUsername: async (artistId) => {
+          const ownerProfile = await this.getUser(artistId);
+          return ownerProfile?.username ?? "Artist";
+        },
+        canArtistDeliverReleaseAlerts: (artistId) =>
+          canArtistDeliverReleaseAlerts(artistId, {
+            getSnapshotsForUser: (id) =>
+              subscriptionStatusRepository.getSnapshotsForUser(id),
           }),
-        );
-      }
-
-      for (const recipientId of alertOnlyRecipientIds) {
-        if (!recipientId) continue;
-        const notif = await this.createNotification({
-          artistId: recipientId,
-          triggeredBy: r.artist_id,
-          postId: firstPostId,
-          releaseId,
-          message: alertMessage,
-          notificationType: "artist_release_alert",
-        } as any);
-        void import("./push/pushSend").then(({ sendPushToUser }) =>
-          sendPushToUser(recipientId, {
-            type: "artist_release_alert",
-            notificationId: notif.id,
-            releaseId,
-            postId: firstPostId,
-            artistId: r.artist_id,
-            artistUsername: ownerUsername,
-            releaseTitle,
-          }),
-        );
-      }
-
-      await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${releaseId}`);
+        providerEnvironment: envResolved.environment,
+        createNotification: async (input) => {
+          const notif = await this.createNotification({
+            artistId: input.recipientId,
+            triggeredBy: input.triggeredBy,
+            postId: input.postId,
+            releaseId: input.releaseId,
+            message: input.message,
+            notificationType: input.notificationType,
+          } as any);
+          return { id: notif.id };
+        },
+        sendArtistReleaseAlertPush: ({
+          recipientId,
+          notificationId,
+          releaseId: rid,
+          postId,
+          artistId,
+          artistUsername,
+          releaseTitle,
+        }) => {
+          void import("./push/pushSend").then(({ sendPushToUser }) =>
+            sendPushToUser(recipientId, {
+              type: "artist_release_alert",
+              notificationId,
+              releaseId: rid,
+              postId,
+              artistId,
+              artistUsername,
+              releaseTitle,
+            }),
+          );
+        },
+        markNotified: async (id) => {
+          await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${id}`);
+        },
+        log: (payload) => {
+          console.log("[maybeNotifyReleasePublic]", payload);
+        },
+      });
     } catch (error) {
       console.error("[maybeNotifyReleasePublic] Error:", error);
     }
@@ -3810,7 +4147,7 @@ export class DatabaseStorage implements IStorage {
         SELECT r.id, r.artist_id, r.title, r.release_date, r.release_day_notified_at, r.artwork_url
         FROM releases r
         WHERE r.release_day_notified_at IS NULL
-          AND r.is_public = true
+          AND r.is_public = true AND r.subscription_suspended_at IS NULL
           AND r.is_coming_soon = false
           AND r.release_date IS NOT NULL
           AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
@@ -3825,7 +4162,26 @@ export class DatabaseStorage implements IStorage {
       for (const r of releases) {
         const pushTasks: Promise<void>[] = [];
         const pushTaskRecipients: string[] = [];
-        const recipientIds = await this.getReleaseNotificationRecipientIds(r.id, r.artist_id);
+        const freeRecipientIds = await this.getReleaseDayFreeRecipientIds(r.id, r.artist_id);
+        const freeRecipientSet = new Set(freeRecipientIds);
+        let paidOnlyRecipientIds: string[] = [];
+        try {
+          const deliveryAllowed = await canArtistDeliverReleaseAlerts(r.artist_id, {
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+          });
+          if (deliveryAllowed) {
+            const alertSubscriberIds = await this.getArtistReleaseAlertSubscriberIds(r.artist_id);
+            paidOnlyRecipientIds = alertSubscriberIds.filter((id) => !freeRecipientSet.has(id));
+          }
+        } catch (entitlementError) {
+          console.error("[notifyReleaseDayLikers] Entitlement check failed; paid-only recipients skipped", {
+            releaseId: r.id,
+            error: entitlementError instanceof Error ? entitlementError.message : String(entitlementError),
+          });
+          paidOnlyRecipientIds = [];
+        }
+        // Deduplicate: each recipient receives exactly one release_day notification.
+        const recipientIds = [...freeRecipientIds, ...paidOnlyRecipientIds];
         const postIds = await this.getReleasePostIds(r.id);
         const firstPostId = postIds[0] ?? null;
         const artistProfile = await this.getUser(r.artist_id);
@@ -4100,6 +4456,25 @@ export class DatabaseStorage implements IStorage {
         user_id: ownerId,
         release_id: releaseId,
       });
+      // Reconcile before notifying: a newly public future release may push this
+      // artist over the free allowance and get suspended immediately, in which
+      // case maybeNotifyReleasePublic will see subscription_suspended_at and skip.
+      if (ownerId) {
+        try {
+          const { reconcileArtistFutureReleaseSuspensions } = await import(
+            "./reconcile-artist-future-release-suspensions"
+          );
+          await reconcileArtistFutureReleaseSuspensions(ownerId, {
+            pool,
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+            // Prefer suspending this newly public release so frozen actives stay put
+            // even when this release has an older created_at (collab-held → public).
+            preferSuspendIds: [releaseId],
+          });
+        } catch (err) {
+          console.error("[recomputeReleaseIsPublic] future-release reconcile failed", err);
+        }
+      }
       await this.maybeNotifyReleasePublic(releaseId);
     }
   }
@@ -4220,6 +4595,16 @@ export class DatabaseStorage implements IStorage {
       await client.query("DELETE FROM release_links WHERE release_id = $1", [releaseId]);
       await client.query("DELETE FROM releases WHERE id = $1 AND artist_id = $2", [releaseId, ownerId]);
       await client.query("COMMIT");
+      // A deleted future release may free up a suspension slot for this artist.
+      void import("./reconcile-artist-future-release-suspensions").then(
+        ({ reconcileArtistFutureReleaseSuspensions }) =>
+          reconcileArtistFutureReleaseSuspensions(ownerId, {
+            pool,
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+          }),
+      ).catch((err) => {
+        console.error("[deleteRelease] future-release reconcile failed", err);
+      });
       return true;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});

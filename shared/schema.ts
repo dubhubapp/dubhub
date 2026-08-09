@@ -111,14 +111,43 @@ export const releases = pgTable("releases", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   artistId: varchar("artist_id").notNull().references(() => profiles.id),
   title: text("title").notNull(),
-  releaseDate: timestamp("release_date").notNull(),
+  releaseDate: timestamp("release_date"),
   artworkUrl: text("artwork_url"),
   notifiedAt: timestamp("notified_at"),
   releaseDayNotifiedAt: timestamp("release_day_notified_at"),
   isPublic: boolean("is_public").notNull().default(true),
+  isComingSoon: boolean("is_coming_soon").notNull().default(false),
+  /** Reversible free-tier future-release suspension; separate from isPublic. */
+  subscriptionSuspendedAt: timestamp("subscription_suspended_at", { withTimezone: true }),
+  subscriptionSuspensionReason: text("subscription_suspension_reason"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/**
+ * Authoritative release-creation history for free-limit enforcement.
+ * release_id has no FK to releases so rows survive hard delete.
+ */
+export const artistReleaseCreationLedger = pgTable(
+  "artist_release_creation_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    artistId: uuid("artist_id")
+      .notNull()
+      .references(() => profiles.id as any, { onDelete: "cascade" }),
+    releaseId: uuid("release_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    releaseIdUnique: unique("artist_release_creation_ledger_release_id_key").on(
+      table.releaseId,
+    ),
+    artistCreatedAtIdx: index("artist_release_creation_ledger_artist_created_at_idx").on(
+      table.artistId,
+      table.createdAt,
+    ),
+  }),
+);
 
 export const releaseCollaborators = pgTable("release_collaborators", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -133,7 +162,7 @@ export const releaseCollaborators = pgTable("release_collaborators", {
 export const releaseLinks = pgTable("release_links", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   releaseId: varchar("release_id").notNull().references(() => releases.id),
-  platform: text("platform").notNull(), // spotify | apple | soundcloud | beatport | bandcamp | youtube | free_download | dub_pack | other
+  platform: text("platform").notNull(), // selectable: spotify | apple_music | soundcloud | beatport | bandcamp | deezer | amazon_music | tidal | youtube_music | free_download | dub_pack | other; legacy: juno
   url: text("url").notNull(),
   linkType: text("link_type"), // presave | listen | download
   createdAt: timestamp("created_at").defaultNow(),
@@ -255,6 +284,51 @@ export const artistReleaseAlerts = pgTable(
   },
   (table) => ({
     userArtistUnique: unique("artist_release_alerts_user_artist_unique").on(table.userId, table.artistId),
+  }),
+);
+
+/**
+ * Permanent first-enable marker for Release Alert demand notifications.
+ * Survives artist_release_alerts disable/re-enable. Backend API only.
+ */
+export const artistReleaseAlertDemandNotifications = pgTable(
+  "artist_release_alert_demand_notifications",
+  {
+    listenerId: varchar("listener_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    artistId: varchar("artist_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    firstEnabledAt: timestamp("first_enabled_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      name: "artist_release_alert_demand_notifications_pkey",
+      columns: [table.listenerId, table.artistId],
+    }),
+  }),
+);
+
+/**
+ * Permanent per-release/post/recipient markers for release_attached delivery.
+ * release_id and post_id have no FKs so markers survive hard delete. Backend API only.
+ */
+export const releaseAttachedNotificationMarkers = pgTable(
+  "release_attached_notification_markers",
+  {
+    releaseId: uuid("release_id").notNull(),
+    postId: uuid("post_id").notNull(),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => profiles.id as any, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      name: "release_attached_notification_markers_pkey",
+      columns: [table.releaseId, table.postId, table.recipientId],
+    }),
   }),
 );
 
@@ -474,6 +548,7 @@ export type Notification = typeof notifications.$inferSelect;
 export type ModeratorAction = typeof moderatorActions.$inferSelect;
 export type PostLike = typeof postLikes.$inferSelect;
 export type Release = typeof releases.$inferSelect;
+export type ArtistReleaseCreationLedger = typeof artistReleaseCreationLedger.$inferSelect;
 export type ReleaseLink = typeof releaseLinks.$inferSelect;
 export type ReleasePost = typeof releasePosts.$inferSelect;
 export type UserPushToken = typeof userPushTokens.$inferSelect;

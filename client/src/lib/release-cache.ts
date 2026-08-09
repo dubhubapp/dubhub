@@ -32,6 +32,12 @@ export type ReleaseDetailRecord = {
   attachedClips?: ReleaseAttachedClip[];
   postIds?: string[];
   artworkPath?: string | null;
+  subscriptionSuspendedAt?: string | null;
+  subscriptionSuspensionReason?: string | null;
+  subscriptionSuspended?: boolean;
+  subscriptionPaused?: boolean;
+  availability?: "subscription_paused" | string;
+  message?: string;
   __previewFromFeed?: true;
 };
 
@@ -51,6 +57,9 @@ export function feedItemToDetailPreview(item: ReleaseFeedItem): ReleaseDetailRec
     links: item.links,
     collaborators: item.collaborators,
     collaboratorStatus: item.collaboratorStatus,
+    subscriptionSuspendedAt:
+      (item as ReleaseFeedItem & { subscriptionSuspendedAt?: string | null })
+        .subscriptionSuspendedAt ?? null,
     __previewFromFeed: true,
   };
 }

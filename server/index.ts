@@ -7,6 +7,10 @@ import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storage } from "./storage";
+import { pool } from "./db";
+import { reconcileArtistFutureReleaseSuspensions } from "./reconcile-artist-future-release-suspensions";
+import { isFutureReleaseSuspensionEnforcementEnabled } from "./future-release-suspension";
+import { subscriptionStatusRepository } from "./subscription-status-repository";
 
 const app = express();
 
@@ -130,6 +134,68 @@ async function logFfprobeRuntimeDiagnostics() {
   });
 }
 
+let futureReleaseSuspensionReconcileRunning = false;
+
+/**
+ * Batch future-release suspension reconcile: catches artists whose access
+ * changed outside a direct create/attach/delete/refresh request (e.g. webhook
+ * updates, expiry passing naturally, or a previously-failed inline reconcile).
+ * Bounded to 200 artists per tick; each artist is reconciled independently so
+ * one failure does not block the rest. Does not call RevenueCat directly —
+ * relies on cached subscription snapshots via subscriptionStatusRepository.
+ */
+async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
+  if (!isFutureReleaseSuspensionEnforcementEnabled()) return;
+  if (futureReleaseSuspensionReconcileRunning) {
+    log("[Cron] Future-release reconcile batch skipped: previous run still in progress");
+    return;
+  }
+  futureReleaseSuspensionReconcileRunning = true;
+  try {
+    const result = await pool.query<{ artist_id: string }>(`
+      SELECT DISTINCT artist_id FROM releases WHERE subscription_suspended_at IS NOT NULL
+      UNION
+      SELECT DISTINCT artist_id FROM releases
+      WHERE is_public = true
+        AND (
+          (release_date IS NULL AND is_coming_soon = true)
+          OR (release_date IS NOT NULL AND release_date >= NOW())
+        )
+      LIMIT 200
+    `);
+    const artistIds = result.rows.map((r) => r.artist_id).filter(Boolean);
+    if (artistIds.length === 0) return;
+
+    let suspended = 0;
+    let restored = 0;
+    let promoted = 0;
+    let failed = 0;
+    for (const artistId of artistIds) {
+      try {
+        const outcome = await reconcileArtistFutureReleaseSuspensions(artistId, {
+          pool,
+          getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+        });
+        suspended += outcome.suspendedCount;
+        restored += outcome.restoredCount;
+        promoted += outcome.promotedCount;
+      } catch (err) {
+        failed += 1;
+        console.error("[Cron] Future-release reconcile failed for artist", { artistId, err });
+      }
+    }
+    if (suspended > 0 || restored > 0 || promoted > 0 || failed > 0) {
+      log(
+        `[Cron] Future-release reconcile batch: artists=${artistIds.length} suspended=${suspended} restored=${restored} promoted=${promoted} failed=${failed}`,
+      );
+    }
+  } catch (err) {
+    console.error("[Cron] Future-release reconcile batch error:", err);
+  } finally {
+    futureReleaseSuspensionReconcileRunning = false;
+  }
+}
+
 (async () => {
   await logFfprobeRuntimeDiagnostics();
   const server = await registerRoutes(app);
@@ -150,6 +216,12 @@ async function logFfprobeRuntimeDiagnostics() {
     } catch (err) {
       console.error("[Cron] Release-day notifications error:", err);
     }
+  });
+
+  // Future-release subscription suspension batch reconcile: hourly in prod, every 15 min in dev.
+  const futureReleaseSuspensionCronExpr = isDev ? "*/15 * * * *" : "0 * * * *";
+  cron.schedule(futureReleaseSuspensionCronExpr, () => {
+    void runFutureReleaseSuspensionReconcileBatch();
   });
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

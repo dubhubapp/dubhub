@@ -34,11 +34,27 @@ export function getNotificationTapRoute(notification: NotificationWithUser): str
   const postId = fields.postId;
   const releaseId = fields.releaseId;
 
+  if (type === "release_alert_enabled") {
+    const username = notification.triggeredByUser?.username?.trim();
+    if (username) {
+      return `/profile/${encodeURIComponent(username)}`;
+    }
+    return "";
+  }
+
   if (shouldOpenCommentsForNotificationType(type) && postId) {
     return `/?post=${encodeURIComponent(postId)}&openComments=1`;
   }
 
   if (type === "artist_identified_post" && postId) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
+
+  if (type === "community_identified_post" && postId) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
+
+  if (type === "track_identified" && postId) {
     return `/?post=${encodeURIComponent(postId)}`;
   }
 
