@@ -9,6 +9,7 @@ import { normalizePostForPreview } from "@/lib/normalize-post-for-preview";
 import { resolveMediaUrl } from "@/lib/media-url";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
 import type { PostWithUser } from "@shared/schema";
+import { resolveAttachClipToggleKind } from "@/lib/release-attach-post-release";
 
 export type ReleasePostsGallerySelection = {
   selectedPostIds: string[];
@@ -276,6 +277,28 @@ function ReleaseGalleryAttachToggle({
   onToggle: () => void;
   testId: string;
 }) {
+  const kind = resolveAttachClipToggleKind({
+    isSelected,
+    isDetachLocked: Boolean(disabled && isSelected),
+  });
+
+  if (kind === "attached-readonly") {
+    return (
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-[max(5.5rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))] z-[108] flex justify-center px-4"
+        data-post-id={postId}
+      >
+        <div
+          className="flex items-center gap-2 rounded-full border border-white/20 bg-black/70 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-sm"
+          data-testid={`${testId}-readonly`}
+        >
+          <Check className="h-4 w-4 shrink-0 text-green-400" aria-hidden />
+          <span>Attached to release</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="pointer-events-none absolute inset-x-0 bottom-[max(5.5rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))] z-[108] flex justify-center px-4"

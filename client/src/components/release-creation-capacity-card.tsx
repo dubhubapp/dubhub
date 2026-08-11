@@ -1,71 +1,55 @@
 /**
- * Compact Create Release capacity card (server-authoritative).
+ * Compact Create Release capacity notice (server-authoritative).
+ * Prominent only when free create is blocked; quiet otherwise; hidden when unlimited.
  */
 
-import { Button } from "@/components/ui/button";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
+import { ReleaseFormLimitNotice } from "@/components/release-form-limit-notice";
 import {
   UPGRADE_PLACEHOLDER_HINT,
   type ReleaseCapacityCardCopy,
 } from "@/lib/release-creation-capacity";
-import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
+import type { LimitNoticeProminence } from "@/lib/release-form-limit-prominence";
 
 type Props = {
   loading: boolean;
   copy: ReleaseCapacityCardCopy | null;
+  prominence: LimitNoticeProminence;
   onUpgradeClick: () => void;
 };
 
 export function ReleaseCreationCapacityCard({
   loading,
   copy,
+  prominence,
   onUpgradeClick,
 }: Props) {
   if (loading && !copy) {
     return (
       <div
-        className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+        className="py-1"
         data-testid="release-creation-capacity-loading"
         aria-busy="true"
         aria-label="Loading release capacity"
       >
-        <DubHubSkeletonBar tone="mid" className="h-4 w-48 mb-2" />
-        <DubHubSkeletonBar tone="soft" className="h-3 w-full" />
+        <DubHubSkeletonBar tone="soft" className="h-3 w-56" />
       </div>
     );
   }
 
-  if (!copy) return null;
-
-  const showPlaceholderHint = !isVerifiedArtistToolsPaywallEnabled();
+  if (!copy || prominence === "hidden") return null;
 
   return (
-    <div
-      className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] space-y-2"
-      data-testid="release-creation-capacity-card"
-      role="status"
-    >
-      <h2 className="text-sm font-semibold text-foreground">{copy.title}</h2>
-      <p className="text-xs leading-relaxed text-muted-foreground">{copy.body}</p>
-      {copy.showUpgrade ? (
-        <div className="pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs border-white/15 bg-black/20"
-            onClick={onUpgradeClick}
-            data-testid="release-creation-capacity-upgrade"
-          >
-            Upgrade
-          </Button>
-          {showPlaceholderHint ? (
-            <p className="mt-1 text-[10px] text-muted-foreground/80">
-              {UPGRADE_PLACEHOLDER_HINT}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    <ReleaseFormLimitNotice
+      prominence={prominence}
+      title={copy.title}
+      body={prominence === "quiet" ? null : copy.body}
+      showUpgrade={copy.showUpgrade}
+      onUpgradeClick={onUpgradeClick}
+      ctaLabel="Upgrade"
+      ctaHint={UPGRADE_PLACEHOLDER_HINT}
+      testId="release-creation-capacity-card"
+      upgradeTestId="release-creation-capacity-upgrade"
+    />
   );
 }

@@ -19,6 +19,9 @@ function emptyStorage(): HomeWidgetServiceStorage {
     async getHomeWidgetListenerSelection() {
       return { release: null, isSaved: false };
     },
+    async getHomeWidgetListenerSavedReleaseCandidates() {
+      return [];
+    },
   };
 }
 

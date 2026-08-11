@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { X, Music2 } from "lucide-react";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
-import { isReleaseDayToday, toLocalDateKey } from "@/lib/release-status";
+import { isReleaseDayTodayFromTiming, toLocalDateKey } from "@/lib/release-status";
 import type { ReleaseFeedItem } from "@/pages/release-tracker";
 import { Button } from "@/components/ui/button";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
@@ -154,7 +154,7 @@ export function ReleaseDropDayBanner() {
   });
 
   const releases = useMemo(
-    () => candidates.filter((r) => isReleaseDayToday(r.isComingSoon, r.releaseDate)),
+    () => candidates.filter((r) => isReleaseDayTodayFromTiming(r)),
     [candidates, todayKey]
   );
 

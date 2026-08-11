@@ -1,5 +1,4 @@
-import { formatReleaseCardDate } from "@/components/release-feed-card";
-import { isReleaseUpcoming } from "@/lib/release-status";
+import { formatReleasePublicSchedule, isReleaseUpcomingFromTiming } from "@/lib/release-status";
 import {
   RELEASE_COMING_SOON_LABEL,
   RELEASE_RELEASED_LABEL,
@@ -21,6 +20,9 @@ export {
 type ReleaseStatusPillProps = {
   isComingSoon?: boolean;
   releaseDate?: string | null;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | null;
+  releaseTimezone?: string | null;
   /** When set, overrides computed upcoming/released state. */
   upcoming?: boolean;
   /** Subscription-suspended — distinct neutral pill, same dimensions as Coming Soon. */
@@ -33,6 +35,9 @@ type ReleaseStatusPillProps = {
 export function ReleaseStatusPill({
   isComingSoon,
   releaseDate,
+  releaseTimingMode,
+  releaseAt,
+  releaseTimezone,
   upcoming,
   paused = false,
   className,
@@ -43,6 +48,9 @@ export function ReleaseStatusPill({
     paused,
     isComingSoon,
     releaseDate,
+    releaseTimingMode,
+    releaseAt,
+    releaseTimezone,
     upcoming,
     size,
   });
@@ -62,11 +70,15 @@ export function ReleaseStatusPill({
   );
 }
 
-export function releaseStatusSubtitle(
-  isComingSoon: boolean | undefined,
-  releaseDate: string | null | undefined,
-): string {
-  if (isComingSoon && !releaseDate) return "Coming soon...";
-  if (releaseDate) return formatReleaseCardDate(releaseDate);
-  return isReleaseUpcoming(isComingSoon, releaseDate) ? RELEASE_COMING_SOON_LABEL : "";
+export function releaseStatusSubtitle(args: {
+  isComingSoon?: boolean;
+  releaseDate?: string | null;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | null;
+  releaseTimezone?: string | null;
+}): string {
+  if (args.isComingSoon && !args.releaseDate) return "Coming soon...";
+  const schedule = formatReleasePublicSchedule(args);
+  if (schedule) return schedule;
+  return isReleaseUpcomingFromTiming(args) ? RELEASE_COMING_SOON_LABEL : "";
 }

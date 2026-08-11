@@ -5,6 +5,7 @@ import {
   FREE_LINK_LIMIT_REACHED_CODE,
   FREE_RELEASE_LINK_LIMIT,
   LINK_AT_LIMIT_BODY,
+  LINK_CAPACITY_UPGRADE_HINT,
   LINK_LIMIT_TOAST,
   LINK_OVER_LIMIT_BODY,
   LINK_PAID_BODY,
@@ -21,6 +22,7 @@ import {
   maxSelectableLinks,
   parseLinkAllowance,
   parseLinkCapacity,
+  resolveLinkCapacityHeader,
   resolveLinkLimitCardCopy,
 } from "./release-link-limit";
 import { planReleaseLinkSync } from "./sync-release-links";
@@ -48,6 +50,20 @@ describe("formatLinkLimitTitle / resolveLinkLimitCardCopy", () => {
     assert.deepEqual(
       resolveLinkLimitCardCopy({ unlimited: true, used: 3, limit: null }),
       { title: LINK_PAID_TITLE, body: LINK_PAID_BODY },
+    );
+  });
+
+  it("quiet free capacity header includes upgrade hint; paid does not", () => {
+    assert.deepEqual(
+      resolveLinkCapacityHeader({ unlimited: false, used: 0, limit: 1 }),
+      {
+        title: "0 of 1 free links used",
+        upgradeHint: LINK_CAPACITY_UPGRADE_HINT,
+      },
+    );
+    assert.equal(
+      resolveLinkCapacityHeader({ unlimited: true, used: 0, limit: null }),
+      null,
     );
   });
 });

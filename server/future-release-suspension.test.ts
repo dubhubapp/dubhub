@@ -109,6 +109,36 @@ describe("classifyReleaseUtc", () => {
       "past",
     );
   });
+
+  it("Exact later today stays future_today before release_at", () => {
+    assert.equal(
+      classifyReleaseUtc(
+        {
+          isComingSoon: false,
+          releaseDate: "2026-08-02T00:00:00.000Z",
+          releaseTimingMode: "exact",
+          releaseAt: "2026-08-02T18:00:00.000Z",
+        },
+        NOW,
+      ),
+      "future_today",
+    );
+  });
+
+  it("Exact becomes past at/after release_at same UTC day", () => {
+    assert.equal(
+      classifyReleaseUtc(
+        {
+          isComingSoon: false,
+          releaseDate: "2026-08-02T00:00:00.000Z",
+          releaseTimingMode: "exact",
+          releaseAt: "2026-08-02T12:00:00.000Z",
+        },
+        NOW,
+      ),
+      "past",
+    );
+  });
 });
 
 describe("isUtcFutureOrToday / isEligiblePublicFuture", () => {

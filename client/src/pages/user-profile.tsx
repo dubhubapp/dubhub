@@ -55,6 +55,7 @@ import {
   type NotificationGroupKind,
 } from "@shared/notification-types";
 import { buildNotificationListGroupKey } from "@/lib/notification-grouping";
+import { getReleaseEventGroupSummaryMessage } from "@/lib/release-event-group-copy";
 import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
@@ -2026,15 +2027,15 @@ export default function UserProfile() {
       return `${group.count} new artist tags on your post`;
     }
     if (group.kind === "release_event") {
-      const messages = group.notifications.map((n) => (n.message || "").toLowerCase());
-      const hasReleaseDay = messages.some((m) => m.includes("out now") || m.includes("released today") || m.includes("release day"));
-      const hasAnnouncement = messages.some((m) => m.includes("just got announced") || m.includes("announced"));
-      const hasCollab = messages.some((m) => m.includes("collaboration invite") || m.includes("collaborator"));
-      if (hasReleaseDay && hasAnnouncement) return `${group.count} updates on this release (announcement + release-day)`;
-      if (hasReleaseDay) return `${group.count} release-day updates`;
-      if (hasAnnouncement) return `${group.count} announcement updates for this release`;
-      if (hasCollab) return `${group.count} collaboration updates for this release`;
-      return `${group.count} updates for this release`;
+      return getReleaseEventGroupSummaryMessage({
+        count: group.count,
+        notifications: group.notifications.map((n) => ({
+          message: n.message,
+          notificationType: n.notificationType,
+          postId: n.postId,
+          releaseId: n.releaseId,
+        })),
+      });
     }
     if (group.kind === "system_event") {
       return `${group.count} system updates`;

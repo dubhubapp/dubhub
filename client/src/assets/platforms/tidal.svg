@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" text-rendering="geometricPrecision" image-rendering="optimizeQuality" fill-rule="evenodd" clip-rule="evenodd" viewBox="0 0 512 512"><path d="M256 0c141.385 0 256 114.615 256 256S397.385 512 256 512 0 397.385 0 256 114.615 0 256 0zm50.384 219.459l-50.372 50.383 50.379 50.391-50.382 50.393-50.395-50.393 50.393-50.389-50.393-50.39 50.395-50.372 50.38 50.369 50.389-50.375 50.382 50.382-50.382 50.392-50.394-50.391zm-100.767-.001l-50.392 50.392-50.385-50.392 50.385-50.382 50.392 50.382z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" xml:space="preserve" viewBox="31.99 187.98 936.03 624.04">
+
+<defs>
+</defs>
+
+<g transform="matrix(5.2407 0 0 5.2407 500.0032 500.0021)" id="251604">
+<g style="">
+		<g transform="matrix(6.2943 0 0 -6.2943 0.0014 -29.7683)" id="869873">
+<path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; is-custom-font: none; font-file-url: none; fill: white; fill-rule: nonzero; opacity: 1;" transform=" translate(4.7295, 0.001)" d="m 0 0 l -4.729 -4.73 L -9.459 0 l 4.73 4.728 Z" stroke-linecap="round"/>
+</g>
+		<g transform="matrix(6.2943 0 0 -6.2943 0.0014 29.7656)" id="756993">
+<path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; is-custom-font: none; font-file-url: none; fill: white; fill-rule: nonzero; opacity: 1;" transform=" translate(4.7295, 0)" d="m 0 0 l -4.729 -4.73 L -9.459 0 l 4.73 4.73 Z" stroke-linecap="round"/>
+</g>
+		<g transform="matrix(6.2943 0 0 -6.2943 -59.5356 -29.769)" id="87521">
+<path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; is-custom-font: none; font-file-url: none; fill: white; fill-rule: nonzero; opacity: 1;" transform=" translate(4.7295, 0.0005)" d="m 0 0 l -4.73 -4.73 L -9.459 0 l 4.729 4.729 Z" stroke-linecap="round"/>
+</g>
+		<g transform="matrix(6.2943 0 0 -6.2943 59.5352 -29.769)" id="549218">
+<path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; is-custom-font: none; font-file-url: none; fill: white; fill-rule: nonzero; opacity: 1;" transform=" translate(4.7295, 0.0005)" d="m 0 0 l -4.729 -4.73 L -9.459 0 l 4.73 4.729 Z" stroke-linecap="round"/>
+</g>
+</g>
+</g>
+</svg>

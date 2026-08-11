@@ -1,7 +1,9 @@
 import { Check, Edit2, Music } from "lucide-react";
-import { formatDate } from "@/pages/release-tracker";
 import { formatReleaseTitleLine } from "@/lib/release-display";
-import { isReleaseUpcoming } from "@/lib/release-status";
+import {
+  formatReleasePublicSchedule,
+  isReleaseUpcomingFromTiming,
+} from "@/lib/release-status";
 import { useViewerSavedRelease } from "@/hooks/use-viewer-saved-release";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +13,9 @@ export type ReleasePreviewData = {
   artworkUrl: string | null;
   releaseDate: string | null;
   isComingSoon?: boolean;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | null;
+  releaseTimezone?: string | null;
   ownerUsername: string;
   ownerArtistId?: string | null;
   collaborators: { username: string; status: string }[];
@@ -30,6 +35,17 @@ export function ReleasePreviewCard({
   className,
 }: ReleasePreviewCardProps) {
   const viewerSavedRelease = useViewerSavedRelease(releasePreview.id);
+  const timing = {
+    isComingSoon: releasePreview.isComingSoon,
+    releaseDate: releasePreview.releaseDate,
+    releaseTimingMode: releasePreview.releaseTimingMode,
+    releaseAt: releasePreview.releaseAt,
+    releaseTimezone: releasePreview.releaseTimezone,
+  };
+  const upcoming = isReleaseUpcomingFromTiming(timing);
+  const scheduleLine = releasePreview.isComingSoon
+    ? "Coming soon..."
+    : formatReleasePublicSchedule(timing) || "";
 
   return (
     <button
@@ -61,23 +77,19 @@ export function ReleasePreviewCard({
           )}
         </p>
         <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-          {releasePreview.isComingSoon
-            ? "Coming soon..."
-            : releasePreview.releaseDate
-              ? formatDate(releasePreview.releaseDate)
-              : ""}
-          <span
-            className={cn(
-              "ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px]",
-              isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-                ? "bg-amber-500/20 text-amber-400"
-                : "bg-green-500/20 text-green-600 dark:text-green-400",
-            )}
-          >
-            {isReleaseUpcoming(releasePreview.isComingSoon, releasePreview.releaseDate)
-              ? "Upcoming"
-              : "Released"}
-          </span>
+          {scheduleLine}
+          {scheduleLine ? (
+            <span
+              className={cn(
+                "ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px]",
+                upcoming
+                  ? "bg-amber-500/20 text-amber-400"
+                  : "bg-green-500/20 text-green-600 dark:text-green-400",
+              )}
+            >
+              {upcoming ? "Upcoming" : "Released"}
+            </span>
+          ) : null}
         </p>
         <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
           {isReleaseOwner ? (

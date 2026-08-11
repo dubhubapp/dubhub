@@ -1,5 +1,6 @@
 import type { PluginListenerHandle } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 
 export type PushReceivePermission = "prompt" | "denied" | "granted";
@@ -7,17 +8,28 @@ export type PushReceivePermission = "prompt" | "denied" | "granted";
 export type PushPermissionRequestResult = PushReceivePermission;
 import { navigate } from "wouter/use-browser-location";
 import { apiRequest } from "./queryClient";
+import { resolveDeviceIanaTimezone } from "./release-timezone-options";
+import { shouldReportPushTimezone } from "./push-token-timezone";
 
 let lastRegisteredToken: string | null = null;
+/** Last IANA timezone successfully persisted for the current token (skip redundant writes). */
+let lastReportedTimezone: string | null = null;
 let listenersRegistered = false;
 let registerPushInFlight: Promise<PushPermissionRequestResult> | null = null;
 /** Per app session: avoid repeated silent register() for the same authenticated user. */
 let silentPushRegisterAttemptedForUserId: string | null = null;
+let timezoneForegroundHookInstalled = false;
+let timezoneForegroundUserId: string | null = null;
 
 const pushPluginListenerHandles: PluginListenerHandle[] = [];
+let timezoneForegroundRemove: (() => void) | null = null;
 
 export function getLastRegisteredPushToken(): string | null {
   return lastRegisteredToken;
+}
+
+export function getLastReportedPushTimezone(): string | null {
+  return lastReportedTimezone;
 }
 
 type ApnsEnvironment = "sandbox" | "production";
@@ -38,6 +50,110 @@ function detectEnvironment(): "sandbox" | "production" {
 
 export function getConfiguredApnsEnvironment(): ApnsEnvironment {
   return detectEnvironment();
+}
+
+async function postPushTokenRegister(args: {
+  token: string;
+  timezone?: string | null;
+}): Promise<{ ok: boolean; timezone?: string | null }> {
+  const env = getConfiguredApnsEnvironment();
+  const body: Record<string, string> = {
+    token: args.token,
+    platform: "ios",
+    environment: env,
+  };
+  if (args.timezone) {
+    body.timezone = args.timezone;
+  }
+  const res = await apiRequest("POST", "/api/push-tokens/register", body);
+  if (!res.ok) {
+    return { ok: false };
+  }
+  let persistedTz: string | null | undefined;
+  try {
+    const json = (await res.json()) as { timezone?: string | null };
+    persistedTz = json?.timezone;
+  } catch {
+    persistedTz = args.timezone ?? undefined;
+  }
+  if (typeof persistedTz === "string" && persistedTz.trim()) {
+    lastReportedTimezone = persistedTz.trim();
+  } else if (args.timezone) {
+    lastReportedTimezone = args.timezone;
+  }
+  return { ok: true, timezone: lastReportedTimezone };
+}
+
+/**
+ * If device IANA timezone changed vs last successful report, re-POST the known
+ * token with the new timezone. No permission prompt. No-op without a token.
+ */
+export async function syncPushTokenTimezoneIfChanged(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const token = lastRegisteredToken;
+  if (!token) return;
+  const tz = resolveDeviceIanaTimezone();
+  if (
+    !shouldReportPushTimezone({
+      lastReported: lastReportedTimezone,
+      current: tz,
+    })
+  ) {
+    return;
+  }
+  try {
+    const result = await postPushTokenRegister({ token, timezone: tz! });
+    if (!result.ok) {
+      console.error("[push][timezone] foreground timezone sync failed", { timezone: tz });
+    }
+  } catch (err) {
+    console.error("[push][timezone] foreground timezone sync error", err);
+  }
+}
+
+/** Install once: refresh IANA timezone on foreground/resume for the signed-in user. */
+export function ensurePushTimezoneForegroundSync(userId: string): void {
+  if (!Capacitor.isNativePlatform()) return;
+  const trimmed = userId.trim();
+  if (!trimmed) return;
+  timezoneForegroundUserId = trimmed;
+
+  if (timezoneForegroundHookInstalled) return;
+  timezoneForegroundHookInstalled = true;
+
+  const onForeground = () => {
+    if (!timezoneForegroundUserId) return;
+    void syncPushTokenTimezoneIfChanged();
+  };
+
+  const onVisibility = () => {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      onForeground();
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+
+  let removeCap: (() => void) | undefined;
+  void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+    if (isActive) onForeground();
+  }).then((handle) => {
+    removeCap = () => {
+      void handle.remove();
+    };
+  });
+
+  timezoneForegroundRemove = () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    removeCap?.();
+    timezoneForegroundHookInstalled = false;
+    timezoneForegroundRemove = null;
+  };
+}
+
+export function clearPushTimezoneForegroundSync(): void {
+  timezoneForegroundUserId = null;
+  timezoneForegroundRemove?.();
+  lastReportedTimezone = null;
 }
 
 /** APNs may deliver IDs as strings or numbers; treat both as routable. */
@@ -156,30 +272,23 @@ export async function registerPushListeners(): Promise<void> {
         try {
           lastRegisteredToken = token.value;
           const env = getConfiguredApnsEnvironment();
+          const timezone = resolveDeviceIanaTimezone();
           console.log("[push][register] APNs device token received; posting to backend", {
             environment: env,
+            timezone: timezone ?? null,
           });
-          const res = await apiRequest("POST", "/api/push-tokens/register", {
+          const result = await postPushTokenRegister({
             token: token.value,
-            platform: "ios",
-            environment: env,
+            timezone,
           });
-          if (res.ok) {
-            let tokenRowId: string | undefined;
-            try {
-              const body = (await res.json()) as { id?: string };
-              tokenRowId = body?.id;
-            } catch {
-              tokenRowId = undefined;
-            }
+          if (result.ok) {
             console.log("[push][register] backend token registration succeeded", {
               environment: env,
-              ...(tokenRowId ? { tokenRowId } : {}),
+              timezone: result.timezone ?? null,
             });
           } else {
             console.error("[push][register] backend token registration failed", {
               environment: env,
-              status: res.status,
             });
           }
         } catch (err) {
@@ -211,6 +320,8 @@ export async function registerPushListeners(): Promise<void> {
 /** Clear silent-register session guard (e.g. on sign-out) so the next login can sync again. */
 export function resetSilentPushRegistrationSession(): void {
   silentPushRegisterAttemptedForUserId = null;
+  lastReportedTimezone = null;
+  timezoneForegroundUserId = null;
 }
 
 /**
@@ -243,11 +354,14 @@ export async function syncPushTokenIfPermissionGranted(userId: string): Promise<
 
     silentPushRegisterAttemptedForUserId = trimmedUserId;
     await registerPushListeners();
+    ensurePushTimezoneForegroundSync(trimmedUserId);
     console.log("[push][sync] permission granted; calling PushNotifications.register()", {
       userId: trimmedUserId,
       apnsEnvironment: getConfiguredApnsEnvironment(),
     });
     await PushNotifications.register();
+    // Best-effort timezone sync if token already known from a prior registration event.
+    void syncPushTokenTimezoneIfChanged();
   } catch (err) {
     console.error("[push][sync] silent register failed", { userId: trimmedUserId, err });
   }
@@ -307,6 +421,7 @@ export async function unregisterPushAndDeactivate(): Promise<void> {
   try {
     await deactivateCurrentPushToken();
     lastRegisteredToken = null;
+    lastReportedTimezone = null;
     await PushNotifications.unregister();
   } catch (err) {
     console.error("[push] unregister error", err);

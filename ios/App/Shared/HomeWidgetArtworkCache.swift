@@ -1,8 +1,8 @@
 import Foundation
 import UIKit
 
-/// Downloads and caches a modest square JPEG into the App Group for WidgetKit.
-/// Main app only — widget reads the file; it does not download.
+/// Downloads and caches modest square JPEGs into the App Group for WidgetKit.
+/// Main app only — widget reads files; it does not download.
 enum HomeWidgetArtworkCache {
     /// Enough for systemSmall/systemMedium @3x without shipping full originals.
     static let maxPixelSize: CGFloat = 720
@@ -24,8 +24,68 @@ enum HomeWidgetArtworkCache {
     }
 
     /**
+     Sync artwork for the given release collection:
+     - download missing / refresh by rewriting each release file
+     - remove files for release ids no longer in the keep set
+     - remove legacy `active.jpg`
+     Completion returns the local filename for `activeReleaseId` when available.
+     */
+    static func syncArtwork(
+        releases: [(id: String, artworkUrl: String?)],
+        activeReleaseId: String?,
+        completion: @escaping (_ activeLocalFilename: String?) -> Void
+    ) {
+        let keepIds = Set(
+            releases
+                .map { $0.id.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        removeStaleArtwork(keepingReleaseIds: keepIds)
+
+        guard !releases.isEmpty else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        let group = DispatchGroup()
+        var filenames: [String: String] = [:]
+        let lock = NSLock()
+
+        for item in releases {
+            let releaseId = item.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let filename = HomeWidgetAppGroup.artworkFilename(forReleaseId: releaseId) else {
+                continue
+            }
+            group.enter()
+            downloadAndWrite(
+                fromRemoteUrlString: item.artworkUrl,
+                filename: filename
+            ) { wrote in
+                if wrote {
+                    lock.lock()
+                    filenames[releaseId] = filename
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) {
+            let active = activeReleaseId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let active, let name = filenames[active] {
+                completion(name)
+            } else if let first = releases.first,
+                      let name = filenames[first.id.trimmingCharacters(in: .whitespacesAndNewlines)] {
+                completion(name)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+
+    /**
      Clears prior artwork, then optionally downloads + writes `active.jpg`.
-     Download failure returns nil filename without throwing — caller still writes text payload.
+     Legacy single-release path — prefer `syncArtwork` for multi-release.
      */
     static func replaceArtwork(
         fromRemoteUrlString urlString: String?,
@@ -42,29 +102,14 @@ enum HomeWidgetArtworkCache {
             return
         }
 
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 20
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            defer {
-                // Ensure completion always on a consistent queue for plugin writes.
+        downloadAndWrite(
+            fromRemoteUrlString: urlString,
+            filename: HomeWidgetAppGroup.activeArtworkFilename
+        ) { wrote in
+            DispatchQueue.main.async {
+                completion(wrote ? HomeWidgetAppGroup.activeArtworkFilename : nil)
             }
-            guard let data = data, !data.isEmpty else {
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
-            guard let jpeg = prepareSquareJPEG(from: data) else {
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
-            let filename = writeActiveJPEG(jpeg)
-            DispatchQueue.main.async { completion(filename) }
-        }.resume()
+        }
     }
 
     static func prepareSquareJPEG(from data: Data) -> Data? {
@@ -74,22 +119,81 @@ enum HomeWidgetArtworkCache {
         return scaled.jpegData(compressionQuality: jpegQuality)
     }
 
-    private static func writeActiveJPEG(_ data: Data) -> String? {
-        guard let directory = HomeWidgetAppGroup.artworkDirectoryURL() else { return nil }
+    private static func removeStaleArtwork(keepingReleaseIds keepIds: Set<String>) {
+        guard let directory = HomeWidgetAppGroup.artworkDirectoryURL() else { return }
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        for file in files {
+            let name = file.lastPathComponent
+            if name == HomeWidgetAppGroup.activeArtworkFilename {
+                try? fm.removeItem(at: file)
+                continue
+            }
+            guard name.hasSuffix(".jpg") else {
+                try? fm.removeItem(at: file)
+                continue
+            }
+            let id = String(name.dropLast(4))
+            if !keepIds.contains(id) {
+                try? fm.removeItem(at: file)
+            }
+        }
+    }
+
+    private static func downloadAndWrite(
+        fromRemoteUrlString urlString: String?,
+        filename: String,
+        completion: @escaping (_ wrote: Bool) -> Void
+    ) {
+        guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let url = URL(string: raw),
+              url.scheme?.lowercased() == "https"
+        else {
+            completion(false)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            guard let data = data, !data.isEmpty else {
+                completion(false)
+                return
+            }
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                completion(false)
+                return
+            }
+            guard let jpeg = prepareSquareJPEG(from: data) else {
+                completion(false)
+                return
+            }
+            completion(writeJPEG(jpeg, filename: filename))
+        }.resume()
+    }
+
+    private static func writeJPEG(_ data: Data, filename: String) -> Bool {
+        guard let directory = HomeWidgetAppGroup.artworkDirectoryURL() else { return false }
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-            let fileURL = directory.appendingPathComponent(
-                HomeWidgetAppGroup.activeArtworkFilename,
-                isDirectory: false
-            )
+            let fileURL = directory.appendingPathComponent(filename, isDirectory: false)
             if fm.fileExists(atPath: fileURL.path) {
                 try fm.removeItem(at: fileURL)
             }
             try data.write(to: fileURL, options: .atomic)
-            return HomeWidgetAppGroup.activeArtworkFilename
+            return true
         } catch {
-            return nil
+            return false
         }
     }
 

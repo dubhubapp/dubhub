@@ -298,6 +298,65 @@ html.theme-transitioning .bg-surface {
     text-align: start;
   }
 
+  /**
+   * Exact release time: match date field geometry on WebKit.
+   * Native time controls otherwise keep a large intrinsic min-width/height.
+   */
+  .dubhub-time-input {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .dubhub-time-input::-webkit-datetime-edit {
+    display: inline-flex;
+    flex: 1 1 0%;
+    align-self: center;
+    min-width: 0 !important;
+    max-width: 100%;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 0;
+    margin: 0;
+    line-height: 1.25rem;
+  }
+
+  .dubhub-time-input::-webkit-datetime-edit-fields-wrapper {
+    display: inline-flex;
+    min-width: 0 !important;
+    max-width: 100%;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    line-height: 1.25rem;
+  }
+
+  .dubhub-time-input::-webkit-datetime-edit-text,
+  .dubhub-time-input::-webkit-datetime-edit-hour-field,
+  .dubhub-time-input::-webkit-datetime-edit-minute-field,
+  .dubhub-time-input::-webkit-datetime-edit-ampm-field {
+    padding: 0 1px;
+  }
+
+  .dubhub-time-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    top: 50%;
+    right: 0.75rem;
+    left: auto;
+    margin: 0;
+    transform: translateY(-50%);
+    opacity: 0.9;
+  }
+
+  .dubhub-time-input::-webkit-date-and-time-value {
+    width: 100%;
+    text-align: center;
+  }
+
   /** Trim editor — prevent iOS text selection / callout during handle & range gestures. */
   .trim-editor-no-select,
   .trim-editor-no-select * {

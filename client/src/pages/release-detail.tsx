@@ -31,7 +31,10 @@ import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
-import { isReleaseDayToday, isReleaseUpcoming } from "@/lib/release-status";
+import {
+  isReleaseDayTodayFromTiming,
+  isReleaseUpcomingFromTiming,
+} from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { ReleaseDetailSkeleton } from "@/components/release-detail-skeleton";
@@ -324,16 +327,23 @@ export default function ReleaseDetail() {
   }
 
   const releaseData = release;
-  const upcoming = isReleaseUpcoming(releaseData.isComingSoon, releaseData.releaseDate);
+  const timingInput = {
+    isComingSoon: releaseData.isComingSoon,
+    releaseDate: releaseData.releaseDate,
+    releaseTimingMode: releaseData.releaseTimingMode,
+    releaseAt: releaseData.releaseAt,
+    releaseTimezone: releaseData.releaseTimezone,
+  };
+  const upcoming = isReleaseUpcomingFromTiming(timingInput);
   const showOwnerReleaseDay =
     isArtist &&
     isOwner &&
-    isReleaseDayToday(releaseData.isComingSoon, releaseData.releaseDate);
+    isReleaseDayTodayFromTiming(timingInput);
   const showSavedReleaseDay =
     hasFullDetail &&
     !isOwner &&
     !!releaseData.viewerSavedRelease &&
-    isReleaseDayToday(releaseData.isComingSoon, releaseData.releaseDate);
+    isReleaseDayTodayFromTiming(timingInput);
   const showRemoveSavedRelease =
     hasFullDetail &&
     !isOwner &&
@@ -538,7 +548,7 @@ export default function ReleaseDetail() {
                   {sanitizeReleaseText(releaseData.title)}
                 </h1>
                 <p className="text-sm mt-1">
-                  {releaseStatusSubtitle(releaseData.isComingSoon, releaseData.releaseDate) ||
+                  {releaseStatusSubtitle(timingInput) ||
                     formatDate(releaseData.releaseDate)}
                 </p>
               </div>
@@ -557,6 +567,9 @@ export default function ReleaseDetail() {
                     paused={isSubscriptionPausedPublic || isSubscriptionPausedOwner}
                     isComingSoon={releaseData.isComingSoon}
                     releaseDate={releaseData.releaseDate}
+                    releaseTimingMode={releaseData.releaseTimingMode}
+                    releaseAt={releaseData.releaseAt}
+                    releaseTimezone={releaseData.releaseTimezone}
                     upcoming={upcoming}
                   />
                   {showShareRelease ? (

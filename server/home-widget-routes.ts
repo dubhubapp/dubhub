@@ -30,6 +30,12 @@ function selectedReleaseIdFromQuery(value: unknown): string | null {
   return typeof value === "string" ? value : "__invalid_selection__";
 }
 
+function viewerTimeZoneFromQuery(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function registerHomeWidgetRoutes(
   app: Express,
   options: RegisterHomeWidgetRoutesOptions = {},
@@ -53,6 +59,7 @@ export function registerHomeWidgetRoutes(
           selectedReleaseId: selectedReleaseIdFromQuery(
             req.query.selectedReleaseId,
           ),
+          viewerTimeZone: viewerTimeZoneFromQuery(req.query.viewerTimeZone),
           deps: options.serviceDeps,
         });
         return res.json(payload);

@@ -8,9 +8,11 @@ import {
   FREE_ATTACHMENT_LIMIT_REACHED_CODE,
   formatAttachmentLimitTitle,
   isFreeAttachmentLimitReachedError,
+  ATTACHMENT_CAPACITY_UPGRADE_HINT,
   maxSelectableAttachments,
   parseAttachmentAllowance,
   parseAttachmentCapacity,
+  resolveAttachmentCapacityHeader,
   resolveAttachmentLimitCardCopy,
 } from "./release-attachment-limit";
 
@@ -60,6 +62,20 @@ describe("release-attachment-limit client helpers", () => {
   it("max selectable is null when unlimited else limit", () => {
     assert.equal(maxSelectableAttachments({ unlimited: true, limit: 3 }), null);
     assert.equal(maxSelectableAttachments({ unlimited: false, limit: 3 }), 3);
+  });
+
+  it("quiet attachment header includes upgrade for free and hides for paid", () => {
+    assert.deepEqual(
+      resolveAttachmentCapacityHeader({ unlimited: false, used: 0, limit: 3 }),
+      {
+        title: "0 of 3 free attachments used",
+        upgradeHint: ATTACHMENT_CAPACITY_UPGRADE_HINT,
+      },
+    );
+    assert.equal(
+      resolveAttachmentCapacityHeader({ unlimited: true, used: 2, limit: null }),
+      null,
+    );
   });
 
   it("friendly limit toast has no raw codes", () => {

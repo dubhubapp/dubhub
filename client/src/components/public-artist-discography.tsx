@@ -4,7 +4,7 @@ import {
   type ReleaseFeedCardData,
 } from "@/components/release-feed-card";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
-import { isReleaseUpcoming } from "@/lib/release-status";
+import { isReleaseUpcomingFromTiming } from "@/lib/release-status";
 import { formatSavedAgoLabel } from "@/lib/saved-release-timing";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -56,8 +56,8 @@ function PublicArtistDiscographyTile({
 }) {
   const { title, artworkUrl } = normalizeReleaseCardFields(release);
   const displayTitle = title || "Untitled release";
-  const upcoming = isReleaseUpcoming(release.isComingSoon, release.releaseDate);
-  const subtitle = releaseStatusSubtitle(release.isComingSoon, release.releaseDate);
+  const upcoming = isReleaseUpcomingFromTiming(release);
+  const subtitle = releaseStatusSubtitle(release);
   const savedAgoLabel =
     showSavedAtLabels && release.savedAt ? formatSavedAgoLabel(release.savedAt) : null;
 
@@ -87,6 +87,9 @@ function PublicArtistDiscographyTile({
             paused={!!release.subscriptionSuspendedAt}
             isComingSoon={release.isComingSoon}
             releaseDate={release.releaseDate}
+            releaseTimingMode={release.releaseTimingMode}
+            releaseAt={release.releaseAt}
+            releaseTimezone={release.releaseTimezone}
             upcoming={upcoming}
             size="compact"
           />

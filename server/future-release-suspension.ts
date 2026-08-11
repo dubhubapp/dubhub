@@ -1,7 +1,16 @@
 /**
  * Pure domain helpers for future-release subscription suspension.
  * No DB imports — callers apply plans transactionally.
+ *
+ * Active future semantics:
+ * - Exact: until release_at (absolute).
+ * - Midnight / legacy: UTC calendar day of release_date (artist-owned; no viewer TZ).
  */
+
+import {
+  normalizeReleaseTimingMode,
+  RELEASE_TIMING_MODE_EXACT,
+} from "@shared/release-timing";
 
 export const FREE_ACTIVE_FUTURE_RELEASE_LIMIT = 2 as const;
 
@@ -30,6 +39,9 @@ export type ReleaseSuspensionRow = {
   releaseDate: Date | string | null;
   createdAt: Date | string | null;
   subscriptionSuspendedAt: Date | string | null;
+  /** Defaults to midnight when absent (legacy rows). */
+  releaseTimingMode?: string | null;
+  releaseAt?: Date | string | null;
 };
 
 /**
@@ -60,7 +72,10 @@ function parseDate(value: Date | string | null): Date | null {
 }
 
 export function classifyReleaseUtc(
-  release: Pick<ReleaseSuspensionRow, "isComingSoon" | "releaseDate">,
+  release: Pick<
+    ReleaseSuspensionRow,
+    "isComingSoon" | "releaseDate" | "releaseTimingMode" | "releaseAt"
+  >,
   now: Date,
 ): ReleaseUtcBucket {
   if (release.releaseDate == null) {
@@ -69,10 +84,26 @@ export function classifyReleaseUtc(
   const date = parseDate(release.releaseDate);
   if (date == null) return "invalid";
 
+  const mode = normalizeReleaseTimingMode(release.releaseTimingMode);
+  if (mode === RELEASE_TIMING_MODE_EXACT) {
+    const at = parseDate(release.releaseAt ?? null);
+    if (at != null && now.getTime() >= at.getTime()) {
+      return "past";
+    }
+    // Still future (or Exact missing release_at): calendar buckets for ordering.
+  }
+
   const releaseDay = utcCalendarDateString(date);
   const today = utcCalendarDateString(now);
   if (releaseDay === today) return "future_today";
   if (releaseDay > today) return "future_dated";
+  // Exact with future release_at but calendar carrier already past UTC day.
+  if (
+    mode === RELEASE_TIMING_MODE_EXACT &&
+    parseDate(release.releaseAt ?? null) != null
+  ) {
+    return "future_dated";
+  }
   return "past";
 }
 

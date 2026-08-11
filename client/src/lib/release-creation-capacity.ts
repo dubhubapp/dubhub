@@ -30,6 +30,50 @@ export const RELEASE_LIMIT_REACHED_TOAST = {
 
 export const UPGRADE_PLACEHOLDER_HINT = "Purchase options coming soon" as const;
 
+export const CREATE_RELEASE_UPGRADE_CTA = "Upgrade for unlimited releases" as const;
+
+export type CreateReleaseBottomCapacity = {
+  createBlocked: boolean;
+  countLabel: string | null;
+  showUpgrade: boolean;
+  upgradeLabel: typeof CREATE_RELEASE_UPGRADE_CTA;
+};
+
+/**
+ * Bottom-of-page Create capacity presentation.
+ * Does not change canCreate / entitlement — only where copy/CTA appear.
+ * Top-of-page capacity card is no longer part of this contract.
+ */
+export function resolveCreateReleaseBottomCapacity(
+  capacity: ReleaseCreationCapacity | null | undefined,
+): CreateReleaseBottomCapacity {
+  if (!capacity) {
+    return {
+      createBlocked: false,
+      countLabel: null,
+      showUpgrade: false,
+      upgradeLabel: CREATE_RELEASE_UPGRADE_CTA,
+    };
+  }
+  const createBlocked = capacity.canCreate === false;
+  if (!createBlocked) {
+    return {
+      createBlocked: false,
+      countLabel: null,
+      showUpgrade: false,
+      upgradeLabel: CREATE_RELEASE_UPGRADE_CTA,
+    };
+  }
+  return {
+    createBlocked: true,
+    countLabel: capacity.unlimited
+      ? null
+      : `${capacity.limit} of ${capacity.limit} free releases used`,
+    showUpgrade: true,
+    upgradeLabel: CREATE_RELEASE_UPGRADE_CTA,
+  };
+}
+
 export function parseReleaseCreationCapacity(
   value: unknown,
 ): ReleaseCreationCapacity | null {

@@ -159,7 +159,17 @@ async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
       WHERE is_public = true
         AND (
           (release_date IS NULL AND is_coming_soon = true)
-          OR (release_date IS NOT NULL AND release_date >= NOW())
+          OR (
+            COALESCE(release_timing_mode, 'midnight') = 'exact'
+            AND release_at IS NOT NULL
+            AND release_at > NOW()
+          )
+          OR (
+            COALESCE(release_timing_mode, 'midnight') <> 'exact'
+            AND release_date IS NOT NULL
+            AND (release_date AT TIME ZONE 'UTC')::date
+              >= (NOW() AT TIME ZONE 'UTC')::date
+          )
         )
       LIMIT 200
     `);
@@ -200,7 +210,8 @@ async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
   await logFfprobeRuntimeDiagnostics();
   const server = await registerRoutes(app);
 
-  // Release-day morning notifications: 9am Europe/London check is inside the job
+  // Exact: at/after release_at. Midnight: listener-local calendar date (markers).
+  // No London 09:00 / 07:00 global threshold.
   const isDev = process.env.NODE_ENV !== "production";
   const cronExpr = isDev ? "* * * * *" : "*/5 * * * *"; // Dev: every 1 min; Prod: every 5 min
   cron.schedule(cronExpr, async () => {
@@ -211,7 +222,7 @@ async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
         log(`[Cron] Release-day notifications sent: ${result.count} for release(s) ${result.releaseIds.join(", ")}`);
       }
       if (isDev && result.releaseIds.length === 0) {
-        log("[Cron] Release-day job: 0 releases eligible (date/time Europe/London, 9am+)");
+        log("[Cron] Release-day job: 0 deliveries (Exact release_at / Midnight local TZ)");
       }
     } catch (err) {
       console.error("[Cron] Release-day notifications error:", err);

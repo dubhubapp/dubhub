@@ -44,6 +44,26 @@ export const ATTACHMENT_OVER_LIMIT_CARD_BODY =
 export const ATTACHMENT_NEAR_LIMIT_HINT =
   "Free artists can attach up to 3 posts per release." as const;
 
+export const ATTACHMENT_CAPACITY_UPGRADE_HINT = "Upgrade for unlimited" as const;
+
+/**
+ * Quiet Attach Clips sheet capacity line for free artists.
+ * Paid/unlimited → null (no promo).
+ */
+export function resolveAttachmentCapacityHeader(args: {
+  unlimited: boolean;
+  used: number;
+  limit: number | null;
+}): { title: string; upgradeHint: string | null } | null {
+  if (args.unlimited) return null;
+  const used = Math.max(0, Math.floor(args.used));
+  const limit = Math.max(0, Math.floor(args.limit ?? FREE_ATTACHMENT_LIMIT));
+  return {
+    title: formatAttachmentLimitTitle(used, limit),
+    upgradeHint: ATTACHMENT_CAPACITY_UPGRADE_HINT,
+  };
+}
+
 export type AttachmentLimitCardCopy = {
   title: string;
   body: string;

@@ -8,6 +8,7 @@ import {
   clearHomeWidgetPayload,
   isHomeWidgetBridgePayloadExpired,
   parseHomeWidgetDto,
+  readHomeWidgetActiveReleaseId,
   readHomeWidgetPayload,
   reloadHomeWidgetTimelines,
   stampHomeWidgetBridgePayload,
@@ -18,6 +19,7 @@ import { HOME_WIDGET_INVALID_SELECTION_ELIGIBILITIES } from "@/lib/home-widget-s
 import {
   clearHomeWidgetSelectedReleaseId,
   readHomeWidgetSelectedReleaseId,
+  writeHomeWidgetSelectedReleaseId,
 } from "@/lib/home-widget-selection-store";
 
 export type HomeWidgetRefreshResult =
@@ -26,6 +28,7 @@ export type HomeWidgetRefreshResult =
       payload: HomeWidgetBridgePayload;
       clearedInvalidSelection: boolean;
       selectionCleared: boolean;
+      selectionAdvanced: boolean;
     }
   | {
       ok: false;
@@ -39,15 +42,23 @@ export type HomeWidgetRefreshDeps = {
   getUserId?: () => Promise<string | null>;
   readSelectedReleaseId?: (userId: string) => string | null;
   clearSelectedReleaseId?: (userId: string) => void;
+  writeSelectedReleaseId?: (
+    userId: string,
+    releaseId: string,
+    options?: { selectedAt?: Date | string },
+  ) => unknown;
   fetchPayload?: (args: {
     accessToken: string;
     selectedReleaseId: string | null;
+    viewerTimeZone?: string | null;
   }) => Promise<HomeWidgetPayload>;
   writePayload?: typeof writeHomeWidgetPayload;
   clearPayload?: typeof clearHomeWidgetPayload;
   reloadTimelines?: typeof reloadHomeWidgetTimelines;
   readPayload?: typeof readHomeWidgetPayload;
+  readActiveReleaseId?: () => Promise<string | null>;
   now?: () => Date;
+  resolveViewerTimeZone?: () => string | null;
 };
 
 const DEFAULT_FOREGROUND_THROTTLE_MS = 60_000;
@@ -74,10 +85,14 @@ async function defaultGetSessionUser(): Promise<{
 async function defaultFetchPayload(args: {
   accessToken: string;
   selectedReleaseId: string | null;
+  viewerTimeZone?: string | null;
 }): Promise<HomeWidgetPayload> {
   const params = new URLSearchParams();
   if (args.selectedReleaseId) {
     params.set("selectedReleaseId", args.selectedReleaseId);
+  }
+  if (args.viewerTimeZone) {
+    params.set("viewerTimeZone", args.viewerTimeZone);
   }
   const query = params.toString();
   const res = await fetch(
@@ -102,10 +117,20 @@ async function defaultFetchPayload(args: {
 }
 
 function shouldClearStoredSelection(dto: HomeWidgetPayload): boolean {
+  if (dto.retireListenerSelection === true) return true;
+  if (dto.advanceListenerSelectionTo) return false;
   if (dto.mode === "listener" && dto.release) return false;
-  // Artist mode may still keep listener selection as fallback.
+  // Artist mode may still keep listener selection as fallback — except Out-now retirement.
   if (dto.mode === "artist") return false;
   return HOME_WIDGET_INVALID_SELECTION_ELIGIBILITIES.has(dto.eligibility);
+}
+
+function defaultViewerTimeZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function refreshHomeWidgetPayload(
@@ -135,22 +160,58 @@ export async function refreshHomeWidgetPayload(
       deps.readSelectedReleaseId ?? readHomeWidgetSelectedReleaseId;
     const clearSelected =
       deps.clearSelectedReleaseId ?? clearHomeWidgetSelectedReleaseId;
+    const writeSelected =
+      deps.writeSelectedReleaseId ??
+      ((id: string, releaseId: string, options?: { selectedAt?: Date | string }) =>
+        writeHomeWidgetSelectedReleaseId(id, releaseId, options));
     const fetchPayload = deps.fetchPayload ?? defaultFetchPayload;
     const writePayload = deps.writePayload ?? writeHomeWidgetPayload;
     const reloadTimelines = deps.reloadTimelines ?? reloadHomeWidgetTimelines;
     const readPayload = deps.readPayload ?? readHomeWidgetPayload;
+    const readActive =
+      deps.readActiveReleaseId ?? readHomeWidgetActiveReleaseId;
     const now = deps.now?.() ?? new Date();
+    const viewerTimeZone =
+      deps.resolveViewerTimeZone?.() ?? defaultViewerTimeZone();
 
-    const selectedReleaseId = readSelected(userId);
+    // Prefer device App Group active page (widget paging) over stale localStorage
+    // so foreground refresh does not snap back to an earlier release.
+    let selectedReleaseId = readSelected(userId);
+    try {
+      const nativeActive = await readActive();
+      if (
+        nativeActive &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          nativeActive,
+        ) &&
+        nativeActive !== selectedReleaseId
+      ) {
+        writeSelected(userId, nativeActive, { selectedAt: now });
+        selectedReleaseId = nativeActive;
+      }
+    } catch {
+      // Bridge optional on web.
+    }
 
     try {
       const dto = await fetchPayload({
         accessToken,
         selectedReleaseId,
+        viewerTimeZone,
       });
 
       let clearedInvalidSelection = false;
-      if (selectedReleaseId && shouldClearStoredSelection(dto)) {
+      let selectionAdvanced = false;
+      if (
+        selectedReleaseId &&
+        typeof dto.advanceListenerSelectionTo === "string" &&
+        dto.advanceListenerSelectionTo
+      ) {
+        writeSelected(userId, dto.advanceListenerSelectionTo, {
+          selectedAt: now,
+        });
+        selectionAdvanced = true;
+      } else if (selectedReleaseId && shouldClearStoredSelection(dto)) {
         clearSelected(userId);
         clearedInvalidSelection = true;
       }
@@ -169,6 +230,7 @@ export async function refreshHomeWidgetPayload(
         payload: stamped,
         clearedInvalidSelection,
         selectionCleared: clearedInvalidSelection,
+        selectionAdvanced,
       };
     } catch (error) {
       const prior = await readPayload();

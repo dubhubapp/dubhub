@@ -5,7 +5,9 @@ import { Calendar, Disc3, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
 import { supabase } from "@/lib/supabaseClient";
-import { isReleaseDayToday } from "@/lib/release-status";
+import {
+  isReleaseDayTodayFromTiming,
+} from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { apiUrl } from "@/lib/apiBase";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
@@ -99,7 +101,7 @@ function isSavedReleaseOutTodayInList(
 ): boolean {
   if (scope !== "saved" || !currentUserId) return false;
   if (r.artistId === currentUserId) return false;
-  return isReleaseDayToday(r.isComingSoon, r.releaseDate);
+  return isReleaseDayTodayFromTiming(r);
 }
 
 function ReleaseFeedContentLoader() {
@@ -124,7 +126,7 @@ function ReleaseFeedContentLoader() {
 
 /** Any release with release_date = today (for glow and Out today badge). */
 function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
-  return isReleaseDayToday(r.isComingSoon, r.releaseDate);
+  return isReleaseDayTodayFromTiming(r);
 }
 
 export default function ReleaseTracker() {
@@ -265,7 +267,7 @@ export default function ReleaseTracker() {
     if (isFeedLoading || !isArtist || effectiveScope !== "my" || !currentUser?.id) return [];
     return feedItems.filter(
       (r) =>
-        r.artistId === currentUser.id && isReleaseDayToday(r.isComingSoon, r.releaseDate)
+        r.artistId === currentUser.id && isReleaseDayTodayFromTiming(r)
     );
   }, [feedItems, isFeedLoading, isArtist, effectiveScope, currentUser?.id]);
 
@@ -278,11 +280,11 @@ export default function ReleaseTracker() {
     [feedItems, featuredReleaseIds]
   );
   const standardOutTodayFeed = useMemo(
-    () => standardDatedFeed.filter((r) => isReleaseDayToday(r.isComingSoon, r.releaseDate)),
+    () => standardDatedFeed.filter((r) => isReleaseDayTodayFromTiming(r)),
     [standardDatedFeed]
   );
   const standardNonOutTodayFeed = useMemo(
-    () => standardDatedFeed.filter((r) => !isReleaseDayToday(r.isComingSoon, r.releaseDate)),
+    () => standardDatedFeed.filter((r) => !isReleaseDayTodayFromTiming(r)),
     [standardDatedFeed]
   );
 

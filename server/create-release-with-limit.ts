@@ -4,6 +4,7 @@
  */
 
 import type { Pool, PoolClient } from "pg";
+import { shouldSetReleaseAnnouncedAt } from "@shared/release-announced";
 import { canArtistUsePaidTools } from "./artist-paid-tool-access";
 import {
   FREE_RELEASE_LIMIT,
@@ -23,6 +24,9 @@ export type CreateReleaseInput = {
   releaseDate: Date | null;
   artworkUrl?: string | null;
   isComingSoon?: boolean;
+  releaseTimingMode?: "midnight" | "exact";
+  releaseAt?: Date | null;
+  releaseTimezone?: string | null;
 };
 
 export type CreateReleaseRow = {
@@ -36,6 +40,10 @@ export type CreateReleaseRow = {
   updatedAt: Date | string | null;
   isPublic?: boolean;
   isComingSoon?: boolean;
+  releaseTimingMode?: string;
+  releaseAt?: Date | string | null;
+  releaseTimezone?: string | null;
+  releaseAnnouncedAt?: Date | string | null;
 };
 
 export type CreateReleaseWithLimitDeps = {
@@ -59,6 +67,17 @@ function mapReleaseRow(row: Record<string, unknown>): CreateReleaseRow {
     updatedAt: (row.updated_at as Date | string | null) ?? null,
     isPublic: row.is_public == null ? undefined : Boolean(row.is_public),
     isComingSoon: row.is_coming_soon == null ? undefined : Boolean(row.is_coming_soon),
+    releaseTimingMode:
+      row.release_timing_mode == null
+        ? "midnight"
+        : String(row.release_timing_mode),
+    releaseAt: (row.release_at as Date | string | null | undefined) ?? null,
+    releaseTimezone:
+      row.release_timezone == null || String(row.release_timezone).trim() === ""
+        ? null
+        : String(row.release_timezone).trim(),
+    releaseAnnouncedAt:
+      (row.release_announced_at as Date | string | null | undefined) ?? null,
   };
 }
 
@@ -155,17 +174,43 @@ export async function createReleaseWithLimit(
         : "allowed_free_slot";
     }
 
+    const timingMode =
+      data.isComingSoon || data.releaseTimingMode !== "exact"
+        ? "midnight"
+        : "exact";
+    const releaseAt = timingMode === "exact" ? data.releaseAt ?? null : null;
+    const releaseTimezone =
+      timingMode === "exact" ? data.releaseTimezone ?? null : null;
+
+    const isComingSoon = data.isComingSoon ?? false;
+    const setAnnouncedAt = shouldSetReleaseAnnouncedAt({
+      previous: null,
+      next: {
+        isComingSoon,
+        releaseDate: data.releaseDate,
+      },
+    });
+    const releaseAnnouncedAt = setAnnouncedAt ? now : null;
+
+    // Slice 2: Midnight clears exact fields; Exact stores server-derived release_at.
+    // Slice 5: sticky release_announced_at on first dated create (server now()).
     const insertRelease = await client.query(
       `INSERT INTO releases (
-         artist_id, title, release_date, artwork_url, is_public, is_coming_soon, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, true, $5, $6, $6)
+         artist_id, title, release_date, artwork_url, is_public, is_coming_soon,
+         release_timing_mode, release_at, release_timezone, release_announced_at,
+         created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8, $9, $10, $10)
        RETURNING *`,
       [
         data.artistId,
         data.title,
         data.releaseDate,
         data.artworkUrl ?? null,
-        data.isComingSoon ?? false,
+        isComingSoon,
+        timingMode,
+        releaseAt,
+        releaseTimezone,
+        releaseAnnouncedAt,
         now,
       ],
     );

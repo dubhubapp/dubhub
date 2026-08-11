@@ -30,24 +30,34 @@ export function ReleaseAttachedClipCard({
   isSelected,
   onToggleSelect,
   selectionDisabled,
+  toggleKind,
 }: {
   clip: ReleaseAttachedClip;
   onOpen: () => void;
   isSelected?: boolean;
   onToggleSelect?: () => void;
   selectionDisabled?: boolean;
+  /** When omitted, falls back to selected → detach / unselected → attach. */
+  toggleKind?: "attach" | "detach" | "attached-readonly";
 }) {
   const thumb = clipThumbSrc(clip);
   const title = clipDisplayTitle(clip);
   const showSelection = typeof onToggleSelect === "function";
+  const showAttachedChrome = Boolean(isSelected);
+  const kind =
+    toggleKind ??
+    (isSelected ? "detach" : "attach");
+  const showAttachedLabelOnly =
+    showAttachedChrome && (!showSelection || kind === "attached-readonly");
+  const showAttachToggle = showSelection && kind !== "attached-readonly";
 
   return (
     <div
       className={cn(
         "relative flex w-[9.25rem] shrink-0 flex-col overflow-hidden rounded-lg",
         "border border-white/10 bg-black/30 text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]",
-        isSelected && "border-green-500/50 ring-1 ring-green-500/30",
-        !showSelection && "hover:border-white/20",
+        showAttachedChrome && "border-green-500/50 ring-1 ring-green-500/30",
+        !showSelection && !showAttachedChrome && "hover:border-white/20",
       )}
       data-testid={`release-attached-clip-${clip.id}`}
     >
@@ -67,7 +77,7 @@ export function ReleaseAttachedClipCard({
               <Music className="h-7 w-7 text-muted-foreground" aria-hidden />
             </div>
           )}
-          {isSelected ? (
+          {showAttachedChrome ? (
             <span
               className="pointer-events-none absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-600/90 text-white shadow-md ring-2 ring-black/30"
               aria-hidden
@@ -96,7 +106,15 @@ export function ReleaseAttachedClipCard({
         ) : null}
       </div>
       </button>
-      {showSelection ? (
+      {showAttachedLabelOnly ? (
+        <div
+          className="border-t border-white/10 px-2 py-1.5 text-center text-[10px] font-medium bg-green-500/15 text-green-600 dark:text-green-400"
+          data-testid={`release-attached-clip-readonly-${clip.id}`}
+        >
+          Attached
+        </div>
+      ) : null}
+      {showAttachToggle ? (
         <button
           type="button"
           className={cn(

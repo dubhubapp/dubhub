@@ -15,6 +15,7 @@ type HomeWidgetBridgePluginContract = {
   }): Promise<{ ok?: boolean }>;
   clearHomeWidgetPayload(): Promise<{ ok?: boolean }>;
   reloadHomeWidgetTimelines(): Promise<{ ok?: boolean }>;
+  readActiveReleaseId(): Promise<{ activeReleaseId?: string | null }>;
 };
 
 const HomeWidgetBridgeNative =
@@ -67,6 +68,19 @@ export function createNativeHomeWidgetBridge(): HomeWidgetBridge {
       const result = await HomeWidgetBridgeNative.reloadHomeWidgetTimelines();
       if (result && result.ok === false) {
         throw new Error("Native HomeWidgetBridge reload failed");
+      }
+    },
+    async readActiveReleaseId() {
+      if (!isNativeIosHomeWidgetBridgePath()) return null;
+      if (!Capacitor.isPluginAvailable("HomeWidgetBridge")) return null;
+      try {
+        const result = await HomeWidgetBridgeNative.readActiveReleaseId();
+        const id = result?.activeReleaseId;
+        if (typeof id !== "string") return null;
+        const trimmed = id.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      } catch {
+        return null;
       }
     },
   };

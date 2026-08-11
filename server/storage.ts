@@ -28,11 +28,23 @@ import {
 } from "./notify-track-identified-likers";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { createReleaseWithLimit } from "./create-release-with-limit";
+import { mapReleaseTimingFields } from "@shared/release-timing";
+import { shouldSetReleaseAnnouncedAt } from "@shared/release-announced";
 import { attachPostsWithLimit } from "./attach-posts-with-limit";
 import {
   FreeReleaseSubscriptionSuspendedError,
   isFreeReleaseSubscriptionSuspendedError,
 } from "./future-release-suspension";
+import {
+  isServerDetachLocked,
+  sqlReleaseFeedPast,
+  sqlReleaseFeedUpcoming,
+} from "./release-timing-live";
+import {
+  isExactReleaseDayNotifyEligible,
+  isMidnightReleaseDueForTimezone,
+  midnightReleaseCalendarYmd,
+} from "./release-day-notify-eligibility";
 
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
@@ -102,6 +114,10 @@ export type HomeWidgetReleaseStorageRow = {
   isComingSoon: boolean;
   subscriptionSuspendedAt: Date | string | null;
   createdAt: Date | string | null;
+  releaseTimingMode?: string | null;
+  releaseAt?: Date | string | null;
+  releaseTimezone?: string | null;
+  releaseAnnouncedAt?: Date | string | null;
 };
 
 export type HomeWidgetListenerSelectionRow = {
@@ -228,6 +244,13 @@ export interface IStorage {
     userId: string,
     releaseId: string,
   ): Promise<HomeWidgetListenerSelectionRow>;
+  /**
+   * Dated Saved Releases candidates for listener Countdown auto-advance.
+   * Membership = Saved Releases feed only (not Release Alerts).
+   */
+  getHomeWidgetListenerSavedReleaseCandidates(
+    userId: string,
+  ): Promise<HomeWidgetReleaseStorageRow[]>;
   /** Earliest like timestamp per release (liked attached-post path only); omit upload-only saves. */
   getSavedReleaseLikeTimestamps(userId: string): Promise<Map<string, string>>;
   /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
@@ -249,8 +272,19 @@ export interface IStorage {
     releaseDate: Date | null;
     artworkUrl?: string | null;
     isComingSoon?: boolean;
+    releaseTimingMode?: "midnight" | "exact";
+    releaseAt?: Date | null;
+    releaseTimezone?: string | null;
   }): Promise<any>;
-  updateRelease(id: string, artistId: string, data: { title?: string; releaseDate?: Date; artworkUrl?: string | null }): Promise<any | undefined>;
+  updateRelease(id: string, artistId: string, data: {
+    title?: string;
+    releaseDate?: Date | null;
+    artworkUrl?: string | null;
+    isComingSoon?: boolean;
+    releaseTimingMode?: "midnight" | "exact";
+    releaseAt?: Date | null;
+    releaseTimezone?: string | null;
+  }): Promise<any | undefined>;
   getReleaseLinks(releaseId: string): Promise<any[]>;
   upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void>;
   deleteReleaseLink(releaseId: string, platform: string): Promise<boolean>;
@@ -290,7 +324,16 @@ export interface IStorage {
   deleteRelease(releaseId: string, ownerId: string): Promise<boolean>;
 
   // Push tokens
-  upsertUserPushToken(userId: string, opts: { token: string; platform: "ios"; environment: "sandbox" | "production" }): Promise<UserPushToken>;
+  upsertUserPushToken(
+    userId: string,
+    opts: {
+      token: string;
+      platform: "ios";
+      environment: "sandbox" | "production";
+      /** Optional IANA timezone; omit to leave existing value unchanged. */
+      timezone?: string;
+    },
+  ): Promise<UserPushToken>;
   deactivateUserPushToken(userId: string, token: string, reason: string): Promise<void>;
   getActivePushTokensForUser(userId: string): Promise<UserPushToken[]>;
   deactivatePushTokenByValue(token: string, reason: string): Promise<void>;
@@ -595,7 +638,19 @@ export class DatabaseStorage implements IStorage {
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
-           LIMIT 1) AS rel_is_coming_soon
+           LIMIT 1) AS rel_is_coming_soon,
+          (SELECT r.release_timing_mode FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timing_mode,
+          (SELECT r.release_at FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_at,
+          (SELECT r.release_timezone FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timezone
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -676,6 +731,9 @@ export class DatabaseStorage implements IStorage {
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
+              releaseTimingMode: row.rel_release_timing_mode ?? null,
+              releaseAt: row.rel_release_at ?? null,
+              releaseTimezone: row.rel_release_timezone ?? null,
               ownerUsername: row.rel_owner_username,
               ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
@@ -825,7 +883,19 @@ export class DatabaseStorage implements IStorage {
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
-           LIMIT 1) AS rel_is_coming_soon
+           LIMIT 1) AS rel_is_coming_soon,
+          (SELECT r.release_timing_mode FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timing_mode,
+          (SELECT r.release_at FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_at,
+          (SELECT r.release_timezone FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timezone
         FROM posts p
         JOIN profiles pr
           ON pr.id = p.user_id
@@ -887,6 +957,9 @@ export class DatabaseStorage implements IStorage {
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
+              releaseTimingMode: row.rel_release_timing_mode ?? null,
+              releaseAt: row.rel_release_at ?? null,
+              releaseTimezone: row.rel_release_timezone ?? null,
               ownerUsername: row.rel_owner_username,
               ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
@@ -1046,7 +1119,19 @@ export class DatabaseStorage implements IStorage {
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
-           LIMIT 1) AS rel_is_coming_soon
+           LIMIT 1) AS rel_is_coming_soon,
+          (SELECT r.release_timing_mode FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timing_mode,
+          (SELECT r.release_at FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_at,
+          (SELECT r.release_timezone FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timezone
         FROM post_likes pl
         JOIN posts p ON p.id = pl.post_id
         JOIN profiles pr ON pr.id = p.user_id
@@ -1095,6 +1180,9 @@ export class DatabaseStorage implements IStorage {
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
               releaseDate: row.rel_release_date,
               isComingSoon: row.rel_is_coming_soon ?? false,
+              releaseTimingMode: row.rel_release_timing_mode ?? null,
+              releaseAt: row.rel_release_at ?? null,
+              releaseTimezone: row.rel_release_timezone ?? null,
               ownerUsername: row.rel_owner_username,
               ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
@@ -1457,7 +1545,19 @@ export class DatabaseStorage implements IStorage {
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
-           LIMIT 1) AS rel_is_coming_soon
+           LIMIT 1) AS rel_is_coming_soon,
+          (SELECT r.release_timing_mode FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timing_mode,
+          (SELECT r.release_at FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_at,
+          (SELECT r.release_timezone FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timezone
         FROM posts p
         JOIN profiles pr ON pr.id = p.user_id
         WHERE p.user_id = ${artistId}
@@ -1492,6 +1592,9 @@ export class DatabaseStorage implements IStorage {
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
+              releaseTimingMode: row.rel_release_timing_mode ?? null,
+              releaseAt: row.rel_release_at ?? null,
+              releaseTimezone: row.rel_release_timezone ?? null,
               ownerUsername: row.rel_owner_username,
               ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators: (Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [])
@@ -1577,7 +1680,19 @@ export class DatabaseStorage implements IStorage {
           (SELECT r.is_coming_soon FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
-           LIMIT 1) AS rel_is_coming_soon
+           LIMIT 1) AS rel_is_coming_soon,
+          (SELECT r.release_timing_mode FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timing_mode,
+          (SELECT r.release_at FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_at,
+          (SELECT r.release_timezone FROM release_posts rp
+           JOIN releases r ON r.id = rp.release_id
+           WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
+           LIMIT 1) AS rel_release_timezone
         FROM posts p
         JOIN profiles pr ON pr.id = p.user_id
         WHERE p.user_id = ${userId}
@@ -1621,6 +1736,9 @@ export class DatabaseStorage implements IStorage {
               artworkUrl: this.releaseArtworkPublicUrl(row.rel_artwork_url),
               releaseDate: row.rel_release_date ?? null,
               isComingSoon: row.rel_is_coming_soon ?? false,
+              releaseTimingMode: row.rel_release_timing_mode ?? null,
+              releaseAt: row.rel_release_at ?? null,
+              releaseTimezone: row.rel_release_timezone ?? null,
               ownerUsername: row.rel_owner_username,
               ownerArtistId: row.rel_owner_artist_id ?? null,
               collaborators,
@@ -1891,9 +2009,14 @@ export class DatabaseStorage implements IStorage {
 
   async upsertUserPushToken(
     userId: string,
-    opts: { token: string; platform: "ios"; environment: "sandbox" | "production" },
+    opts: {
+      token: string;
+      platform: "ios";
+      environment: "sandbox" | "production";
+      timezone?: string;
+    },
   ): Promise<UserPushToken> {
-    const { token, platform, environment } = opts;
+    const { token, platform, environment, timezone } = opts;
     try {
       const existing = await db
         .select()
@@ -1905,20 +2028,25 @@ export class DatabaseStorage implements IStorage {
 
       if (existing.length > 0) {
         const [row] = existing;
+        const patch: Record<string, unknown> = {
+          userId,
+          platform,
+          environment,
+          isActive: true,
+          lastSeenAt: sql`NOW()`,
+          updatedAt: sql`NOW()`,
+          deactivatedAt: null,
+          deactivatedReason: null,
+          lastError: null,
+          lastErrorAt: null,
+        };
+        // Only write timezone when explicitly provided (never erase with NULL).
+        if (timezone !== undefined) {
+          patch.timezone = timezone;
+        }
         const updated = await db
           .update(userPushTokens)
-          .set({
-            userId,
-            platform,
-            environment,
-            isActive: true,
-            lastSeenAt: sql`NOW()`,
-            updatedAt: sql`NOW()`,
-            deactivatedAt: null,
-            deactivatedReason: null,
-            lastError: null,
-            lastErrorAt: null,
-          })
+          .set(patch as any)
           .where(eq(userPushTokens.id, row.id))
           .returning();
         currentRow = updated[0] as UserPushToken;
@@ -1930,6 +2058,7 @@ export class DatabaseStorage implements IStorage {
             platform,
             token,
             environment,
+            ...(timezone !== undefined ? { timezone } : {}),
           })
           .returning();
         currentRow = inserted[0] as UserPushToken;
@@ -2806,8 +2935,17 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             WHERE r.artist_id = ${artistId}
               AND (
-                r.release_date > NOW()
-                OR r.is_coming_soon = true
+                r.is_coming_soon = true
+                OR (
+                  COALESCE(r.release_timing_mode, 'midnight') = 'exact'
+                  AND r.release_at IS NOT NULL
+                  AND r.release_at > NOW()
+                )
+                OR (
+                  COALESCE(r.release_timing_mode, 'midnight') <> 'exact'
+                  AND r.release_date IS NOT NULL
+                  AND r.release_date > NOW()
+                )
               )
           ) AS upcoming_releases,
           (SELECT COUNT(*)::int FROM owned_release_posts) AS posts_featuring_tracks,
@@ -2851,7 +2989,7 @@ export class DatabaseStorage implements IStorage {
   // --- Releases ---
   // Feed returns releases; links are added by route.
   // scope: "my" = owned + collaborator + saved; "saved" = only public releases from liked/uploaded (user/artist Saved Releases)
-  // view: upcoming (release_date >= now), past (release_date < now), collaborations (user is collaborator, my scope only)
+  // view: upcoming / past use Exact release_at vs Midnight UTC calendar; collaborations (user is collaborator, my scope only)
   async getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]> {
     if (!userId) return [];
     const v = view || "upcoming";
@@ -2859,7 +2997,7 @@ export class DatabaseStorage implements IStorage {
     try {
       if (v === "collaborations") {
         const result = await db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.release_timing_mode, r.release_at, r.release_timezone, r.release_announced_at, r.subscription_suspended_at, r.subscription_suspension_reason,
                  pr.username AS artist_username, rc.status AS collaborator_status,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2884,7 +3022,7 @@ export class DatabaseStorage implements IStorage {
                ))`;
       const result = v === "upcoming"
         ? await db.execute(sql`
-            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.release_timing_mode, r.release_at, r.release_timezone, r.release_announced_at, r.subscription_suspended_at, r.subscription_suspension_reason,
                    pr.username AS artist_username, rc.status AS collaborator_status,
                    (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                     FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2892,14 +3030,11 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             JOIN profiles pr ON pr.id = r.artist_id
             LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-            WHERE ${baseWhere} AND (
-              (r.release_date IS NULL AND r.is_coming_soon = true)
-              OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
-            )
+            WHERE ${baseWhere} AND ${sqlReleaseFeedUpcoming}
             ORDER BY r.release_date ASC NULLS LAST
           `)
         : await db.execute(sql`
-            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
+            SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.release_timing_mode, r.release_at, r.release_timezone, r.release_announced_at, r.subscription_suspended_at, r.subscription_suspension_reason,
                    pr.username AS artist_username, rc.status AS collaborator_status,
                    (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                     FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -2907,7 +3042,7 @@ export class DatabaseStorage implements IStorage {
             FROM releases r
             JOIN profiles pr ON pr.id = r.artist_id
             LEFT JOIN release_collaborators rc ON rc.release_id = r.id AND rc.artist_id = ${userId}
-            WHERE ${baseWhere} AND r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date < (NOW() AT TIME ZONE 'UTC')::date)
+            WHERE ${baseWhere} AND ${sqlReleaseFeedPast}
             ORDER BY r.release_date DESC NULLS LAST
           `);
       const rows = (result as any).rows || [];
@@ -2969,7 +3104,7 @@ export class DatabaseStorage implements IStorage {
       const viewerWhere = sql`(${savedWhere} OR ${myWhere})`;
       const result = await db.execute(sql`
         SELECT DISTINCT ON (r.id)
-          r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
+          r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.release_timing_mode, r.release_at, r.release_timezone, r.release_announced_at, r.subscription_suspended_at, r.subscription_suspension_reason,
           pr.username AS artist_username, rc.status AS collaborator_status,
           (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
            FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -3163,6 +3298,10 @@ export class DatabaseStorage implements IStorage {
       isComingSoon: row.is_coming_soon === true,
       subscriptionSuspendedAt: row.subscription_suspended_at ?? null,
       createdAt: row.created_at ?? null,
+      releaseTimingMode: row.release_timing_mode ?? null,
+      releaseAt: row.release_at ?? null,
+      releaseTimezone: row.release_timezone ?? null,
+      releaseAnnouncedAt: row.release_announced_at ?? null,
     };
   }
 
@@ -3181,6 +3320,10 @@ export class DatabaseStorage implements IStorage {
         r.is_coming_soon,
         r.subscription_suspended_at,
         r.created_at,
+        r.release_timing_mode,
+        r.release_at,
+        r.release_timezone,
+        r.release_announced_at,
         pr.username AS artist_username
       FROM releases r
       JOIN profiles pr ON pr.id = r.artist_id
@@ -3188,8 +3331,15 @@ export class DatabaseStorage implements IStorage {
         AND r.is_public = true
         AND r.subscription_suspended_at IS NULL
         AND r.release_date IS NOT NULL
-        AND (r.release_date AT TIME ZONE 'UTC')::date
-          >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+        AND (
+          (r.release_date AT TIME ZONE 'UTC')::date
+            >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - 1)
+          OR (
+            r.release_timing_mode = 'exact'
+            AND r.release_at IS NOT NULL
+            AND r.release_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+          )
+        )
       ORDER BY r.release_date ASC, r.id ASC
     `);
     return ((result as any).rows || []).map((row: any) =>
@@ -3214,6 +3364,10 @@ export class DatabaseStorage implements IStorage {
         r.is_coming_soon,
         r.subscription_suspended_at,
         r.created_at,
+        r.release_timing_mode,
+        r.release_at,
+        r.release_timezone,
+        r.release_announced_at,
         pr.username AS artist_username,
         (${savedWhere}) AS viewer_saved
       FROM releases r
@@ -3227,6 +3381,39 @@ export class DatabaseStorage implements IStorage {
       release: this.mapHomeWidgetReleaseRow(row),
       isSaved: row.viewer_saved === true,
     };
+  }
+
+  async getHomeWidgetListenerSavedReleaseCandidates(
+    userId: string,
+  ): Promise<HomeWidgetReleaseStorageRow[]> {
+    if (!userId) return [];
+    const savedWhere = savedReleasesFeedWhereSql(userId);
+    const result = await db.execute(sql`
+      SELECT
+        r.id,
+        r.artist_id,
+        r.title,
+        r.release_date,
+        r.artwork_url,
+        r.is_public,
+        r.is_coming_soon,
+        r.subscription_suspended_at,
+        r.created_at,
+        r.release_timing_mode,
+        r.release_at,
+        r.release_timezone,
+        r.release_announced_at,
+        pr.username AS artist_username
+      FROM releases r
+      JOIN profiles pr ON pr.id = r.artist_id
+      WHERE ${savedWhere}
+        AND r.release_date IS NOT NULL
+        AND r.is_coming_soon = false
+      ORDER BY r.release_date ASC, r.id ASC
+    `);
+    return ((result as any).rows || []).map((row: any) =>
+      this.mapHomeWidgetReleaseRow(row),
+    );
   }
 
   /**
@@ -3248,10 +3435,7 @@ export class DatabaseStorage implements IStorage {
         FROM releases r
         WHERE r.artist_id = ${artistId}
           AND r.is_public = true AND r.subscription_suspended_at IS NULL
-          AND (
-            (r.release_date IS NULL AND r.is_coming_soon = true)
-            OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
-          )
+          AND ${sqlReleaseFeedUpcoming}
           ${excludePostId
             ? sql`AND NOT EXISTS (
                  SELECT 1 FROM release_posts rp
@@ -3281,7 +3465,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const [upcomingResult, releasedResult] = await Promise.all([
         db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.release_timing_mode, r.release_at, r.release_timezone, r.release_announced_at, r.subscription_suspended_at, r.subscription_suspension_reason,
                  pr.username AS artist_username,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -3289,14 +3473,11 @@ export class DatabaseStorage implements IStorage {
           FROM releases r
           JOIN profiles pr ON pr.id = r.artist_id
           WHERE r.artist_id = ${artistId} AND r.is_public = true AND r.subscription_suspended_at IS NULL
-            AND (
-              (r.release_date IS NULL AND r.is_coming_soon = true)
-              OR (r.release_date IS NOT NULL AND ((r.release_date AT TIME ZONE 'UTC')::date >= (NOW() AT TIME ZONE 'UTC')::date))
-            )
+            AND ${sqlReleaseFeedUpcoming}
           ORDER BY r.release_date ASC NULLS LAST
         `),
         db.execute(sql`
-          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.subscription_suspended_at, r.subscription_suspension_reason,
+          SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url, r.notified_at, r.created_at, r.updated_at, r.is_public, r.is_coming_soon, r.release_timing_mode, r.release_at, r.release_timezone, r.release_announced_at, r.subscription_suspended_at, r.subscription_suspension_reason,
                  pr.username AS artist_username,
                  (SELECT COALESCE(json_agg(json_build_object('username', pc.username, 'status', rc2.status)), '[]'::json)
                   FROM release_collaborators rc2 JOIN profiles pc ON pc.id = rc2.artist_id
@@ -3304,8 +3485,7 @@ export class DatabaseStorage implements IStorage {
           FROM releases r
           JOIN profiles pr ON pr.id = r.artist_id
           WHERE r.artist_id = ${artistId} AND r.is_public = true AND r.subscription_suspended_at IS NULL
-            AND r.release_date IS NOT NULL
-            AND ((r.release_date AT TIME ZONE 'UTC')::date < (NOW() AT TIME ZONE 'UTC')::date)
+            AND ${sqlReleaseFeedPast}
           ORDER BY r.release_date DESC NULLS LAST
         `),
       ]);
@@ -3327,6 +3507,7 @@ export class DatabaseStorage implements IStorage {
         collaborators = Array.isArray(ac) ? ac : (typeof ac === "string" ? JSON.parse(ac || "[]") : []);
       } catch {}
       const normalized = this.normalizeReleaseDisplayFields(row.title, row.artwork_url);
+      const timing = mapReleaseTimingFields(row);
       return {
         id: row.id,
         artistId: row.artist_id,
@@ -3338,6 +3519,10 @@ export class DatabaseStorage implements IStorage {
         updatedAt: row.updated_at,
         isPublic: row.is_public ?? true,
         isComingSoon: row.is_coming_soon ?? false,
+        releaseTimingMode: timing.releaseTimingMode,
+        releaseAt: timing.releaseAt,
+        releaseTimezone: timing.releaseTimezone,
+        releaseAnnouncedAt: timing.releaseAnnouncedAt,
         subscriptionSuspendedAt: row.subscription_suspended_at ?? null,
         subscriptionSuspensionReason: row.subscription_suspension_reason ?? null,
         artistUsername: row.artist_username,
@@ -3411,6 +3596,10 @@ export class DatabaseStorage implements IStorage {
           r.updated_at,
           r.is_public,
           r.is_coming_soon,
+          r.release_timing_mode,
+          r.release_at,
+          r.release_timezone,
+          r.release_announced_at,
           r.subscription_suspended_at,
           r.subscription_suspension_reason,
           pr.username AS artist_username
@@ -3426,6 +3615,7 @@ export class DatabaseStorage implements IStorage {
       const postIds = await this.getReleasePostIds(id);
       const collaborators = await this.getReleaseCollaborators(id);
       const normalized = this.normalizeReleaseDisplayFields(row.title, row.artwork_url);
+      const timing = mapReleaseTimingFields(row);
       return {
         id: row.id,
         artistId: row.artist_id,
@@ -3437,6 +3627,10 @@ export class DatabaseStorage implements IStorage {
         updatedAt: row.updated_at,
         isPublic: row.is_public ?? true,
         isComingSoon: row.is_coming_soon ?? false,
+        releaseTimingMode: timing.releaseTimingMode,
+        releaseAt: timing.releaseAt,
+        releaseTimezone: timing.releaseTimezone,
+        releaseAnnouncedAt: timing.releaseAnnouncedAt,
         subscriptionSuspendedAt: row.subscription_suspended_at ?? null,
         subscriptionSuspensionReason: row.subscription_suspension_reason ?? null,
         artistUsername: row.artist_username,
@@ -3530,6 +3724,9 @@ export class DatabaseStorage implements IStorage {
     releaseDate: Date | null;
     artworkUrl?: string | null;
     isComingSoon?: boolean;
+    releaseTimingMode?: "midnight" | "exact";
+    releaseAt?: Date | null;
+    releaseTimezone?: string | null;
   }): Promise<any> {
     const release = await createReleaseWithLimit(data, {
       pool,
@@ -3542,6 +3739,7 @@ export class DatabaseStorage implements IStorage {
       release_id: release.id,
       metadata: {
         is_coming_soon: release.isComingSoon ?? data.isComingSoon ?? false,
+        release_timing_mode: release.releaseTimingMode ?? "midnight",
       },
     });
 
@@ -3562,29 +3760,119 @@ export class DatabaseStorage implements IStorage {
       notifiedAt: release.notifiedAt,
       createdAt: release.createdAt,
       updatedAt: release.updatedAt,
+      isComingSoon: release.isComingSoon ?? data.isComingSoon ?? false,
+      releaseTimingMode: release.releaseTimingMode ?? "midnight",
+      releaseAt: release.releaseAt ?? null,
+      releaseTimezone: release.releaseTimezone ?? null,
+      releaseAnnouncedAt: release.releaseAnnouncedAt ?? null,
     };
   }
 
   async updateRelease(
     id: string,
     artistId: string,
-    data: { title?: string; releaseDate?: Date | null; artworkUrl?: string | null; isComingSoon?: boolean }
+    data: {
+      title?: string;
+      releaseDate?: Date | null;
+      artworkUrl?: string | null;
+      isComingSoon?: boolean;
+      releaseTimingMode?: "midnight" | "exact";
+      releaseAt?: Date | null;
+      releaseTimezone?: string | null;
+    }
   ): Promise<any | undefined> {
     try {
       const current = await this.getRelease(id);
       if (!current) return undefined;
       const canUpdate = current.artistId === artistId;
       const title = data.title !== undefined ? data.title : current.title;
-      const releaseDate = data.releaseDate !== undefined
-        ? data.releaseDate
-        : (current.releaseDate ? new Date(current.releaseDate) : null);
-      const artworkUrl = data.artworkUrl !== undefined ? data.artworkUrl : current.artworkUrl;
-      const isComingSoon = data.isComingSoon !== undefined ? data.isComingSoon : !!current.isComingSoon;
-      await db.execute(sql`
-        UPDATE releases
-        SET title = ${title}, release_date = ${releaseDate}, artwork_url = ${artworkUrl}, is_coming_soon = ${isComingSoon}, updated_at = NOW()
-        WHERE id = ${id} AND artist_id = ${artistId}
-      `);
+      const isComingSoon =
+        data.isComingSoon !== undefined ? data.isComingSoon : !!current.isComingSoon;
+      const artworkUrl =
+        data.artworkUrl !== undefined ? data.artworkUrl : current.artworkUrl;
+
+      let releaseDate: Date | null;
+      if (isComingSoon) {
+        releaseDate = null;
+      } else if (data.releaseDate !== undefined) {
+        releaseDate = data.releaseDate;
+      } else {
+        releaseDate = current.releaseDate
+          ? new Date(current.releaseDate)
+          : null;
+      }
+
+      let releaseTimingMode: "midnight" | "exact" = "midnight";
+      let releaseAt: Date | null = null;
+      let releaseTimezone: string | null = null;
+
+      if (isComingSoon) {
+        releaseTimingMode = "midnight";
+        releaseAt = null;
+        releaseTimezone = null;
+      } else if (data.releaseTimingMode === "exact") {
+        releaseTimingMode = "exact";
+        releaseAt = data.releaseAt ?? null;
+        releaseTimezone = data.releaseTimezone ?? null;
+      } else if (data.releaseTimingMode === "midnight") {
+        releaseTimingMode = "midnight";
+        releaseAt = null;
+        releaseTimezone = null;
+      } else if (current.releaseTimingMode === "exact" && !isComingSoon) {
+        // Preserve Exact when PATCH omits timing (e.g. title-only).
+        releaseTimingMode = "exact";
+        releaseAt = current.releaseAt ? new Date(current.releaseAt) : null;
+        releaseTimezone = current.releaseTimezone ?? null;
+        if (data.releaseAt !== undefined) releaseAt = data.releaseAt;
+        if (data.releaseTimezone !== undefined) {
+          releaseTimezone = data.releaseTimezone;
+        }
+      } else {
+        releaseTimingMode = "midnight";
+        releaseAt = null;
+        releaseTimezone = null;
+      }
+
+      const setAnnouncedAt = shouldSetReleaseAnnouncedAt({
+        previous: {
+          isComingSoon: !!current.isComingSoon,
+          releaseDate: current.releaseDate ?? null,
+          releaseAnnouncedAt: current.releaseAnnouncedAt ?? null,
+        },
+        next: {
+          isComingSoon,
+          releaseDate,
+        },
+      });
+
+      if (setAnnouncedAt) {
+        await db.execute(sql`
+          UPDATE releases
+          SET title = ${title},
+              release_date = ${releaseDate},
+              artwork_url = ${artworkUrl},
+              is_coming_soon = ${isComingSoon},
+              release_timing_mode = ${releaseTimingMode},
+              release_at = ${releaseAt},
+              release_timezone = ${releaseTimezone},
+              release_announced_at = NOW(),
+              updated_at = NOW()
+          WHERE id = ${id} AND artist_id = ${artistId}
+        `);
+      } else {
+        await db.execute(sql`
+          UPDATE releases
+          SET title = ${title},
+              release_date = ${releaseDate},
+              artwork_url = ${artworkUrl},
+              is_coming_soon = ${isComingSoon},
+              release_timing_mode = ${releaseTimingMode},
+              release_at = ${releaseAt},
+              release_timezone = ${releaseTimezone},
+              updated_at = NOW()
+          WHERE id = ${id} AND artist_id = ${artistId}
+        `);
+      }
       if (canUpdate) {
         void logEvent({
           event_type: "release_updated",
@@ -3656,18 +3944,26 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  /** Removing release–post links is blocked once the release date has passed; adding posts is always allowed (see attachPostsToRelease). */
+  /** Removing release–post links is blocked once the release is live; adding posts is always allowed (see attachPostsToRelease). */
   async detachPostsFromRelease(releaseId: string, actorId: string, postIds: string[]): Promise<{ ok: boolean; locked?: boolean }> {
     try {
       const canManage = await this.canManageRelease(releaseId, actorId);
       if (!canManage) return { ok: false };
       const releaseRow = await db.execute(sql`
-        SELECT release_date FROM releases WHERE id = ${releaseId} LIMIT 1
+        SELECT release_date, is_coming_soon, release_timing_mode, release_at
+        FROM releases WHERE id = ${releaseId} LIMIT 1
       `);
       const rows = (releaseRow as any).rows || [];
       if (rows.length === 0) return { ok: false };
-      const releaseDate = rows[0].release_date ? new Date(rows[0].release_date) : null;
-      if (releaseDate && releaseDate <= new Date()) {
+      const row = rows[0];
+      if (
+        isServerDetachLocked({
+          isComingSoon: row.is_coming_soon === true,
+          releaseTimingMode: row.release_timing_mode,
+          releaseDate: row.release_date ?? null,
+          releaseAt: row.release_at ?? null,
+        })
+      ) {
         return { ok: false, locked: true };
       }
       for (const postId of postIds) {
@@ -4143,45 +4439,141 @@ export class DatabaseStorage implements IStorage {
         console.error("[notifyReleaseDayLikers] Failed to import push sender", importError);
       }
 
-      const releasesResult = await db.execute(sql`
-        SELECT r.id, r.artist_id, r.title, r.release_date, r.release_day_notified_at, r.artwork_url
-        FROM releases r
-        WHERE r.release_day_notified_at IS NULL
-          AND r.is_public = true AND r.subscription_suspended_at IS NULL
-          AND r.is_coming_soon = false
-          AND r.release_date IS NOT NULL
-          AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
-          AND DATE(r.release_date AT TIME ZONE 'Europe/London') = (NOW() AT TIME ZONE 'Europe/London')::date
-          AND (NOW() AT TIME ZONE 'Europe/London')::time >= '09:00'::time
-      `);
-      const releases = (releasesResult as any).rows || [];
       const notifiedReleaseIds: string[] = [];
       let notificationsCreated = 0;
       let pushAttempts = 0;
       let pushFailures = 0;
-      for (const r of releases) {
-        const pushTasks: Promise<void>[] = [];
-        const pushTaskRecipients: string[] = [];
-        const freeRecipientIds = await this.getReleaseDayFreeRecipientIds(r.id, r.artist_id);
+
+      const deliverToRecipient = async (args: {
+        releaseId: string;
+        artistId: string;
+        title: string;
+        recipientId: string;
+        firstPostId: string | null;
+        artistUsername: string;
+        collaboratorUsernames: string[];
+        message: string;
+      }): Promise<boolean> => {
+        // Sticky per-recipient claim (Midnight + Exact). Concurrent cron: one winner.
+        const claimed = await db.transaction(async (tx) => {
+          const markerResult = await tx.execute(sql`
+            INSERT INTO release_day_notification_markers (release_id, user_id)
+            VALUES (${args.releaseId}, ${args.recipientId})
+            ON CONFLICT (release_id, user_id) DO NOTHING
+            RETURNING user_id
+          `);
+          if (((markerResult as any).rows || []).length === 0) {
+            return false;
+          }
+          await tx.execute(sql`
+            INSERT INTO notifications (
+              artist_id, triggered_by, post_id, release_id, message, notification_type, read, created_at
+            )
+            VALUES (
+              ${args.recipientId}, ${args.artistId}, ${args.firstPostId}, ${args.releaseId},
+              ${args.message}, 'release_day', false, NOW()
+            )
+          `);
+          return true;
+        });
+        if (!claimed) return false;
+        notificationsCreated++;
+        const releaseTitle =
+          typeof args.title === "string" && args.title.trim().length > 0
+            ? args.title.trim()
+            : "Release";
+        pushAttempts++;
+        console.log("[notifyReleaseDayLikers] Push attempt", {
+          releaseId: args.releaseId,
+          recipientId: args.recipientId,
+          postId: args.firstPostId,
+          pushType: "release_day_out_today",
+          pushAttempted: true,
+        });
+        if (!sendPushToUserFn) {
+          pushFailures++;
+          console.error("[notifyReleaseDayLikers] Push failed before send (push sender unavailable)", {
+            releaseId: args.releaseId,
+            recipientId: args.recipientId,
+            postId: args.firstPostId,
+            pushType: "release_day_out_today",
+            error: pushImportError instanceof Error ? pushImportError.message : String(pushImportError),
+          });
+          return true;
+        }
+        try {
+          await sendPushToUserFn(args.recipientId, {
+            type: "release_day_out_today",
+            releaseId: args.releaseId,
+            postId: args.firstPostId,
+            artistId: args.artistId,
+            releaseTitle,
+            artistUsername: args.artistUsername,
+            collaboratorUsernames: args.collaboratorUsernames,
+          });
+          console.log("[notifyReleaseDayLikers] Push dispatch resolved", {
+            releaseId: args.releaseId,
+            recipientId: args.recipientId,
+            postId: args.firstPostId,
+            pushType: "release_day_out_today",
+          });
+        } catch (pushErr) {
+          pushFailures++;
+          console.error("[notifyReleaseDayLikers] Push dispatch failed", {
+            releaseId: args.releaseId,
+            recipientId: args.recipientId,
+            postId: args.firstPostId,
+            pushType: "release_day_out_today",
+            error: pushErr instanceof Error ? pushErr.message : String(pushErr),
+          });
+        }
+        return true;
+      };
+
+      const resolveRecipients = async (releaseId: string, artistId: string) => {
+        const freeRecipientIds = await this.getReleaseDayFreeRecipientIds(releaseId, artistId);
         const freeRecipientSet = new Set(freeRecipientIds);
         let paidOnlyRecipientIds: string[] = [];
         try {
-          const deliveryAllowed = await canArtistDeliverReleaseAlerts(r.artist_id, {
+          const deliveryAllowed = await canArtistDeliverReleaseAlerts(artistId, {
             getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
           });
           if (deliveryAllowed) {
-            const alertSubscriberIds = await this.getArtistReleaseAlertSubscriberIds(r.artist_id);
+            const alertSubscriberIds = await this.getArtistReleaseAlertSubscriberIds(artistId);
             paidOnlyRecipientIds = alertSubscriberIds.filter((id) => !freeRecipientSet.has(id));
           }
         } catch (entitlementError) {
           console.error("[notifyReleaseDayLikers] Entitlement check failed; paid-only recipients skipped", {
-            releaseId: r.id,
+            releaseId,
             error: entitlementError instanceof Error ? entitlementError.message : String(entitlementError),
           });
           paidOnlyRecipientIds = [];
         }
-        // Deduplicate: each recipient receives exactly one release_day notification.
-        const recipientIds = [...freeRecipientIds, ...paidOnlyRecipientIds];
+        return [...freeRecipientIds, ...paidOnlyRecipientIds].filter(Boolean);
+      };
+
+      // ——— Exact: release_at gate + global release_day_notified_at; dual-write markers ———
+      const exactResult = await db.execute(sql`
+        SELECT r.id, r.artist_id, r.title, r.release_date, r.release_day_notified_at, r.artwork_url,
+               r.release_timing_mode, r.release_at
+        FROM releases r
+        WHERE r.release_day_notified_at IS NULL
+          AND r.is_public = true AND r.subscription_suspended_at IS NULL
+          AND r.is_coming_soon = false
+          AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
+          AND COALESCE(r.release_timing_mode, 'midnight') = 'exact'
+          AND r.release_at IS NOT NULL
+          AND r.release_at <= NOW()
+      `);
+      const exactReleases = ((exactResult as any).rows || []).filter((r: any) =>
+        isExactReleaseDayNotifyEligible({
+          releaseTimingMode: r.release_timing_mode,
+          releaseAt: r.release_at,
+        }),
+      );
+
+      for (const r of exactReleases) {
+        const recipientIds = await resolveRecipients(r.id, r.artist_id);
         const postIds = await this.getReleasePostIds(r.id);
         const firstPostId = postIds[0] ?? null;
         const artistProfile = await this.getUser(r.artist_id);
@@ -4193,92 +4585,115 @@ export class DatabaseStorage implements IStorage {
           .filter((name: string) => name.length > 0);
         const message = `${artistUsername} released ${r.title}`;
         for (const recipientId of recipientIds) {
-          if (!recipientId) continue;
-          await this.createNotification({
-            artistId: recipientId,
-            triggeredBy: r.artist_id,
-            postId: firstPostId,
+          await deliverToRecipient({
             releaseId: r.id,
-            message,
-            notificationType: "release_day",
-          });
-          notificationsCreated++;
-          const releaseTitle =
-            typeof r.title === "string" && r.title.trim().length > 0 ? r.title.trim() : "Release";
-          pushAttempts++;
-          console.log("[notifyReleaseDayLikers] Push attempt", {
-            releaseId: r.id,
+            artistId: r.artist_id,
+            title: r.title,
             recipientId,
-            postId: firstPostId,
-            pushType: "release_day_out_today",
-            pushAttempted: true,
+            firstPostId,
+            artistUsername,
+            collaboratorUsernames,
+            message,
           });
-          if (!sendPushToUserFn) {
-            pushFailures++;
-            console.error("[notifyReleaseDayLikers] Push failed before send (push sender unavailable)", {
-              releaseId: r.id,
-              recipientId,
-              postId: firstPostId,
-              pushType: "release_day_out_today",
-              error: pushImportError instanceof Error ? pushImportError.message : String(pushImportError),
-            });
-            continue;
-          }
-          pushTasks.push(
-            sendPushToUserFn(recipientId, {
-              type: "release_day_out_today",
-              releaseId: r.id,
-              postId: firstPostId,
-              artistId: r.artist_id,
-              releaseTitle,
-              artistUsername,
-              collaboratorUsernames,
-            }),
-          );
-          pushTaskRecipients.push(recipientId);
         }
-
-        const pushResults = await Promise.allSettled(pushTasks);
-        for (let i = 0; i < pushResults.length; i++) {
-          const recipientId = pushTaskRecipients[i] ?? null;
-          const result = pushResults[i];
-          if (result.status === "fulfilled") {
-            console.log("[notifyReleaseDayLikers] Push dispatch resolved", {
-              releaseId: r.id,
-              recipientId,
-              postId: firstPostId,
-              pushType: "release_day_out_today",
-            });
-          } else {
-            pushFailures++;
-            console.error("[notifyReleaseDayLikers] Push dispatch failed", {
-              releaseId: r.id,
-              recipientId,
-              postId: firstPostId,
-              pushType: "release_day_out_today",
-              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-            });
-          }
-        }
-
         await db.execute(sql`
           UPDATE releases SET release_day_notified_at = NOW() WHERE id = ${r.id}
         `);
-        console.log("[notifyReleaseDayLikers] Release processing completed", {
+        notifiedReleaseIds.push(r.id);
+        console.log("[notifyReleaseDayLikers] Exact release processing completed", {
           releaseId: r.id,
           recipients: recipientIds.length,
-          notificationsCreated,
-          pushAttempts,
-          pushFailures,
         });
-        notifiedReleaseIds.push(r.id);
       }
+
+      // ——— Midnight: per-recipient local date + sticky marker claim ———
+      // Window: calendar YMD within ~3 days of UTC today (covers staggered zones).
+      const midnightResult = await db.execute(sql`
+        SELECT r.id, r.artist_id, r.title, r.release_date, r.artwork_url,
+               r.release_timing_mode, r.release_at
+        FROM releases r
+        WHERE r.is_public = true AND r.subscription_suspended_at IS NULL
+          AND r.is_coming_soon = false
+          AND r.release_date IS NOT NULL
+          AND EXISTS (SELECT 1 FROM release_posts rp WHERE rp.release_id = r.id)
+          AND COALESCE(r.release_timing_mode, 'midnight') = 'midnight'
+          AND (r.release_date AT TIME ZONE 'UTC')::date
+                BETWEEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - 3
+                    AND (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date + 1
+      `);
+      const midnightReleases = (midnightResult as any).rows || [];
+
+      for (const r of midnightReleases) {
+        const releaseYmd = midnightReleaseCalendarYmd(r.release_date);
+        if (!releaseYmd) continue;
+
+        const recipientIds = await resolveRecipients(r.id, r.artist_id);
+        if (recipientIds.length === 0) continue;
+
+        const tzResult = await pool.query<{ user_id: string; timezone: string }>(
+          `SELECT DISTINCT ON (user_id) user_id, timezone
+           FROM user_push_tokens
+           WHERE is_active = true
+             AND timezone IS NOT NULL
+             AND user_id = ANY($1::uuid[])
+           ORDER BY user_id, last_seen_at DESC`,
+          [recipientIds],
+        );
+        const tzByUser = new Map<string, string>();
+        for (const row of tzResult.rows) {
+          tzByUser.set(String(row.user_id), String(row.timezone));
+        }
+
+        const postIds = await this.getReleasePostIds(r.id);
+        const firstPostId = postIds[0] ?? null;
+        const artistProfile = await this.getUser(r.artist_id);
+        const artistUsername = artistProfile?.username ?? "Artist";
+        const collaborators = await this.getReleaseCollaborators(r.id);
+        const collaboratorUsernames = collaborators
+          .filter((c: any) => c?.status === "ACCEPTED" && typeof c?.username === "string")
+          .map((c: any) => String(c.username).trim())
+          .filter((name: string) => name.length > 0);
+        const message = `${artistUsername} released ${r.title}`;
+
+        let deliveredAny = false;
+        for (const recipientId of recipientIds) {
+          const effectiveTz = tzByUser.get(recipientId) ?? null;
+          // Fail closed: no Midnight delivery without known IANA timezone.
+          if (
+            !isMidnightReleaseDueForTimezone({
+              releaseCalendarYmd: releaseYmd,
+              effectiveTimezone: effectiveTz,
+            })
+          ) {
+            continue;
+          }
+          const delivered = await deliverToRecipient({
+            releaseId: r.id,
+            artistId: r.artist_id,
+            title: r.title,
+            recipientId,
+            firstPostId,
+            artistUsername,
+            collaboratorUsernames,
+            message,
+          });
+          if (delivered) deliveredAny = true;
+        }
+        if (deliveredAny) {
+          notifiedReleaseIds.push(r.id);
+          console.log("[notifyReleaseDayLikers] Midnight release processing touched", {
+            releaseId: r.id,
+            releaseYmd,
+          });
+        }
+      }
+
       return {
         count: notificationsCreated,
         notificationsCreated,
         pushAttempts,
         pushFailures,
-        releaseIds: notifiedReleaseIds,
+        releaseIds: [...new Set(notifiedReleaseIds)],
       };
     } catch (error) {
       console.error("[notifyReleaseDayLikers] Error:", error);

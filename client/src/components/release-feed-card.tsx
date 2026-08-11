@@ -11,6 +11,10 @@ import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { getLinkCtaLabel, getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
 import { isPersistedReleaseSubscriptionSuspended } from "@/lib/release-subscription-paused";
+import {
+  formatReleasePublicSchedule,
+  isReleaseUpcomingFromTiming,
+} from "@/lib/release-status";
 import { cn } from "@/lib/utils";
 
 export type ReleaseFeedCardData = {
@@ -21,6 +25,9 @@ export type ReleaseFeedCardData = {
   artworkUrl: string | null;
   artistUsername: string;
   isComingSoon?: boolean;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | null;
+  releaseTimezone?: string | null;
   links?: { id: string; platform: string; url: string; linkType?: string | null }[];
   collaborators?: { username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
@@ -67,13 +74,19 @@ export function normalizeReleaseCardFields(r: Pick<ReleaseFeedCardData, "title" 
 
 export function formatReleaseCardDate(d: string | null) {
   if (!d) return "";
-  const date = new Date(d);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatReleasePublicSchedule({
+    releaseDate: d,
+    releaseTimingMode: "midnight",
+  });
 }
 
+/** @deprecated Prefer isReleaseUpcomingFromTiming with full timing fields. */
 export function isReleaseCardUpcoming(d: string | null) {
   if (!d) return false;
-  return new Date(d) > new Date();
+  return isReleaseUpcomingFromTiming({
+    releaseDate: d,
+    releaseTimingMode: "midnight",
+  });
 }
 
 /**
@@ -99,13 +112,28 @@ export function ReleaseFeedCard({
   const releaseDayHighlight = !!highlight?.releaseDayHighlight;
   const isOwnerReleaseDay = !!highlight?.isOwnerReleaseDay;
   const featured = !!highlight?.featured;
-  const upcoming = r.isComingSoon || isReleaseCardUpcoming(r.releaseDate);
+  const upcoming = isReleaseUpcomingFromTiming({
+    isComingSoon: r.isComingSoon,
+    releaseDate: r.releaseDate,
+    releaseTimingMode: r.releaseTimingMode,
+    releaseAt: r.releaseAt,
+    releaseTimezone: r.releaseTimezone,
+  });
   const byline = formatReleaseByline(r.artistUsername, r.collaborators);
   const accessibilityLabel = buildReleaseFeedCardAccessibilityLabel({
     byline,
     title: normalized.title,
     countdownSelected: showCountdownSelectedIndicator,
   });
+  const scheduleLabel = r.isComingSoon
+    ? "Coming soon..."
+    : formatReleasePublicSchedule({
+        isComingSoon: r.isComingSoon,
+        releaseDate: r.releaseDate,
+        releaseTimingMode: r.releaseTimingMode,
+        releaseAt: r.releaseAt,
+        releaseTimezone: r.releaseTimezone,
+      });
 
   return (
     <div
@@ -162,7 +190,7 @@ export function ReleaseFeedCard({
           </p>
         ) : null}
         <p className="mt-1 text-xs text-muted-foreground">
-          {r.isComingSoon ? "Coming soon..." : formatReleaseCardDate(r.releaseDate)}
+          {scheduleLabel}
         </p>
         {getBannerFromLinks(r.links, upcoming) ? (
           <p className="mt-1 text-xs text-primary">{getBannerFromLinks(r.links, upcoming)}</p>
@@ -172,6 +200,9 @@ export function ReleaseFeedCard({
             paused={isPersistedReleaseSubscriptionSuspended(r)}
             isComingSoon={r.isComingSoon}
             releaseDate={r.releaseDate}
+            releaseTimingMode={r.releaseTimingMode}
+            releaseAt={r.releaseAt}
+            releaseTimezone={r.releaseTimezone}
             upcoming={upcoming}
           />
           {collabDisplay ? <span className={collabDisplay.className}>{collabDisplay.label}</span> : null}

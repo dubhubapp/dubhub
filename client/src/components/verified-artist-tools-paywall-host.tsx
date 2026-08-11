@@ -2,7 +2,7 @@
  * App-level host: registers the paywall opener and renders one shared sheet.
  */
 
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { VerifiedArtistToolsPaywall } from "@/components/verified-artist-tools-paywall";
 import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
 import type { VerifiedArtistToolsPaywallSource } from "@/lib/verified-artist-tools-paywall-copy";
@@ -19,10 +19,12 @@ export function VerifiedArtistToolsPaywallHost() {
   const [returnFocusRef, setReturnFocusRef] = useState<
     RefObject<HTMLElement | null> | undefined
   >(undefined);
+  const onDismissedRef = useRef<(() => void) | undefined>(undefined);
 
   const openPaywall = useCallback((context: VerifiedArtistToolsUpgradeContext) => {
     setSource(context.source);
     setReturnFocusRef(context.returnFocusRef);
+    onDismissedRef.current = context.onDismissed;
     setOpen(true);
   }, []);
 
@@ -42,7 +44,15 @@ export function VerifiedArtistToolsPaywallHost() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setReturnFocusRef(undefined);
+        if (!next) {
+          setReturnFocusRef(undefined);
+          const dismissed = onDismissedRef.current;
+          onDismissedRef.current = undefined;
+          // After close animation frame so Links can reopen cleanly on top.
+          if (dismissed) {
+            window.setTimeout(() => dismissed(), 0);
+          }
+        }
       }}
       source={source}
       returnFocusRef={returnFocusRef}

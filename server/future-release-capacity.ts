@@ -40,6 +40,9 @@ function mapRow(row: Record<string, unknown>): ReleaseSuspensionRow {
     createdAt: (row.created_at as Date | string | null) ?? null,
     subscriptionSuspendedAt:
       (row.subscription_suspended_at as Date | string | null) ?? null,
+    releaseTimingMode:
+      (row.release_timing_mode as string | null | undefined) ?? null,
+    releaseAt: (row.release_at as Date | string | null | undefined) ?? null,
   };
 }
 
@@ -56,7 +59,8 @@ export async function getFutureReleaseCapacity(
   });
 
   const result = await deps.pool.query(
-    `SELECT id, is_public, is_coming_soon, release_date, created_at, subscription_suspended_at
+    `SELECT id, is_public, is_coming_soon, release_date, created_at, subscription_suspended_at,
+            release_timing_mode, release_at
      FROM releases
      WHERE artist_id = $1 AND is_public = true`,
     [artistId],

@@ -274,7 +274,7 @@ NOT `user_id` or `from_user_id`.
 | id                               | uuid        | NO       | gen_random_uuid() | Primary key                                      |
 | artist_id                        | uuid        | NO       | –                 | FK → profiles.id (owner)                         |
 | title                            | text        | NO       | –                 | Release title                                    |
-| release_date                     | timestamptz | YES      | –                 | Release date/time (nullable when coming soon)    |
+| release_date                     | timestamptz | YES      | –                 | Calendar-date carrier for Midnight mode (nullable when coming soon). Live values are typically stored at 00:00Z serialization; that MUST NOT be treated as a global exact release instant. |
 | artwork_url                      | text        | YES      | –                 | Artwork path/URL (release-artworks bucket)       |
 | notified_at                      | timestamptz | YES      | –                 | When announcement notifications were sent        |
 | created_at                       | timestamptz | YES      | now()             | Created                                          |
@@ -282,8 +282,14 @@ NOT `user_id` or `from_user_id`.
 | release_day_notified_at          | timestamptz | YES      | –                 | When release-day morning notifications were sent |
 | is_public                        | boolean     | NO       | false             | Public visibility flag                           |
 | is_coming_soon                   | boolean     | NO       | false             | True when release has no confirmed date yet      |
+| release_timing_mode              | text        | NO       | `midnight`        | `midnight` (calendar date, default) or `exact` (absolute `release_at`). Existing dated rows are Midnight; do not infer exact from `release_date` 00:00Z. |
+| release_at                       | timestamptz | YES      | –                 | Absolute global release instant when `release_timing_mode='exact'`. NULL for Midnight / Coming Soon. Never backfill from `release_date` 00:00Z. |
+| release_timezone                 | text        | YES      | –                 | IANA timezone for exact wall-clock reconstruction/editing. NULL for Midnight / Coming Soon. |
+| release_announced_at             | timestamptz | YES      | –                 | Absolute product timestamp for first dated announcement. Inert foundation until announcement slice; do not backfill from `notified_at`. |
 | subscription_suspended_at        | timestamptz | YES      | –                 | When set, this future release is subscription-suspended — separate from `is_public` (a release can be `is_public = true` and still suspended). Reversible on resubscribe. Past releases are never newly suspended; no release data is deleted. |
 | subscription_suspension_reason   | text        | YES      | –                 | Machine reason for suspension, e.g. `over_free_future_allowance`. Not a billing/provider field. |
+
+Note: Migration `supabase/migrations/20260809180000_release_timing_domain.sql` adds the four timing columns additively. It does not alter `release_date`, rewrite historical values, or backfill `release_at` / `release_announced_at`.
 
 Note: Deletion: Hard delete. Release history for subscription enforcement is preserved in artist_release_creation_ledger.
 

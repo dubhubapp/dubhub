@@ -1,9 +1,18 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Upload, Plus, Trash2, UserPlus, ImageOff } from "lucide-react";
+import { ArrowLeft, Link as LinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useUser } from "@/lib/user-context";
 import { apiRequest } from "@/lib/queryClient";
 import { ApiRequestError } from "@/lib/apiDiagnostics";
@@ -13,54 +22,72 @@ import { scheduleHomeWidgetRefreshAfterAuth } from "@/lib/home-widget-refresh";
 import {
   availablePlatformOptions,
   draftHasDuplicatePlatforms,
-  getPlatformLabel,
   normalizePlatformForApi,
-  sortLinksByPlatform,
 } from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
-import { formatUsernameDisplay } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { playSuccessNotification } from "@/lib/haptic";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
-import { SEARCH_INPUT_KEYBOARD_PROPS, preventEnterFormSubmit } from "@/lib/form-search-input";
-import { ReleaseStatusFields } from "@/components/release-status-fields";
+import { ReleaseFormHero } from "@/components/release-form-hero";
+import { ReleaseTitleSheet } from "@/components/release-title-sheet";
+import { ReleaseScheduleSheet } from "@/components/release-schedule-sheet";
+import { ReleaseToolsManagementRow } from "@/components/release-tools-management-row";
+import { ReleaseLinksSheet } from "@/components/release-links-sheet";
+import { ReleaseCollaboratorsSheet } from "@/components/release-collaborators-sheet";
+import { buildDraftScheduleHeroSummary } from "@/lib/release-form-hero-schedule";
+import { formatReleaseLinksRowSummary } from "@/lib/release-tools-links-summary";
+import { RELEASE_TOOLS_SECTION_TITLE } from "@/lib/release-tools-section-title";
+import { formatReleaseCollaboratorsRowSummary } from "@/lib/release-tools-collaborators-summary";
+import { ReleaseCollaboratorsRowIcon } from "@/lib/release-collaborators-row-icon";
+import {
+  applyCreateDiscardChoice,
+  createBackDecision,
+  hasUnsavedReleaseDraft,
+} from "@/lib/release-create-dirty";
+import {
+  CREATE_WITHOUT_POSTS_BACK,
+  CREATE_WITHOUT_POSTS_BODY,
+  CREATE_WITHOUT_POSTS_CONFIRM,
+  CREATE_WITHOUT_POSTS_TITLE,
+  nextReleaseCreateSubmitStep,
+} from "@/lib/release-create-zero-posts";
+import {
+  buildReleaseTimingRequestFields,
+  defaultMidnightDraft,
+  type ReleaseTimingDraft,
+} from "@/lib/release-timing-draft";
+import { releaseTimingApiErrorToast } from "@/lib/release-timing-api-error";
 import {
   ReleaseAttachPostsSection,
   type EligiblePostForAttach,
 } from "@/components/release-attach-posts-section";
-import { ReleaseCreationCapacityCard } from "@/components/release-creation-capacity-card";
+import { filterEligiblePostsForAttachSearch } from "@/lib/release-attach-clips-overview";
 import {
   RELEASE_CREATION_CAPACITY_QUERY_KEY,
   RELEASE_LIMIT_REACHED_TOAST,
   UPGRADE_PLACEHOLDER_HINT,
   isFreeReleaseLimitReachedError,
   parseReleaseCreationCapacity,
-  resolveReleaseCapacityCardCopy,
+  resolveCreateReleaseBottomCapacity,
 } from "@/lib/release-creation-capacity";
+import { resolveFreeQuotaNoticeProminence } from "@/lib/release-form-limit-prominence";
 import {
   ATTACHMENT_ALLOWANCE_QUERY_KEY,
   ATTACHMENT_LIMIT_TOAST,
-  ATTACHMENT_NEAR_LIMIT_HINT,
   isFreeAttachmentLimitReachedError,
   maxSelectableAttachments,
   parseAttachmentAllowance,
 } from "@/lib/release-attachment-limit";
-import { PlatformIcon } from "@/components/PlatformIcon";
-import { ReleaseLinkPlatformPicker } from "@/components/release-link-platform-picker";
-import {
-  ReleaseLinkTypeSelect,
-  buildLinkTypeOptions,
-} from "@/components/release-link-type-select";
+import { buildLinkTypeOptions } from "@/components/release-link-type-select";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
+import { scheduleReleaseLinksUpgrade } from "@/lib/release-links-upgrade-flow";
 import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
 import {
   FREE_RELEASE_LINK_LIMIT,
   LINK_ALLOWANCE_QUERY_KEY,
-  LINK_LIMIT_CARD_COPY,
   LINK_LIMIT_TOAST,
-  LISTENING_LINK_FUTURE_GUIDANCE,
   PAID_LINK_TYPE_TOAST,
   INVALID_RELEASE_LINK_TYPE_TOAST,
   canAddLinkToDraft,
@@ -71,11 +98,10 @@ import {
   parseLinkAllowance,
   resolveLinkLimitCardCopy,
 } from "@/lib/release-link-limit";
-import { isReleaseUpcoming } from "@/lib/release-status";
+import { isReleaseUpcomingFromTiming } from "@/lib/release-status";
 import {
   type CanonicalLinkPurpose,
   defaultPurposeForNewDraft,
-  purposeOptionLabel,
   supportedPurposesForPlatform,
 } from "@shared/release-link-platforms";
 
@@ -88,6 +114,9 @@ export default function ReleaseCreate() {
   const [title, setTitle] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
   const [comingSoon, setComingSoon] = useState(false);
+  const [timingDraft, setTimingDraft] = useState<ReleaseTimingDraft>(() =>
+    defaultMidnightDraft(),
+  );
   const [artworkPath, setArtworkPath] = useState<string | null>(null);
   const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -103,9 +132,39 @@ export default function ReleaseCreate() {
   const [saving, setSaving] = useState(false);
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
   const [collabSearch, setCollabSearch] = useState("");
+  const [titleSheetOpen, setTitleSheetOpen] = useState(false);
+  const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
+  const [linksSheetOpen, setLinksSheetOpen] = useState(false);
+  const [collaboratorsSheetOpen, setCollaboratorsSheetOpen] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [zeroPostConfirmOpen, setZeroPostConfirmOpen] = useState(false);
+  const createSubmitStartedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const handleBack = () => navigate("/releases");
+  const navigateToReleases = () => navigate("/releases");
+  const isDirty = hasUnsavedReleaseDraft({
+    title,
+    artworkPath,
+    comingSoon,
+    releaseDate,
+    timingDraft,
+    draftLinksCount: draftLinks.length,
+    stagedCollaboratorsCount: stagedCollaborators.length,
+    selectedPostIdsCount: selectedPostIds.length,
+  });
+  const handleBack = () => {
+    if (createBackDecision(isDirty) === "confirm") {
+      setDiscardDialogOpen(true);
+      return;
+    }
+    navigateToReleases();
+  };
+  const handleDiscardConfirm = () => {
+    setDiscardDialogOpen(false);
+    if (applyCreateDiscardChoice("discard") === "navigate") {
+      navigateToReleases();
+    }
+  };
   useIosKeyboardResizeNone(true);
   const { isNativeIos, keyboardHeight, prefersReducedMotion } = useIosKeyboardAwareScroll({
     enabled: true,
@@ -126,14 +185,42 @@ export default function ReleaseCreate() {
     },
   });
 
-  const capacityCopy = capacityQuery.data
-    ? resolveReleaseCapacityCardCopy(capacityQuery.data)
-    : null;
   const createLocked =
     capacityQuery.data != null && capacityQuery.data.canCreate === false;
+  const createBottomCapacity = resolveCreateReleaseBottomCapacity(
+    capacityQuery.data,
+  );
 
   const handleUpgrade = (source: "release_limit" | "attachment_limit" | "link_limit") => {
+    if (source === "link_limit") {
+      scheduleReleaseLinksUpgrade({
+        suspendLinks: () => setLinksSheetOpen(false),
+        restoreLinks: () => setLinksSheetOpen(true),
+        openUpgrade: (onDismissed) => {
+          requestVerifiedArtistToolsUpgrade(toast, { source, onDismissed });
+        },
+      });
+      return;
+    }
     requestVerifiedArtistToolsUpgrade(toast, { source });
+  };
+
+  const openLinksPremiumUpgrade = (args: {
+    platform: string;
+    requestedLinkType: string;
+  }) => {
+    scheduleReleaseLinksUpgrade({
+      suspendLinks: () => setLinksSheetOpen(false),
+      restoreLinks: () => setLinksSheetOpen(true),
+      openUpgrade: (onDismissed) => {
+        requestVerifiedArtistToolsUpgrade(toast, {
+          source: "release_link_presave",
+          platform: args.platform,
+          requestedLinkType: args.requestedLinkType,
+          onDismissed,
+        });
+      },
+    });
   };
 
   const attachmentAllowanceQuery = useQuery({
@@ -188,9 +275,17 @@ export default function ReleaseCreate() {
   });
   const showLinkUpgrade =
     linkAllowanceQuery.data != null &&
-    linkAllowanceQuery.data.unlimited === false &&
-    draftLinks.length >= (linkAllowanceQuery.data.limit ?? FREE_RELEASE_LINK_LIMIT);
-  const releaseIsUpcoming = isReleaseUpcoming(comingSoon, releaseDate || null);
+    linkAllowanceQuery.data.unlimited === false;
+  const linkLimitProminence = resolveFreeQuotaNoticeProminence({
+    unlimited: linkUnlimited,
+    used: draftLinks.length,
+    limit: linkAllowanceQuery.data?.limit ?? FREE_RELEASE_LINK_LIMIT,
+  });
+  const releaseIsUpcoming = isReleaseUpcomingFromTiming({
+    isComingSoon: comingSoon,
+    releaseDate: releaseDate || null,
+    releaseTimingMode: timingDraft.mode,
+  });
   const showFutureListenGuidance =
     !linkUnlimited &&
     releaseIsUpcoming &&
@@ -199,6 +294,22 @@ export default function ReleaseCreate() {
     () => availablePlatformOptions(draftLinks.map((l) => l.platform)),
     [draftLinks],
   );
+  const heroSchedule = useMemo(
+    () =>
+      buildDraftScheduleHeroSummary({
+        comingSoon,
+        releaseDateYmd: releaseDate,
+        timingDraft,
+      }),
+    [comingSoon, releaseDate, timingDraft],
+  );
+  const heroArtworkUrl = useMemo(() => {
+    if (artworkPreviewUrl) return artworkPreviewUrl;
+    if (!artworkPath) return null;
+    if (artworkPath.startsWith("http")) return artworkPath;
+    return supabase.storage.from("release-artworks").getPublicUrl(artworkPath).data
+      .publicUrl;
+  }, [artworkPreviewUrl, artworkPath]);
   const linkTypeOptions = useMemo(() => {
     if (!linkPlatform) return [];
     return buildLinkTypeOptions({
@@ -215,6 +326,55 @@ export default function ReleaseCreate() {
       unlimited: linkUnlimited,
     });
     setLinkPurpose(next);
+    setPurposeTouched(false);
+  };
+
+  const handleAddDraftLink = () => {
+    if (!linkPlatform || !linkUrl.trim()) return;
+    if (!canAddDraftLink) {
+      toast({
+        title: LINK_LIMIT_TOAST.title,
+        description: LINK_LIMIT_TOAST.body,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (
+      draftLinks.some(
+        (l) =>
+          normalizePlatformForApi(l.platform) ===
+          normalizePlatformForApi(linkPlatform),
+      )
+    ) {
+      toast({
+        title: "Platform already added",
+        description: "Each platform can only be added once per release.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
+    const purpose = unlocked.includes(linkPurpose)
+      ? linkPurpose
+      : (unlocked[0] ?? "listen");
+    if (isPaidOnlyReleaseLink(linkPlatform, purpose)) {
+      openLinksPremiumUpgrade({
+        platform: linkPlatform,
+        requestedLinkType: purpose,
+      });
+      return;
+    }
+    setDraftLinks((links) => [
+      ...links,
+      {
+        platform: linkPlatform,
+        url: linkUrl.trim(),
+        linkType: purpose === "listen" ? null : purpose,
+      },
+    ]);
+    setLinkPlatform("");
+    setLinkUrl("");
+    setLinkPurpose("listen");
     setPurposeTouched(false);
   };
 
@@ -246,17 +406,14 @@ export default function ReleaseCreate() {
     enabled: !!currentUser?.id && userType === "artist",
   });
 
-  const filteredEligiblePosts = useMemo(() => {
-    const posts = (eligiblePosts as EligiblePostForAttach[]) || [];
-    if (!searchTerm.trim()) return posts;
-    const q = searchTerm.trim().toLowerCase();
-    return posts.filter(
-      (p) =>
-        (p.dj_name || "").toLowerCase().includes(q) ||
-        (p.title || "").toLowerCase().includes(q) ||
-        (p.verified_comment_body || "").toLowerCase().includes(q)
-    );
-  }, [eligiblePosts, searchTerm]);
+  const filteredEligiblePosts = useMemo(
+    () =>
+      filterEligiblePostsForAttachSearch(
+        (eligiblePosts as EligiblePostForAttach[]) || [],
+        searchTerm,
+      ),
+    [eligiblePosts, searchTerm],
+  );
 
   const handleArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -324,33 +481,18 @@ export default function ReleaseCreate() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (createLocked) return;
-    releaseCreateHapticFiredRef.current = false;
-    if (!title.trim()) {
-      toast({ title: "Title is required", variant: "destructive" });
+  const submitCreatedRelease = async () => {
+    if (createLocked || createSubmitStartedRef.current) return;
+    const timingFields = buildReleaseTimingRequestFields({
+      comingSoon,
+      releaseDateYmd: releaseDate,
+      draft: timingDraft,
+    });
+    if ("error" in timingFields) {
+      toast({ title: timingFields.error, variant: "destructive" });
       return;
     }
-    if (title.trim().length > INPUT_LIMITS.releaseTitle) {
-      toast({
-        title: `Title must be at most ${INPUT_LIMITS.releaseTitle} characters`,
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!comingSoon && !releaseDate) {
-      toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
-      return;
-    }
-    if (draftHasDuplicatePlatforms(draftLinks)) {
-      toast({
-        title: "Duplicate platforms",
-        description: "Each platform can only be added once per release.",
-        variant: "destructive",
-      });
-      return;
-    }
+    createSubmitStartedRef.current = true;
     setSaving(true);
     try {
       console.log("[ReleaseCreate] Creating release", {
@@ -358,12 +500,14 @@ export default function ReleaseCreate() {
         releaseDate,
         selectedPostIds,
         linkCount: draftLinks.length,
+        timingMode: timingFields.release_timing_mode,
       });
       const res = await apiRequest("POST", "/api/releases", {
         title: title.trim(),
         release_date: comingSoon ? null : releaseDate,
         artwork_url: artworkPath || undefined,
         is_coming_soon: comingSoon,
+        ...timingFields,
       });
       const data = await res.json();
       const releaseId = (data.id ?? data.release_id) as string;
@@ -439,6 +583,15 @@ export default function ReleaseCreate() {
       navigate("/releases");
     } catch (error) {
       console.error("[ReleaseCreate] Create failed", error);
+      const timingToast = releaseTimingApiErrorToast(error);
+      if (timingToast) {
+        toast({
+          title: timingToast.title,
+          description: timingToast.description,
+          variant: "destructive",
+        });
+        return;
+      }
       if (isFreeReleaseLimitReachedError(error)) {
         // Preserve entered form data; never surface raw 403 / JSON / codes.
         toast({
@@ -495,8 +648,57 @@ export default function ReleaseCreate() {
         variant: "destructive",
       });
     } finally {
+      createSubmitStartedRef.current = false;
       setSaving(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (createLocked || saving) return;
+    releaseCreateHapticFiredRef.current = false;
+    if (!title.trim()) {
+      toast({ title: "Title is required", variant: "destructive" });
+      return;
+    }
+    if (title.trim().length > INPUT_LIMITS.releaseTitle) {
+      toast({
+        title: `Title must be at most ${INPUT_LIMITS.releaseTitle} characters`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!comingSoon && !releaseDate) {
+      toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
+      return;
+    }
+    const timingFields = buildReleaseTimingRequestFields({
+      comingSoon,
+      releaseDateYmd: releaseDate,
+      draft: timingDraft,
+    });
+    if ("error" in timingFields) {
+      toast({ title: timingFields.error, variant: "destructive" });
+      return;
+    }
+    if (draftHasDuplicatePlatforms(draftLinks)) {
+      toast({
+        title: "Duplicate platforms",
+        description: "Each platform can only be added once per release.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const submitStep = nextReleaseCreateSubmitStep({
+      isCreate: true,
+      formValid: true,
+      selectedPostIdsCount: selectedPostIds.length,
+    });
+    if (submitStep === "confirm-zero-posts") {
+      setZeroPostConfirmOpen(true);
+      return;
+    }
+    await submitCreatedRelease();
   };
 
   if (userType !== "artist" || !currentUser) {
@@ -532,355 +734,181 @@ export default function ReleaseCreate() {
         </Button>
         <h1 className="text-xl font-bold mb-4">Add Release</h1>
 
-        <div className="mb-6">
-          <ReleaseCreationCapacityCard
-            loading={capacityQuery.isLoading}
-            copy={capacityCopy}
-            onUpgradeClick={() => handleUpgrade("release_limit")}
-          />
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <section className="space-y-4">
-            <div>
-              <label className="text-sm font-medium block mb-1">Title *</label>
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value.slice(0, INPUT_LIMITS.releaseTitle))}
-                placeholder="Release title"
-                required
-                maxLength={INPUT_LIMITS.releaseTitle}
-              />
-              <p className="text-xs text-muted-foreground text-right mt-1">
-                {title.length} / {INPUT_LIMITS.releaseTitle}
-              </p>
-            </div>
-            <ReleaseStatusFields
+        <form onSubmit={handleSubmit} className="space-y-8">
+          <section className="space-y-4" aria-labelledby="release-create-core-heading">
+            <h2 id="release-create-core-heading" className="sr-only">
+              Release
+            </h2>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleArtworkChange}
+            />
+            <ReleaseFormHero
+              artworkUrl={heroArtworkUrl}
+              uploading={uploading}
+              onArtworkPress={() => fileInputRef.current?.click()}
+              title={title}
+              titleEditable
+              onTitlePress={() => setTitleSheetOpen(true)}
+              schedule={heroSchedule}
+              onSchedulePress={() => setScheduleSheetOpen(true)}
+            />
+            <ReleaseTitleSheet
+              open={titleSheetOpen}
+              onOpenChange={setTitleSheetOpen}
+              value={title}
+              onChange={setTitle}
+            />
+            <ReleaseScheduleSheet
+              open={scheduleSheetOpen}
+              onOpenChange={setScheduleSheetOpen}
               comingSoon={comingSoon}
               onComingSoonChange={setComingSoon}
               releaseDate={releaseDate}
               onReleaseDateChange={setReleaseDate}
+              timingDraft={timingDraft}
+              onTimingDraftChange={setTimingDraft}
             />
-            <div>
-              <label className="text-sm font-medium block mb-1">Artwork</label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleArtworkChange}
-              />
-              <div className="flex items-center gap-3">
-                {(artworkPreviewUrl || artworkPath) && (
-                  <div className="w-20 h-20 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-                    <img
-                      src={
-                        artworkPreviewUrl
-                          ? artworkPreviewUrl
-                          : artworkPath?.startsWith("http")
-                          ? artworkPath
-                          : artworkPath
-                          ? supabase.storage.from("release-artworks").getPublicUrl(artworkPath).data.publicUrl
-                          : ""
-                      }
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  {uploading ? "Uploading…" : artworkPath ? "Change artwork" : "Upload artwork"}
-                </Button>
-              </div>
-            </div>
           </section>
 
           <section className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground">Collaborators</h2>
-            <p className="text-xs text-muted-foreground">
-              Invite verified artists. Release stays private until all collaborators accept.
-            </p>
-            <div className="flex gap-2 mb-2">
-              <Input
-                placeholder="Search artist username..."
-                value={collabSearch}
-                onChange={(e) => setCollabSearch(e.target.value)}
-                className="flex-1"
-                {...SEARCH_INPUT_KEYBOARD_PROPS}
+            <h2 className="text-sm font-medium text-muted-foreground">
+              {RELEASE_TOOLS_SECTION_TITLE}
+            </h2>
+            <div className="min-w-0">
+              <ReleaseToolsManagementRow
+                label="Links"
+                icon={LinkIcon}
+                summary={formatReleaseLinksRowSummary(draftLinks)}
+                onClick={() => setLinksSheetOpen(true)}
+                testId="release-tools-links-row"
               />
-            </div>
-            {collabSearch && (
-              <div className="mb-2 max-h-32 overflow-y-auto border rounded-lg divide-y">
-                {(verifiedArtists as { id: string; username: string }[])
-                  .filter(
-                    (a) =>
-                      a.id !== currentUser?.id &&
-                      !stagedCollaborators.some((s) => s.id === a.id) &&
-                      stagedCollaborators.length < 4
-                  )
-                  .slice(0, 5)
-                  .map((artist) => (
-                    <button
-                      key={artist.id}
-                      type="button"
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between"
-                      onClick={() => {
-                        if (stagedCollaborators.length >= 4) return;
-                        setStagedCollaborators((prev) =>
-                          prev.some((p) => p.id === artist.id)
-                            ? prev
-                            : [...prev, { id: artist.id, username: artist.username }]
-                        );
-                        setCollabSearch("");
-                      }}
-                    >
-                      {formatUsernameDisplay(artist.username)}
-                      <UserPlus className="w-4 h-4 text-primary" />
-                    </button>
-                  ))}
-              </div>
-            )}
-            {stagedCollaborators.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">Pending invite (max 4):</p>
-                {stagedCollaborators.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between py-1.5 px-2 rounded bg-muted"
-                  >
-                    <span className="text-sm">{formatUsernameDisplay(c.username)}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() =>
-                        setStagedCollaborators((prev) => prev.filter((p) => p.id !== c.id))
+              <ReleaseToolsManagementRow
+                label="Collaborators"
+                icon={ReleaseCollaboratorsRowIcon}
+                summary={formatReleaseCollaboratorsRowSummary({
+                  existing: [],
+                  staged: stagedCollaborators,
+                })}
+                onClick={() => setCollaboratorsSheetOpen(true)}
+                testId="release-tools-collaborators-row"
+              />
+              <ReleaseAttachPostsSection
+                eligiblePosts={(eligiblePosts as EligiblePostForAttach[]) || []}
+                filteredEligiblePosts={filteredEligiblePosts}
+                selectedPostIds={selectedPostIds}
+                onSelectedPostIdsChange={setSelectedPostIds}
+                searchTerm={searchTerm}
+                onSearchTermChange={setSearchTerm}
+                maxSelectable={attachmentMaxSelectable}
+                attachmentUsage={
+                  attachmentAllowanceQuery.data && !attachmentAllowanceQuery.data.unlimited
+                    ? {
+                        used: selectedPostIds.length,
+                        limit: attachmentAllowanceQuery.data.limit,
                       }
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground">Links</h2>
-            {linkAllowanceQuery.data ? (
-              <div
-                className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] space-y-1.5"
-                data-testid="release-link-limit-notice"
-                role="status"
-              >
-                <p
-                  className="text-sm font-semibold text-foreground"
-                  data-testid="release-link-limit-title"
-                >
-                  {linkCardCopy.title}
-                </p>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {linkCardCopy.body}
-                </p>
-                {showLinkUpgrade ? (
-                  <div className="pt-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs border-white/15 bg-black/20"
-                      onClick={() => handleUpgrade("link_limit")}
-                      data-testid="release-link-upgrade"
-                    >
-                      {LINK_LIMIT_CARD_COPY.ctaLabel}
-                    </Button>
-                    {!isVerifiedArtistToolsPaywallEnabled() ? (
-                      <p className="mt-1 text-[10px] text-muted-foreground/80">
-                        {LINK_LIMIT_CARD_COPY.ctaHint}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {showFutureListenGuidance ? (
-              <div
-                className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1"
-                data-testid="release-listening-link-future-guidance"
-                role="status"
-              >
-                <p className="text-sm font-semibold text-foreground">
-                  {LISTENING_LINK_FUTURE_GUIDANCE.title}
-                </p>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {LISTENING_LINK_FUTURE_GUIDANCE.body}
-                </p>
-              </div>
-            ) : null}
-            <div className="space-y-2">
-              {sortLinksByPlatform(draftLinks).map((l) => (
-                <div key={`${l.platform}-${l.url}`} className="flex items-center gap-2">
-                  <PlatformIcon platform={l.platform} />
-                  <span className="text-sm">
-                    {getPlatformLabel(l.platform)}
-                    {l.linkType ? (
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        ({purposeOptionLabel(l.platform, (l.linkType as CanonicalLinkPurpose) || "listen")})
-                      </span>
-                    ) : null}
-                  </span>
-                  <a
-                    href={l.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary truncate flex-1"
-                  >
-                    {l.url}
-                  </a>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      setDraftLinks((links) =>
-                        links.filter((link) => !(link.platform === l.platform && link.url === l.url))
-                      )
-                    }
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-2 items-end">
-              <ReleaseLinkPlatformPicker
-                value={linkPlatform}
-                options={platformChoices}
-                disabled={!canAddDraftLink}
-                data-testid="release-link-platform-picker"
-                onChange={(nextPlatform) => {
-                  setLinkPlatform(nextPlatform);
-                  if (
-                    !purposeTouched ||
-                    !supportedPurposesForPlatform(nextPlatform).includes(linkPurpose)
-                  ) {
-                    applyPlatformDefaultPurpose(nextPlatform);
-                  }
+                    : null
+                }
+                attachmentLimitNotice={
+                  attachmentAllowanceQuery.data && !attachmentAllowanceQuery.data.unlimited
+                    ? undefined
+                    : null
+                }
+                showUpgradeCta={showAttachmentUpgrade}
+                onUpgradeClick={(onDismissed) => {
+                  requestVerifiedArtistToolsUpgrade(toast, {
+                    source: "attachment_limit",
+                    onDismissed,
+                  });
                 }}
               />
-              {linkPlatform && linkTypeOptions.length > 0 ? (
-                <ReleaseLinkTypeSelect
-                  platform={linkPlatform}
-                  value={linkPurpose}
-                  options={linkTypeOptions}
-                  disabled={!canAddDraftLink}
-                  onChange={(next) => {
-                    setLinkPurpose(next);
-                    setPurposeTouched(true);
-                  }}
-                  onLockedSelect={(requested) => {
-                    requestVerifiedArtistToolsUpgrade(toast, {
-                      source: "release_link_presave",
-                      platform: linkPlatform,
-                      requestedLinkType: requested,
-                    });
-                  }}
-                />
-              ) : null}
-              <Input
-                placeholder="URL"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                className="flex-1 min-w-[8rem]"
-                onKeyDown={preventEnterFormSubmit}
-                disabled={!canAddDraftLink}
-              />
-              <Button
-                size="sm"
-                type="button"
-                onClick={() => {
-                  if (!linkPlatform || !linkUrl.trim()) return;
-                  if (!canAddDraftLink) {
-                    toast({
-                      title: LINK_LIMIT_TOAST.title,
-                      description: LINK_LIMIT_TOAST.body,
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  if (draftLinks.some((l) => normalizePlatformForApi(l.platform) === normalizePlatformForApi(linkPlatform))) {
-                    toast({
-                      title: "Platform already added",
-                      description: "Each platform can only be added once per release.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
-                  const purpose = unlocked.includes(linkPurpose)
-                    ? linkPurpose
-                    : (unlocked[0] ?? "listen");
-                  if (isPaidOnlyReleaseLink(linkPlatform, purpose)) {
-                    requestVerifiedArtistToolsUpgrade(toast, {
-                      source: "release_link_presave",
-                      platform: linkPlatform,
-                      requestedLinkType: purpose,
-                    });
-                    return;
-                  }
-                  setDraftLinks((links) => [
-                    ...links,
-                    {
-                      platform: linkPlatform,
-                      url: linkUrl.trim(),
-                      linkType: purpose === "listen" ? null : purpose,
-                    },
-                  ]);
-                  setLinkPlatform("");
-                  setLinkUrl("");
-                  setLinkPurpose("listen");
-                  setPurposeTouched(false);
-                }}
-                disabled={!linkPlatform || !linkUrl.trim() || !canAddDraftLink}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
             </div>
+            <ReleaseLinksSheet
+              open={linksSheetOpen}
+              onOpenChange={setLinksSheetOpen}
+              draftLinks={draftLinks}
+              onRemoveLink={(link) =>
+                setDraftLinks((links) =>
+                  links.filter(
+                    (l) => !(l.platform === link.platform && l.url === link.url),
+                  ),
+                )
+              }
+              linkPlatform={linkPlatform}
+              onLinkPlatformChange={(nextPlatform) => {
+                setLinkPlatform(nextPlatform);
+                if (
+                  !purposeTouched ||
+                  !supportedPurposesForPlatform(nextPlatform).includes(linkPurpose)
+                ) {
+                  applyPlatformDefaultPurpose(nextPlatform);
+                }
+              }}
+              linkPurpose={linkPurpose}
+              onLinkPurposeChange={(next) => {
+                setLinkPurpose(next);
+                setPurposeTouched(true);
+              }}
+              onLockedPurposeSelect={(requested) => {
+                openLinksPremiumUpgrade({
+                  platform: linkPlatform,
+                  requestedLinkType: requested,
+                });
+              }}
+              linkUrl={linkUrl}
+              onLinkUrlChange={setLinkUrl}
+              platformChoices={platformChoices}
+              linkTypeOptions={linkTypeOptions}
+              canAddDraftLink={canAddDraftLink}
+              onAddLink={handleAddDraftLink}
+              limitNotice={{
+                show: !!linkAllowanceQuery.data && linkLimitProminence !== "hidden",
+                prominence: linkLimitProminence,
+                title: linkCardCopy.title,
+                body: linkCardCopy.body,
+                showUpgrade: showLinkUpgrade,
+                onUpgradeClick: () => handleUpgrade("link_limit"),
+              }}
+              showFutureListenGuidance={showFutureListenGuidance}
+            />
+            <ReleaseCollaboratorsSheet
+              open={collaboratorsSheetOpen}
+              onOpenChange={setCollaboratorsSheetOpen}
+              existingCollaborators={[]}
+              stagedCollaborators={stagedCollaborators}
+              invitesLocked={false}
+              collabSearch={collabSearch}
+              onCollabSearchChange={setCollabSearch}
+              searchResults={verifiedArtists as { id: string; username: string }[]}
+              onStageCollaborator={(artist) => {
+                if (stagedCollaborators.length >= 4) return;
+                setStagedCollaborators((prev) =>
+                  prev.some((p) => p.id === artist.id)
+                    ? prev
+                    : [...prev, { id: artist.id, username: artist.username }],
+                );
+                setCollabSearch("");
+              }}
+              onUnstageCollaborator={(id) =>
+                setStagedCollaborators((prev) => prev.filter((p) => p.id !== id))
+              }
+              currentUserId={currentUser?.id}
+            />
           </section>
-
-          <ReleaseAttachPostsSection
-            eligiblePosts={(eligiblePosts as EligiblePostForAttach[]) || []}
-            filteredEligiblePosts={filteredEligiblePosts}
-            selectedPostIds={selectedPostIds}
-            onSelectedPostIdsChange={setSelectedPostIds}
-            searchTerm={searchTerm}
-            onSearchTermChange={setSearchTerm}
-            helperText="Selected posts will be attached when you create this release."
-            maxSelectable={attachmentMaxSelectable}
-            attachmentUsage={
-              attachmentAllowanceQuery.data && !attachmentAllowanceQuery.data.unlimited
-                ? {
-                    used: selectedPostIds.length,
-                    limit: attachmentAllowanceQuery.data.limit,
-                  }
-                : null
-            }
-            attachmentLimitNotice={
-              attachmentAllowanceQuery.data && !attachmentAllowanceQuery.data.unlimited
-                ? ATTACHMENT_NEAR_LIMIT_HINT
-                : null
-            }
-            showUpgradeCta={showAttachmentUpgrade}
-            onUpgradeClick={() => handleUpgrade("attachment_limit")}
-          />
 
           <div className="pt-2 pb-8 space-y-2">
+            {createBottomCapacity.countLabel ? (
+              <p
+                className="text-xs text-muted-foreground text-center"
+                data-testid="release-create-capacity-count"
+                role="status"
+              >
+                {createBottomCapacity.countLabel}
+              </p>
+            ) : null}
             {createLocked ? (
               <>
                 <Button
@@ -891,15 +919,17 @@ export default function ReleaseCreate() {
                 >
                   Create Release
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleUpgrade("release_limit")}
-                  data-testid="release-create-upgrade-locked"
-                >
-                  Upgrade
-                </Button>
+                {createBottomCapacity.showUpgrade ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleUpgrade("release_limit")}
+                    data-testid="release-create-upgrade-locked"
+                  >
+                    {createBottomCapacity.upgradeLabel}
+                  </Button>
+                ) : null}
                 {!isVerifiedArtistToolsPaywallEnabled() ? (
                   <p className="text-[10px] text-center text-muted-foreground">
                     {UPGRADE_PLACEHOLDER_HINT}
@@ -920,6 +950,63 @@ export default function ReleaseCreate() {
         </form>
       </div>
       </div>
+
+      <AlertDialog open={zeroPostConfirmOpen} onOpenChange={setZeroPostConfirmOpen}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{CREATE_WITHOUT_POSTS_TITLE}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {CREATE_WITHOUT_POSTS_BODY}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={saving}
+              data-testid="release-create-zero-posts-back"
+            >
+              {CREATE_WITHOUT_POSTS_BACK}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              data-testid="release-create-zero-posts-confirm"
+              onClick={(e) => {
+                e.preventDefault();
+                setZeroPostConfirmOpen(false);
+                void submitCreatedRelease();
+              }}
+            >
+              {saving ? "Creating…" : CREATE_WITHOUT_POSTS_CONFIRM}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard release?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your changes haven&apos;t been saved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                applyCreateDiscardChoice("keep");
+              }}
+            >
+              Keep editing
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDiscardConfirm}
+              data-testid="release-create-discard-confirm"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SwipeBackPage>
   );
 }

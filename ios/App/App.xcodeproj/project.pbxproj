@@ -40,6 +40,8 @@
 		DHRCWBF0D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DHRCWFR0A /* Assets.xcassets */; };
 		DHRCWBF0E /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR0B /* WidgetKit.framework */; };
 		DHRCWBF0F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR0C /* SwiftUI.framework */; };
+		DHRCWBF14 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR11 /* AppIntents.framework */; };
+		DHRCWBF15 /* ReleaseCountdownPagingIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */; };
 		DHRCWBF10 /* ReleaseCountdownWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DHRCWFR0D /* ReleaseCountdownWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DHRCWBF11 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR0B /* WidgetKit.framework */; };
 /* End PBXBuildFile section */
@@ -88,6 +90,8 @@
 		DHRCWFR0A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DHRCWFR0B /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		DHRCWFR0C /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		DHRCWFR11 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
+		DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCountdownPagingIntents.swift; sourceTree = "<group>"; };
 		DHRCWFR0D /* ReleaseCountdownWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ReleaseCountdownWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		DHRCWFR0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		DHRCWFR0F /* ReleaseCountdownWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ReleaseCountdownWidget.entitlements; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 			files = (
 				DHRCWBF0E /* WidgetKit.framework in Frameworks */,
 				DHRCWBF0F /* SwiftUI.framework in Frameworks */,
+				DHRCWBF14 /* AppIntents.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -190,6 +195,7 @@
 				DHRCWFR07 /* ReleaseCountdownEntry.swift */,
 				DHRCWFR08 /* ReleaseCountdownProvider.swift */,
 				DHRCWFR09 /* ReleaseCountdownViews.swift */,
+				DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */,
 				DHRCWFR0A /* Assets.xcassets */,
 			);
 			path = ReleaseCountdownWidget;
@@ -200,6 +206,7 @@
 			children = (
 				DHRCWFR0B /* WidgetKit.framework */,
 				DHRCWFR0C /* SwiftUI.framework */,
+				DHRCWFR11 /* AppIntents.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -356,6 +363,7 @@
 				DHRCWBF0A /* ReleaseCountdownEntry.swift in Sources */,
 				DHRCWBF0B /* ReleaseCountdownProvider.swift in Sources */,
 				DHRCWBF0C /* ReleaseCountdownViews.swift in Sources */,
+				DHRCWBF15 /* ReleaseCountdownPagingIntents.swift in Sources */,
 				DHRCWBF05 /* HomeWidgetAppGroup.swift in Sources */,
 				DHRCWBF06 /* HomeWidgetPayloadModels.swift in Sources */,
 				DHRCWBF07 /* HomeWidgetUtcCountdown.swift in Sources */,

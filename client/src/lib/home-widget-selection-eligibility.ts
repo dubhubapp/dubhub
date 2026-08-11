@@ -98,4 +98,5 @@ export const HOME_WIDGET_INVALID_SELECTION_ELIGIBILITIES = new Set([
   "selected_release_not_saved",
   "selected_release_undated",
   "selected_release_unavailable",
+  "selected_release_out_now_expired",
 ]);

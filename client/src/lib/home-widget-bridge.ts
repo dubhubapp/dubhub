@@ -11,20 +11,23 @@ import {
   isNativeIosHomeWidgetBridgePath,
 } from "@/lib/home-widget-bridge-native";
 
-export const HOME_WIDGET_BRIDGE_SCHEMA_VERSION = 1 as const;
+export const HOME_WIDGET_BRIDGE_SCHEMA_VERSION = 2 as const;
+/** Still accepted when reading stale App Group payloads until the next refresh. */
+export const HOME_WIDGET_BRIDGE_SCHEMA_VERSION_LEGACY = 1 as const;
 
 export const HOME_WIDGET_BRIDGE_PAYLOAD_STORAGE_KEY =
   "dubhub:home-widget-bridge-payload" as const;
 
 export type HomeWidgetBridgePayload = {
-  schemaVersion: typeof HOME_WIDGET_BRIDGE_SCHEMA_VERSION;
+  schemaVersion:
+    | typeof HOME_WIDGET_BRIDGE_SCHEMA_VERSION
+    | typeof HOME_WIDGET_BRIDGE_SCHEMA_VERSION_LEGACY;
   accountUserId: string;
   writtenAt: string;
   dto: HomeWidgetPayload;
   /**
-   * Native App Group artwork basename (e.g. active.jpg).
-   * Set by iOS HomeWidgetBridge on write; optional for web/local.
-   * Not part of the server DTO. schemaVersion stays 1.
+   * Native App Group artwork basename for the active release (compat).
+   * Multi-release artwork uses `<releaseId>.jpg` under ReleaseCountdownArtwork/.
    */
   artworkLocalFilename?: string | null;
 };
@@ -35,6 +38,8 @@ export type HomeWidgetBridge = {
   clearHomeWidgetPayload(): Promise<void>;
   reloadHomeWidgetTimelines(): Promise<void>;
   readHomeWidgetPayload?: () => Promise<HomeWidgetBridgePayload | null>;
+  /** Device-local active page (AppIntent paging). Optional on web. */
+  readActiveReleaseId?: () => Promise<string | null>;
 };
 
 const HOME_WIDGET_MODES = new Set(["artist", "listener", "empty", "unavailable"]);
@@ -54,33 +59,14 @@ function isHttpUrl(value: unknown): value is string {
   }
 }
 
-export function parseHomeWidgetDto(raw: unknown): HomeWidgetPayload | null {
+const RELEASE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseHomeWidgetReleaseDto(
+  raw: unknown,
+): HomeWidgetPayload["release"] {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const value = raw as Record<string, unknown>;
-  if (typeof value.mode !== "string" || !HOME_WIDGET_MODES.has(value.mode)) {
-    return null;
-  }
-  if (typeof value.eligibility !== "string" || !value.eligibility.trim()) {
-    return null;
-  }
-  if (!isIsoTimestamp(value.generatedAt) || !isIsoTimestamp(value.expiresAt)) {
-    return null;
-  }
-
-  if (value.release == null) {
-    return {
-      mode: value.mode as HomeWidgetPayload["mode"],
-      eligibility: value.eligibility as HomeWidgetPayload["eligibility"],
-      release: null,
-      generatedAt: value.generatedAt,
-      expiresAt: value.expiresAt,
-    };
-  }
-
-  if (typeof value.release !== "object" || Array.isArray(value.release)) {
-    return null;
-  }
-  const release = value.release as Record<string, unknown>;
+  const release = raw as Record<string, unknown>;
   if (typeof release.id !== "string" || !release.id.trim()) return null;
   if (typeof release.title !== "string") return null;
   if (typeof release.artistName !== "string") return null;
@@ -95,24 +81,136 @@ export function parseHomeWidgetDto(raw: unknown): HomeWidgetPayload | null {
   }
   if (typeof release.isOutNow !== "boolean") return null;
 
+  const timingModeRaw = release.timingMode;
+  const timingMode =
+    timingModeRaw === "midnight" || timingModeRaw === "exact"
+      ? timingModeRaw
+      : undefined;
+  const releaseCalendarDate =
+    typeof release.releaseCalendarDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(release.releaseCalendarDate.trim())
+      ? release.releaseCalendarDate.trim()
+      : release.releaseCalendarDate === null
+        ? null
+        : undefined;
+  const releaseAt =
+    release.releaseAt === null
+      ? null
+      : typeof release.releaseAt === "string" && isIsoTimestamp(release.releaseAt)
+        ? release.releaseAt
+        : undefined;
+
+  const releaseAnnouncedAt =
+    release.releaseAnnouncedAt === null
+      ? null
+      : typeof release.releaseAnnouncedAt === "string" &&
+          isIsoTimestamp(release.releaseAnnouncedAt)
+        ? release.releaseAnnouncedAt
+        : undefined;
+
+  if (timingMode === "exact" && (releaseAt == null || releaseAt === undefined)) {
+    return null;
+  }
+
+  return {
+    id: release.id.trim(),
+    title: release.title,
+    artistName: release.artistName,
+    artworkUrl:
+      typeof release.artworkUrl === "string" && release.artworkUrl.trim()
+        ? release.artworkUrl.trim()
+        : null,
+    releaseDate: release.releaseDate,
+    deepLink: release.deepLink,
+    countdownLabel: release.countdownLabel,
+    isOutNow: release.isOutNow,
+    ...(timingMode ? { timingMode } : {}),
+    ...(releaseCalendarDate !== undefined ? { releaseCalendarDate } : {}),
+    ...(releaseAt !== undefined ? { releaseAt } : {}),
+    ...(releaseAnnouncedAt !== undefined ? { releaseAnnouncedAt } : {}),
+  };
+}
+
+export function parseHomeWidgetDto(raw: unknown): HomeWidgetPayload | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.mode !== "string" || !HOME_WIDGET_MODES.has(value.mode)) {
+    return null;
+  }
+  if (typeof value.eligibility !== "string" || !value.eligibility.trim()) {
+    return null;
+  }
+  if (!isIsoTimestamp(value.generatedAt) || !isIsoTimestamp(value.expiresAt)) {
+    return null;
+  }
+
+  const retireListenerSelection =
+    value.retireListenerSelection === true ? true : undefined;
+  const advanceListenerSelectionTo =
+    typeof value.advanceListenerSelectionTo === "string" &&
+    RELEASE_ID_PATTERN.test(value.advanceListenerSelectionTo.trim())
+      ? value.advanceListenerSelectionTo.trim()
+      : undefined;
+
+  const releasesRaw = value.releases;
+  let releases: NonNullable<HomeWidgetPayload["releases"]> | undefined;
+  if (Array.isArray(releasesRaw)) {
+    const parsedReleases = [];
+    for (const item of releasesRaw) {
+      const parsed = parseHomeWidgetReleaseDto(item);
+      if (!parsed) return null;
+      parsedReleases.push(parsed);
+    }
+    if (parsedReleases.length > 0) releases = parsedReleases;
+  }
+
+  const activeReleaseId =
+    typeof value.activeReleaseId === "string" &&
+    RELEASE_ID_PATTERN.test(value.activeReleaseId.trim())
+      ? value.activeReleaseId.trim()
+      : undefined;
+
+  if (value.release == null) {
+    return {
+      mode: value.mode as HomeWidgetPayload["mode"],
+      eligibility: value.eligibility as HomeWidgetPayload["eligibility"],
+      release: null,
+      generatedAt: value.generatedAt,
+      expiresAt: value.expiresAt,
+      ...(advanceListenerSelectionTo
+        ? { advanceListenerSelectionTo }
+        : {}),
+      ...(retireListenerSelection ? { retireListenerSelection: true } : {}),
+    };
+  }
+
+  const release = parseHomeWidgetReleaseDto(value.release);
+  if (!release) return null;
+
+  if (activeReleaseId && activeReleaseId !== release.id) {
+    // Active pointer must match the stamped primary release.
+    return null;
+  }
+  if (releases && !releases.some((r) => r.id === release.id)) {
+    return null;
+  }
+
   return {
     mode: value.mode as HomeWidgetPayload["mode"],
     eligibility: value.eligibility as HomeWidgetPayload["eligibility"],
-    release: {
-      id: release.id.trim(),
-      title: release.title,
-      artistName: release.artistName,
-      artworkUrl:
-        typeof release.artworkUrl === "string" && release.artworkUrl.trim()
-          ? release.artworkUrl.trim()
-          : null,
-      releaseDate: release.releaseDate,
-      deepLink: release.deepLink,
-      countdownLabel: release.countdownLabel,
-      isOutNow: release.isOutNow,
-    },
+    release,
+    ...(releases ? { releases } : {}),
+    ...(activeReleaseId
+      ? { activeReleaseId }
+      : releases
+        ? { activeReleaseId: release.id }
+        : {}),
     generatedAt: value.generatedAt,
     expiresAt: value.expiresAt,
+    ...(advanceListenerSelectionTo
+      ? { advanceListenerSelectionTo }
+      : {}),
+    ...(retireListenerSelection ? { retireListenerSelection: true } : {}),
   };
 }
 
@@ -129,7 +227,12 @@ export function parseHomeWidgetBridgePayload(
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (record.schemaVersion !== HOME_WIDGET_BRIDGE_SCHEMA_VERSION) return null;
+  if (
+    record.schemaVersion !== HOME_WIDGET_BRIDGE_SCHEMA_VERSION &&
+    record.schemaVersion !== HOME_WIDGET_BRIDGE_SCHEMA_VERSION_LEGACY
+  ) {
+    return null;
+  }
   if (typeof record.accountUserId !== "string" || !record.accountUserId.trim()) {
     return null;
   }
@@ -243,6 +346,14 @@ export function createLocalHomeWidgetBridge(
         return null;
       }
     },
+    async readActiveReleaseId() {
+      const payload = await this.readHomeWidgetPayload?.();
+      return (
+        payload?.dto.activeReleaseId ??
+        payload?.dto.release?.id ??
+        null
+      );
+    },
   };
 }
 
@@ -299,4 +410,13 @@ export async function readHomeWidgetPayload(): Promise<HomeWidgetBridgePayload |
     return bridge.readHomeWidgetPayload();
   }
   return null;
+}
+
+export async function readHomeWidgetActiveReleaseId(): Promise<string | null> {
+  const bridge = getHomeWidgetBridge();
+  if (bridge.readActiveReleaseId) {
+    return bridge.readActiveReleaseId();
+  }
+  const payload = await readHomeWidgetPayload();
+  return payload?.dto.activeReleaseId ?? payload?.dto.release?.id ?? null;
 }

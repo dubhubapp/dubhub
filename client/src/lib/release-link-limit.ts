@@ -100,11 +100,31 @@ export type LinkLimitCardCopy = {
   body: string;
 };
 
+export const LINK_CAPACITY_UPGRADE_HINT = "Upgrade for unlimited" as const;
+
 /** Title always uses the real used count — never clamped to limit. */
 export function formatLinkLimitTitle(used: number, limit: number): string {
   const safeUsed = Math.max(0, Math.floor(used));
   const safeLimit = Math.max(0, Math.floor(limit));
   return `${safeUsed} of ${safeLimit} free links used`;
+}
+
+/**
+ * Quiet header capacity line for free artists.
+ * Paid/unlimited → null (no promo on the Links sheet header).
+ */
+export function resolveLinkCapacityHeader(args: {
+  unlimited: boolean;
+  used: number;
+  limit: number | null;
+}): { title: string; upgradeHint: string | null } | null {
+  if (args.unlimited) return null;
+  const used = Math.max(0, Math.floor(args.used));
+  const limit = Math.max(0, Math.floor(args.limit ?? FREE_RELEASE_LINK_LIMIT));
+  return {
+    title: formatLinkLimitTitle(used, limit),
+    upgradeHint: LINK_CAPACITY_UPGRADE_HINT,
+  };
 }
 
 export function resolveLinkLimitCardCopy(args: {

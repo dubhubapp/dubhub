@@ -2,7 +2,11 @@
  * Shared release status pill presentation contract (Coming Soon / Released / Paused).
  */
 
-import { isReleaseUpcoming } from "@/lib/release-status";
+import {
+  isReleaseUpcoming,
+  isReleaseUpcomingFromTiming,
+  type ReleaseTimingInput,
+} from "@/lib/release-status";
 import { RELEASE_SUBSCRIPTION_PAUSED_LABEL } from "@/lib/release-subscription-paused";
 
 export const RELEASE_COMING_SOON_LABEL = "Coming Soon";
@@ -34,6 +38,9 @@ export function resolveReleaseStatusPillPresentation(args: {
   paused?: boolean;
   isComingSoon?: boolean;
   releaseDate?: string | null;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | null;
+  releaseTimezone?: string | null;
   upcoming?: boolean;
   size?: "default" | "compact";
 }): {
@@ -56,8 +63,19 @@ export function resolveReleaseStatusPillPresentation(args: {
     };
   }
 
+  const timing: ReleaseTimingInput = {
+    isComingSoon: args.isComingSoon,
+    releaseDate: args.releaseDate,
+    releaseTimingMode: args.releaseTimingMode,
+    releaseAt: args.releaseAt,
+    releaseTimezone: args.releaseTimezone,
+  };
+
   const isUpcomingState =
-    args.upcoming ?? isReleaseUpcoming(args.isComingSoon, args.releaseDate);
+    args.upcoming ??
+    (args.releaseTimingMode != null || args.releaseAt != null
+      ? isReleaseUpcomingFromTiming(timing)
+      : isReleaseUpcoming(args.isComingSoon, args.releaseDate));
   if (isUpcomingState) {
     return {
       variant: "coming_soon",

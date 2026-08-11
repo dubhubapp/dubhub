@@ -85,7 +85,7 @@ describe("home widget native adapter contract", () => {
 
     await native.writeHomeWidgetPayload(stamped);
     assert.equal(writes.length, 1);
-    assert.equal(writes[0].schemaVersion, 1);
+    assert.equal(writes[0].schemaVersion, 2);
     assert.equal(writes[0].accountUserId, "user-a");
 
     await native.reloadHomeWidgetTimelines();

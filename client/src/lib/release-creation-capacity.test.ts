@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  CREATE_RELEASE_UPGRADE_CTA,
   FREE_RELEASE_LIMIT_REACHED_CODE,
   RELEASE_LIMIT_REACHED_TOAST,
   isFreeReleaseLimitReachedError,
   parseReleaseCreationCapacity,
+  resolveCreateReleaseBottomCapacity,
   resolveReleaseCapacityCardCopy,
 } from "./release-creation-capacity";
 import { ApiRequestError } from "./apiDiagnostics";
@@ -94,6 +96,56 @@ describe("resolveReleaseCapacityCardCopy", () => {
     assert.equal(copy.title, "Unlimited releases");
     assert.equal(copy.body, "You're subscribed to Verified Artist Tools.");
     assert.equal(copy.showUpgrade, false);
+  });
+});
+
+describe("resolveCreateReleaseBottomCapacity", () => {
+  it("with room preserves create action and hides upgrade", () => {
+    const ux = resolveCreateReleaseBottomCapacity({
+      unlimited: false,
+      used: 1,
+      limit: 2,
+      remaining: 1,
+      canCreate: true,
+    });
+    assert.equal(ux.createBlocked, false);
+    assert.equal(ux.countLabel, null);
+    assert.equal(ux.showUpgrade, false);
+  });
+
+  it("at limit blocks create and shows concise upgrade CTA", () => {
+    const ux = resolveCreateReleaseBottomCapacity({
+      unlimited: false,
+      used: 2,
+      limit: 2,
+      remaining: 0,
+      canCreate: false,
+    });
+    assert.equal(ux.createBlocked, true);
+    assert.equal(ux.countLabel, "2 of 2 free releases used");
+    assert.equal(ux.showUpgrade, true);
+    assert.equal(ux.upgradeLabel, CREATE_RELEASE_UPGRADE_CTA);
+    assert.equal(ux.upgradeLabel, "Upgrade for unlimited releases");
+    assert.equal(ux.countLabel?.includes("You've reached"), false);
+  });
+
+  it("paid/unlimited has no bottom promo", () => {
+    const ux = resolveCreateReleaseBottomCapacity({
+      unlimited: true,
+      used: 5,
+      limit: 2,
+      remaining: 0,
+      canCreate: true,
+    });
+    assert.equal(ux.createBlocked, false);
+    assert.equal(ux.showUpgrade, false);
+    assert.equal(ux.countLabel, null);
+  });
+
+  it("null capacity is not blocked", () => {
+    const ux = resolveCreateReleaseBottomCapacity(null);
+    assert.equal(ux.createBlocked, false);
+    assert.equal(ux.showUpgrade, false);
   });
 });
 

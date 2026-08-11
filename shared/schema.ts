@@ -111,12 +111,28 @@ export const releases = pgTable("releases", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   artistId: varchar("artist_id").notNull().references(() => profiles.id),
   title: text("title").notNull(),
-  releaseDate: timestamp("release_date"),
+  /**
+   * Calendar-date carrier for Midnight mode (live DB: timestamptz).
+   * Values are typically stored at 00:00Z serialization and MUST NOT be treated
+   * as a global exact release instant. Exact instants use releaseAt instead.
+   */
+  releaseDate: timestamp("release_date", { withTimezone: true }),
   artworkUrl: text("artwork_url"),
   notifiedAt: timestamp("notified_at"),
   releaseDayNotifiedAt: timestamp("release_day_notified_at"),
   isPublic: boolean("is_public").notNull().default(true),
   isComingSoon: boolean("is_coming_soon").notNull().default(false),
+  /**
+   * midnight (default) = calendar date; exact = absolute releaseAt.
+   * Do not infer exact from release_date 00:00Z.
+   */
+  releaseTimingMode: text("release_timing_mode").notNull().default("midnight"),
+  /** Absolute global instant when releaseTimingMode=exact; otherwise null. */
+  releaseAt: timestamp("release_at", { withTimezone: true }),
+  /** IANA timezone for exact wall-clock editing; null for midnight. */
+  releaseTimezone: text("release_timezone"),
+  /** Absolute announcement timestamp; inert until announcement slice. */
+  releaseAnnouncedAt: timestamp("release_announced_at", { withTimezone: true }),
   /** Reversible free-tier future-release suspension; separate from isPublic. */
   subscriptionSuspendedAt: timestamp("subscription_suspended_at", { withTimezone: true }),
   subscriptionSuspensionReason: text("subscription_suspension_reason"),
@@ -182,6 +198,8 @@ export const userPushTokens = pgTable("user_push_tokens", {
   token: text("token").notNull(),
   environment: text("environment").notNull(), // 'sandbox' | 'production'
   isActive: boolean("is_active").notNull().default(true),
+  /** IANA timezone from device (e.g. Europe/London). NULL until client reports. */
+  timezone: text("timezone"),
   lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -191,6 +209,26 @@ export const userPushTokens = pgTable("user_push_tokens", {
   lastError: text("last_error"),
 });
 
+/**
+ * Per-recipient Out-now / release-day delivery markers (sticky).
+ * Backend API / server pool only; RLS enabled with no client policies in DB.
+ */
+export const releaseDayNotificationMarkers = pgTable(
+  "release_day_notification_markers",
+  {
+    releaseId: uuid("release_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id as any, { onDelete: "cascade" }),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      name: "release_day_notification_markers_pkey",
+      columns: [table.releaseId, table.userId],
+    }),
+  }),
+);
 /** Push-only notification preferences (one row per user). */
 export const userNotificationPreferences = pgTable("user_notification_preferences", {
   userId: varchar("user_id").primaryKey().references(() => profiles.id),

@@ -7,6 +7,7 @@ import { registerArtistProfileSharePreviewRoutes } from "./artistProfileSharePre
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { parseReleaseCalendarDate, requestBodyAttemptsReleaseTimingMutation, RELEASE_TIMING_LOCKED_CODE, RELEASE_TIMING_LOCKED_MESSAGE, RELEASE_TITLE_LOCKED_CODE, RELEASE_TITLE_LOCKED_MESSAGE } from "@shared/release-timing";
 import { toPublicArtistProfileQuestionAnswers } from "@shared/artist-profile-questions";
 import {
   buildArtistProfileQuestionsState,
@@ -58,6 +59,10 @@ import { canArtistDeliverReleaseAlerts } from "./artist-release-alert-delivery";
 import { canArtistUsePaidTools } from "./artist-paid-tool-access";
 import { handlePostArtistReleaseAlert } from "./post-artist-release-alert";
 import { isFreeReleaseLimitReachedError } from "./release-creation-limit";
+import {
+  resolveReleaseTimingForCreate,
+  resolveReleaseTimingForUpdate,
+} from "./resolve-release-timing-write";
 import { getReleaseCreationCapacity } from "./release-creation-capacity";
 import {
   getArtistAttachmentAllowance,
@@ -80,6 +85,8 @@ import {
 } from "./release-link-limit";
 import { isFreeReleaseSubscriptionSuspendedError } from "./future-release-suspension";
 import { getFutureReleaseCapacity } from "./future-release-capacity";
+import { isServerDetachLocked, isServerReleaseLiveForMutation } from "./release-timing-live";
+import { isForbiddenLiveTitleMutation } from "./release-title-lock";
 import {
   buildCompressOnlyArgs,
   extractPostThumbnail,
@@ -5321,7 +5328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/push-tokens/register", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
-      const { token, platform, environment } = req.body ?? {};
+      const { token, platform, environment, timezone } = req.body ?? {};
       if (typeof token !== "string" || token.trim() === "") {
         return res.status(400).json({ message: "token is required" });
       }
@@ -5330,12 +5337,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Unsupported platform" });
       }
       const env = environment === "production" ? "production" : "sandbox";
+
+      let timezoneOpt: string | undefined;
+      if (timezone !== undefined && timezone !== null) {
+        if (typeof timezone !== "string" || timezone.trim() === "") {
+          return res.status(400).json({
+            message: "timezone must be a valid IANA name when provided",
+            code: "INVALID_RELEASE_TIMEZONE",
+          });
+        }
+        const { validateIanaTimezoneName } = await import("./validate-iana-timezone");
+        const { INVALID_RELEASE_TIMEZONE_CODE, INVALID_RELEASE_TIMEZONE_MESSAGE } = await import(
+          "@shared/release-timing"
+        );
+        const checked = await validateIanaTimezoneName(timezone, pool);
+        if (!checked.ok) {
+          return res.status(400).json({
+            message: checked.message || INVALID_RELEASE_TIMEZONE_MESSAGE,
+            code: checked.code || INVALID_RELEASE_TIMEZONE_CODE,
+          });
+        }
+        timezoneOpt = checked.timezone;
+      }
+
       const row = await storage.upsertUserPushToken(req.dbUser.id, {
         token: token.trim(),
         platform: "ios",
         environment: env,
+        ...(timezoneOpt !== undefined ? { timezone: timezoneOpt } : {}),
       });
-      res.json({ ok: true, id: row.id, environment: row.environment });
+      res.json({
+        ok: true,
+        id: row.id,
+        environment: row.environment,
+        timezone: (row as any).timezone ?? null,
+      });
     } catch (error) {
       console.error("[/api/push-tokens/register] Error:", error);
       res.status(500).json({ message: "Failed to register push token" });
@@ -6014,7 +6050,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.dbUser.verified_artist) {
         return res.status(403).json({ message: "Verified artists only" });
       }
-      const { title, release_date, artwork_url, is_coming_soon } = req.body;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const { title, release_date, artwork_url, is_coming_soon } = body;
       const coming = !!is_coming_soon;
       const titleTrim = String(title ?? "").trim();
       if (!titleTrim) return res.status(400).json({ message: "title is required" });
@@ -6024,19 +6061,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (looksLikeImageDataUri(titleTrim) || containsImageDataUri(titleTrim)) {
         return res.status(400).json({ message: "title appears to be image data, not release text" });
       }
-      let releaseDate: Date | null = null;
+
+      let legacyYmd: string | null = null;
       if (!coming) {
-        if (!release_date) return res.status(400).json({ message: "release_date is required unless coming soon" });
-        const d = new Date(release_date);
-        if (isNaN(d.getTime())) return res.status(400).json({ message: "Invalid release_date" });
-        releaseDate = d;
+        if (!release_date) {
+          return res.status(400).json({ message: "release_date is required unless coming soon" });
+        }
+        const parsedDate = parseReleaseCalendarDate(release_date);
+        if (!parsedDate.ok) {
+          const d = new Date(String(release_date));
+          if (Number.isNaN(d.getTime())) {
+            return res.status(400).json({ message: "Invalid release_date" });
+          }
+          legacyYmd = d.toISOString().slice(0, 10);
+        } else {
+          legacyYmd = parsedDate.ymd;
+        }
       }
+
+      const timing = await resolveReleaseTimingForCreate({
+        body,
+        comingSoon: coming,
+        legacyReleaseDateYmd: legacyYmd,
+        pool,
+      });
+      if (!timing.ok) {
+        return res.status(timing.status).json({
+          code: timing.code,
+          message: timing.message,
+        });
+      }
+
       const release = await storage.createRelease({
         artistId: req.dbUser.id,
         title: titleTrim,
-        releaseDate,
-        artworkUrl: artwork_url?.trim() || null,
-        isComingSoon: coming,
+        releaseDate: timing.releaseDate,
+        artworkUrl: typeof artwork_url === "string" ? artwork_url.trim() || null : null,
+        isComingSoon: timing.isComingSoon,
+        releaseTimingMode: timing.releaseTimingMode,
+        releaseAt: timing.releaseAt,
+        releaseTimezone: timing.releaseTimezone,
       });
       const artworkUrl = releaseArtworkPublicUrl(release.artworkUrl) || release.artworkUrl;
       res.status(201).json({ ...release, artworkUrl });
@@ -6053,8 +6117,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
-      const { title, release_date, artwork_url, is_coming_soon } = req.body;
-      const updates: { title?: string; releaseDate?: Date | null; artworkUrl?: string | null; isComingSoon?: boolean } = {};
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const { title, release_date, artwork_url, is_coming_soon } = body;
+      const updates: {
+        title?: string;
+        releaseDate?: Date | null;
+        artworkUrl?: string | null;
+        isComingSoon?: boolean;
+        releaseTimingMode?: "midnight" | "exact";
+        releaseAt?: Date | null;
+        releaseTimezone?: string | null;
+      } = {};
+      let requestedTitle: string | undefined;
       if (title !== undefined) {
         const t = String(title).trim();
         if (!t) return res.status(400).json({ message: "title cannot be empty" });
@@ -6064,18 +6138,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (looksLikeImageDataUri(t) || containsImageDataUri(t)) {
           return res.status(400).json({ message: "title appears to be image data, not release text" });
         }
-        updates.title = t;
+        requestedTitle = t;
       }
-      if (release_date !== undefined) {
+      if (artwork_url !== undefined) {
+        updates.artworkUrl =
+          typeof artwork_url === "string" ? artwork_url.trim() || null : null;
+      }
+
+      const current = await storage.getRelease(req.params.id);
+      if (!current) return res.status(404).json({ message: "Release not found" });
+      if (current.artistId !== req.dbUser.id) {
+        return res.status(403).json({ message: "Not your release" });
+      }
+
+      const liveForMutation = isServerReleaseLiveForMutation({
+        isComingSoon: current.isComingSoon === true,
+        releaseTimingMode: current.releaseTimingMode,
+        releaseDate: current.releaseDate ?? null,
+        releaseAt: current.releaseAt ?? null,
+      });
+
+      if (
+        isForbiddenLiveTitleMutation({
+          live: liveForMutation,
+          requestedTitle,
+          currentTitle: current.title,
+        })
+      ) {
+        // Atomic: reject the whole PATCH (including allowed fields like artwork).
+        return res.status(409).json({
+          code: RELEASE_TITLE_LOCKED_CODE,
+          message: RELEASE_TITLE_LOCKED_MESSAGE,
+        });
+      }
+
+      if (requestedTitle !== undefined) {
+        updates.title = requestedTitle;
+      }
+
+      const comingSoonProvided = is_coming_soon !== undefined;
+      const releaseDateProvided = release_date !== undefined;
+      let legacyYmd: string | null = null;
+      if (releaseDateProvided) {
         if (!release_date) {
-          updates.releaseDate = null;
+          legacyYmd = null;
         } else {
-          const d = new Date(release_date);
-          if (!isNaN(d.getTime())) updates.releaseDate = d;
+          const parsedDate = parseReleaseCalendarDate(release_date);
+          if (parsedDate.ok) {
+            legacyYmd = parsedDate.ymd;
+          } else {
+            const d = new Date(String(release_date));
+            if (!Number.isNaN(d.getTime())) legacyYmd = d.toISOString().slice(0, 10);
+          }
         }
       }
-      if (is_coming_soon !== undefined) updates.isComingSoon = !!is_coming_soon;
-      if (artwork_url !== undefined) updates.artworkUrl = artwork_url?.trim() || null;
+
+      const timingRelevant = requestBodyAttemptsReleaseTimingMutation(body);
+
+      if (timingRelevant && liveForMutation) {
+        return res.status(409).json({
+          code: RELEASE_TIMING_LOCKED_CODE,
+          message: RELEASE_TIMING_LOCKED_MESSAGE,
+        });
+      }
+
+      if (timingRelevant) {
+        const timing = await resolveReleaseTimingForUpdate({
+          body,
+          comingSoon: comingSoonProvided ? !!is_coming_soon : undefined,
+          releaseDateProvided,
+          legacyReleaseDateYmd: legacyYmd,
+          current: {
+            isComingSoon: !!current.isComingSoon,
+            releaseDate: current.releaseDate ?? null,
+            releaseTimingMode: current.releaseTimingMode,
+            releaseAt: current.releaseAt ?? null,
+            releaseTimezone: current.releaseTimezone ?? null,
+          },
+          pool,
+        });
+        if (!timing.ok) {
+          return res.status(timing.status).json({
+            code: timing.code,
+            message: timing.message,
+          });
+        }
+        updates.isComingSoon = timing.isComingSoon;
+        updates.releaseDate = timing.releaseDate;
+        updates.releaseTimingMode = timing.releaseTimingMode;
+        updates.releaseAt = timing.releaseAt;
+        updates.releaseTimezone = timing.releaseTimezone;
+      }
+
       const release = await storage.updateRelease(req.params.id, req.dbUser.id, updates);
       if (!release) return res.status(404).json({ message: "Release not found" });
       const artworkPath = release.artworkUrl || null;
@@ -6313,8 +6467,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!release) return res.status(404).json({ message: "Release not found" });
       const canManage = await storage.canManageRelease(req.params.id, req.dbUser.id);
       if (!canManage) return res.status(403).json({ message: "Not authorized to manage this release" });
-      const releaseDate = release.releaseDate ? new Date(release.releaseDate) : null;
-      if (releaseDate && releaseDate <= new Date()) {
+      if (
+        isServerDetachLocked({
+          isComingSoon: release.isComingSoon === true,
+          releaseTimingMode: release.releaseTimingMode,
+          releaseDate: release.releaseDate ?? null,
+          releaseAt: release.releaseAt ?? null,
+        })
+      ) {
         return res.status(409).json({
           code: "RELEASE_LOCKED",
           message: "Posts cannot be removed after a release is live. You can still add new posts.",

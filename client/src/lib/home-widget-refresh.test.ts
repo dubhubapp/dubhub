@@ -133,7 +133,7 @@ describe("home widget bridge payload parsing", () => {
       dto: dto(),
       writtenAt: NOW,
     });
-    assert.equal(stamped.schemaVersion, 1);
+    assert.equal(stamped.schemaVersion, 2);
     assert.equal(stamped.accountUserId, USER_A);
     assert.equal(stamped.dto.expiresAt, "2026-08-08T12:00:00.000Z");
     assert.equal(stamped.artworkLocalFilename, undefined);
@@ -154,7 +154,7 @@ describe("home widget bridge payload parsing", () => {
     assert.equal(parseHomeWidgetDto({ mode: "listener" }), null);
     assert.equal(
       parseHomeWidgetBridgePayload({
-        schemaVersion: 1,
+        schemaVersion: 2,
         accountUserId: USER_A,
         writtenAt: NOW.toISOString(),
         dto: { ...dto(), release: { ...dto().release!, deepLink: "/releases/1" } },
@@ -198,7 +198,7 @@ describe("home widget payload refresh", () => {
     if (result.ok) {
       assert.equal(result.payload.accountUserId, USER_A);
       assert.equal(result.payload.dto.mode, "listener");
-      assert.equal(result.payload.schemaVersion, 1);
+      assert.equal(result.payload.schemaVersion, 2);
     }
     assert.equal(bridge.writes.length, 1);
     assert.equal(bridge.reloads, 1);
@@ -289,6 +289,52 @@ describe("home widget payload refresh", () => {
       assert.equal(result.payload.dto.release, null);
     }
     assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), null);
+    setHomeWidgetBridgeForTests(null);
+  });
+
+  it("writes auto-advanced selection into account-scoped store", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    const storage = memoryStorage();
+    const nextId = "00000000-0000-4000-8000-000000000099";
+    writeHomeWidgetSelectedReleaseId(USER_A, RELEASE_ID, { storage });
+
+    const result = await refreshHomeWidgetPayload({
+      getUserId: async () => USER_A,
+      getAccessToken: async () => "token",
+      readSelectedReleaseId: (id) => readHomeWidgetSelectedReleaseId(id, storage),
+      clearSelectedReleaseId: (id) => clearHomeWidgetSelectedReleaseId(id, storage),
+      writeSelectedReleaseId: (id, releaseId, options) =>
+        writeHomeWidgetSelectedReleaseId(id, releaseId, { ...options, storage }),
+      fetchPayload: async () =>
+        dto({
+          mode: "listener",
+          eligibility: "eligible_listener_release",
+          advanceListenerSelectionTo: nextId,
+          release: {
+            id: nextId,
+            title: "Next Saved",
+            artistName: "artist",
+            artworkUrl: null,
+            releaseDate: "2026-09-01T00:00:00.000Z",
+            deepLink: `https://dubhub.uk/?release=${nextId}`,
+            countdownLabel: "27 days",
+            isOutNow: false,
+            timingMode: "midnight",
+            releaseCalendarDate: "2026-09-01",
+            releaseAt: null,
+          },
+        }),
+      now: () => NOW,
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.selectionAdvanced, true);
+      assert.equal(result.selectionCleared, false);
+    }
+    assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), nextId);
     setHomeWidgetBridgeForTests(null);
   });
 

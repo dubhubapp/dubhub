@@ -346,6 +346,9 @@ function VideoCardInner({
     artworkUrl: string | null;
     releaseDate: string | null;
     isComingSoon?: boolean;
+    releaseTimingMode?: string | null;
+    releaseAt?: string | null;
+    releaseTimezone?: string | null;
     ownerUsername: string;
     ownerArtistId?: string | null;
     collaborators: { username: string; status: string }[];

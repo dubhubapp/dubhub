@@ -17,6 +17,11 @@ export type VerifiedArtistToolsUpgradeContext = {
   requestedLinkType?: string;
   /** Optional focus restore target after the Settings-originated paywall closes. */
   returnFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Called when the upgrade UI is dismissed (paywall close or toast-only path).
+   * Use to restore a suspended sheet (e.g. Links) without stacking modals.
+   */
+  onDismissed?: () => void;
 };
 
 type ToastFn = (args: {
@@ -55,4 +60,5 @@ export function requestVerifiedArtistToolsUpgrade(
     title: "Upgrade",
     description: UPGRADE_PLACEHOLDER_HINT,
   });
+  context.onDismissed?.();
 }

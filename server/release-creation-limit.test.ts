@@ -30,6 +30,10 @@ type ReleaseRow = {
   updated_at: Date;
   is_public: boolean;
   is_coming_soon: boolean;
+  release_timing_mode: string;
+  release_at: Date | null;
+  release_timezone: string | null;
+  release_announced_at: null;
 };
 
 class FakeDb {
@@ -119,8 +123,12 @@ class FakeDb {
             notified_at: null,
             is_public: true,
             is_coming_soon: Boolean(params?.[4]),
-            created_at: params?.[5] as Date,
-            updated_at: params?.[5] as Date,
+            release_timing_mode: String(params?.[5] ?? "midnight"),
+            release_at: (params?.[6] as Date | null) ?? null,
+            release_timezone: (params?.[7] as string | null) ?? null,
+            release_announced_at: (params?.[8] as Date | null) ?? null,
+            created_at: params?.[9] as Date,
+            updated_at: params?.[9] as Date,
           };
           db.releases.push(row);
           return { rows: [row], rowCount: 1, command: "INSERT", oid: 0, fields: [] };
@@ -256,6 +264,32 @@ describe("createReleaseWithLimit ledger + free/paid policy", () => {
     assert.equal(db.ledger[0].releaseId, created.id);
     assert.equal(db.ledger[0].createdAt.toISOString(), NOW.toISOString());
     assert.equal(created.createdAt?.toString(), NOW.toString());
+    assert.equal(
+      created.releaseAnnouncedAt?.toString(),
+      NOW.toString(),
+      "dated create sets release_announced_at",
+    );
+  });
+
+  it("Coming Soon create leaves release_announced_at null", async () => {
+    const db = new FakeDb();
+    const created = await createReleaseWithLimit(
+      {
+        artistId: ARTIST_A,
+        title: "Soon",
+        releaseDate: null,
+        isComingSoon: true,
+      },
+      {
+        pool: db.asPool(),
+        getSnapshotsForUser: async () => ({ sandbox: null, production: null }),
+        now: () => NOW,
+        enforcementEnabled: true,
+        paidToolAccessOverride: true,
+      },
+    );
+    assert.equal(created.releaseAnnouncedAt, null);
+    assert.equal(db.releases[0].release_announced_at, null);
   });
 
   it("release insert failure creates no ledger row", async () => {

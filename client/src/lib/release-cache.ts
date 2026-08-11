@@ -24,6 +24,9 @@ export type ReleaseDetailRecord = {
   artistUsername: string;
   isComingSoon?: boolean;
   isPublic?: boolean;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | null;
+  releaseTimezone?: string | null;
   links?: { id: string; platform: string; url: string; linkType?: string | null }[];
   collaborators?: { id?: string; artistId?: string; username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
@@ -54,6 +57,9 @@ export function feedItemToDetailPreview(item: ReleaseFeedItem): ReleaseDetailRec
     artistUsername: item.artistUsername,
     isComingSoon: item.isComingSoon,
     isPublic: (item as ReleaseFeedItem & { isPublic?: boolean }).isPublic ?? true,
+    releaseTimingMode: item.releaseTimingMode,
+    releaseAt: item.releaseAt,
+    releaseTimezone: item.releaseTimezone,
     links: item.links,
     collaborators: item.collaborators,
     collaboratorStatus: item.collaboratorStatus,
