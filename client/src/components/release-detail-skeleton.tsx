@@ -1,7 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
-import { ReleaseAttachedClipsSkeleton } from "@/components/release-attached-clips";
 import { ReleaseActivitySection } from "@/components/release-activity-section";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 
@@ -53,14 +52,12 @@ export function ReleaseDetailSkeleton({ onBack }: ReleaseDetailSkeletonProps) {
           </div>
         </div>
 
-        <ReleaseAttachedClipsSkeleton />
-
         <ReleaseActivitySection
           isLoading
           firstPostLabel={null}
           latestPostLabel={null}
-          announcedAfterLabel={null}
-          releasedAfterLabel={null}
+          announcedDuration={null}
+          releasedDuration={null}
         />
       </div>
     </SwipeBackPage>

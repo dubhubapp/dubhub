@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { ArrowLeft, ExternalLink, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
+import { ArrowLeft, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,7 +29,13 @@ import { formatDate } from "./release-tracker";
 import { sanitizeReleaseText } from "@/lib/release-display";
 import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
-import { getLinkCtaLabel, getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
+import { getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
+import { resolveReleaseLinkSurfacePresentation } from "@/lib/release-link-presentation";
+import {
+  RELEASE_DETAIL_LINK_CLASS,
+  RELEASE_DETAIL_LINK_ICON_SLOT_CLASS,
+  RELEASE_DETAIL_LINK_ROW_CLASS,
+} from "@/lib/release-tracker-presentation";
 import { ReleaseStatusPill, releaseStatusSubtitle } from "@/components/release-status-pill";
 import {
   isReleaseDayTodayFromTiming,
@@ -45,8 +51,13 @@ import {
   invalidateAfterSavedReleaseRemoved,
   type ReleaseDetailRecord,
 } from "@/lib/release-cache";
-import { ReleaseAttachedClips, ReleaseAttachedClipsSkeleton } from "@/components/release-attached-clips";
+import { resolveReleaseAttachedPostsSectionState } from "@/lib/release-detail-loading";
+import { ReleaseAttachedClips } from "@/components/release-attached-clips";
 import { ReleaseActivitySection } from "@/components/release-activity-section";
+import {
+  formatActivityPostCalendarDate,
+  resolveSignedActivityDuration,
+} from "@/lib/release-activity-copy";
 import { ReleaseAttachedPostsGallery } from "@/components/release-attached-posts-gallery";
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
 import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
@@ -74,6 +85,7 @@ import { shareRelease } from "@/lib/release-share";
 import { cn } from "@/lib/utils";
 import {
   RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY,
+  RELEASE_SUBSCRIPTION_PAUSED_OWNER_TITLE,
   RELEASE_SUBSCRIPTION_PAUSED_PUBLIC_COPY,
   RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA,
   shouldShowOwnerSubscriptionPausedBanner,
@@ -93,52 +105,10 @@ type ReleaseStats = {
   daysToRelease: number | null;
 };
 
-function formatMonthYear(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-}
-
-function formatDurationLabel(totalMinutes: number): string {
-  if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return "0 days";
-
-  if (totalMinutes < 60) {
-    const mins = Math.max(1, Math.round(totalMinutes));
-    return `${mins} min${mins === 1 ? "" : "s"}`;
-  }
-
-  if (totalMinutes < 24 * 60) {
-    const hours = Math.floor(totalMinutes / 60);
-    const mins = Math.round(totalMinutes % 60);
-    if (mins === 0) return `${hours} hour${hours === 1 ? "" : "s"}`;
-    return `${hours} hour${hours === 1 ? "" : "s"} ${mins} min${mins === 1 ? "" : "s"}`;
-  }
-
-  const days = Math.floor(totalMinutes / (24 * 60));
-  return `${days} day${days === 1 ? "" : "s"}`;
-}
-
 const REMOVE_SAVED_RELEASE_CONFIRM =
   "Removing this release will unlike all posts you've liked that are attached to it.";
 const REMOVE_SAVED_RELEASE_BLOCKED =
   "This release can't be removed because it's attached to one of your uploads.";
-
-function formatDurationBetween(start: string | null | undefined, end: string | null | undefined, fallbackDays?: number | null): string {
-  if (start && end) {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
-      const diffMs = endDate.getTime() - startDate.getTime();
-      if (diffMs >= 0) {
-        return formatDurationLabel(diffMs / (1000 * 60));
-      }
-    }
-  }
-
-  const safeDays = Number(fallbackDays ?? 0);
-  return `${safeDays} day${safeDays === 1 ? "" : "s"}`;
-}
 
 export default function ReleaseDetail() {
   const [, params] = useRoute("/releases/:id");
@@ -359,15 +329,23 @@ export default function ReleaseDetail() {
     isOwner: !!isOwner,
     viewerSavedRelease: releaseData.viewerSavedRelease,
   });
-  const firstPostLabel = formatMonthYear(stats?.firstClipAt ?? null);
-  const latestPostLabel = formatMonthYear(stats?.latestClipAt ?? null);
-  const announcedAfterLabel =
+  const firstPostLabel = formatActivityPostCalendarDate(stats?.firstClipAt ?? null);
+  const latestPostLabel = formatActivityPostCalendarDate(stats?.latestClipAt ?? null);
+  const announcedDuration =
     stats?.daysToAnnouncement !== null && stats?.daysToAnnouncement !== undefined
-      ? formatDurationBetween(stats?.firstClipAt, releaseData?.createdAt, stats.daysToAnnouncement)
+      ? resolveSignedActivityDuration({
+          start: stats?.firstClipAt,
+          end: releaseData?.createdAt,
+          fallbackDays: stats.daysToAnnouncement,
+        })
       : null;
-  const releasedAfterLabel =
+  const releasedDuration =
     stats?.daysToRelease !== null && stats?.daysToRelease !== undefined
-      ? formatDurationBetween(stats?.firstClipAt, releaseData?.releaseDate, stats.daysToRelease)
+      ? resolveSignedActivityDuration({
+          start: stats?.firstClipAt,
+          end: releaseData?.releaseDate,
+          fallbackDays: stats.daysToRelease,
+        })
       : null;
   const showShareRelease =
     hasFullDetail &&
@@ -454,12 +432,6 @@ export default function ReleaseDetail() {
           </p>
         )}
 
-        {isFetching && releaseData && (
-          <p className="text-xs text-muted-foreground mb-3" aria-live="polite">
-            Updating release…
-          </p>
-        )}
-
         {showOwnerReleaseDay && (
           <ReleaseDayCelebration releaseId={releaseData.id} title={releaseData.title} variant="full" />
         )}
@@ -472,49 +444,6 @@ export default function ReleaseDetail() {
             Waiting for collaborators to accept before this release is public.
           </div>
         )}
-
-        {isSubscriptionPausedOwner ? (
-          <div
-            className="mb-4 space-y-2 rounded-lg border border-white/10 bg-muted/40 px-3 py-2"
-            data-testid="banner-release-subscription-paused"
-            role="status"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <ReleaseStatusPill paused data-testid="badge-release-paused-banner" />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY}
-            </p>
-            {isOwner ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs border-white/15 bg-black/20"
-                onClick={() =>
-                  requestVerifiedArtistToolsUpgrade(toast, {
-                    source: "future_release_paused",
-                  })
-                }
-                data-testid="button-release-paused-upgrade"
-              >
-                {RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
-        {isSubscriptionPausedPublic ? (
-          <div
-            className="mb-4 rounded-lg border border-white/10 bg-black/30 px-3 py-3"
-            data-testid="banner-release-unavailable"
-            role="status"
-          >
-            <p className="text-sm text-muted-foreground">
-              {releaseData.message || RELEASE_SUBSCRIPTION_PAUSED_PUBLIC_COPY}
-            </p>
-          </div>
-        ) : null}
 
         <div className="mb-6 flex min-w-0 items-start gap-4 overflow-hidden">
           <ReleaseArtworkThumb
@@ -612,40 +541,91 @@ export default function ReleaseDetail() {
           </div>
         </div>
 
+        {isSubscriptionPausedOwner ? (
+          <div
+            className="mb-4 space-y-1.5 rounded-lg border border-white/10 bg-muted/30 px-3 py-2"
+            data-testid="banner-release-subscription-paused"
+            role="status"
+          >
+            <p className="text-sm font-medium text-foreground">
+              {RELEASE_SUBSCRIPTION_PAUSED_OWNER_TITLE}
+            </p>
+            <p className="text-xs leading-snug text-muted-foreground">
+              {RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY}
+            </p>
+            {isOwner ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-0.5 h-8 text-xs border-white/15 bg-black/20"
+                onClick={() =>
+                  requestVerifiedArtistToolsUpgrade(toast, {
+                    source: "future_release_paused",
+                  })
+                }
+                data-testid="button-release-paused-upgrade"
+              >
+                {RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isSubscriptionPausedPublic ? (
+          <div
+            className="mb-4 rounded-lg border border-white/10 bg-black/30 px-3 py-2"
+            data-testid="banner-release-unavailable"
+            role="status"
+          >
+            <p className="text-xs leading-snug text-muted-foreground">
+              {releaseData.message || RELEASE_SUBSCRIPTION_PAUSED_PUBLIC_COPY}
+            </p>
+          </div>
+        ) : null}
+
         {!isSubscriptionPausedPublic && releaseData.links && releaseData.links.length > 0 && (
-          <div className="mb-6">
-            <div className="flex min-w-0 flex-wrap gap-2">
-              {sortLinksByPlatform(
-                filterPublicReleaseLinks((releaseData.links as ReleaseLink[]) || [], upcoming),
-              ).map((link) => {
-                const label = getLinkCtaLabel(link.platform, upcoming, link.linkType);
-                if (!label) return null;
-                return (
+          <div className={RELEASE_DETAIL_LINK_ROW_CLASS} data-testid="release-detail-link-actions">
+            {sortLinksByPlatform(
+              filterPublicReleaseLinks((releaseData.links as ReleaseLink[]) || [], upcoming),
+            ).map((link) => {
+              const presentation = resolveReleaseLinkSurfacePresentation({
+                platform: link.platform,
+                linkType: link.linkType,
+                url: link.url,
+                isUpcoming: upcoming,
+                surface: "detail",
+              });
+              if (!presentation) return null;
+              return (
                 <a
                   key={link.id}
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ios-press ios-press-soft inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-sm hover:bg-muted/80"
+                  className={RELEASE_DETAIL_LINK_CLASS}
+                  aria-label={presentation.accessibleLabel}
+                  title={presentation.accessibleLabel}
+                  data-testid={`release-detail-link-${link.id}`}
                 >
-                  <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                  <span className="truncate text-primary">
-                    {label}
-                  </span>
-                  <ExternalLink className="w-3 h-3" />
+                  <PlatformIcon
+                    platform={presentation.iconPlatform}
+                    className="h-5 w-5 object-contain"
+                    boxClassName={RELEASE_DETAIL_LINK_ICON_SLOT_CLASS}
+                  />
+                  <span className="min-w-0 truncate">{presentation.visibleLabel}</span>
                 </a>
-                );
-              })}
-            </div>
+              );
+            })}
           </div>
         )}
 
-        {!isSubscriptionPausedPublic ? (
-          !hasFullDetail || releaseData.attachedClips === undefined ? (
-            <ReleaseAttachedClipsSkeleton />
-          ) : (
-            <ReleaseAttachedClips clips={releaseData.attachedClips} onOpenClip={openAttachedPost} />
-          )
+        {!isSubscriptionPausedPublic &&
+        resolveReleaseAttachedPostsSectionState({
+          hasFullDetail,
+          attachedClips: releaseData.attachedClips,
+        }) === "ready" ? (
+          <ReleaseAttachedClips clips={releaseData.attachedClips ?? []} onOpenClip={openAttachedPost} />
         ) : null}
 
         {!isSubscriptionPausedPublic ? (
@@ -654,8 +634,8 @@ export default function ReleaseDetail() {
             isLoading={isStatsLoading}
             firstPostLabel={firstPostLabel}
             latestPostLabel={latestPostLabel}
-            announcedAfterLabel={announcedAfterLabel}
-            releasedAfterLabel={releasedAfterLabel}
+            announcedDuration={announcedDuration}
+            releasedDuration={releasedDuration}
             releaseAfterIsUpcoming={upcoming}
           />
         ) : null}

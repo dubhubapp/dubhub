@@ -1,9 +1,11 @@
 import { Check, Edit2, Music } from "lucide-react";
+import { ReleaseStatusPill } from "@/components/release-status-pill";
 import { formatReleaseTitleLine } from "@/lib/release-display";
 import {
   formatReleasePublicSchedule,
   isReleaseUpcomingFromTiming,
 } from "@/lib/release-status";
+import { RELEASE_PREVIEW_DATE_STATUS_ROW_CLASS } from "@/lib/release-tracker-presentation";
 import { useViewerSavedRelease } from "@/hooks/use-viewer-saved-release";
 import { cn } from "@/lib/utils";
 
@@ -76,21 +78,24 @@ export function ReleasePreviewCard({
             releasePreview.collaborators,
           )}
         </p>
-        <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-          {scheduleLine}
+        <div
+          className={RELEASE_PREVIEW_DATE_STATUS_ROW_CLASS}
+          data-testid="release-preview-date-status-row"
+        >
           {scheduleLine ? (
-            <span
-              className={cn(
-                "ml-1.5 inline-block rounded px-1 py-0.5 text-[9px] sm:text-[10px]",
-                upcoming
-                  ? "bg-amber-500/20 text-amber-400"
-                  : "bg-green-500/20 text-green-600 dark:text-green-400",
-              )}
-            >
-              {upcoming ? "Upcoming" : "Released"}
-            </span>
+            <span className="shrink-0 text-[10px] text-gray-400 sm:text-xs">{scheduleLine}</span>
           ) : null}
-        </p>
+          <ReleaseStatusPill
+            isComingSoon={releasePreview.isComingSoon}
+            releaseDate={releasePreview.releaseDate}
+            releaseTimingMode={releasePreview.releaseTimingMode}
+            releaseAt={releasePreview.releaseAt}
+            releaseTimezone={releasePreview.releaseTimezone}
+            upcoming={upcoming}
+            size="compact"
+            data-testid="release-preview-status-pill"
+          />
+        </div>
         <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-gray-400 sm:text-[11px]">
           {isReleaseOwner ? (
             <>

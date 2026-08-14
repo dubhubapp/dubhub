@@ -94,6 +94,7 @@ export function ReleaseAttachedClipCard({
         )}
         <div className="flex min-w-0 items-center gap-1">
           <span className="min-w-0 truncate text-[10px] text-muted-foreground">@{clip.uploaderUsername}</span>
+          {/* clip.isVerifiedArtist = uploader profile identity only */}
           {clip.isVerifiedArtist ? (
             <GoldVerifiedTick className="h-2.5 w-2.5 shrink-0 text-[#FFD700]" glow="inline" />
           ) : null}
@@ -140,7 +141,7 @@ export function ReleaseAttachedClipCard({
   );
 }
 
-/** Reserved height while attached posts load with the release detail payload. */
+/** Large attached-post card placeholders. Do not mount when post presence is unknown. */
 export function ReleaseAttachedClipsSkeleton() {
   return (
     <section

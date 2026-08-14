@@ -87,6 +87,7 @@ export function useHomeWidgetSelection(args: {
         releaseId,
         artistModeActive: artistModeLikelyActive,
       });
+      // Authoritative store after persist + refresh (may clear/advance).
       setSelectedReleaseId(getCurrentHomeWidgetSelectedReleaseId(userId));
       toast({
         title: result.refreshFailed
@@ -113,6 +114,7 @@ export function useHomeWidgetSelection(args: {
     setBusy("clearing");
     try {
       const result = await clearHomeWidgetReleaseSelection({ userId });
+      // Authoritative store after local clear + refresh (must not resurrect A).
       setSelectedReleaseId(getCurrentHomeWidgetSelectedReleaseId(userId));
       toast({
         title: result.refreshFailed

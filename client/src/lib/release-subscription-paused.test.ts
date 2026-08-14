@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY,
+  RELEASE_SUBSCRIPTION_PAUSED_OWNER_TITLE,
+  RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA,
   isPersistedReleaseSubscriptionSuspended,
   mergeReleaseDetailPreservingSuspension,
   shouldShowOwnerSubscriptionPausedBanner,
@@ -81,8 +83,11 @@ describe("shouldShowOwnerSubscriptionPausedBanner", () => {
       }),
       true,
     );
-    assert.match(RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY, /paused because your subscription/i);
+    assert.equal(RELEASE_SUBSCRIPTION_PAUSED_OWNER_TITLE, "This release is paused");
+    assert.match(RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY, /subscription is inactive/i);
+    assert.match(RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY, /Restore your artist tools/i);
     assert.equal(RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY.includes("upcoming"), false);
+    assert.equal(RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA, "Restore release");
   });
 
   it("shows for suspended Coming Soon", () => {

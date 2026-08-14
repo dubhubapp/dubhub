@@ -1,9 +1,10 @@
 /**
  * Release Detail header action chrome.
  *
- * Countdown keeps a 44pt hit target (`min-h-11`, `items-end`) but is mounted in a
- * compact flow slot matching Share height so it sits just under Coming Soon without
- * pushing past the artwork bottom. Transparent hit area extends upward.
+ * Countdown is a direct binary text action. It keeps a 44pt hit target (`min-h-11`,
+ * `items-end`) mounted in a compact flow slot matching Share height so it sits just
+ * under Coming Soon without pushing past the artwork bottom. Transparent hit area
+ * extends upward; visible icon/text stay on the flow-slot edge.
  */
 
 /** Compact text action beside Coming Soon. */
@@ -21,8 +22,13 @@ export const RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS =
 export const RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS =
   "relative h-[1.375rem] w-full shrink-0" as const;
 
+/** Share icon — keep optically compact on the status row. */
 export const RELEASE_DETAIL_HEADER_ACTION_ICON_CLASS =
   "h-3 w-3 shrink-0" as const;
+
+/** Countdown icon — slightly larger than Share so CalendarClock matches optically. */
+export const RELEASE_DETAIL_COUNTDOWN_ACTION_ICON_CLASS =
+  "h-3.5 w-3.5 shrink-0" as const;
 
 /** Artwork / metadata bounded column height (Tailwind h-32). */
 export const RELEASE_DETAIL_ARTWORK_SIZE_CLASS = "h-32 w-32" as const;

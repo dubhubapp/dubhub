@@ -1,17 +1,22 @@
 import { formatReleasePublicSchedule, isReleaseUpcomingFromTiming } from "@/lib/release-status";
 import {
   RELEASE_COMING_SOON_LABEL,
-  RELEASE_RELEASED_LABEL,
+  RELEASE_UPCOMING_LABEL,
   resolveReleaseStatusPillPresentation,
 } from "@/lib/release-status-pill";
 import { cn } from "@/lib/utils";
 
 export {
   RELEASE_COMING_SOON_LABEL,
+  RELEASE_UPCOMING_LABEL,
+  RELEASE_SCHEDULED_LABEL,
   RELEASE_RELEASED_LABEL,
   RELEASE_STATUS_PILL_BASE_CLASS,
   RELEASE_STATUS_PILL_SIZE_CLASS,
+  RELEASE_STATUS_PILL_LABEL_CLASS,
   RELEASE_COMING_SOON_PILL_CLASS,
+  RELEASE_UPCOMING_PILL_CLASS,
+  RELEASE_SCHEDULED_PILL_CLASS,
   RELEASE_RELEASED_PILL_CLASS,
   RELEASE_PAUSED_PILL_CLASS,
   resolveReleaseStatusPillPresentation,
@@ -80,5 +85,6 @@ export function releaseStatusSubtitle(args: {
   if (args.isComingSoon && !args.releaseDate) return "Coming soon...";
   const schedule = formatReleasePublicSchedule(args);
   if (schedule) return schedule;
-  return isReleaseUpcomingFromTiming(args) ? RELEASE_COMING_SOON_LABEL : "";
+  if (!isReleaseUpcomingFromTiming(args)) return "";
+  return args.isComingSoon ? RELEASE_COMING_SOON_LABEL : RELEASE_UPCOMING_LABEL;
 }

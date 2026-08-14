@@ -1,5 +1,6 @@
 /**
- * Shared release status pill presentation contract (Coming Soon / Released / Paused).
+ * Shared release status pill presentation contract
+ * (Upcoming / Coming Soon / Released / Paused).
  */
 
 import {
@@ -10,6 +11,13 @@ import {
 import { RELEASE_SUBSCRIPTION_PAUSED_LABEL } from "@/lib/release-subscription-paused";
 
 export const RELEASE_COMING_SOON_LABEL = "Coming Soon";
+/** Dated, pre-live releases — user-facing list/detail/discography pill. */
+export const RELEASE_UPCOMING_LABEL = "Upcoming";
+/**
+ * @deprecated Prefer RELEASE_UPCOMING_LABEL. Kept as an alias so older imports keep working.
+ * Create/Edit draft hero still uses its own local "Scheduled" label.
+ */
+export const RELEASE_SCHEDULED_LABEL = RELEASE_UPCOMING_LABEL;
 export const RELEASE_RELEASED_LABEL = "Released";
 
 export const RELEASE_STATUS_PILL_BASE_CLASS =
@@ -20,19 +28,34 @@ export const RELEASE_STATUS_PILL_SIZE_CLASS = {
   compact: "min-h-[1.125rem] px-1.5 py-0.5 text-[10px]",
 } as const;
 
-/** Coming Soon — amber (unchanged). */
+/**
+ * Canonical release-status pill tone system:
+ * muted semantic fill + restrained semantic ring + white/near-white label.
+ * Colour communicates status; text treatment stays consistent.
+ * Upcoming must NEVER use accent/turquoise (selection chrome).
+ */
+export const RELEASE_STATUS_PILL_LABEL_CLASS = "text-white" as const;
+
+/** Coming Soon — amber family. Explicit is_coming_soon only. */
 export const RELEASE_COMING_SOON_PILL_CLASS =
-  "bg-amber-500/20 text-amber-600 dark:text-amber-400" as const;
+  "bg-amber-500/25 text-white ring-1 ring-inset ring-amber-400/35" as const;
 
-/** Released — green (unchanged). */
+/** Upcoming — indigo/blue family. Must NOT use accent/turquoise. */
+export const RELEASE_UPCOMING_PILL_CLASS =
+  "bg-indigo-500/25 text-white ring-1 ring-inset ring-indigo-400/35" as const;
+
+/** @deprecated Prefer RELEASE_UPCOMING_PILL_CLASS. */
+export const RELEASE_SCHEDULED_PILL_CLASS = RELEASE_UPCOMING_PILL_CLASS;
+
+/** Released — green family. */
 export const RELEASE_RELEASED_PILL_CLASS =
-  "bg-green-500/20 text-green-600 dark:text-green-400" as const;
+  "bg-green-500/25 text-white ring-1 ring-inset ring-green-400/35" as const;
 
-/** Paused — neutral muted; distinct from Coming Soon amber. */
+/** Paused — neutral slate; quieter than active statuses. */
 export const RELEASE_PAUSED_PILL_CLASS =
-  "bg-muted text-muted-foreground ring-1 ring-inset ring-white/10" as const;
+  "bg-slate-500/25 text-white ring-1 ring-inset ring-slate-400/30" as const;
 
-export type ReleaseStatusPillVariant = "paused" | "coming_soon" | "released";
+export type ReleaseStatusPillVariant = "paused" | "coming_soon" | "upcoming" | "released";
 
 export function resolveReleaseStatusPillPresentation(args: {
   paused?: boolean;
@@ -76,13 +99,23 @@ export function resolveReleaseStatusPillPresentation(args: {
     (args.releaseTimingMode != null || args.releaseAt != null
       ? isReleaseUpcomingFromTiming(timing)
       : isReleaseUpcoming(args.isComingSoon, args.releaseDate));
+
   if (isUpcomingState) {
+    if (args.isComingSoon) {
+      return {
+        variant: "coming_soon",
+        label: RELEASE_COMING_SOON_LABEL,
+        baseClass: RELEASE_STATUS_PILL_BASE_CLASS,
+        sizeClass,
+        toneClass: RELEASE_COMING_SOON_PILL_CLASS,
+      };
+    }
     return {
-      variant: "coming_soon",
-      label: RELEASE_COMING_SOON_LABEL,
+      variant: "upcoming",
+      label: RELEASE_UPCOMING_LABEL,
       baseClass: RELEASE_STATUS_PILL_BASE_CLASS,
       sizeClass,
-      toneClass: RELEASE_COMING_SOON_PILL_CLASS,
+      toneClass: RELEASE_UPCOMING_PILL_CLASS,
     };
   }
 

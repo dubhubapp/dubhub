@@ -3,6 +3,8 @@
  * Selection remains page-owned and persists on Create/Save only.
  */
 
+import { resolveAttachedClipUploaderIsVerifiedArtist } from "@shared/attached-clip-uploader-verified";
+
 export const ATTACHED_POSTS_ROW_LABEL = "Attached posts" as const;
 export const ATTACHED_POSTS_EMPTY_SUMMARY = "No posts attached" as const;
 export const ATTACH_POSTS_POLICY_DISCLOSURE_LABEL = "About attaching posts" as const;
@@ -31,6 +33,7 @@ export type EligiblePostForAttach = {
   dj_name?: string;
   title?: string;
   verified_comment_body?: string;
+  /** Post track-ID flag — must not drive attached-card uploader tick. */
   is_verified_artist?: boolean;
 };
 
@@ -38,14 +41,21 @@ export function eligiblePostToAttachedClip(
   post: EligiblePostForAttach,
   enriched?: {
     likes?: number;
-    user?: { username?: string | null } | null;
+    user?: {
+      username?: string | null;
+      account_type?: string | null;
+      verified_artist?: boolean | null;
+    } | null;
     username?: string | null;
+    account_type?: string | null;
+    verified_artist?: boolean | null;
   } | null,
 ): {
   id: string;
   title: string | null;
   thumbnailUrl: string | null;
   uploaderUsername: string;
+  /** Uploader verified-artist identity (not post artist-identification). */
   isVerifiedArtist: boolean;
   likes: number;
 } {
@@ -54,12 +64,22 @@ export function eligiblePostToAttachedClip(
     enriched?.user?.username?.trim() ||
     enriched?.username?.trim() ||
     null;
+  const uploaderAccountType =
+    enriched?.user?.account_type ?? enriched?.account_type ?? null;
+  const uploaderVerifiedArtist =
+    enriched?.user?.verified_artist === true || enriched?.verified_artist === true;
   return {
     id: post.id,
     title,
     thumbnailUrl: post.thumbnailUrl ?? post.thumbnail_url ?? null,
     uploaderUsername: username || "user",
-    isVerifiedArtist: Boolean(post.is_verified_artist ?? true),
+    // Fail closed: missing uploader profile verification → false (never ?? true).
+    isVerifiedArtist: resolveAttachedClipUploaderIsVerifiedArtist({
+      uploaderAccountType,
+      uploaderVerifiedArtist,
+      postIsVerifiedArtist: post.is_verified_artist,
+      postArtistVerifiedBy: null,
+    }),
     likes: typeof enriched?.likes === "number" ? enriched.likes : 0,
   };
 }

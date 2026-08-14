@@ -15,6 +15,7 @@ import {
   refreshHomeWidgetPayload,
   resetHomeWidgetRefreshStateForTests,
   scheduleHomeWidgetForegroundRefresh,
+  shouldAdoptNativeHomeWidgetActivePage,
 } from "./home-widget-refresh";
 import { clearHomeWidgetSessionState } from "./home-widget-session";
 import {
@@ -335,6 +336,108 @@ describe("home widget payload refresh", () => {
       assert.equal(result.selectionCleared, false);
     }
     assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), nextId);
+    setHomeWidgetBridgeForTests(null);
+  });
+
+  it("adopts native active page only when a local selection already exists", () => {
+    assert.equal(
+      shouldAdoptNativeHomeWidgetActivePage({
+        storedSelectedReleaseId: RELEASE_ID,
+        nativeActiveReleaseId: "00000000-0000-4000-8000-000000000099",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldAdoptNativeHomeWidgetActivePage({
+        storedSelectedReleaseId: RELEASE_ID,
+        nativeActiveReleaseId: RELEASE_ID,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAdoptNativeHomeWidgetActivePage({
+        storedSelectedReleaseId: null,
+        nativeActiveReleaseId: RELEASE_ID,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAdoptNativeHomeWidgetActivePage({
+        storedSelectedReleaseId: "",
+        nativeActiveReleaseId: RELEASE_ID,
+      }),
+      false,
+    );
+  });
+
+  it("does not resurrect a cleared local selection from leftover native/payload id", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    const storage = memoryStorage();
+    const requested: Array<string | null> = [];
+
+    const result = await refreshHomeWidgetPayload({
+      getUserId: async () => USER_A,
+      getAccessToken: async () => "token",
+      readSelectedReleaseId: (id) => readHomeWidgetSelectedReleaseId(id, storage),
+      writeSelectedReleaseId: (id, releaseId, options) =>
+        writeHomeWidgetSelectedReleaseId(id, releaseId, { ...options, storage }),
+      readActiveReleaseId: async () => RELEASE_ID,
+      fetchPayload: async ({ selectedReleaseId }) => {
+        requested.push(selectedReleaseId);
+        return dto({
+          mode: "empty",
+          eligibility: "no_listener_selection",
+          release: null,
+        });
+      },
+      now: () => NOW,
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(requested, [null]);
+    assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), null);
+    setHomeWidgetBridgeForTests(null);
+  });
+
+  it("adopts a different native page over a stale stored selection", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    const storage = memoryStorage();
+    const nativeId = "00000000-0000-4000-8000-000000000099";
+    writeHomeWidgetSelectedReleaseId(USER_A, RELEASE_ID, { storage });
+    const requested: Array<string | null> = [];
+
+    const result = await refreshHomeWidgetPayload({
+      getUserId: async () => USER_A,
+      getAccessToken: async () => "token",
+      readSelectedReleaseId: (id) => readHomeWidgetSelectedReleaseId(id, storage),
+      writeSelectedReleaseId: (id, releaseId, options) =>
+        writeHomeWidgetSelectedReleaseId(id, releaseId, { ...options, storage }),
+      readActiveReleaseId: async () => nativeId,
+      fetchPayload: async ({ selectedReleaseId }) => {
+        requested.push(selectedReleaseId);
+        return dto({
+          release: {
+            id: nativeId,
+            title: "Paged",
+            artistName: "artist",
+            artworkUrl: null,
+            releaseDate: "2026-09-01T00:00:00.000Z",
+            deepLink: `https://dubhub.uk/?release=${nativeId}`,
+            countdownLabel: "27 days",
+            isOutNow: false,
+          },
+        });
+      },
+      now: () => NOW,
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(requested, [nativeId]);
+    assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), nativeId);
     setHomeWidgetBridgeForTests(null);
   });
 

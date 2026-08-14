@@ -8,6 +8,7 @@ import {
 } from "./home-widget-bridge";
 import {
   clearHomeWidgetReleaseSelection,
+  getCurrentHomeWidgetSelectedReleaseId,
   selectHomeWidgetRelease,
 } from "./home-widget-selection";
 import {
@@ -17,6 +18,7 @@ import {
 } from "./home-widget-selection-store";
 import { resetHomeWidgetRefreshStateForTests } from "./home-widget-refresh";
 import { HOME_WIDGET_SELECTION_COPY } from "./home-widget-selection-eligibility";
+import { resolveHomeWidgetSelectionButtonPresentation } from "./home-widget-countdown-icon";
 
 const USER = "00000000-0000-4000-8000-0000000000aa";
 const RELEASE_A = "00000000-0000-4000-8000-000000000001";
@@ -94,15 +96,36 @@ function dto(overrides: Partial<HomeWidgetPayload> = {}): HomeWidgetPayload {
   };
 }
 
-function refreshDeps(fetchPayload: () => Promise<HomeWidgetPayload>) {
+function refreshDeps(
+  fetchPayload: (selectedReleaseId: string | null) => Promise<HomeWidgetPayload>,
+  extras?: { readActiveReleaseId?: () => Promise<string | null> },
+) {
   return {
     getUserId: async () => USER,
     getAccessToken: async () => "token",
     readSelectedReleaseId: (id: string) => readHomeWidgetSelectedReleaseId(id),
     clearSelectedReleaseId: (id: string) => clearHomeWidgetSelectedReleaseId(id),
-    fetchPayload: async () => fetchPayload(),
+    writeSelectedReleaseId: (
+      id: string,
+      releaseId: string,
+      options?: { selectedAt?: Date | string },
+    ) => writeHomeWidgetSelectedReleaseId(id, releaseId, options),
+    fetchPayload: async (args: { selectedReleaseId: string | null }) =>
+      fetchPayload(args.selectedReleaseId),
     now: () => NOW,
+    readActiveReleaseId: extras?.readActiveReleaseId,
   };
+}
+
+function isSelectedFor(releaseId: string): boolean {
+  const selected = getCurrentHomeWidgetSelectedReleaseId(USER);
+  return !!selected && selected === releaseId;
+}
+
+function buttonViewFor(releaseId: string) {
+  return resolveHomeWidgetSelectionButtonPresentation(
+    isSelectedFor(releaseId) ? "selected" : "idle",
+  );
 }
 
 describe("home widget selection actions", () => {
@@ -174,6 +197,129 @@ describe("home widget selection actions", () => {
       assert.equal(readHomeWidgetSelectedReleaseId(USER), null);
       assert.equal(bridge.current?.dto.release, null);
     } finally {
+      setHomeWidgetBridgeForTests(null);
+    }
+  });
+
+  it("successful clear leaves store null and next action is select, even if native still shows A", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    writeHomeWidgetSelectedReleaseId(USER, RELEASE_A);
+
+    try {
+      assert.equal(isSelectedFor(RELEASE_A), true);
+      assert.equal(buttonViewFor(RELEASE_A).action, "clear");
+      assert.equal(buttonViewFor(RELEASE_A).label, "In your Countdown");
+      assert.equal(buttonViewFor(RELEASE_A).ariaPressed, true);
+
+      const result = await clearHomeWidgetReleaseSelection({
+        userId: USER,
+        refreshDeps: refreshDeps(
+          async () =>
+            dto({
+              mode: "empty",
+              eligibility: "no_listener_selection",
+              release: null,
+            }),
+          { readActiveReleaseId: async () => RELEASE_A },
+        ),
+      });
+
+      assert.equal(result.toastMessage, HOME_WIDGET_SELECTION_COPY.successRemoved);
+      assert.equal(getCurrentHomeWidgetSelectedReleaseId(USER), null);
+      assert.equal(isSelectedFor(RELEASE_A), false);
+      const after = buttonViewFor(RELEASE_A);
+      assert.equal(after.label, "Add to Countdown");
+      assert.equal(after.ariaPressed, false);
+      assert.equal(after.action, "select");
+    } finally {
+      clearHomeWidgetSelectedReleaseId(USER);
+      setHomeWidgetBridgeForTests(null);
+    }
+  });
+
+  it("successful select updates stored id to A", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    clearHomeWidgetSelectedReleaseId(USER);
+
+    try {
+      const result = await selectHomeWidgetRelease({
+        userId: USER,
+        releaseId: RELEASE_A,
+        refreshDeps: refreshDeps(async () => dto()),
+      });
+      assert.equal(result.selectionSaved, true);
+      assert.equal(result.toastMessage, HOME_WIDGET_SELECTION_COPY.successSelected);
+      assert.equal(getCurrentHomeWidgetSelectedReleaseId(USER), RELEASE_A);
+      assert.equal(isSelectedFor(RELEASE_A), true);
+      assert.equal(buttonViewFor(RELEASE_A).label, "In your Countdown");
+      assert.equal(buttonViewFor(RELEASE_A).action, "clear");
+    } finally {
+      clearHomeWidgetSelectedReleaseId(USER);
+      setHomeWidgetBridgeForTests(null);
+    }
+  });
+
+  it("select B replaces A in store and selected state", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    writeHomeWidgetSelectedReleaseId(USER, RELEASE_A);
+
+    try {
+      const result = await selectHomeWidgetRelease({
+        userId: USER,
+        releaseId: RELEASE_B,
+        refreshDeps: refreshDeps(async (selectedReleaseId) =>
+          dto({
+            release: {
+              id: selectedReleaseId ?? RELEASE_B,
+              title: "B",
+              artistName: "artist",
+              artworkUrl: null,
+              releaseDate: "2026-08-12T00:00:00.000Z",
+              deepLink: `https://dubhub.uk/?release=${RELEASE_B}`,
+              countdownLabel: "6 days",
+              isOutNow: false,
+            },
+          }),
+        ),
+      });
+      assert.equal(result.selectionSaved, true);
+      assert.equal(getCurrentHomeWidgetSelectedReleaseId(USER), RELEASE_B);
+      assert.equal(isSelectedFor(RELEASE_A), false);
+      assert.equal(isSelectedFor(RELEASE_B), true);
+      assert.equal(buttonViewFor(RELEASE_B).action, "clear");
+      assert.equal(buttonViewFor(RELEASE_A).action, "select");
+    } finally {
+      clearHomeWidgetSelectedReleaseId(USER);
+      setHomeWidgetBridgeForTests(null);
+    }
+  });
+
+  it("successful local clear + refresh warning still reads empty store", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    writeHomeWidgetSelectedReleaseId(USER, RELEASE_A);
+
+    try {
+      const result = await clearHomeWidgetReleaseSelection({
+        userId: USER,
+        refreshDeps: refreshDeps(async () => {
+          throw new Error("network down");
+        }),
+      });
+      assert.equal(result.refreshFailed, true);
+      assert.equal(result.toastMessage, HOME_WIDGET_SELECTION_COPY.refreshFailed);
+      assert.equal(getCurrentHomeWidgetSelectedReleaseId(USER), null);
+      assert.equal(isSelectedFor(RELEASE_A), false);
+      assert.equal(buttonViewFor(RELEASE_A).action, "select");
+    } finally {
+      clearHomeWidgetSelectedReleaseId(USER);
       setHomeWidgetBridgeForTests(null);
     }
   });

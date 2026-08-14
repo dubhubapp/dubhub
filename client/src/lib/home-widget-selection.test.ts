@@ -118,6 +118,24 @@ describe("home widget selection storage", () => {
       "00000000-0000-4000-8000-000000000002",
     );
   });
+
+  it("failed storage remove leaves the selected id", () => {
+    const storage = memoryStorage();
+    writeHomeWidgetSelectedReleaseId(
+      "user-a",
+      "00000000-0000-4000-8000-000000000001",
+      { storage },
+    );
+    clearHomeWidgetSelectedReleaseId("user-a", {
+      removeItem: () => {
+        throw new Error("quota");
+      },
+    });
+    assert.equal(
+      readHomeWidgetSelectedReleaseId("user-a", storage),
+      "00000000-0000-4000-8000-000000000001",
+    );
+  });
 });
 
 describe("home widget selection eligibility UI", () => {

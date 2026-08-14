@@ -116,6 +116,27 @@ async function defaultFetchPayload(args: {
   return parsed;
 }
 
+const HOME_WIDGET_RELEASE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Widget paging may move the native active page ahead of localStorage.
+ * Adopt that page only when a local selection already exists.
+ *
+ * Do NOT adopt when localStorage is empty: a deliberate clear (or never-selected
+ * account) must not be resurrected from a leftover App Group / prior payload id.
+ */
+export function shouldAdoptNativeHomeWidgetActivePage(args: {
+  storedSelectedReleaseId: string | null | undefined;
+  nativeActiveReleaseId: string | null | undefined;
+}): boolean {
+  const stored = args.storedSelectedReleaseId?.trim() ?? "";
+  const native = args.nativeActiveReleaseId?.trim() ?? "";
+  if (!stored || !native) return false;
+  if (!HOME_WIDGET_RELEASE_ID_PATTERN.test(native)) return false;
+  return native !== stored;
+}
+
 function shouldClearStoredSelection(dto: HomeWidgetPayload): boolean {
   if (dto.retireListenerSelection === true) return true;
   if (dto.advanceListenerSelectionTo) return false;
@@ -174,19 +195,20 @@ export async function refreshHomeWidgetPayload(
     const viewerTimeZone =
       deps.resolveViewerTimeZone?.() ?? defaultViewerTimeZone();
 
-    // Prefer device App Group active page (widget paging) over stale localStorage
-    // so foreground refresh does not snap back to an earlier release.
+    // Prefer device App Group active page (widget paging) over a *stale non-empty*
+    // localStorage id so foreground refresh does not snap back to an earlier release.
+    // An empty local selection is authoritative (user cleared Countdown) and must
+    // not be overwritten by leftover native/payload active ids.
     let selectedReleaseId = readSelected(userId);
     try {
       const nativeActive = await readActive();
       if (
-        nativeActive &&
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          nativeActive,
-        ) &&
-        nativeActive !== selectedReleaseId
+        shouldAdoptNativeHomeWidgetActivePage({
+          storedSelectedReleaseId: selectedReleaseId,
+          nativeActiveReleaseId: nativeActive,
+        })
       ) {
-        writeSelected(userId, nativeActive, { selectedAt: now });
+        writeSelected(userId, nativeActive!, { selectedAt: now });
         selectedReleaseId = nativeActive;
       }
     } catch {

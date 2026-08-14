@@ -30,6 +30,7 @@ import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { createReleaseWithLimit } from "./create-release-with-limit";
 import { mapReleaseTimingFields } from "@shared/release-timing";
 import { shouldSetReleaseAnnouncedAt } from "@shared/release-announced";
+import { resolveAttachedClipUploaderIsVerifiedArtist } from "@shared/attached-clip-uploader-verified";
 import { attachPostsWithLimit } from "./attach-posts-with-limit";
 import {
   FreeReleaseSubscriptionSuspendedError,
@@ -3547,6 +3548,8 @@ export class DatabaseStorage implements IStorage {
           p.is_verified_community,
           p.created_at,
           pr.username AS uploader_username,
+          pr.account_type AS uploader_account_type,
+          pr.verified_artist AS uploader_verified_artist,
           COALESCE(pl_counts.likes_count, 0) AS likes_count
         FROM release_posts rp
         JOIN posts p ON p.id = rp.post_id
@@ -3573,7 +3576,13 @@ export class DatabaseStorage implements IStorage {
         title: row.title ?? null,
         thumbnailUrl: mapPostThumbnailUrl(row),
         uploaderUsername: row.uploader_username ?? "user",
-        isVerifiedArtist: row.is_verified_artist === true && row.artist_verified_by != null,
+        // Uploader profile identity only — not posts.is_verified_artist (track ID state).
+        isVerifiedArtist: resolveAttachedClipUploaderIsVerifiedArtist({
+          uploaderAccountType: row.uploader_account_type ?? null,
+          uploaderVerifiedArtist: row.uploader_verified_artist === true,
+          postIsVerifiedArtist: row.is_verified_artist,
+          postArtistVerifiedBy: row.artist_verified_by,
+        }),
         likes: Number(row.likes_count ?? 0),
       }));
     } catch (error) {

@@ -8,6 +8,7 @@ export type ReleaseAttachedClip = {
   title: string | null;
   thumbnailUrl: string | null;
   uploaderUsername: string;
+  /** Uploader profile verified-artist identity — not posts.is_verified_artist. */
   isVerifiedArtist: boolean;
   likes: number;
 };

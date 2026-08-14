@@ -1,20 +1,32 @@
-import { ExternalLink } from "lucide-react";
 import { ReleaseStatusPill } from "@/components/release-status-pill";
 import { ReleaseArtworkThumb } from "@/components/release-artwork-thumb";
+import { CountdownStatusBadge } from "@/components/countdown-status-badge";
 import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
-import {
-  HomeWidgetCountdownIcon,
-  buildReleaseFeedCardAccessibilityLabel,
-} from "@/lib/home-widget-countdown-icon";
+import { buildReleaseFeedCardAccessibilityLabel } from "@/lib/home-widget-countdown-icon";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
 import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
-import { getLinkCtaLabel, getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
+import { getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
+import { resolveReleaseLinkSurfacePresentation } from "@/lib/release-link-presentation";
 import { isPersistedReleaseSubscriptionSuspended } from "@/lib/release-subscription-paused";
 import {
   formatReleasePublicSchedule,
   isReleaseUpcomingFromTiming,
 } from "@/lib/release-status";
+import { resolveReleaseStatusPillPresentation } from "@/lib/release-status-pill";
+import {
+  RELEASE_FEED_ARTWORK_FALLBACK_ICON_CLASS,
+  RELEASE_FEED_ARTWORK_SIZE_CLASS,
+  RELEASE_FEED_CTA_ICON_ONLY_CLASS,
+  RELEASE_FEED_CTA_ICON_SLOT_CLASS,
+  RELEASE_FEED_CTA_LIST_CLASS,
+  RELEASE_FEED_CTA_SEMANTIC_CLASS,
+  RELEASE_FEED_META_COLUMN_CLASS,
+  RELEASE_FEED_META_STACK_CLASS,
+  RELEASE_FEED_ROW_BASE_CLASS,
+  RELEASE_FEED_STATUS_ROW_CLASS,
+  stopReleaseRowNavigation,
+} from "@/lib/release-tracker-presentation";
 import { cn } from "@/lib/utils";
 
 export type ReleaseFeedCardData = {
@@ -43,8 +55,7 @@ export type ReleaseFeedCardHighlight = {
   featured?: boolean;
 };
 
-export const RELEASE_CARD_BASE_CLASS =
-  "ios-press w-full text-left rounded-xl p-4 transition-all border flex gap-4 bg-black/30 backdrop-blur-md border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] hover:bg-black/40 hover:border-white/20";
+export const RELEASE_CARD_BASE_CLASS = RELEASE_FEED_ROW_BASE_CLASS;
 
 function looksLikeImageDataUri(value: string | null | undefined): boolean {
   if (!value) return false;
@@ -98,6 +109,7 @@ type ReleaseFeedCardProps = {
   onOpen: () => void;
   highlight?: ReleaseFeedCardHighlight;
   showCountdownSelectedIndicator?: boolean;
+  showByline?: boolean;
 };
 
 export function ReleaseFeedCard({
@@ -105,6 +117,7 @@ export function ReleaseFeedCard({
   onOpen,
   highlight,
   showCountdownSelectedIndicator = false,
+  showByline,
 }: ReleaseFeedCardProps) {
   const normalized = normalizeReleaseCardFields(r);
   const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
@@ -119,12 +132,9 @@ export function ReleaseFeedCard({
     releaseAt: r.releaseAt,
     releaseTimezone: r.releaseTimezone,
   });
-  const byline = formatReleaseByline(r.artistUsername, r.collaborators);
-  const accessibilityLabel = buildReleaseFeedCardAccessibilityLabel({
-    byline,
-    title: normalized.title,
-    countdownSelected: showCountdownSelectedIndicator,
-  });
+  const paused = isPersistedReleaseSubscriptionSuspended(r);
+  const bylineVisible = showByline !== false;
+  const byline = bylineVisible ? formatReleaseByline(r.artistUsername, r.collaborators) : "";
   const scheduleLabel = r.isComingSoon
     ? "Coming soon..."
     : formatReleasePublicSchedule({
@@ -134,6 +144,26 @@ export function ReleaseFeedCard({
         releaseAt: r.releaseAt,
         releaseTimezone: r.releaseTimezone,
       });
+  const statusPresentation = resolveReleaseStatusPillPresentation({
+    paused,
+    isComingSoon: r.isComingSoon,
+    releaseDate: r.releaseDate,
+    releaseTimingMode: r.releaseTimingMode,
+    releaseAt: r.releaseAt,
+    releaseTimezone: r.releaseTimezone,
+    upcoming,
+  });
+  const accessibilityLabel = buildReleaseFeedCardAccessibilityLabel({
+    byline,
+    title: normalized.title,
+    countdownSelected: showCountdownSelectedIndicator,
+    schedule: scheduleLabel,
+    status: statusPresentation.label,
+  });
+  const preReleaseBanner = getBannerFromLinks(r.links, upcoming);
+  const publicLinks = !paused && r.links?.length
+    ? sortLinksByPlatform(filterPublicReleaseLinks(r.links, upcoming))
+    : [];
 
   return (
     <div
@@ -149,85 +179,98 @@ export function ReleaseFeedCard({
       }}
       className={cn(
         RELEASE_CARD_BASE_CLASS,
-        "relative min-w-0 overflow-hidden",
-        featured && "bg-transparent border-0 px-1 py-2 shadow-none hover:bg-transparent",
+        featured && "py-2.5",
         !featured &&
           savedOutToday &&
-          "ring-1 ring-emerald-500/40 shadow-[0_0_24px_-8px_rgba(16,185,129,0.3)] bg-emerald-500/[0.06] border-emerald-500/35",
+          "rounded-md bg-emerald-500/[0.06] pl-2.5 -ml-2.5 border-l-2 border-emerald-400/70",
         !featured &&
           isOwnerReleaseDay &&
-          "ring-1 ring-violet-500/40 shadow-[0_0_26px_-8px_rgba(139,92,246,0.35)] bg-violet-500/[0.06] border-violet-500/35",
+          "rounded-md bg-violet-500/[0.06] pl-2.5 -ml-2.5 border-l-2 border-violet-400/70",
         !featured &&
           releaseDayHighlight &&
           !savedOutToday &&
           !isOwnerReleaseDay &&
-          "ring-1 ring-amber-500/35 shadow-[0_0_22px_-8px_rgba(245,158,11,0.3)] bg-amber-500/[0.06] border-amber-500/30",
+          "rounded-md bg-amber-500/[0.05] pl-2.5 -ml-2.5 border-l-2 border-amber-400/55",
       )}
       data-countdown-selected={showCountdownSelectedIndicator ? "true" : "false"}
     >
-      {showCountdownSelectedIndicator ? (
-        <span
-          className="pointer-events-none absolute right-2.5 top-2.5 z-[1] flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-accent shadow-sm ring-1 ring-white/10"
-          aria-hidden
-          data-testid={`release-countdown-selected-indicator-${r.id}`}
-        >
-          <HomeWidgetCountdownIcon className="h-3.5 w-3.5" strokeWidth={2} />
-        </span>
-      ) : null}
       <ReleaseArtworkThumb
         artworkUrl={normalized.artworkUrl}
-        className="h-20 w-20 shrink-0 rounded-lg"
-        iconClassName="h-10 w-10"
+        className={RELEASE_FEED_ARTWORK_SIZE_CLASS}
+        iconClassName={RELEASE_FEED_ARTWORK_FALLBACK_ICON_CLASS}
         testId={`release-feed-artwork-${r.id}`}
       />
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <p className="min-w-0 truncate text-xs font-semibold leading-snug text-foreground">
-          {byline}
-        </p>
-        {normalized.title ? (
-          <p className="mt-0.5 line-clamp-2 min-w-0 break-all text-sm leading-snug text-foreground">
-            {normalized.title}
-          </p>
-        ) : null}
-        <p className="mt-1 text-xs text-muted-foreground">
-          {scheduleLabel}
-        </p>
-        {getBannerFromLinks(r.links, upcoming) ? (
-          <p className="mt-1 text-xs text-primary">{getBannerFromLinks(r.links, upcoming)}</p>
-        ) : null}
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          <ReleaseStatusPill
-            paused={isPersistedReleaseSubscriptionSuspended(r)}
-            isComingSoon={r.isComingSoon}
-            releaseDate={r.releaseDate}
-            releaseTimingMode={r.releaseTimingMode}
-            releaseAt={r.releaseAt}
-            releaseTimezone={r.releaseTimezone}
-            upcoming={upcoming}
-          />
-          {collabDisplay ? <span className={collabDisplay.className}>{collabDisplay.label}</span> : null}
+      <div className={RELEASE_FEED_META_COLUMN_CLASS}>
+        <div className={RELEASE_FEED_META_STACK_CLASS}>
+          {normalized.title ? (
+            <p className="line-clamp-2 min-w-0 break-all text-[15px] font-semibold leading-snug text-foreground">
+              {normalized.title}
+            </p>
+          ) : null}
+          {byline ? (
+            <p className="min-w-0 truncate text-xs leading-snug text-muted-foreground">
+              {byline}
+            </p>
+          ) : null}
+          {scheduleLabel ? (
+            <p className="text-xs text-muted-foreground">
+              {scheduleLabel}
+            </p>
+          ) : null}
+          {preReleaseBanner ? (
+            <p className="text-xs text-primary">{preReleaseBanner}</p>
+          ) : null}
+          <div className={RELEASE_FEED_STATUS_ROW_CLASS} data-testid="release-feed-status-row">
+            <ReleaseStatusPill
+              paused={paused}
+              isComingSoon={r.isComingSoon}
+              releaseDate={r.releaseDate}
+              releaseTimingMode={r.releaseTimingMode}
+              releaseAt={r.releaseAt}
+              releaseTimezone={r.releaseTimezone}
+              upcoming={upcoming}
+            />
+            {showCountdownSelectedIndicator ? (
+              <CountdownStatusBadge
+                testId={`release-countdown-selected-indicator-${r.id}`}
+              />
+            ) : null}
+            {collabDisplay ? <span className={collabDisplay.className}>{collabDisplay.label}</span> : null}
+          </div>
         </div>
-        {!isPersistedReleaseSubscriptionSuspended(r) && r.links && r.links.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {sortLinksByPlatform(filterPublicReleaseLinks(r.links, upcoming)).map((link) => {
-              const label = getLinkCtaLabel(link.platform, upcoming, link.linkType);
-              if (!label) return null;
+        {publicLinks.length > 0 ? (
+          <div className={RELEASE_FEED_CTA_LIST_CLASS} data-testid="release-feed-link-actions">
+            {publicLinks.map((link) => {
+              const presentation = resolveReleaseLinkSurfacePresentation({
+                platform: link.platform,
+                linkType: link.linkType,
+                url: link.url,
+                isUpcoming: upcoming,
+                surface: "overview",
+              });
+              if (!presentation) return null;
+              const iconOnly = !presentation.showsSemanticLabel;
               return (
-              <a
-                key={link.id}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ios-press ios-press-soft inline-flex items-center gap-0.5 rounded bg-muted p-1 text-xs hover:bg-muted/80"
-                title={label}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <PlatformIcon platform={link.platform} className="h-5 w-auto object-contain" />
-                <span className="max-w-[12rem] truncate">
-                  {label}
-                </span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
+                <a
+                  key={link.id}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={iconOnly ? RELEASE_FEED_CTA_ICON_ONLY_CLASS : RELEASE_FEED_CTA_SEMANTIC_CLASS}
+                  aria-label={presentation.accessibleLabel}
+                  title={presentation.accessibleLabel}
+                  onClick={stopReleaseRowNavigation}
+                  data-testid={`release-feed-link-${link.id}`}
+                >
+                  <PlatformIcon
+                    platform={presentation.iconPlatform}
+                    className="h-5 w-5 object-contain"
+                    boxClassName={RELEASE_FEED_CTA_ICON_SLOT_CLASS}
+                  />
+                  {presentation.visibleLabel ? (
+                    <span className="min-w-0 truncate">{presentation.visibleLabel}</span>
+                  ) : null}
+                </a>
               );
             })}
           </div>

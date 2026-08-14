@@ -20,18 +20,20 @@
    */
   --releases-cta-gap-above-nav: 0.5rem;
   /** Opaque band bleed beneath the fade so list content never shows through the tab bar. */
-  --releases-cta-stack-bleed: 1.5rem;
+  --releases-cta-stack-bleed: 1.25rem;
   --releases-cta-button-block: 3.5rem;
-  --releases-cta-fade-block: 8rem;
+  --releases-cta-fade-block: 3.75rem;
   --releases-cta-scroll-extra: 0.625rem;
   /**
    * Scroll padding for the list only — shell `pb-[var(--app-bottom-nav-block)]` already clears the tab bar.
-   * This matches the fixed CTA stack (gap + fade + button + buffer) so the last card clears the occluder.
+   * This matches the fixed CTA stack (gap + fade + button + buffer) so the last row clears the occluder.
    */
   --releases-feed-bottom-pad: calc(
     var(--releases-cta-gap-above-nav) + var(--releases-cta-fade-block) + var(--releases-cta-button-block) +
       var(--releases-cta-scroll-extra)
   );
+  /** Listeners have no Add Release stack; shell already clears the tab bar. */
+  --releases-feed-bottom-pad-listener: 1rem;
   /** Home VideoCard: reserve horizontal space for the action rail (icons + labels). */
   --video-feed-rail-width: clamp(3.375rem, 10.5vw, 4.375rem);
   /**

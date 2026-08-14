@@ -5,11 +5,13 @@
 
 export const RELEASE_SUBSCRIPTION_PAUSED_LABEL = "Paused" as const;
 
-export const RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY =
-  "This release is paused because your subscription is inactive. Upgrade to restore it and your other paused future releases." as const;
+/** Compact owner/collaborator notice title — hero already shows the Paused pill. */
+export const RELEASE_SUBSCRIPTION_PAUSED_OWNER_TITLE = "This release is paused" as const;
 
-export const RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA =
-  "Upgrade to restore this release" as const;
+export const RELEASE_SUBSCRIPTION_PAUSED_OWNER_COPY =
+  "Your subscription is inactive. Restore your artist tools to reactivate this and your other paused future releases." as const;
+
+export const RELEASE_SUBSCRIPTION_PAUSED_UPGRADE_CTA = "Restore release" as const;
 
 export const RELEASE_SUBSCRIPTION_PAUSED_PUBLIC_COPY =
   "This release isn't currently available." as const;

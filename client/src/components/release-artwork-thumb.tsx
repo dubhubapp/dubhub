@@ -16,6 +16,9 @@ export type ReleaseArtworkThumbProps = {
   onOpen?: () => void;
   openAriaLabel?: string;
   testId?: string;
+  /** Optional — list rows omit these; Artwork View may set eager/lazy. */
+  loading?: "eager" | "lazy";
+  fetchPriority?: "high" | "low" | "auto";
 };
 
 /**
@@ -33,6 +36,8 @@ export function ReleaseArtworkThumb({
   onOpen,
   openAriaLabel,
   testId = "release-artwork-thumb",
+  loading,
+  fetchPriority,
 }: ReleaseArtworkThumbProps) {
   const [failed, setFailed] = useState(false);
   const url = hasReleaseArtworkUrl(artworkUrl) ? artworkUrl!.trim() : null;
@@ -45,6 +50,19 @@ export function ReleaseArtworkThumb({
       data-testid={`${testId}-fallback`}
     />
   );
+
+  const image = showImage ? (
+    <img
+      src={url!}
+      alt=""
+      className={cn("h-full w-full object-cover", imageClassName)}
+      draggable={false}
+      loading={loading}
+      // React 19 / DOM: fetchPriority; attribute form for broader engine support
+      fetchPriority={fetchPriority}
+      onError={() => setFailed(true)}
+    />
+  ) : null;
 
   return (
     <div
@@ -64,21 +82,10 @@ export function ReleaseArtworkThumb({
             aria-label={openAriaLabel ?? "View artwork"}
             data-testid={`${testId}-open`}
           >
-            <img
-              src={url!}
-              alt=""
-              className={cn("h-full w-full object-cover", imageClassName)}
-              draggable={false}
-              onError={() => setFailed(true)}
-            />
+            {image}
           </button>
         ) : (
-          <img
-            src={url!}
-            alt=""
-            className={cn("h-full w-full object-cover", imageClassName)}
-            onError={() => setFailed(true)}
-          />
+          image
         )
       ) : (
         fallback
