@@ -222,24 +222,27 @@ type TrackFieldKey =
 const fieldSuccessOutlineClass =
   "border-cyan-400/50 bg-cyan-950/20 shadow-[0_0_0_1px_rgba(34,211,238,0.35)] ring-1 ring-cyan-400/25";
 
-function FieldCompleteCheck({
-  className,
-  variant = "overlay",
-}: {
-  className?: string;
-  variant?: "overlay" | "inline";
-}) {
+function FieldCompleteCheck({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 ring-1 ring-cyan-400/20",
-        variant === "overlay" && "absolute",
+        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 ring-1 ring-cyan-400/20",
         className,
       )}
       aria-hidden
     >
       <Check className="h-3 w-3 text-cyan-300/85" strokeWidth={2.25} />
     </span>
+  );
+}
+
+/** Optional field name primary; "Optional" muted secondary — local to this page. */
+function OptionalFieldLabel({ children }: { children: string }) {
+  return (
+    <FormLabel className="flex items-baseline justify-between gap-3 text-sm font-medium text-gray-300">
+      <span>{children}</span>
+      <span className="shrink-0 text-xs font-normal text-muted-foreground">Optional</span>
+    </FormLabel>
   );
 }
 
@@ -1711,7 +1714,7 @@ export default function SubmitMetadata() {
           <Form {...form}>
             <form
               onSubmit={form.handleSubmit(onSubmit)}
-              className="min-w-0 space-y-4"
+              className="min-w-0 space-y-3"
               onFocusCapture={(e) => {
                 if (!isSubmitMetadataKbdMetricsDebugEnabled()) return;
                 const t = e.target;
@@ -1734,46 +1737,50 @@ export default function SubmitMetadata() {
                   return (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-300">Title *</FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., Amazing DnB track from Fabric"
-                            className={cn(
-                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
-                            )}
-                            data-testid="input-title"
-                            maxLength={INPUT_LIMITS.postTitle}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value || ""}
-                            onFocus={() =>
-                              setFieldFocused((f) => ({ ...f, title: true }))
-                            }
-                            onBlur={(e) => {
-                              field.onBlur();
-                              setFieldFocused((f) => ({ ...f, title: false }));
-                              const v = (e.target as HTMLInputElement).value;
-                              setFieldConfirmed((c) => ({
-                                ...c,
-                                title: isTitleComplete(v),
-                              }));
-                            }}
-                            onChange={(e) => {
-                              field.onChange(e);
-                              if (!isTitleComplete(e.target.value)) {
-                                setFieldConfirmed((c) => ({ ...c, title: false }));
+                      <div>
+                        <div className="relative">
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., Amazing DnB track from Fabric"
+                              className={cn(
+                                "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
+                                success ? fieldSuccessOutlineClass : "border-gray-600",
+                              )}
+                              data-testid="input-title"
+                              maxLength={INPUT_LIMITS.postTitle}
+                              aria-required={true}
+                              name={field.name}
+                              ref={field.ref}
+                              value={field.value || ""}
+                              onFocus={() =>
+                                setFieldFocused((f) => ({ ...f, title: true }))
                               }
-                            }}
-                          />
-                        </FormControl>
-                        {success ? (
-                          <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
-                        ) : null}
+                              onBlur={(e) => {
+                                field.onBlur();
+                                setFieldFocused((f) => ({ ...f, title: false }));
+                                const v = (e.target as HTMLInputElement).value;
+                                setFieldConfirmed((c) => ({
+                                  ...c,
+                                  title: isTitleComplete(v),
+                                }));
+                              }}
+                              onChange={(e) => {
+                                field.onChange(e);
+                                if (!isTitleComplete(e.target.value)) {
+                                  setFieldConfirmed((c) => ({ ...c, title: false }));
+                                }
+                              }}
+                            />
+                          </FormControl>
+                          {success ? (
+                            <FieldCompleteCheck className="right-2 top-1/2 -translate-y-1/2" />
+                          ) : null}
+                        </div>
+                        {/* Counter grouped with field (mt-1) — not a third FormItem space-y sibling */}
+                        <p className="mt-1 text-xs leading-none text-gray-500 text-right">
+                          {(field.value?.length ?? 0)} / {INPUT_LIMITS.postTitle}
+                        </p>
                       </div>
-                      <p className="text-xs leading-none text-gray-500 text-right">
-                        {(field.value?.length ?? 0)} / {INPUT_LIMITS.postTitle}
-                      </p>
                       <FormMessage />
                     </FormItem>
                   );
@@ -1789,66 +1796,61 @@ export default function SubmitMetadata() {
                   return (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-300">Genre *</FormLabel>
-                      <div className="flex items-center gap-2.5">
-                        <div className="min-w-0 flex-1">
-                          <Select
-                            value={field.value || undefined}
-                            onValueChange={(v) => {
-                              field.onChange(v);
-                              if (!isGenreComplete(v)) {
-                                setFieldConfirmed((c) => ({ ...c, genre: false }));
-                              }
-                            }}
-                            onOpenChange={(open) => {
-                              if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
-                                logSubmitMetadataKbdDeep("genre:beforeOpen", pageScrollRef.current);
-                              }
-                              setFieldFocused((f) => ({ ...f, genre: open }));
-                              if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
-                                queueMicrotask(() => {
-                                  logSubmitMetadataKbdDeep("genre:afterOpen", pageScrollRef.current);
-                                });
-                              }
-                              if (!open) {
-                                field.onBlur();
-                                queueMicrotask(() => {
-                                  const g = form.getValues("genre");
-                                  setFieldConfirmed((c) => ({
-                                    ...c,
-                                    genre: isGenreComplete(g),
-                                  }));
-                                });
-                              }
-                            }}
-                          >
-                            <FormControl>
-                              <SelectTrigger
-                                ref={field.ref}
-                                className={cn(
-                                  "w-full bg-surface text-white transition-[border-color,box-shadow,background-color]",
-                                  success ? fieldSuccessOutlineClass : "border-gray-600",
-                                )}
-                                data-testid="select-genre"
-                              >
-                                <SelectValue placeholder="Select genre..." />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {genres.map((genre) => (
-                                <SelectItem key={genre.value} value={genre.value}>
-                                  {genre.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                      <div className="relative">
+                        <Select
+                          value={field.value || undefined}
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                            if (!isGenreComplete(v)) {
+                              setFieldConfirmed((c) => ({ ...c, genre: false }));
+                            }
+                          }}
+                          onOpenChange={(open) => {
+                            if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
+                              logSubmitMetadataKbdDeep("genre:beforeOpen", pageScrollRef.current);
+                            }
+                            setFieldFocused((f) => ({ ...f, genre: open }));
+                            if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
+                              queueMicrotask(() => {
+                                logSubmitMetadataKbdDeep("genre:afterOpen", pageScrollRef.current);
+                              });
+                            }
+                            if (!open) {
+                              field.onBlur();
+                              queueMicrotask(() => {
+                                const g = form.getValues("genre");
+                                setFieldConfirmed((c) => ({
+                                  ...c,
+                                  genre: isGenreComplete(g),
+                                }));
+                              });
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger
+                              ref={field.ref}
+                              aria-required={true}
+                              className={cn(
+                                "w-full bg-surface text-white transition-[border-color,box-shadow,background-color]",
+                                success ? fieldSuccessOutlineClass : "border-gray-600",
+                              )}
+                              data-testid="select-genre"
+                            >
+                              <SelectValue placeholder="Select genre..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {genres.map((genre) => (
+                              <SelectItem key={genre.value} value={genre.value}>
+                                {genre.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {/* Absolute overlay left of Radix chevron — must not join flex flow (no layout shift). */}
                         {success ? (
-                          <div
-                            className="flex h-10 w-10 shrink-0 items-center justify-center"
-                            aria-hidden
-                          >
-                            <FieldCompleteCheck variant="inline" />
-                          </div>
+                          <FieldCompleteCheck className="right-9 top-1/2 -translate-y-1/2" />
                         ) : null}
                       </div>
                       <FormMessage />
@@ -1865,53 +1867,53 @@ export default function SubmitMetadata() {
                   const success = showFieldSuccess("description", valid);
                   return (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">
-                        Description (Optional)
-                      </FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Textarea
-                            placeholder="What makes this track special? How long have you been looking for this tune? Where did you first hear this?"
-                            className={cn(
-                              "min-h-[72px] resize-none py-2 text-white placeholder-gray-400 transition-[border-color,box-shadow,background-color]",
-                              success ? "pr-9" : "",
-                              success
-                                ? fieldSuccessOutlineClass
-                                : "border-gray-600 bg-surface",
-                            )}
-                            rows={4}
-                            data-testid="textarea-description"
-                            maxLength={INPUT_LIMITS.postDescription}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value ?? ""}
-                            onFocus={() =>
-                              setFieldFocused((f) => ({ ...f, description: true }))
-                            }
-                            onBlur={(e) => {
-                              field.onBlur();
-                              setFieldFocused((f) => ({ ...f, description: false }));
-                              const v = (e.target as HTMLTextAreaElement).value;
-                              setFieldConfirmed((c) => ({
-                                ...c,
-                                description: isDescriptionComplete(v),
-                              }));
-                            }}
-                            onChange={(e) => {
-                              field.onChange(e);
-                              if (!isDescriptionComplete(e.target.value)) {
-                                setFieldConfirmed((c) => ({ ...c, description: false }));
+                      <OptionalFieldLabel>Description</OptionalFieldLabel>
+                      <div>
+                        <div className="relative">
+                          <FormControl>
+                            <Textarea
+                              placeholder="Anything else that could help identify the track?"
+                              className={cn(
+                                "min-h-[72px] resize-none py-2 text-white placeholder-gray-400 transition-[border-color,box-shadow,background-color]",
+                                success ? "pr-9" : "",
+                                success
+                                  ? fieldSuccessOutlineClass
+                                  : "border-gray-600 bg-surface",
+                              )}
+                              rows={3}
+                              data-testid="textarea-description"
+                              maxLength={INPUT_LIMITS.postDescription}
+                              name={field.name}
+                              ref={field.ref}
+                              value={field.value ?? ""}
+                              onFocus={() =>
+                                setFieldFocused((f) => ({ ...f, description: true }))
                               }
-                            }}
-                          />
-                        </FormControl>
-                        {success ? (
-                          <FieldCompleteCheck className="right-2 top-2" />
-                        ) : null}
+                              onBlur={(e) => {
+                                field.onBlur();
+                                setFieldFocused((f) => ({ ...f, description: false }));
+                                const v = (e.target as HTMLTextAreaElement).value;
+                                setFieldConfirmed((c) => ({
+                                  ...c,
+                                  description: isDescriptionComplete(v),
+                                }));
+                              }}
+                              onChange={(e) => {
+                                field.onChange(e);
+                                if (!isDescriptionComplete(e.target.value)) {
+                                  setFieldConfirmed((c) => ({ ...c, description: false }));
+                                }
+                              }}
+                            />
+                          </FormControl>
+                          {success ? (
+                            <FieldCompleteCheck className="right-2 top-2" />
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-none text-gray-500 text-right">
+                          {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
+                        </p>
                       </div>
-                      <p className="text-xs leading-none text-gray-500 text-right">
-                        {(field.value?.length ?? 0)} / {INPUT_LIMITS.postDescription}
-                      </p>
                       <FormMessage />
                     </FormItem>
                   );
@@ -1926,7 +1928,7 @@ export default function SubmitMetadata() {
                   const success = showFieldSuccess("playedDate", valid);
                   return (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Date (Optional)</FormLabel>
+                      <OptionalFieldLabel>Date</OptionalFieldLabel>
                       <div className="relative isolate flex min-w-0 w-full max-w-full overflow-hidden rounded-md [contain:inline-size]">
                         <FormControl className="min-w-0 w-full max-w-full flex-1 basis-0">
                           <Input
@@ -1984,7 +1986,7 @@ export default function SubmitMetadata() {
                   const success = showFieldSuccess("location", valid);
                   return (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Location (Optional)</FormLabel>
+                      <OptionalFieldLabel>Location</OptionalFieldLabel>
                       <div className="relative">
                         <FormControl>
                           <Input
@@ -2036,7 +2038,7 @@ export default function SubmitMetadata() {
                   const success = showFieldSuccess("djName", valid);
                   return (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Played by (Optional)</FormLabel>
+                      <OptionalFieldLabel>Played by</OptionalFieldLabel>
                       <div className="relative">
                         <FormControl>
                           <Input
@@ -2080,48 +2082,50 @@ export default function SubmitMetadata() {
                 }}
               />
 
-              <div
-                className={cn(
-                  "relative w-full rounded-xl transition-[filter,box-shadow] duration-700",
-                  submitEnabled &&
-                    !submitBusy &&
-                    "shadow-[0_0_28px_rgba(34,211,238,0.38),0_0_56px_rgba(34,211,238,0.18)]",
-                )}
-              >
+              {/* pt-3: intentional CTA separation beyond field stack space-y-3; keeps glow off Played by */}
+              <div className="pt-3">
                 <div
                   className={cn(
-                    "relative w-full overflow-hidden rounded-xl",
-                    submitEnabled && !submitBusy && "p-[2px]",
+                    "relative w-full rounded-xl transition-[filter,box-shadow] duration-700",
+                    submitEnabled &&
+                      !submitBusy &&
+                      "shadow-[0_0_28px_rgba(34,211,238,0.38),0_0_56px_rgba(34,211,238,0.18)]",
                   )}
                 >
-                  {submitEnabled && !submitBusy ? (
-                    <div
-                      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[10px]"
-                      aria-hidden
-                    >
-                      <div
-                        className="absolute left-1/2 top-1/2 h-[240%] w-[240%] min-h-[260px] min-w-[260px] -translate-x-1/2 -translate-y-1/2 animate-submit-edge-trace"
-                        style={{
-                          background:
-                            "conic-gradient(from 0deg, rgba(34,211,238,0.08) 0deg, transparent 58deg, transparent 302deg, rgba(224,249,255,0.95) 322deg, rgba(103,232,249,0.65) 332deg, rgba(34,211,238,0.25) 342deg, transparent 352deg)",
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                  <Button
-                    type="submit"
+                  <div
                     className={cn(
-                      "relative z-[2] w-full h-12 text-base font-semibold transition-colors duration-500",
-                      submitEnabled && !submitBusy ? "rounded-[10px]" : "rounded-xl",
-                      submitBusy
-                        ? "border-0 bg-primary/85 text-primary-foreground hover:bg-primary/85"
-                        : submitEnabled
-                          ? "border-0 bg-primary text-primary-foreground hover:bg-primary/92"
-                          : "cursor-not-allowed border border-white/10 bg-primary/20 text-primary-foreground/45 shadow-none hover:bg-primary/20",
+                      "relative w-full overflow-hidden rounded-xl",
+                      submitEnabled && !submitBusy && "p-[2px]",
                     )}
-                    disabled={!submitEnabled}
-                    data-testid="button-submit"
                   >
+                    {submitEnabled && !submitBusy ? (
+                      <div
+                        className="pointer-events-none absolute inset-0 overflow-hidden rounded-[10px]"
+                        aria-hidden
+                      >
+                        <div
+                          className="absolute left-1/2 top-1/2 h-[240%] w-[240%] min-h-[260px] min-w-[260px] -translate-x-1/2 -translate-y-1/2 animate-submit-edge-trace"
+                          style={{
+                            background:
+                              "conic-gradient(from 0deg, rgba(34,211,238,0.08) 0deg, transparent 58deg, transparent 302deg, rgba(224,249,255,0.95) 322deg, rgba(103,232,249,0.65) 332deg, rgba(34,211,238,0.25) 342deg, transparent 352deg)",
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      className={cn(
+                        "relative z-[2] w-full h-12 text-base font-semibold transition-colors duration-500 disabled:opacity-100",
+                        submitEnabled && !submitBusy ? "rounded-[10px]" : "rounded-xl",
+                        submitBusy
+                          ? "border-0 bg-primary/85 text-primary-foreground hover:bg-primary/85"
+                          : submitEnabled
+                            ? "border-0 bg-primary text-primary-foreground hover:bg-primary/92"
+                            : "cursor-not-allowed border border-white/10 bg-primary/20 text-primary-foreground/45 shadow-none hover:bg-primary/20",
+                      )}
+                      disabled={!submitEnabled}
+                      data-testid="button-submit"
+                    >
                     {submitBusy ? (
                       <>
                         <InlineSpinner className="mr-2 border-white" sizeClassName="h-4 w-4" />
@@ -2138,6 +2142,7 @@ export default function SubmitMetadata() {
                     )}
                   </Button>
                 </div>
+              </div>
               </div>
             </form>
           </Form>
