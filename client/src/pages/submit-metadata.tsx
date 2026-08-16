@@ -5,8 +5,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { getSubgenresForParent, isValidSubgenre } from "@shared/post-subgenre";
 import { MAX_VIDEO_UPLOAD_BYTES, MAX_VIDEO_UPLOAD_MB } from "@shared/video-upload";
 import type { PostWithUser } from "@shared/schema";
+import {
+  SUBMIT_SUBGENRE_NONE_VALUE,
+  serializeSubmitSubgenre,
+} from "@/lib/submit-subgenre";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -156,6 +161,11 @@ const submitFormSchema = z.object({
     .min(1, "Title is required")
     .max(INPUT_LIMITS.postTitle, `Title must be at most ${INPUT_LIMITS.postTitle} characters`),
   genre: z.string().min(1, "Genre is required").max(INPUT_LIMITS.postGenre),
+  subgenre: z
+    .string()
+    .max(INPUT_LIMITS.postSubgenre)
+    .optional()
+    .nullable(),
   description: z.string().max(INPUT_LIMITS.postDescription, `Description must be at most ${INPUT_LIMITS.postDescription} characters`),
   djName: z.string().max(INPUT_LIMITS.postDjName, `Must be at most ${INPUT_LIMITS.postDjName} characters`),
   location: z.string().max(INPUT_LIMITS.postLocation, `Must be at most ${INPUT_LIMITS.postLocation} characters`),
@@ -188,6 +198,11 @@ function isGenreComplete(genre: string | undefined) {
   return !!genre && GENRE_VALUE_SET.has(genre);
 }
 
+function isSubgenreComplete(genre: string | undefined, subgenre: string | undefined) {
+  const id = serializeSubmitSubgenre(subgenre);
+  return !!id && isValidSubgenre(genre, id);
+}
+
 function isDescriptionComplete(description: string | undefined) {
   const raw = description ?? "";
   const t = raw.trim();
@@ -216,7 +231,8 @@ type TrackFieldKey =
   | "playedDate"
   | "location"
   | "djName"
-  | "genre";
+  | "genre"
+  | "subgenre";
 
 /** Turquoise outline is the primary success cue; tick is secondary. */
 const fieldSuccessOutlineClass =
@@ -862,6 +878,7 @@ export default function SubmitMetadata() {
       title: "",
       description: "",
       genre: "",
+      subgenre: "",
       djName: "",
       location: "",
       playedDate: "",
@@ -1138,6 +1155,7 @@ export default function SubmitMetadata() {
         title: data.formData.title.trim(),
         video_url: data.videoUrl,
         genre: data.formData.genre.trim(),
+        subgenre: serializeSubmitSubgenre(data.formData.subgenre),
         description: data.formData.description?.trim() || null,
         location: data.formData.location?.trim() || null,
         dj_name: data.formData.djName?.trim() || null,
@@ -1549,6 +1567,8 @@ export default function SubmitMetadata() {
   const watched = form.watch();
   const requiredFieldsReady =
     isTitleComplete(watched.title) && isGenreComplete(watched.genre);
+  const subgenreOptions = getSubgenresForParent(watched.genre);
+  const showSubgenreField = isGenreComplete(watched.genre) && subgenreOptions.length > 0;
   /** True only after Submit is pressed — never during passive metadata edits. */
   const isActuallySubmittingUpload =
     isUploading || submitMutation.isPending;
@@ -1801,9 +1821,12 @@ export default function SubmitMetadata() {
                           value={field.value || undefined}
                           onValueChange={(v) => {
                             field.onChange(v);
-                            if (!isGenreComplete(v)) {
-                              setFieldConfirmed((c) => ({ ...c, genre: false }));
-                            }
+                            form.setValue("subgenre", "");
+                            setFieldConfirmed((c) => ({
+                              ...c,
+                              ...(isGenreComplete(v) ? {} : { genre: false }),
+                              subgenre: false,
+                            }));
                           }}
                           onOpenChange={(open) => {
                             if (isSubmitMetadataKbdMetricsDebugEnabled() && open) {
@@ -1858,6 +1881,74 @@ export default function SubmitMetadata() {
                   );
                 }}
               />
+
+              {showSubgenreField ? (
+              <FormField
+                control={form.control}
+                name="subgenre"
+                render={({ field }) => {
+                  const valid = isSubgenreComplete(watched.genre, field.value ?? undefined);
+                  const success = showFieldSuccess("subgenre", valid);
+                  return (
+                    <FormItem className="space-y-1.5">
+                      <OptionalFieldLabel>Sub-genre</OptionalFieldLabel>
+                      <div className="relative">
+                        <Select
+                          value={field.value || undefined}
+                          onValueChange={(v) => {
+                            const next = v === SUBMIT_SUBGENRE_NONE_VALUE ? "" : v;
+                            field.onChange(next);
+                            if (!isSubgenreComplete(form.getValues("genre"), next)) {
+                              setFieldConfirmed((c) => ({ ...c, subgenre: false }));
+                            }
+                          }}
+                          onOpenChange={(open) => {
+                            setFieldFocused((f) => ({ ...f, subgenre: open }));
+                            if (!open) {
+                              field.onBlur();
+                              queueMicrotask(() => {
+                                const g = form.getValues("genre");
+                                const s = form.getValues("subgenre");
+                                setFieldConfirmed((c) => ({
+                                  ...c,
+                                  subgenre: isSubgenreComplete(g ?? undefined, s ?? undefined),
+                                }));
+                              });
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger
+                              ref={field.ref}
+                              aria-required={false}
+                              className={cn(
+                                "w-full bg-surface text-white transition-[border-color,box-shadow,background-color]",
+                                success ? fieldSuccessOutlineClass : "border-gray-600",
+                              )}
+                              data-testid="select-subgenre"
+                            >
+                              <SelectValue placeholder="Select sub-genre..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value={SUBMIT_SUBGENRE_NONE_VALUE}>None</SelectItem>
+                            {subgenreOptions.map((entry) => (
+                              <SelectItem key={entry.id} value={entry.id}>
+                                {entry.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {success ? (
+                          <FieldCompleteCheck className="right-9 top-1/2 -translate-y-1/2" />
+                        ) : null}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+              ) : null}
 
               <FormField
                 control={form.control}

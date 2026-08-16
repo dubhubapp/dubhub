@@ -175,8 +175,8 @@ describe("ReleaseTracker primary collection switch", () => {
     );
   });
 
-  it("primary-to-secondary gap is tighter than the previous mb-3 token", () => {
-    assert.match(RELEASE_TRACKER_PRIMARY_ROW_CLASS, /mb-2/);
+  it("primary-to-secondary gap stays compact (shared sticky rhythm)", () => {
+    assert.match(RELEASE_TRACKER_PRIMARY_ROW_CLASS, /mb-1/);
     assert.doesNotMatch(RELEASE_TRACKER_PRIMARY_ROW_CLASS, /mb-3/);
   });
 
@@ -187,6 +187,12 @@ describe("ReleaseTracker primary collection switch", () => {
     assert.match(trackerSrc, /disabled=\{!artworkSupported\}/);
     assert.doesNotMatch(trackerSrc, /artworkSupported \?\s*\(/);
     assert.match(trackerSrc, /h-11 w-11 shrink-0/);
+    // Margin on the 44pt toggle expands items-end secondary row and drops labels vs Leaderboard.
+    assert.doesNotMatch(trackerSrc, /mb-0\.5 flex h-11 w-11/);
+  });
+
+  it("secondary row geometry matches Leaderboard (no extra toggle margin)", () => {
+    assert.equal(RELEASE_TRACKER_SECONDARY_ROW_CLASS, "flex min-h-11 items-end");
   });
 
   it("Collaborations still forces List without writing over stored Artwork preference", () => {

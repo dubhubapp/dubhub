@@ -40,12 +40,11 @@ export function resolvePaidToolGateMode(args: {
 
 /** Copy for the first gated surface: private release-alert audience count. */
 export const RELEASE_ALERTS_AUDIENCE_LOCKED_COPY = {
-  title: "Release Alerts audience",
+  title: "Release Alerts Audience",
+  /** Short insight context; listener-interest detail lives on the release_alerts paywall. */
   body:
-    "See how many listeners are waiting for your next release. Artist verification and the gold tick stay free — this insight is part of Verified Artist Tools.",
-  listenersNote:
-    "Listeners can still turn on Release Alerts for your profile. They stay subscribed and will be notified when you use this feature.",
-  ctaLabel: "Upgrade",
+    "See how many listeners are waiting for your next release. This insight is part of Verified Artist Tools.",
+  ctaLabel: "Unlock with Verified Artist Tools",
   ctaHint: "Purchase options coming soon",
 } as const;
 

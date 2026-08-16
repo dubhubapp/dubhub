@@ -28,6 +28,7 @@ import {
   normalizeCanonicalGenreId,
   parseSuggestedGenreFromReportDescription,
 } from "@shared/report-genre";
+import { parseCreatePostSubgenre } from "./post-subgenre";
 import {
   COMMENT_ATTACHED_TO_IDENTIFICATION_MESSAGE,
   COMMENT_DELETED_INTERACTION_MESSAGE,
@@ -1904,6 +1905,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (genreTrim.length > INPUT_LIMITS.postGenre) {
         return res.status(400).json({ message: `Genre must be at most ${INPUT_LIMITS.postGenre} characters` });
       }
+      const parsedSubgenre = parseCreatePostSubgenre(genreTrim, req.body?.subgenre);
+      if (!parsedSubgenre.ok) {
+        return res.status(400).json({
+          message: parsedSubgenre.message,
+          code: parsedSubgenre.code,
+        });
+      }
       const descStr = description != null ? String(description) : "";
       if (descStr.length > INPUT_LIMITS.postDescription) {
         return res.status(400).json({ message: `Description must be at most ${INPUT_LIMITS.postDescription} characters` });
@@ -1937,6 +1945,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         video_url,
         thumbnail_url,
         genre: genreTrim,
+        subgenre: parsedSubgenre.subgenre,
         description: descStr.trim() || undefined,
         location: locStr.trim() || undefined,
         dj_name: djStr.trim() || undefined,
@@ -5193,7 +5202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const auditReason = `Genre corrected: ${oldLabel} → ${newLabel}`;
 
       await db.execute(sql`
-        UPDATE posts SET genre = ${canonicalGenre} WHERE id = ${report.reported_post_id}
+        UPDATE posts SET genre = ${canonicalGenre}, subgenre = NULL WHERE id = ${report.reported_post_id}
       `);
 
       await db.execute(sql`

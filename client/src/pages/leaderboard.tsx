@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Trophy, Medal, Award, Ticket, Calendar, Mic, Headphones } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
@@ -12,9 +11,52 @@ import { getGenreChipStyle } from "@/lib/genre-styles";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { Capacitor } from "@capacitor/core";
+import { playInteractionLight } from "@/lib/haptic";
+import {
+  planLeaderboardScopeChange,
+  useLeaderboardScopeSwipe,
+} from "@/lib/leaderboard-scope-swipe";
+import {
+  LEADERBOARD_CONTENT_TOP_GAP_CLASS,
+  LEADERBOARD_LIST_CLASS,
+  LEADERBOARD_PRIMARY_ACTIVE_CLASS,
+  LEADERBOARD_PRIMARY_INACTIVE_CLASS,
+  LEADERBOARD_PRIMARY_INDICATOR_CLASS,
+  LEADERBOARD_PRIMARY_LABEL_CLASS,
+  LEADERBOARD_PRIMARY_ROW_CLASS,
+  LEADERBOARD_PRIMARY_TRIGGER_BASE_CLASS,
+  LEADERBOARD_PRIZE_SECTION_CLASS,
+  LEADERBOARD_REP_FILL_CLASS,
+  LEADERBOARD_REP_MIN_WIDTH_PX,
+  LEADERBOARD_REP_TRACK_CLASS,
+  LEADERBOARD_ROW_BASE_CLASS,
+  LEADERBOARD_ROW_CURRENT_CLASS,
+  LEADERBOARD_SCORE_COLUMN_CLASS,
+  LEADERBOARD_SECONDARY_ACTIVE_CLASS,
+  LEADERBOARD_SECONDARY_BUTTON_BASE_CLASS,
+  LEADERBOARD_SECONDARY_INACTIVE_CLASS,
+  LEADERBOARD_SECONDARY_ROW_CLASS,
+  LEADERBOARD_STICKY_CHROME_CLASS,
+  LEADERBOARD_STICKY_FADE_CLASS,
+  LEADERBOARD_TIME_FILTERS,
+  LEADERBOARD_TOP_LIMIT,
+  leaderboardArtistsMyRankQueryKey,
+  leaderboardArtistsQueryKey,
+  leaderboardRepProgressAriaValueText,
+  leaderboardUsersMyRankQueryKey,
+  leaderboardUsersQueryKey,
+  leaderboardVisibleProgressPct,
+  type LeaderboardScope,
+  type LeaderboardTimeFilter,
+} from "@/lib/leaderboard-presentation";
+import {
+  repProgressBarBaseColor,
+  repProgressPremiumGradientFromGenreBg,
+  whiteRepProgressGradient,
+} from "@/lib/profile-rep-styles";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -29,7 +71,6 @@ interface LeaderboardEntry {
   moderator: boolean;
 }
 
-type TimeFilter = "month" | "year" | "all";
 type LeaderboardRankResponse = {
   rank: number;
   entry: LeaderboardEntry | null;
@@ -64,7 +105,7 @@ const PRIZE_CARD_THEMES = {
   },
 } as const;
 
-const getCurrentMonth = () => new Date().toLocaleString('default', { month: 'long' });
+const getCurrentMonth = () => new Date().toLocaleString("default", { month: "long" });
 
 function getDaysRemainingInMonth(): number {
   const now = new Date();
@@ -77,64 +118,47 @@ function formatDaysRemaining(days: number): string {
   if (days === 1) return "1 day remaining";
   return `${days} days remaining`;
 }
-const TOP_LIMIT = 100;
 
 function formatRank(rank: number) {
   return `#${rank}`;
 }
 
-function progressFillStyle(hexColor: string | null | undefined) {
-  if (!hexColor) {
-    return "linear-gradient(90deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,1) 55%, rgba(241,245,249,0.95) 100%)";
-  }
-  const h = hexColor.replace("#", "").trim();
-  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) {
-    return "linear-gradient(90deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,1) 55%, rgba(241,245,249,0.95) 100%)";
-  }
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  const dark = `rgb(${Math.round(r * 0.62)}, ${Math.round(g * 0.62)}, ${Math.round(b * 0.62)})`;
-  const base = `rgb(${r}, ${g}, ${b})`;
-  const light = `rgb(${Math.min(255, Math.round(r + (255 - r) * 0.28))}, ${Math.min(255, Math.round(g + (255 - g) * 0.28))}, ${Math.min(255, Math.round(b + (255 - b) * 0.28))})`;
-  return `linear-gradient(90deg, ${dark} 0%, ${base} 54%, ${light} 100%)`;
-}
-
-function progressBaseColor(hexColor: string | null | undefined) {
-  const h = (hexColor ?? "").replace("#", "").trim();
-  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) return "#ffffff";
-  return `#${h}`;
-}
-
-function genreGlowShadow(hexColor: string | null | undefined) {
-  const h = (hexColor ?? "").replace("#", "").trim();
-  if (h.length !== 6 || !/^[a-fA-F0-9]{6}$/.test(h)) {
-    return "0 0 10px rgba(255,255,255,0.35)";
-  }
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `0 0 12px rgba(${r}, ${g}, ${b}, 0.45)`;
-}
-
 export default function Leaderboard() {
   const { currentUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
-  const [activeTab, setActiveTab] = useState<"users" | "artists">("users");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("month");
+  const [activeTab, setActiveTab] = useState<LeaderboardScope>("users");
+  const [timeFilter, setTimeFilter] = useState<LeaderboardTimeFilter>("month");
   const pageScrollRef = useRef<HTMLDivElement | null>(null);
+  const swipeContentRef = useRef<HTMLDivElement | null>(null);
+  const activeTabRef = useRef<LeaderboardScope>(activeTab);
+  activeTabRef.current = activeTab;
   const currentUserId = currentUser?.id;
 
-  const handleLeaderboardTabChange = (v: string) => {
-    const next = v as "users" | "artists";
-    if (next === activeTab) return;
+  /**
+   * Single scope-change owner for primary tab taps and Community ↔ Artists swipe.
+   * Scrolls to top (matches existing tap behaviour) and fires one light commit haptic.
+   */
+  const setLeaderboardScope = useCallback((nextScope: LeaderboardScope) => {
+    const plan = planLeaderboardScopeChange(activeTabRef.current, nextScope);
+    if (!plan.changed) return;
     pageScrollRef.current?.scrollTo({ top: 0 });
-    setActiveTab(next);
+    setActiveTab(plan.nextScope);
+    playInteractionLight();
+  }, []);
+
+  const handleLeaderboardTabChange = (v: string) => {
+    setLeaderboardScope(v as LeaderboardScope);
   };
+
+  useLeaderboardScopeSwipe({
+    scopeRef: activeTabRef,
+    containerRef: swipeContentRef,
+    onCommitScope: setLeaderboardScope,
+  });
 
   // Fetch user leaderboard
   const { data: userLeaderboard = [], isLoading: isLoadingUsers } = useQuery<LeaderboardEntry[]>({
-    queryKey: ["/api/leaderboard/users", timeFilter],
+    queryKey: leaderboardUsersQueryKey(timeFilter),
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
       const res = await apiRequest("GET", `/api/leaderboard/users?${params.toString()}`);
@@ -144,7 +168,7 @@ export default function Leaderboard() {
 
   // Fetch artist leaderboard
   const { data: artistLeaderboard = [], isLoading: isLoadingArtists } = useQuery<LeaderboardEntry[]>({
-    queryKey: ["/api/leaderboard/artists", timeFilter],
+    queryKey: leaderboardArtistsQueryKey(timeFilter),
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
       const res = await apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`);
@@ -153,7 +177,7 @@ export default function Leaderboard() {
   });
 
   const { data: userMyRank } = useQuery<LeaderboardRankResponse>({
-    queryKey: ["/api/leaderboard/users/my-rank", currentUserId, timeFilter],
+    queryKey: leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
     enabled: !!currentUserId,
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -171,7 +195,7 @@ export default function Leaderboard() {
   });
 
   const { data: artistMyRank } = useQuery<LeaderboardRankResponse>({
-    queryKey: ["/api/leaderboard/artists/my-rank", currentUserId, timeFilter],
+    queryKey: leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
     enabled: !!currentUserId,
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -187,8 +211,14 @@ export default function Leaderboard() {
     },
     retry: false,
   });
-  const userTopEntries = useMemo(() => userLeaderboard.slice(0, TOP_LIMIT), [userLeaderboard]);
-  const artistTopEntries = useMemo(() => artistLeaderboard.slice(0, TOP_LIMIT), [artistLeaderboard]);
+  const userTopEntries = useMemo(
+    () => userLeaderboard.slice(0, LEADERBOARD_TOP_LIMIT),
+    [userLeaderboard],
+  );
+  const artistTopEntries = useMemo(
+    () => artistLeaderboard.slice(0, LEADERBOARD_TOP_LIMIT),
+    [artistLeaderboard],
+  );
   const userHasCurrentUserInTop = useMemo(
     () => !!currentUserId && userTopEntries.some((entry) => entry.user_id === currentUserId),
     [userTopEntries, currentUserId],
@@ -199,12 +229,12 @@ export default function Leaderboard() {
   );
   const userOutsideTop = useMemo(() => {
     if (!currentUserId || userHasCurrentUserInTop || !userMyRank?.entry) return null;
-    if ((userMyRank.rank ?? 0) <= TOP_LIMIT) return null;
+    if ((userMyRank.rank ?? 0) <= LEADERBOARD_TOP_LIMIT) return null;
     return userMyRank;
   }, [currentUserId, userHasCurrentUserInTop, userMyRank]);
   const artistOutsideTop = useMemo(() => {
     if (!currentUserId || artistHasCurrentUserInTop || !artistMyRank?.entry) return null;
-    if ((artistMyRank.rank ?? 0) <= TOP_LIMIT) return null;
+    if ((artistMyRank.rank ?? 0) <= LEADERBOARD_TOP_LIMIT) return null;
     return artistMyRank;
   }, [currentUserId, artistHasCurrentUserInTop, artistMyRank]);
 
@@ -240,12 +270,18 @@ export default function Leaderboard() {
     const highlightAsCurrent = forceCurrentUser || isCurrentUser;
     const isVerifiedArtist = entry.account_type === "artist" && entry.verified_artist === true;
     const trustLevel = deriveTrustLevel(entry.reputation ?? 0);
-    const levelProgress = Math.min(100, Math.max(0, Number.isFinite(trustLevel.progressPct) ? trustLevel.progressPct : 0));
-    const visibleProgress = levelProgress > 0 ? Math.max(levelProgress, 14) : 0;
+    const levelProgress = Math.min(
+      100,
+      Math.max(0, Number.isFinite(trustLevel.progressPct) ? trustLevel.progressPct : 0),
+    );
+    const visibleProgress = leaderboardVisibleProgressPct(levelProgress);
     const genreStyle = getGenreChipStyle(entry.favorite_genre ?? null);
-    const baseColor = progressBaseColor(genreStyle?.bgColor ?? null);
-    const barFill = progressFillStyle(genreStyle?.bgColor ?? null);
-    const barGlow = genreGlowShadow(genreStyle?.bgColor ?? null);
+    const genreHex = genreStyle?.bgColor ?? null;
+    const baseColor = repProgressBarBaseColor(genreHex);
+    const barFill = genreHex
+      ? repProgressPremiumGradientFromGenreBg(genreHex)
+      : whiteRepProgressGradient();
+    const progressAriaText = leaderboardRepProgressAriaValueText(trustLevel);
 
     const profileImageUrl =
       resolveAvatarUrlForProfile(entry.avatar_url, entry.account_type) ?? "";
@@ -261,11 +297,10 @@ export default function Leaderboard() {
 
     return (
       <div
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
-          highlightAsCurrent
-            ? "bg-primary/10 border-primary/60 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
-            : "bg-black/25 backdrop-blur-md border-white/10 hover:bg-black/35"
-        }`}
+        className={cn(
+          LEADERBOARD_ROW_BASE_CLASS,
+          highlightAsCurrent && LEADERBOARD_ROW_CURRENT_CLASS,
+        )}
         data-testid={`leaderboard-entry-${entry.user_id}`}
       >
         {/* Rank */}
@@ -285,28 +320,29 @@ export default function Leaderboard() {
           data-testid={`avatar-${entry.user_id}`}
           onClick={handleOpenProfile}
         >
-          <img 
-            src={profileImageUrl} 
+          <img
+            src={profileImageUrl}
             alt=""
             className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(profileImageUrl) ? "avatar-default-media" : ""}`}
             onError={(e) => {
-              // Fallback to initials if image fails to load
               const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
-              target.nextElementSibling?.classList.remove('hidden');
+              target.style.display = "none";
+              target.nextElementSibling?.classList.remove("hidden");
             }}
           />
           <div className="hidden w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-white font-bold">
-            {(formatUsernameDisplay(entry.username).replace(/^@/, "") || entry.username || "?").charAt(0).toUpperCase()}
+            {(formatUsernameDisplay(entry.username).replace(/^@/, "") || entry.username || "?")
+              .charAt(0)
+              .toUpperCase()}
           </div>
         </button>
 
         {/* User Info */}
         <div className="flex-1 min-w-0">
-          <div className="relative z-[1] flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
+          <div className="relative z-[1] mb-1.5 flex min-w-0 items-center gap-x-2">
             <button
               type="button"
-              className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 basis-0 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+              className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
               data-testid={`username-${entry.user_id}`}
               onClick={handleOpenProfile}
             >
@@ -326,30 +362,42 @@ export default function Leaderboard() {
           </div>
 
           <div className="relative z-0 flex items-center gap-2">
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">{trustLevel.displayName}</span>
-            <div className="flex-1 h-2 bg-black/55 rounded-full overflow-hidden">
-              <div 
-                className="h-full transition-all duration-300 rounded-full"
+            <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
+              {trustLevel.displayName}
+            </span>
+            <div className={LEADERBOARD_REP_TRACK_CLASS}>
+              <div
+                className={LEADERBOARD_REP_FILL_CLASS}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(levelProgress)}
+                aria-valuetext={progressAriaText}
+                aria-label={progressAriaText}
+                data-testid={`reputation-bar-${entry.user_id}`}
                 style={{
                   width: `${visibleProgress}%`,
-                  minWidth: visibleProgress > 0 ? "18px" : "0px",
+                  minWidth: visibleProgress > 0 ? `${LEADERBOARD_REP_MIN_WIDTH_PX}px` : "0px",
                   backgroundImage: barFill,
                   backgroundColor: baseColor,
-                  filter: "saturate(1.32) contrast(1.05)",
-                  opacity: 1,
-                  boxShadow: barGlow,
                 }}
               />
             </div>
           </div>
         </div>
 
-        {/* Correct IDs */}
-        <div className="text-right min-w-[68px]">
-          <div className="font-mono text-lg font-bold leading-none" data-testid={`confirmed-ids-${entry.user_id}`}>
+        {/* IDs metric — value remains entry.correct_ids */}
+        <div className={LEADERBOARD_SCORE_COLUMN_CLASS}>
+          <div
+            className="font-mono text-lg font-bold leading-none"
+            data-testid={`confirmed-ids-${entry.user_id}`}
+          >
             {entry.correct_ids}
           </div>
-          <div className="text-[10px] mt-1 text-muted-foreground uppercase tracking-wide">Correct IDs</div>
+          {/* No CSS uppercase — preserves acronym casing "IDs" (not "IDS"). */}
+          <div className="mt-1 text-[10px] tracking-wide text-muted-foreground">
+            IDs
+          </div>
         </div>
       </div>
     );
@@ -362,7 +410,7 @@ export default function Leaderboard() {
     const daysRemaining = formatDaysRemaining(getDaysRemainingInMonth());
 
     return (
-      <div className="relative mb-4 px-4">
+      <div className={LEADERBOARD_PRIZE_SECTION_CLASS}>
         <div className="relative" data-testid="rewards-banner">
           <div
             className={`pointer-events-none absolute inset-0 rounded-xl ${theme.glowShadow}`}
@@ -402,7 +450,9 @@ export default function Leaderboard() {
                 🏆 {monthUpper} PRIZE
               </span>
 
-              <h3 className={`max-w-full px-1 text-base font-bold leading-snug sm:text-lg ${theme.title}`}>
+              <h3
+                className={`max-w-full px-1 text-base font-bold leading-snug sm:text-lg ${theme.title}`}
+              >
                 {reward}
               </h3>
 
@@ -436,9 +486,17 @@ export default function Leaderboard() {
   }) => {
     if (isLoading) {
       return (
-        <div className="space-y-2.5">
-          {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="h-[74px] bg-black/20 border border-white/10 rounded-xl animate-pulse" />
+        <div className={LEADERBOARD_LIST_CLASS} aria-busy="true" aria-label="Loading leaderboard">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-1 py-3">
+              <div className="h-6 w-10 shrink-0 animate-pulse rounded bg-white/5" />
+              <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-white/5" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-4 w-2/3 max-w-[10rem] animate-pulse rounded bg-white/5" />
+                <div className="h-2 w-full animate-pulse rounded-full bg-white/5" />
+              </div>
+              <div className="h-8 w-[68px] shrink-0 animate-pulse rounded bg-white/5" />
+            </div>
           ))}
         </div>
       );
@@ -446,7 +504,7 @@ export default function Leaderboard() {
 
     if (entries.length === 0) {
       return (
-        <div className="text-center py-12">
+        <div className="py-12 text-center">
           <p className="text-muted-foreground">{emptyLabel}</p>
           <Button
             variant="outline"
@@ -461,13 +519,13 @@ export default function Leaderboard() {
     }
 
     return (
-      <div className="space-y-2.5">
+      <div className={LEADERBOARD_LIST_CLASS}>
         {entries.map((entry, index) => (
           <LeaderboardEntryRow key={entry.user_id} entry={entry} rank={index + 1} />
         ))}
 
         {outsideTop?.entry && (
-          <div className="pt-2 mt-3 border-t border-white/15">
+          <div className="border-t border-white/15 pt-1">
             <LeaderboardEntryRow
               entry={outsideTop.entry}
               rank={outsideTop.rank}
@@ -484,46 +542,94 @@ export default function Leaderboard() {
       ref={pageScrollRef}
       className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
     >
-      <div className="app-page-top-pad max-w-4xl mx-auto px-4 pb-6">
-        {/* Main Tabs */}
-        <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange} className="mb-6">
-          <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 space-y-2 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-2">
-            <TabsList className="grid w-full grid-cols-2 bg-transparent p-0" data-testid="leaderboard-tabs">
+      <div className="mx-auto max-w-4xl px-4 pb-6">
+        <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange}>
+          <div className={LEADERBOARD_STICKY_CHROME_CLASS}>
+            <TabsList
+              className={cn(LEADERBOARD_PRIMARY_ROW_CLASS, "h-auto w-full bg-transparent p-0")}
+              data-testid="leaderboard-tabs"
+              aria-label="Leaderboard scope"
+            >
               <TabsTrigger
                 value="users"
                 data-testid="tab-users"
-                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className={cn(
+                  LEADERBOARD_PRIMARY_TRIGGER_BASE_CLASS,
+                  activeTab === "users"
+                    ? LEADERBOARD_PRIMARY_ACTIVE_CLASS
+                    : LEADERBOARD_PRIMARY_INACTIVE_CLASS,
+                )}
               >
-                Community
+                <span
+                  className={cn(
+                    LEADERBOARD_PRIMARY_LABEL_CLASS,
+                    activeTab === "users" && LEADERBOARD_PRIMARY_INDICATOR_CLASS,
+                  )}
+                >
+                  Community
+                </span>
               </TabsTrigger>
               <TabsTrigger
                 value="artists"
                 data-testid="tab-artists"
-                className="ios-press rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:text-accent-foreground data-[state=active]:font-semibold data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+                className={cn(
+                  LEADERBOARD_PRIMARY_TRIGGER_BASE_CLASS,
+                  activeTab === "artists"
+                    ? LEADERBOARD_PRIMARY_ACTIVE_CLASS
+                    : LEADERBOARD_PRIMARY_INACTIVE_CLASS,
+                )}
               >
-                Artists
+                <span
+                  className={cn(
+                    LEADERBOARD_PRIMARY_LABEL_CLASS,
+                    activeTab === "artists" && LEADERBOARD_PRIMARY_INDICATOR_CLASS,
+                  )}
+                >
+                  Artists
+                </span>
               </TabsTrigger>
             </TabsList>
 
-            {/* Time Filter Dropdown */}
-            <div className="flex justify-center" data-testid="time-filters">
-              <Select value={timeFilter} onValueChange={(v) => setTimeFilter(v as TimeFilter)}>
-                <SelectTrigger className="w-[180px] h-9 rounded-full border-white/20 bg-white/10 backdrop-blur-lg text-white data-[placeholder]:text-white/70 focus:ring-white/30">
-                  <SelectValue placeholder="Select period" />
-                </SelectTrigger>
-                <SelectContent className="bg-black/75 border-white/20 text-white backdrop-blur-xl">
-                  <SelectItem value="month" data-testid="filter-month">This Month</SelectItem>
-                  <SelectItem value="year" data-testid="filter-year">This Year</SelectItem>
-                  <SelectItem value="all" data-testid="filter-all">All Time</SelectItem>
-                </SelectContent>
-              </Select>
+            <div
+              className={LEADERBOARD_SECONDARY_ROW_CLASS}
+              role="tablist"
+              aria-label="Leaderboard timeframe"
+              data-testid="time-filters"
+            >
+              {LEADERBOARD_TIME_FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={timeFilter === filter.value}
+                  data-testid={filter.testId}
+                  onClick={() => setTimeFilter(filter.value)}
+                  className={cn(
+                    LEADERBOARD_SECONDARY_BUTTON_BASE_CLASS,
+                    timeFilter === filter.value
+                      ? LEADERBOARD_SECONDARY_ACTIVE_CLASS
+                      : LEADERBOARD_SECONDARY_INACTIVE_CLASS,
+                  )}
+                >
+                  {filter.label}
+                </button>
+              ))}
             </div>
+            <div
+              className={LEADERBOARD_STICKY_FADE_CLASS}
+              aria-hidden
+              data-testid="leaderboard-sticky-fade"
+            />
           </div>
 
-          <div className="relative z-0 pt-14 w-full">
+          <div
+            ref={swipeContentRef}
+            className={cn("relative z-0 w-full", LEADERBOARD_CONTENT_TOP_GAP_CLASS)}
+            data-testid="leaderboard-swipe-region"
+          >
             <div
-              key={activeTab}
-              className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 duration-200 ease-out"
+              key={`${activeTab}-${timeFilter}`}
+              className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
             >
               {activeTab === "users" ? (
                 <>

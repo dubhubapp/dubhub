@@ -37,6 +37,21 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { ArtistProfileQuestionsPrompt } from "@/components/artist-profile-questions-prompt";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
+import {
+  PROFILE_POSTS_FILTER_LABEL_CLASS,
+  PROFILE_POSTS_FILTER_ROW_CLASS,
+  PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS,
+  PROFILE_POSTS_FILTER_TAB_BASE_CLASS,
+  PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS,
+} from "@/lib/profile-posts-filter-presentation";
+import {
+  PROFILE_PRIMARY_NAV_ICON_CLASS,
+  PROFILE_PRIMARY_NAV_LABEL_CLASS,
+  PROFILE_PRIMARY_NAV_LIST_CLASS,
+  PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS,
+  PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS,
+  PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS,
+} from "@/lib/profile-primary-nav-presentation";
 import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { resolveMediaUrl } from "@/lib/media-url";
@@ -59,7 +74,6 @@ import { getReleaseEventGroupSummaryMessage } from "@/lib/release-event-group-co
 import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
-import { ARTIST_BETA_ARTIST_TOOLS_MESSAGE } from "@/lib/artist-beta-copy";
 import {
   consumeProfileNotificationsTabIntent,
   PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT,
@@ -151,7 +165,7 @@ function notificationRowFields(n: NotificationWithUser) {
 /** Concise copy for profile stat sections and cards (popover help). */
 const PROFILE_HELP = {
   sectionImpact:
-    "Statistics related to your verified artist activity on dub hub.",
+    "Stats about your verified artist activity on dub hub. Shown on your Overview — not on your public profile.",
   sectionUserActivity:
     "Your personal activity: uploads, confirmed IDs on your posts, and engagement your posts receive.",
   sectionOverview:
@@ -224,8 +238,17 @@ function getGenreChipColors(genre: string) {
   }
 }
 
-const PROFILE_ACTIVITY_CARD_CLASS =
-  "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
+/** Vertical rhythm between Overview sections — equal inset around `divide-y` rules.
+ * Direct `section` children only (Quick One renders its own `<section>` when visible). */
+const PROFILE_OVERVIEW_SECTIONS_CLASS =
+  "mt-5 divide-y divide-white/5 [&>section]:py-5 [&>section:first-child]:pt-0 [&>section:last-child]:pb-1";
+
+/** Lightweight Impact / Community mode tabs — text + accent underline (not segmented pills). */
+const PROFILE_IMPACT_MODE_TAB_BASE =
+  "ios-press relative flex min-h-11 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+const PROFILE_IMPACT_MODE_TAB_ACTIVE =
+  "font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:rounded-full after:bg-accent";
+const PROFILE_IMPACT_MODE_TAB_INACTIVE = "font-medium text-white/55 hover:text-white/80";
 
 /** Matches public profile fav-genre pill footprint. */
 const OWNER_PROFILE_GENRE_VALUE_PILL_CLASS =
@@ -687,7 +710,7 @@ export default function UserProfile() {
     collaborations: number;
   };
 
-  const { data: artistStats } = useQuery<ArtistStats>({
+  const { data: artistStats, isPending: artistStatsPending } = useQuery<ArtistStats>({
     queryKey: ["/api/artists", currentUser?.id, "stats"],
     enabled: !!currentUser?.id && userType === "artist",
     retry: false,
@@ -959,66 +982,76 @@ export default function UserProfile() {
       artistStats.collaborations > 0
     );
 
-  const artistImpactItems: StatsCardItem[] = artistStats
-    ? [
+  const artistImpactItems: StatsCardItem[] = (() => {
+    const stats = artistStats ?? {
+      confirmedTracks: 0,
+      releasesCreated: 0,
+      upcomingReleases: 0,
+      postsFeaturingTracks: 0,
+      totalLikesAcrossPosts: 0,
+      totalCommentsAcrossPosts: 0,
+      uniqueUploaders: 0,
+      collaborations: 0,
+    };
+    return [
         {
           label: "Confirmed",
-          value: artistStats.confirmedTracks.toLocaleString(),
+          value: stats.confirmedTracks.toLocaleString(),
           Icon: BadgeCheck,
           toneClassName: "border-green-500/35 bg-green-500/5 shadow-[0_0_12px_rgba(34,197,94,0.12)] text-green-300 [&_svg]:drop-shadow-[0_0_6px_rgba(34,197,94,0.4)]",
           info: PROFILE_HELP.artistConfirmedTracks,
         },
         {
           label: "Releases",
-          value: artistStats.releasesCreated.toLocaleString(),
+          value: stats.releasesCreated.toLocaleString(),
           Icon: Calendar,
           toneClassName: "border-indigo-500/35 bg-indigo-500/5 shadow-[0_0_12px_rgba(99,102,241,0.12)] text-indigo-300 [&_svg]:drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]",
           info: PROFILE_HELP.artistReleases,
         },
         {
           label: "Upcoming",
-          value: artistStats.upcomingReleases.toLocaleString(),
+          value: stats.upcomingReleases.toLocaleString(),
           Icon: CalendarClock,
           toneClassName: "border-amber-500/35 bg-amber-500/5 shadow-[0_0_12px_rgba(245,158,11,0.12)] text-amber-300 [&_svg]:drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]",
           info: PROFILE_HELP.artistUpcoming,
         },
         {
           label: "Featured Clips",
-          value: artistStats.postsFeaturingTracks.toLocaleString(),
+          value: stats.postsFeaturingTracks.toLocaleString(),
           Icon: Radio,
           toneClassName: "border-purple-500/35 bg-purple-500/5 shadow-[0_0_12px_rgba(168,85,247,0.12)] text-purple-300 [&_svg]:drop-shadow-[0_0_6px_rgba(168,85,247,0.4)]",
           info: PROFILE_HELP.artistFeaturedClips,
         },
         {
           label: "Track Saves",
-          value: artistStats.totalLikesAcrossPosts.toLocaleString(),
+          value: stats.totalLikesAcrossPosts.toLocaleString(),
           Icon: Heart,
           toneClassName: "border-pink-500/35 bg-pink-500/5 shadow-[0_0_12px_rgba(236,72,153,0.12)] text-pink-300 [&_svg]:drop-shadow-[0_0_6px_rgba(236,72,153,0.4)]",
           info: PROFILE_HELP.artistTrackSaves,
         },
         {
           label: "Comments",
-          value: artistStats.totalCommentsAcrossPosts.toLocaleString(),
+          value: stats.totalCommentsAcrossPosts.toLocaleString(),
           Icon: MessageCircle,
           toneClassName: "border-cyan-500/35 bg-cyan-500/5 shadow-[0_0_12px_rgba(6,182,212,0.12)] text-cyan-300 [&_svg]:drop-shadow-[0_0_6px_rgba(6,182,212,0.4)]",
           info: PROFILE_HELP.artistComments,
         },
         {
           label: "Uploaders",
-          value: artistStats.uniqueUploaders.toLocaleString(),
+          value: stats.uniqueUploaders.toLocaleString(),
           Icon: Users,
           toneClassName: "border-blue-500/35 bg-blue-500/5 shadow-[0_0_12px_rgba(59,130,246,0.12)] text-blue-300 [&_svg]:drop-shadow-[0_0_6px_rgba(59,130,246,0.4)]",
           info: PROFILE_HELP.artistUploaders,
         },
         {
           label: "Collaborations",
-          value: artistStats.collaborations.toLocaleString(),
+          value: stats.collaborations.toLocaleString(),
           Icon: Headphones,
           toneClassName: "border-emerald-500/35 bg-emerald-500/5 shadow-[0_0_12px_rgba(16,185,129,0.12)] text-emerald-300 [&_svg]:drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]",
           info: PROFILE_HELP.artistCollaborations,
         },
-      ]
-    : [];
+      ];
+  })();
 
   const userOverviewItems: StatsCardItem[] = [
     {
@@ -2626,92 +2659,107 @@ export default function UserProfile() {
           </section>
 
           {/* Tabs */}
-          <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-6">
-            <div className="sticky top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-30 mb-4 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-1">
-            <TabsList
-              className="grid w-full grid-cols-4 gap-1 bg-transparent p-0 h-auto"
-              data-testid="profile-tabs"
-            >
-              <TabsTrigger
-                value="profile"
-                data-testid="tab-profile"
-                className="ios-press min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+          <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-5">
+            <div className={PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS}>
+              <TabsList
+                className={PROFILE_PRIMARY_NAV_LIST_CLASS}
+                data-testid="profile-tabs"
               >
-                <User className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
-                <span className="truncate">Overview</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="posts"
-                data-testid="tab-posts"
-                className="ios-press min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
-              >
-                <Upload className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
-                <span className="truncate">Posts</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="liked"
-                data-testid="tab-liked"
-                className="ios-press min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
-              >
-                <Heart className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
-                <span className="truncate">Likes</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="notifications"
-                data-testid="tab-notifications"
-                className="ios-press relative min-w-0 rounded-xl border border-white/10 bg-black/20 px-1.5 py-2 text-[11px] font-medium leading-none text-white/70 sm:px-2 sm:py-2.5 sm:text-sm data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
-              >
-                <Bell className="mr-0.5 h-3.5 w-3.5 shrink-0 sm:mr-1 sm:h-4 sm:w-4" />
-                <span className="truncate">Notif.</span>
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold tabular-nums">
-                    {formatNotificationBadgeCount(unreadCount)}
+                <TabsTrigger
+                  value="profile"
+                  data-testid="tab-profile"
+                  className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
+                >
+                  <User className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Overview</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="posts"
+                  data-testid="tab-posts"
+                  className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
+                >
+                  <Upload className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Posts</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="liked"
+                  data-testid="tab-liked"
+                  className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
+                >
+                  <Heart className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Likes</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="notifications"
+                  data-testid="tab-notifications"
+                  aria-label={
+                    unreadCount > 0
+                      ? `Notifications, ${formatNotificationBadgeCount(unreadCount)} unread`
+                      : "Notifications"
+                  }
+                  className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
+                >
+                  <Bell className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS} aria-hidden>
+                    Notif.
                   </span>
-                )}
-              </TabsTrigger>
-            </TabsList>
+                  {unreadCount > 0 && (
+                    <span
+                      className="absolute right-0.5 top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none tabular-nums text-white"
+                      aria-hidden
+                    >
+                      {formatNotificationBadgeCount(unreadCount)}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+              <div className={PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS} aria-hidden />
             </div>
 
-            <TabsContent value="profile" className="space-y-4 mt-5">
-              {currentUser?.userType === "artist" ? (
-                <div
-                  className="rounded-xl border border-[#4ae9df]/25 bg-[#4ae9df]/[0.07] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(74,233,223,0.1)]"
-                  role="note"
-                  data-testid="artist-beta-profile-note"
-                >
-                  <p className="text-xs leading-relaxed text-white/80">{ARTIST_BETA_ARTIST_TOOLS_MESSAGE}</p>
-                </div>
-              ) : null}
-
-              {userType === "artist" && artistStats ? (
-                <div className={PROFILE_ACTIVITY_CARD_CLASS} data-testid="your-activity-list">
-                  <div className="mb-3">
-                    <div className="inline-flex items-center rounded-xl border border-white/10 bg-black/35 backdrop-blur-md p-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setArtistStatsMode("artist")}
-                        className={`ios-press px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
+            <TabsContent value="profile" className={PROFILE_OVERVIEW_SECTIONS_CLASS}>
+              {userType === "artist" ? (
+                <section data-testid="your-activity-list">
+                  <div
+                    className="mb-3 flex items-end gap-5"
+                    role="tablist"
+                    aria-label="Artist impact or community activity"
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={artistStatsMode === "artist"}
+                      onClick={() => setArtistStatsMode("artist")}
+                      className={PROFILE_IMPACT_MODE_TAB_BASE}
+                      data-testid="stats-mode-artist"
+                    >
+                      <span
+                        className={`relative inline-block whitespace-nowrap px-0.5 pb-[5px] ${
                           artistStatsMode === "artist"
-                            ? "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
-                            : "bg-black/20 text-white/70 hover:text-white"
+                            ? PROFILE_IMPACT_MODE_TAB_ACTIVE
+                            : PROFILE_IMPACT_MODE_TAB_INACTIVE
                         }`}
-                        data-testid="stats-mode-artist"
                       >
                         Artist Impact
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setArtistStatsMode("user")}
-                        className={`ios-press px-3 py-1.5 text-xs font-medium rounded-lg border border-white/10 transition-all ${
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={artistStatsMode === "user"}
+                      onClick={() => setArtistStatsMode("user")}
+                      className={PROFILE_IMPACT_MODE_TAB_BASE}
+                      data-testid="stats-mode-user"
+                    >
+                      <span
+                        className={`relative inline-block whitespace-nowrap px-0.5 pb-[5px] ${
                           artistStatsMode === "user"
-                            ? "text-accent-foreground font-semibold border-accent/70 bg-accent shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
-                            : "bg-black/20 text-white/70 hover:text-white"
+                            ? PROFILE_IMPACT_MODE_TAB_ACTIVE
+                            : PROFILE_IMPACT_MODE_TAB_INACTIVE
                         }`}
-                        data-testid="stats-mode-user"
                       >
                         Community Activity
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                   </div>
 
                   {artistStatsMode === "artist" ? (
@@ -2747,7 +2795,11 @@ export default function UserProfile() {
                                 />
                               ) : null}
                             </div>
-                            <span className="text-sm font-semibold tabular-nums">{value}</span>
+                            {artistStatsPending ? (
+                              <DubHubSkeletonBar tone="mid" className="h-4 w-10 shrink-0" aria-hidden />
+                            ) : (
+                              <span className="text-sm font-semibold tabular-nums">{value}</span>
+                            )}
                           </div>
                         ))}
                         <ReleaseAlertsAudienceGateRow
@@ -2755,15 +2807,11 @@ export default function UserProfile() {
                           info={PROFILE_HELP.artistReleaseAlerts}
                         />
                       </div>
-                      {!hasAnyArtistImpact ? (
+                      {!artistStatsPending && !hasAnyArtistImpact ? (
                         <p className="text-xs text-gray-400 mt-3 text-center">
                           Your impact stats will grow as tracks are confirmed and clips get linked to your releases.
                         </p>
                       ) : null}
-                      <p className="mt-4 text-[11px] leading-relaxed text-gray-500">
-                        Only you can see your Artist Impact. Other artists and community members can&apos;t view
-                        these stats.
-                      </p>
                     </>
                   ) : (
                     <ProfileCommunityActivitySection
@@ -2777,9 +2825,9 @@ export default function UserProfile() {
                       genreStats={genreStats}
                     />
                   )}
-                </div>
+                </section>
               ) : (
-                <div className={PROFILE_ACTIVITY_CARD_CLASS} data-testid="your-activity-list">
+                <section data-testid="your-activity-list">
                   <ProfileCommunityActivitySection
                     userOverviewItems={userOverviewItems}
                     overviewStatsLoading={profileOverviewStatsLoading}
@@ -2790,12 +2838,11 @@ export default function UserProfile() {
                     postsLoading={postsLoading}
                     genreStats={genreStats}
                   />
-                </div>
+                </section>
               )}
 
           {/* Rep (trust tier) */}
-          <div>
-            <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+          <section>
               {reputationLoading ? (
                 <ProfileRepOverviewSkeleton />
               ) : (
@@ -2809,8 +2856,7 @@ export default function UserProfile() {
                   percentileVariant="self"
                 />
               )}
-            </div>
-          </div>
+          </section>
 
           {verifiedArtist && userType === "artist" && currentUser?.id ? (
             <ArtistProfileQuestionsPrompt
@@ -2820,11 +2866,11 @@ export default function UserProfile() {
           ) : null}
 
           {/* Settings */}
-          <div>
+          <section>
             <Button
               variant="ghost"
               type="button"
-              className="ios-press w-full border border-white/10 bg-black/30 hover:bg-black/40 text-left p-4 rounded-xl flex items-center justify-between h-auto backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+              className="ios-press min-h-11 w-full rounded-none border-0 bg-transparent px-0 py-0 text-left hover:bg-white/[0.03] flex items-center justify-between h-auto"
               data-testid="button-settings"
               onClick={() => navigate("/settings")}
             >
@@ -2834,52 +2880,95 @@ export default function UserProfile() {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </Button>
-              </div>
+          </section>
             </TabsContent>
 
             {/* Posts Tab */}
-            <TabsContent value="posts" className="mt-6" forceMount>
+            <TabsContent value="posts" className="mt-2.5" forceMount>
               {postsViewerStartIndex === null && (
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <Button
-                    variant={postFilter === "all" ? "default" : "outline"}
-                    size="sm"
+                <div
+                  className={PROFILE_POSTS_FILTER_ROW_CLASS}
+                  role="tablist"
+                  aria-label="Filter posts by identification status"
+                  data-testid="profile-posts-filter"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={postFilter === "all"}
+                    className={PROFILE_POSTS_FILTER_TAB_BASE_CLASS}
                     onClick={() => {
                       setPostFilter("all");
                       setPostsViewerStartIndex(null);
                     }}
                     data-testid="filter-all-posts"
                   >
-                    All ({userPosts.length})
-                  </Button>
-                  <Button
-                    variant={postFilter === "identified" ? "default" : "outline"}
-                    size="sm"
+                    <span
+                      className={`${PROFILE_POSTS_FILTER_LABEL_CLASS} ${
+                        postFilter === "all"
+                          ? PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS
+                          : PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS
+                      }`}
+                    >
+                      All ({userPosts.length})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={postFilter === "identified"}
+                    className={PROFILE_POSTS_FILTER_TAB_BASE_CLASS}
                     onClick={() => {
                       setPostFilter("identified");
                       setPostsViewerStartIndex(null);
                     }}
                     data-testid="filter-identified-posts"
                   >
-                    Identified ({userPosts.filter(t =>
-                      t.verificationStatus === "identified" ||
-                      t.verificationStatus === "community" ||
-                      t.verificationStatus === "community_approved"
-                    ).length})
-                  </Button>
-                  <Button
-                    variant={postFilter === "unidentified" ? "default" : "outline"}
-                    size="sm"
+                    <span
+                      className={`${PROFILE_POSTS_FILTER_LABEL_CLASS} ${
+                        postFilter === "identified"
+                          ? PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS
+                          : PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS
+                      }`}
+                    >
+                      Identified (
+                      {
+                        userPosts.filter(
+                          (t) =>
+                            t.verificationStatus === "identified" ||
+                            t.verificationStatus === "community" ||
+                            t.verificationStatus === "community_approved",
+                        ).length
+                      }
+                      )
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={postFilter === "unidentified"}
+                    className={PROFILE_POSTS_FILTER_TAB_BASE_CLASS}
                     onClick={() => {
                       setPostFilter("unidentified");
                       setPostsViewerStartIndex(null);
                     }}
                     data-testid="filter-unidentified-posts"
                   >
-                    Unidentified ({userPosts.filter(t =>
-                      t.verificationStatus === "unverified"
-                    ).length})
-                  </Button>
+                    <span
+                      className={`${PROFILE_POSTS_FILTER_LABEL_CLASS} ${
+                        postFilter === "unidentified"
+                          ? PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS
+                          : PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS
+                      }`}
+                    >
+                      Unidentified (
+                      {
+                        userPosts.filter((t) => t.verificationStatus === "unverified")
+                          .length
+                      }
+                      )
+                    </span>
+                  </button>
                 </div>
               )}
 

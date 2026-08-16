@@ -9,7 +9,7 @@ type FeedPageLike = {
 
 function patchPostGenre(post: PostWithUser, postId: string, newGenre: string): PostWithUser {
   if (post.id !== postId) return post;
-  return { ...post, genre: newGenre };
+  return { ...post, genre: newGenre, subgenre: null };
 }
 
 /** Update cached posts after a moderator genre correction. */

@@ -3,6 +3,13 @@
  * Scope/view URL behaviour and feed queries stay in the page — this file is display/state-shape only.
  */
 
+import {
+  STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS,
+  STICKY_TAB_CHROME_CLASS,
+  STICKY_TAB_CONTENT_TOP_GAP_CLASS,
+  STICKY_TAB_PRIMARY_ROW_CLASS,
+} from "@/lib/sticky-tab-chrome";
+
 export type ReleaseTrackerFeedView = "upcoming" | "collaborations" | "past";
 export type ReleaseTrackerFeedScope = "my" | "saved";
 
@@ -88,7 +95,11 @@ export const RELEASE_DETAIL_LINK_SHOW_EXTERNAL_ICON = false as const;
  * Primary My/Saved: text-led two-column collection switch.
  * No boxes, trays, fills, or segmented capsule. Hit area stays >=44pt.
  */
-export const RELEASE_TRACKER_PRIMARY_ROW_CLASS = "mb-2 flex" as const;
+export const RELEASE_TRACKER_STICKY_CHROME_CLASS = STICKY_TAB_CHROME_CLASS;
+/** Same dissolve treatment as Leaderboard sticky (parity when switching bottom tabs). */
+export const RELEASE_TRACKER_STICKY_FADE_CLASS = STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS;
+export const RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS = STICKY_TAB_CONTENT_TOP_GAP_CLASS;
+export const RELEASE_TRACKER_PRIMARY_ROW_CLASS = STICKY_TAB_PRIMARY_ROW_CLASS;
 /** Secondary Upcoming/Collaborations/Past + layout toggle. No full-width baseline rule. */
 export const RELEASE_TRACKER_SECONDARY_ROW_CLASS = "flex min-h-11 items-end" as const;
 export const RELEASE_TRACKER_PRIMARY_BUTTON_BASE_CLASS =

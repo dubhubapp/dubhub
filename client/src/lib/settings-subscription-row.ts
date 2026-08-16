@@ -1,5 +1,6 @@
 /**
  * Settings row presentation for Verified Artist Tools (safe fields only).
+ * UI consumes authoritative domain state — never defines entitlement.
  */
 
 import type { SubscriptionEnvironmentSelection } from "./subscription-environment";
@@ -16,9 +17,13 @@ export type SettingsSubscriptionRowMode =
   | "active"
   | "cancelled_active"
   | "needs_attention"
+  | "unresolved"
   | "unavailable";
 
-export type SettingsAttentionKind = "none" | "grace" | "billing";
+export type SettingsAttentionKind = "none" | "grace" | "billing" | "unresolved";
+
+/** Distinguishes unresolved domain states for tests while sharing presentation. */
+export type SettingsUnresolvedKind = "none" | "stale" | "unknown";
 
 export type SettingsSubscriptionRowView = {
   mode: SettingsSubscriptionRowMode;
@@ -28,11 +33,16 @@ export type SettingsSubscriptionRowView = {
   showUpgrade: boolean;
   showRestore: boolean;
   showManage: boolean;
+  /** Refetch canonical SUBSCRIPTION_STATUS_QUERY_KEY — no second refresh architecture. */
+  showRetry: boolean;
+  /** Compact Terms · Privacy under management actions (not Free / first-time). */
+  showLegalLinks: boolean;
   /** Compact “Included with your plan” lines — paid-access surfaces only. */
   showPlanSummary: boolean;
   planSummaryLines: readonly string[];
-  /** Restrained warning treatment for grace / billing (icon + copy; not colour-only). */
+  /** Restrained warning treatment for grace / billing / unresolved (icon + copy; not colour-only). */
   attentionKind: SettingsAttentionKind;
+  unresolvedKind: SettingsUnresolvedKind;
   isLifetime: boolean;
 };
 
@@ -41,6 +51,9 @@ export const SETTINGS_ACTIVE_PLAN_SUMMARY_LINES = PAYWALL_SUCCESS_CONFIRMATION_L
 
 const FREE_MARKETING_DETAIL =
   "More tools for sharing and managing your releases." as const;
+
+const UNRESOLVED_DETAIL =
+  "We couldn’t confirm your current subscription status. Your access won’t be changed until it can be verified." as const;
 
 function formatAccessThrough(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -107,11 +120,26 @@ function planLabelFromProduct(productIdentifier: string | null | undefined): str
 }
 
 function baseView(
-  partial: Omit<SettingsSubscriptionRowView, "planSummaryLines" | "attentionKind" | "isLifetime" | "showPlanSummary"> &
+  partial: Omit<
+    SettingsSubscriptionRowView,
+    | "planSummaryLines"
+    | "attentionKind"
+    | "isLifetime"
+    | "showPlanSummary"
+    | "showRetry"
+    | "showLegalLinks"
+    | "unresolvedKind"
+  > &
     Partial<
       Pick<
         SettingsSubscriptionRowView,
-        "planSummaryLines" | "attentionKind" | "isLifetime" | "showPlanSummary"
+        | "planSummaryLines"
+        | "attentionKind"
+        | "isLifetime"
+        | "showPlanSummary"
+        | "showRetry"
+        | "showLegalLinks"
+        | "unresolvedKind"
       >
     >,
 ): SettingsSubscriptionRowView {
@@ -120,12 +148,36 @@ function baseView(
     attentionKind: "none",
     isLifetime: false,
     showPlanSummary: false,
+    showRetry: false,
+    showLegalLinks: false,
+    unresolvedKind: "none",
     ...partial,
   };
 }
 
+function unresolvedView(args: {
+  title: string;
+  kind: "stale" | "unknown";
+}): SettingsSubscriptionRowView {
+  // Shared presentation; kind remains explicit for tests / future divergence.
+  return baseView({
+    mode: "unresolved",
+    title: args.title,
+    statusLabel: "Subscription status unavailable",
+    detail: UNRESOLVED_DETAIL,
+    showUpgrade: false,
+    showRestore: true,
+    showManage: false,
+    showRetry: true,
+    showLegalLinks: false,
+    attentionKind: "unresolved",
+    unresolvedKind: args.kind,
+  });
+}
+
 /**
  * Map authoritative selection to a Settings row that never exposes RC internals.
+ * Free is only emitted for authoritative never_subscribed — never as a fallthrough.
  */
 export function resolveSettingsSubscriptionRowView(args: {
   loading: boolean;
@@ -166,6 +218,7 @@ export function resolveSettingsSubscriptionRowView(args: {
       showUpgrade: false,
       showRestore: true,
       showManage: false,
+      showRetry: true,
     });
   }
 
@@ -188,6 +241,14 @@ export function resolveSettingsSubscriptionRowView(args: {
     willRenew: status?.willRenew,
   });
 
+  // Stale / unknown must never look like Free (no Upgrade-first marketing).
+  if (state === "stale" || freshness === "stale") {
+    return unresolvedView({ title, kind: "stale" });
+  }
+  if (state === "unknown" || freshness === "unknown") {
+    return unresolvedView({ title, kind: "unknown" });
+  }
+
   // Grace first — access may still be paid; must not share billing copy.
   if (gracePeriod || state === "grace_period") {
     if (paid) {
@@ -201,6 +262,7 @@ export function resolveSettingsSubscriptionRowView(args: {
         showUpgrade: false,
         showRestore: true,
         showManage: true,
+        showLegalLinks: true,
         showPlanSummary: true,
         attentionKind: "grace",
         isLifetime: lifetime,
@@ -215,6 +277,7 @@ export function resolveSettingsSubscriptionRowView(args: {
       showUpgrade: false,
       showRestore: true,
       showManage: true,
+      showLegalLinks: true,
       attentionKind: "billing",
     });
   }
@@ -228,6 +291,7 @@ export function resolveSettingsSubscriptionRowView(args: {
       showUpgrade: false,
       showRestore: true,
       showManage: true,
+      showLegalLinks: true,
       attentionKind: "billing",
       showPlanSummary: false,
     });
@@ -239,11 +303,12 @@ export function resolveSettingsSubscriptionRowView(args: {
       title,
       statusLabel: "Active",
       detail: accessThrough
-        ? `Won’t renew · Active through ${accessThrough}`
+        ? `Won’t renew · Available through ${accessThrough}`
         : "Active · Won’t renew",
       showUpgrade: false,
       showRestore: true,
       showManage: true,
+      showLegalLinks: true,
       showPlanSummary: true,
     });
   }
@@ -259,6 +324,7 @@ export function resolveSettingsSubscriptionRowView(args: {
         showRestore: true,
         // Promotional/internal lifetime has no renewable App Store subscription to manage.
         showManage: false,
+        showLegalLinks: false,
         showPlanSummary: true,
         isLifetime: true,
       });
@@ -266,7 +332,7 @@ export function resolveSettingsSubscriptionRowView(args: {
 
     const detail =
       status?.willRenew === false && accessThrough
-        ? `Won’t renew · Active through ${accessThrough}`
+        ? `Won’t renew · Available through ${accessThrough}`
         : status?.willRenew === true && accessThrough
           ? plan
             ? `${plan} · Renews ${accessThrough}`
@@ -283,6 +349,7 @@ export function resolveSettingsSubscriptionRowView(args: {
       showUpgrade: false,
       showRestore: true,
       showManage: true,
+      showLegalLinks: true,
       showPlanSummary: true,
     });
   }
@@ -312,13 +379,18 @@ export function resolveSettingsSubscriptionRowView(args: {
     });
   }
 
-  return baseView({
-    mode: "free",
-    title,
-    statusLabel: "Free",
-    detail: FREE_MARKETING_DETAIL,
-    showUpgrade: true,
-    showRestore: true,
-    showManage: false,
-  });
+  // Authoritative free only — never a silent fallthrough.
+  if (state === "never_subscribed") {
+    return baseView({
+      mode: "free",
+      title,
+      statusLabel: "Free",
+      detail: FREE_MARKETING_DETAIL,
+      showUpgrade: true,
+      showRestore: true,
+      showManage: false,
+    });
+  }
+
+  return unresolvedView({ title, kind: "unknown" });
 }

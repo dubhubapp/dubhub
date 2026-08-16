@@ -14,6 +14,7 @@ import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
 import { mapPostThumbnailUrl } from "./postThumbnailUrl";
+import { mapStoredSubgenre } from "./post-subgenre";
 import { enableArtistReleaseAlertWithDemandDedup } from "./artist-release-alert-demand-enable";
 import {
   canArtistDeliverReleaseAlerts,
@@ -161,7 +162,7 @@ export interface IStorage {
     } | null;
   }>;
   getPost(id: string): Promise<any | undefined>;
-  createPost(data: { userId: string; title: string; video_url: string; thumbnail_url?: string | null; genre?: string; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
+  createPost(data: { userId: string; title: string; video_url: string; thumbnail_url?: string | null; genre?: string; subgenre?: string | null; description?: string; location?: string; dj_name?: string; played_date?: string | null }): Promise<any>;
   deletePost(id: string): Promise<boolean>;
   getPostsByArtist(artistId: string): Promise<any[]>;
   getUserPostsWithDetails(userId: string, currentUserId?: string): Promise<any[]>;
@@ -568,6 +569,7 @@ export class DatabaseStorage implements IStorage {
           p.video_url,
           p.thumbnail_url,
           p.genre,
+          p.subgenre,
           p.description,
           p.location,
           p.dj_name,
@@ -699,6 +701,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: row.video_url,
         thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
+        subgenre: mapStoredSubgenre(row.subgenre),
         description: row.description,
         location: row.location,
         djName: row.dj_name,
@@ -813,6 +816,7 @@ export class DatabaseStorage implements IStorage {
           p.video_url,
           p.thumbnail_url,
           p.genre,
+          p.subgenre,
           p.description,
           p.location,
           p.dj_name,
@@ -925,6 +929,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: row.video_url,
         thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
+        subgenre: mapStoredSubgenre(row.subgenre),
         description: row.description,
         location: row.location,
         djName: row.dj_name,
@@ -1065,6 +1070,7 @@ export class DatabaseStorage implements IStorage {
           p.video_url,
           p.thumbnail_url,
           p.genre,
+          p.subgenre,
           p.description,
           p.location,
           p.dj_name,
@@ -1159,6 +1165,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: row.video_url,
         thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
+        subgenre: mapStoredSubgenre(row.subgenre),
         description: row.description,
         location: row.location,
         djName: row.dj_name,
@@ -1429,6 +1436,7 @@ export class DatabaseStorage implements IStorage {
     video_url: string;
     thumbnail_url?: string | null;
     genre?: string;
+    subgenre?: string | null;
     description?: string;
     location?: string;
     dj_name?: string;
@@ -1436,13 +1444,14 @@ export class DatabaseStorage implements IStorage {
   }): Promise<any> {
     try {
       const result = await db.execute(sql`
-        INSERT INTO posts (user_id, title, video_url, thumbnail_url, genre, description, location, dj_name, played_date, created_at)
+        INSERT INTO posts (user_id, title, video_url, thumbnail_url, genre, subgenre, description, location, dj_name, played_date, created_at)
         VALUES (
           ${data.userId},
           ${data.title},
           ${data.video_url},
           ${data.thumbnail_url ?? null},
           ${data.genre ?? null},
+          ${data.subgenre ?? null},
           ${data.description ?? null},
           ${data.location ?? null},
           ${data.dj_name ?? null},
@@ -1503,6 +1512,7 @@ export class DatabaseStorage implements IStorage {
           p.video_url,
           p.thumbnail_url,
           p.genre,
+          p.subgenre,
           p.description,
           p.location,
           p.dj_name,
@@ -1573,6 +1583,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: row.video_url,
         thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
+        subgenre: mapStoredSubgenre(row.subgenre),
         description: row.description,
         location: row.location,
         djName: row.dj_name,
@@ -1620,6 +1631,7 @@ export class DatabaseStorage implements IStorage {
           p.video_url,
           p.thumbnail_url,
           p.genre,
+          p.subgenre,
           p.description,
           p.location,
           p.dj_name,
@@ -1715,6 +1727,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: row.video_url,
         thumbnailUrl: mapPostThumbnailUrl(row),
         genre: row.genre,
+        subgenre: mapStoredSubgenre(row.subgenre),
         description: row.description,
         location: row.location,
         djName: row.dj_name,
@@ -4003,6 +4016,7 @@ export class DatabaseStorage implements IStorage {
             p.thumbnail_url,
             p.dj_name,
             p.genre,
+            p.subgenre,
             p.description,
             p.verification_status,
             p.is_verified_artist,
@@ -4030,6 +4044,7 @@ export class DatabaseStorage implements IStorage {
             p.thumbnail_url,
             p.dj_name,
             p.genre,
+            p.subgenre,
             p.description,
             p.verification_status,
             p.is_verified_artist,

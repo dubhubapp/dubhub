@@ -6,7 +6,9 @@ import {
   refreshServerSubscriptionSnapshot,
   resetSubscriptionRefreshDiagnosticsForTests,
 } from "./subscription-refresh";
-import { syncSubscriptionAfterRevenueCatSuccess } from "./subscription-sync";
+import { syncSubscriptionAfterRevenueCatSuccess, retryAuthoritativeSubscriptionStatus } from "./subscription-sync";
+import { resolveSettingsSubscriptionRowView } from "./settings-subscription-row";
+import { selectAuthoritativeSubscriptionEnvironment } from "./subscription-environment";
 import { SUBSCRIPTION_STATUS_QUERY_KEY } from "./subscription-status";
 
 const STATUS_PAYLOAD = {
@@ -284,5 +286,242 @@ describe("syncSubscriptionAfterRevenueCatSuccess", () => {
     ]);
     // Injected refresh is called per sync; dedupe lives in refreshServerSubscriptionSnapshot.
     assert.equal(refreshCalls, 2);
+  });
+});
+
+describe("retryAuthoritativeSubscriptionStatus (Settings Retry)", () => {
+  beforeEach(() => {
+    resetSubscriptionRefreshDiagnosticsForTests();
+  });
+
+  it("invokes server refresh then refetches authoritative status on success", async () => {
+    const queryClient = new QueryClient();
+    let refreshCalls = 0;
+    let statusRefetchCalls = 0;
+    const originalRefetch = queryClient.refetchQueries.bind(queryClient);
+    queryClient.refetchQueries = (async (filters) => {
+      if (
+        filters?.queryKey &&
+        JSON.stringify(filters.queryKey) === JSON.stringify([...SUBSCRIPTION_STATUS_QUERY_KEY])
+      ) {
+        statusRefetchCalls += 1;
+      }
+      return originalRefetch(filters);
+    }) as typeof queryClient.refetchQueries;
+
+    const expiredFresh = {
+      ...STATUS_PAYLOAD,
+      environments: {
+        ...STATUS_PAYLOAD.environments,
+        sandbox: {
+          ...STATUS_PAYLOAD.environments.sandbox,
+          state: "expired",
+          freshness: "fresh",
+          hasPaidToolAccess: false,
+          irreversibleActionsAllowed: false,
+          willRenew: false,
+        },
+      },
+    };
+
+    const result = await retryAuthoritativeSubscriptionStatus({
+      queryClient,
+      refresh: async () => {
+        refreshCalls += 1;
+        return {
+          ok: true,
+          verificationPending: false,
+          httpStatus: 200,
+          latencyMs: 9,
+          failureReason: null,
+          contentType: "application/json",
+          bodyPreview: null,
+          status: expiredFresh,
+        };
+      },
+    });
+
+    assert.equal(refreshCalls, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.queriesRefetched, true);
+    assert.ok(statusRefetchCalls >= 1);
+    assert.deepEqual(
+      queryClient.getQueryData([...SUBSCRIPTION_STATUS_QUERY_KEY]),
+      expiredFresh,
+    );
+  });
+
+  it("does not treat GET-only as success path — refresh must run", async () => {
+    let refreshCalls = 0;
+    await retryAuthoritativeSubscriptionStatus({
+      refresh: async () => {
+        refreshCalls += 1;
+        return {
+          ok: true,
+          verificationPending: false,
+          httpStatus: 200,
+          latencyMs: 1,
+          failureReason: null,
+          contentType: "application/json",
+          bodyPreview: null,
+          status: STATUS_PAYLOAD,
+        };
+      },
+    });
+    assert.equal(refreshCalls, 1);
+  });
+
+  it("refresh failure stays unresolved and does not overwrite cache", async () => {
+    const queryClient = new QueryClient();
+    const stalePayload = {
+      ...STATUS_PAYLOAD,
+      environments: {
+        production: {
+          ...STATUS_PAYLOAD.environments.production,
+          state: "stale",
+          freshness: "stale",
+        },
+        sandbox: {
+          ...STATUS_PAYLOAD.environments.sandbox,
+          state: "stale",
+          freshness: "stale",
+          hasPaidToolAccess: false,
+        },
+      },
+    };
+    queryClient.setQueryData([...SUBSCRIPTION_STATUS_QUERY_KEY], stalePayload);
+
+    const result = await retryAuthoritativeSubscriptionStatus({
+      queryClient,
+      refresh: async () => ({
+        ok: false,
+        verificationPending: true,
+        httpStatus: null,
+        latencyMs: 20,
+        failureReason: "timeout",
+        contentType: null,
+        bodyPreview: null,
+        status: null,
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.queriesRefetched, false);
+    assert.deepEqual(
+      queryClient.getQueryData([...SUBSCRIPTION_STATUS_QUERY_KEY]),
+      stalePayload,
+    );
+
+    const selection = selectAuthoritativeSubscriptionEnvironment(stalePayload, "local");
+    const view = resolveSettingsSubscriptionRowView({
+      loading: false,
+      hasError: false,
+      selection,
+    });
+    assert.equal(view.mode, "unresolved");
+    assert.notEqual(view.statusLabel, "Free");
+    assert.equal(view.showUpgrade, false);
+  });
+
+  it("stale → expired fresh renders Subscription ended via resolver", async () => {
+    const expiredFresh = {
+      ...STATUS_PAYLOAD,
+      environments: {
+        production: {
+          ...STATUS_PAYLOAD.environments.production,
+          state: "never_subscribed",
+          freshness: "fresh",
+        },
+        sandbox: {
+          ...STATUS_PAYLOAD.environments.sandbox,
+          state: "expired",
+          freshness: "fresh",
+          hasPaidToolAccess: false,
+          irreversibleActionsAllowed: false,
+          willRenew: false,
+          productIdentifier: "monthly",
+        },
+      },
+    };
+    const queryClient = new QueryClient();
+    await retryAuthoritativeSubscriptionStatus({
+      queryClient,
+      refresh: async () => ({
+        ok: true,
+        verificationPending: false,
+        httpStatus: 200,
+        latencyMs: 3,
+        failureReason: null,
+        contentType: "application/json",
+        bodyPreview: null,
+        status: expiredFresh,
+      }),
+    });
+    const selection = selectAuthoritativeSubscriptionEnvironment(expiredFresh, "local");
+    const view = resolveSettingsSubscriptionRowView({
+      loading: false,
+      hasError: false,
+      selection,
+    });
+    assert.equal(view.statusLabel, "Subscription ended");
+    assert.equal(view.showUpgrade, true);
+  });
+
+  it("stale → active fresh renders Active", async () => {
+    const activeFresh = {
+      ...STATUS_PAYLOAD,
+      environments: {
+        ...STATUS_PAYLOAD.environments,
+        sandbox: {
+          ...STATUS_PAYLOAD.environments.sandbox,
+          state: "active",
+          freshness: "fresh",
+          hasPaidToolAccess: true,
+          irreversibleActionsAllowed: true,
+          willRenew: true,
+        },
+      },
+    };
+    const selection = selectAuthoritativeSubscriptionEnvironment(activeFresh, "local");
+    const view = resolveSettingsSubscriptionRowView({
+      loading: false,
+      hasError: false,
+      selection,
+    });
+    assert.equal(view.mode, "active");
+    assert.equal(view.statusLabel, "Active");
+    assert.equal(view.showUpgrade, false);
+  });
+
+  it("stale → never_subscribed fresh renders Free", async () => {
+    const neverFresh = {
+      ...STATUS_PAYLOAD,
+      environments: {
+        production: {
+          ...STATUS_PAYLOAD.environments.production,
+          state: "never_subscribed",
+          freshness: "fresh",
+        },
+        sandbox: {
+          ...STATUS_PAYLOAD.environments.sandbox,
+          state: "never_subscribed",
+          freshness: "fresh",
+          hasPaidToolAccess: false,
+          irreversibleActionsAllowed: false,
+          productIdentifier: null,
+          willRenew: null,
+          accessThrough: null,
+          expiresAt: null,
+        },
+      },
+    };
+    const selection = selectAuthoritativeSubscriptionEnvironment(neverFresh, "local");
+    const view = resolveSettingsSubscriptionRowView({
+      loading: false,
+      hasError: false,
+      selection,
+    });
+    assert.equal(view.statusLabel, "Free");
+    assert.equal(view.showUpgrade, true);
   });
 });

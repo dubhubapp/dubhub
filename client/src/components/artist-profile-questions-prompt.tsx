@@ -16,9 +16,6 @@ import {
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { cn } from "@/lib/utils";
 
-const CARD_CLASS =
-  "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
-
 const PROMPT_ANIM_CLASS =
   "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-safe:ease-out";
 
@@ -147,15 +144,15 @@ export function ArtistProfileQuestionsPrompt({
 
   if (showSuccess && profileTabActive) {
     return (
-      <div
-        className={cn(CARD_CLASS, PROMPT_ANIM_CLASS, className)}
+      <section
+        className={cn(PROMPT_ANIM_CLASS, className)}
         data-testid="artist-profile-questions-success"
       >
         <div className="flex items-start gap-2.5">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#4ae9df]" aria-hidden />
           <p className="text-sm leading-relaxed text-white break-words">{SUCCESS_MESSAGE}</p>
         </div>
-      </div>
+      </section>
     );
   }
 
@@ -164,11 +161,11 @@ export function ArtistProfileQuestionsPrompt({
   }
 
   return (
-    <div
-      className={cn(CARD_CLASS, PROMPT_ANIM_CLASS, className)}
+    <section
+      className={cn(PROMPT_ANIM_CLASS, className)}
       data-testid="artist-profile-questions-prompt"
     >
-      <div className="mb-3 flex items-start gap-2.5">
+      <div className="mb-4 flex items-start gap-2.5">
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#4ae9df]/80" aria-hidden />
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-white">Quick one…</h3>
@@ -178,7 +175,7 @@ export function ArtistProfileQuestionsPrompt({
         </div>
       </div>
 
-      <div className="space-y-3 border-t border-white/10 pt-3" data-testid="artist-profile-question-editor">
+      <div className="space-y-3" data-testid="artist-profile-question-editor">
         <div className="min-w-0 space-y-1.5">
           <p className="text-sm font-medium leading-snug text-white break-words">{promptQuestion.question}</p>
           {promptQuestion.helper ? (
@@ -230,6 +227,6 @@ export function ArtistProfileQuestionsPrompt({
           </p>
         ) : null}
       </div>
-    </div>
+    </section>
   );
 }

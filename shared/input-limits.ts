@@ -8,6 +8,8 @@ export const INPUT_LIMITS = {
   postDjName: 60,
   /** Stored genre label (enum values are short) */
   postGenre: 64,
+  /** Stored sub-genre id (controlled taxonomy; unused until a later slice) */
+  postSubgenre: 64,
   /** Comments */
   commentBody: 500,
   /** Release name */

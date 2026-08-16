@@ -51,6 +51,43 @@ export async function invalidateAndRefetchSubscriptionStatus(
   }
 }
 
+export type SettingsSubscriptionRetryResult = {
+  ok: boolean;
+  refresh: SubscriptionRefreshResult;
+  queriesRefetched: boolean;
+};
+
+type SettingsRetryDeps = {
+  queryClient?: QueryClient | null;
+  refresh?: typeof refreshServerSubscriptionSnapshot;
+};
+
+/**
+ * Settings unresolved Retry: POST /api/user/subscription-refresh (reconcile),
+ * then refetch authoritative GET status. Not a GET-only refetch.
+ * Failure leaves cached state unchanged (no Free flash / no paid grant).
+ */
+export async function retryAuthoritativeSubscriptionStatus(
+  deps: SettingsRetryDeps = {},
+): Promise<SettingsSubscriptionRetryResult> {
+  const refreshFn = deps.refresh ?? refreshServerSubscriptionSnapshot;
+  const refresh = await refreshFn();
+
+  if (!refresh.ok) {
+    return { ok: false, refresh, queriesRefetched: false };
+  }
+
+  let queriesRefetched = false;
+  if (deps.queryClient) {
+    if (refresh.status) {
+      deps.queryClient.setQueryData([...SUBSCRIPTION_STATUS_QUERY_KEY], refresh.status);
+    }
+    queriesRefetched = await invalidateAndRefetchSubscriptionStatus(deps.queryClient);
+  }
+
+  return { ok: true, refresh, queriesRefetched };
+}
+
 /**
  * Server reconcile + subscription query refresh after RC commerce success.
  */

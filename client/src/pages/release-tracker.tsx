@@ -48,6 +48,7 @@ import {
   RELEASE_FEED_MONTH_HEADING_CLASS,
   RELEASE_FEED_SKELETON_VARIANT,
   RELEASE_TRACKER_ADD_HREF,
+  RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS,
   RELEASE_TRACKER_PRIMARY_ACTIVE_CLASS,
   RELEASE_TRACKER_PRIMARY_BUTTON_BASE_CLASS,
   RELEASE_TRACKER_PRIMARY_INACTIVE_CLASS,
@@ -55,6 +56,8 @@ import {
   RELEASE_TRACKER_PRIMARY_LABEL_CLASS,
   RELEASE_TRACKER_PRIMARY_ROW_CLASS,
   RELEASE_TRACKER_SECONDARY_ROW_CLASS,
+  RELEASE_TRACKER_STICKY_CHROME_CLASS,
+  RELEASE_TRACKER_STICKY_FADE_CLASS,
   coerceReleaseTrackerView,
   getReleaseTrackerEmptyCopy,
   getReleaseTrackerSecondaryViews,
@@ -454,7 +457,10 @@ export default function ReleaseTracker() {
       >
       <div className="px-4 max-w-md mx-auto">
         {currentUser?.id && (
-          <div className="sticky top-0 z-30 -mx-4 bg-background px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] pb-2">
+          <div
+            className={RELEASE_TRACKER_STICKY_CHROME_CLASS}
+            data-testid="releases-sticky-chrome"
+          >
             {isArtist && (
               <div
                 className={RELEASE_TRACKER_PRIMARY_ROW_CLASS}
@@ -530,7 +536,9 @@ export default function ReleaseTracker() {
                   setLayoutPreference(effectiveLayout === "artwork" ? "list" : "artwork")
                 }
                 className={cn(
-                  "ios-press mb-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-md",
+                  // No mb-* here: margin expands the items-end secondary flex line and
+                  // drops Upcoming/Collaborations/Past below Leaderboard timeframe labels.
+                  "ios-press flex h-11 w-11 shrink-0 items-center justify-center rounded-md",
                   artworkSupported
                     ? "text-white/60 hover:text-white"
                     : "cursor-not-allowed text-white/30 hover:text-white/30 disabled:pointer-events-none disabled:opacity-100",
@@ -544,10 +552,19 @@ export default function ReleaseTracker() {
                 )}
               </button>
             </div>
+            <div
+              className={RELEASE_TRACKER_STICKY_FADE_CLASS}
+              aria-hidden
+              data-testid="releases-sticky-fade"
+            />
           </div>
         )}
 
-        <div className={currentUser?.id ? "pt-3" : "app-page-top-pad"}>
+        <div
+          className={
+            currentUser?.id ? RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS : "app-page-top-pad"
+          }
+        >
         {currentUser?.id && !isFeedLoading && !isFeedError && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && effectiveLayout === "list" && (
           <div className="relative z-10 mb-5 space-y-2 border-b border-white/10 pb-3">
             <ReleaseDayCelebration releaseId={myReleasesDueToday[0].id} variant="heading" />

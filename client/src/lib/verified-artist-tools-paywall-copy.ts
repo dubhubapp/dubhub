@@ -72,7 +72,8 @@ const CONTEXT_COPY: Record<
   },
   release_alerts: {
     title: "Turn on Release Alerts",
-    body: "Notify everyone waiting when you share a new release.",
+    body:
+      "Listeners can turn on Release Alerts for your profile at any time. Their interest stays saved, and with Verified Artist Tools you can notify everyone waiting when you share a new release.",
     emphasizeBenefit: "Release Alerts for waiting listeners",
   },
   settings: {

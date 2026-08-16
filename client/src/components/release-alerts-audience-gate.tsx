@@ -15,7 +15,6 @@ import {
 } from "@/lib/paid-tool-gate";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
 import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
@@ -88,39 +87,60 @@ export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
   if (mode === "locked") {
     const copy = RELEASE_ALERTS_AUDIENCE_LOCKED_COPY;
     const paywallEnabled = isVerifiedArtistToolsPaywallEnabled();
+    const openUpgrade = () => {
+      requestVerifiedArtistToolsUpgrade(toast, { source: "release_alerts" });
+    };
+
+    /**
+     * Same list geometry as Artist Impact rows (`flex … py-2.5` / icon+label / value).
+     * Extra height is only the compact secondary CTA *below* the primary row.
+     * Locked uses absolute hit-slop so ≥44pt tap without min-h-11 inflating the row.
+     */
     return (
-      <div
-        className="py-2.5"
-        data-testid="artist-release-alerts-audience-locked"
-        role="status"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Lock className="w-4 h-4 shrink-0 text-gray-400" />
+      <div data-testid="artist-release-alerts-audience-locked">
+        <div className="flex items-center justify-between pt-2.5">
+          <div className="flex items-center gap-2.5">
+            <Bell className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
             <span className="text-sm text-gray-200">{copy.title}</span>
           </div>
-          <span className="text-xs font-medium text-gray-500 shrink-0">Locked</span>
+          <button
+            type="button"
+            className="ios-press relative inline-flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-400 disabled:pointer-events-none disabled:opacity-50"
+            disabled={!paywallEnabled}
+            aria-disabled={!paywallEnabled}
+            aria-label="Locked — unlock with Verified Artist Tools"
+            title={paywallEnabled ? "Unlock with Verified Artist Tools" : copy.ctaHint}
+            onClick={openUpgrade}
+            data-testid="artist-release-alerts-audience-locked-affordance"
+          >
+            <span
+              className="absolute -inset-y-3 -inset-x-2"
+              aria-hidden
+            />
+            <Lock className="relative h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="relative">Locked</span>
+          </button>
         </div>
-        <p className="mt-1.5 text-xs leading-relaxed text-gray-400">{copy.body}</p>
-        <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{copy.listenersNote}</p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-2.5 h-8 text-xs border-white/15 bg-black/20"
-          disabled={!paywallEnabled}
-          aria-disabled={!paywallEnabled}
-          title={paywallEnabled ? undefined : copy.ctaHint}
-          onClick={() =>
-            requestVerifiedArtistToolsUpgrade(toast, { source: "release_alerts" })
-          }
-          data-testid="artist-release-alerts-audience-cta"
-        >
-          {copy.ctaLabel}
-        </Button>
-        {!paywallEnabled ? (
-          <p className="mt-1 text-[10px] text-gray-600">{copy.ctaHint}</p>
-        ) : null}
+        <div className="pb-2.5 pl-[1.625rem] pt-1">
+          <button
+            type="button"
+            className="ios-press relative block max-w-full text-left text-xs font-medium leading-snug text-gray-400 hover:text-gray-300 disabled:pointer-events-none disabled:opacity-50"
+            disabled={!paywallEnabled}
+            aria-disabled={!paywallEnabled}
+            title={paywallEnabled ? undefined : copy.ctaHint}
+            onClick={openUpgrade}
+            data-testid="artist-release-alerts-audience-cta"
+          >
+            <span className="absolute -inset-y-2 inset-x-0" aria-hidden />
+            <span className="relative">
+              {copy.ctaLabel}
+              <span aria-hidden> →</span>
+            </span>
+          </button>
+          {!paywallEnabled ? (
+            <p className="relative mt-0.5 text-[10px] leading-snug text-gray-600">{copy.ctaHint}</p>
+          ) : null}
+        </div>
       </div>
     );
   }

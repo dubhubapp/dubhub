@@ -75,7 +75,18 @@ describe("verified-artist-tools-paywall-copy", () => {
       /Verified Artist Tools/,
     );
     assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Verified Artist Tools/);
-    assert.equal(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, "Upgrade");
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/);
+  });
+
+  it("release_alerts paywall keeps listener-interest semantics", () => {
+    const copy = resolveVerifiedArtistToolsPaywallCopy("release_alerts");
+    assert.equal(copy.title, "Turn on Release Alerts");
+    assert.match(copy.body, /Listeners can turn on Release Alerts/i);
+    assert.match(copy.body, /interest stays saved/i);
+    assert.match(copy.body, /Verified Artist Tools/i);
+    assert.match(copy.body, /notify everyone waiting/i);
+    assert.doesNotMatch(copy.body, /listeners need to pay|pay to opt in/i);
+    assert.doesNotMatch(copy.body, /verification.*(requires|needs) payment/i);
   });
 });
 
@@ -265,7 +276,7 @@ describe("resolveSettingsSubscriptionRowView", () => {
     });
     assert.equal(view.mode, "cancelled_active");
     assert.match(view.detail ?? "", /Won’t renew/);
-    assert.match(view.detail ?? "", /Active through/);
+    assert.match(view.detail ?? "", /Available through/);
     assert.equal((view.detail ?? "").toLowerCase().includes("expired"), false);
   });
 

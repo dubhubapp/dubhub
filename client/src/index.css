@@ -219,6 +219,30 @@ html.theme-transitioning .bg-surface {
     padding-top: clamp(0.75rem, 2.8vw, 1.25rem);
   }
 
+  /**
+   * Leaderboard sticky blur dissolve — overlay only (no layout height).
+   * Mask fades the backdrop-filter itself so content softens before the chrome edge.
+   * WKWebView/Safari: -webkit-mask-image + mask-image.
+   */
+  .leaderboard-sticky-blur-dissolve {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      rgba(0, 0, 0, 0.72) 32%,
+      rgba(0, 0, 0, 0.38) 58%,
+      rgba(0, 0, 0, 0.12) 80%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      rgba(0, 0, 0, 0.72) 32%,
+      rgba(0, 0, 0, 0.38) 58%,
+      rgba(0, 0, 0, 0.12) 80%,
+      transparent 100%
+    );
+  }
+
   /* Subtle iOS-style press feedback for tap targets. */
   .ios-press {
     transform: translateZ(0);

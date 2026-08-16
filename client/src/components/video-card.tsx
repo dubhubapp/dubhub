@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { Heart, MessageCircle, Bookmark, Send, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Send, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload, ArrowLeftRight } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -32,6 +32,12 @@ import {
 import { useLocation } from "wouter";
 import { ReleasePreviewCard } from "./release-preview-card";
 import { getGenreChipStyle, getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
+import {
+  genrePillMemoFieldsDiffer,
+  getGenrePillAriaLabel,
+  getGenrePillVisibleLabel,
+  resolveTrustedSubgenreLabel,
+} from "@/lib/post-genre-pill";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay, cn } from "@/lib/utils";
@@ -274,6 +280,7 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     if (getPostFeedPosterRaw(prev.post) !== getPostFeedPosterRaw(next.post)) return false;
     if (prev.post.verificationStatus !== next.post.verificationStatus) return false;
     if (prev.post.description !== next.post.description) return false;
+    if (genrePillMemoFieldsDiffer(prev.post, next.post)) return false;
     if (prev.post.comments !== next.post.comments) return false;
     if (prev.post.currentUserTaggedAsArtist !== next.post.currentUserTaggedAsArtist) return false;
     const pTaggedSnake = (prev.post as { current_user_tagged_as_artist?: boolean }).current_user_tagged_as_artist;
@@ -390,6 +397,10 @@ function VideoCardInner({
   useEffect(() => {
     setCommentCountBump(0);
   }, [post.id, post.comments]);
+  const [showSubgenreLabel, setShowSubgenreLabel] = useState(false);
+  useEffect(() => {
+    setShowSubgenreLabel(false);
+  }, [post.id, post.genre, post.subgenre]);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -2327,6 +2338,12 @@ function VideoCardInner({
       : (post.user.avatar_url || undefined);
 
   const genreChip = getGenreChipStyle(post.genre);
+  const trustedSubgenreLabel = resolveTrustedSubgenreLabel(post.genre, post.subgenre);
+  const genrePillVisibleLabel = getGenrePillVisibleLabel(
+    genreChip.label,
+    trustedSubgenreLabel,
+    showSubgenreLabel ? "subgenre" : "parent",
+  );
   const likeSaveNoteColor = genreChip.bgColor || DUB_HUB_ACCENT;
   const statusBadgeEl = getStatusBadge();
   const overlayDensityControl =
@@ -2381,10 +2398,46 @@ function VideoCardInner({
     }
   }, []);
 
-  const genrePillEl = (
+  const genrePillVisualClass =
+    "rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
+  const genrePillEl = trustedSubgenreLabel ? (
+    <button
+      type="button"
+      data-testid="post-genre-tag"
+      aria-pressed={showSubgenreLabel}
+      aria-label={getGenrePillAriaLabel(
+        genreChip.label,
+        trustedSubgenreLabel,
+        showSubgenreLabel ? "subgenre" : "parent",
+      )}
+      className={cn(
+        genrePillVisualClass,
+        "relative inline-flex items-center gap-1 cursor-pointer touch-manipulation appearance-none border-0",
+        "after:absolute after:left-1/2 after:top-1/2 after:h-11 after:min-w-[44px] after:w-full after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']",
+        "outline-none focus-visible:ring-2 focus-visible:ring-white/50",
+      )}
+      style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+      }}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowSubgenreLabel((open) => !open);
+      }}
+    >
+      {genrePillVisibleLabel}
+      <ArrowLeftRight
+        aria-hidden
+        data-testid="post-genre-swap-affordance"
+        className="pointer-events-none h-2 w-2 shrink-0 opacity-45"
+        strokeWidth={2.25}
+      />
+    </button>
+  ) : (
     <span
       data-testid="post-genre-tag"
-      className="inline-block rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
+      className={cn("inline-block", genrePillVisualClass)}
       style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
     >
       {genreChip.label}

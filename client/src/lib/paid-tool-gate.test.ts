@@ -239,11 +239,12 @@ describe("resolvePaidToolGateMode — Release Alerts audience", () => {
     assert.equal(mode, "locked");
   });
 
-  it("locked copy keeps verification free and does not sell credibility", () => {
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /verification/i);
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /stay free/i);
+  it("locked copy keeps Upgrade CTA and does not sell credibility", () => {
+    assert.equal(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.title, "Release Alerts Audience");
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/i);
     assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /credibility|verified badge for sale/i);
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.listenersNote, /Listeners can still/i);
+    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Listeners can still/i);
+    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /credibility/i);
   });
 
   it("unrelated artist identity tools remain ungated by this surface", () => {
