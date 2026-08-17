@@ -5,14 +5,42 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type TouchEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { Flame, Clock, TrendingUp } from "lucide-react";
+import { Flame, Clock, TrendingUp, ChevronLeft, ChevronRight, ArrowLeftRight } from "lucide-react";
 import { GENRE_ENTRIES, getGenreLabel } from "@/lib/genre-styles";
 import { cn } from "@/lib/utils";
 import { DiceDiscoverIcon } from "@/components/random-dice-button";
 import { playInteractionMedium } from "@/lib/haptic";
+import {
+  DISCOVER_GENRES_PAGE,
+  DISCOVER_GENRE_PAGE_FRAME_CLASS,
+  DISCOVER_GENRE_PAGE_GRID_CLASS,
+  DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS,
+  DISCOVER_MENU_CONTENT_INSET_CLASS,
+  DISCOVER_MENU_HEADING_TEXT_CLASS,
+  DISCOVER_PAGE_ARROW_Y_CLASS,
+  clampDiscoverPageDragOffset,
+  discoverPageStripTranslatePx,
+  getDiscoverAdjacentGenreFilterPages,
+  getDiscoverGenreFilterPages,
+  getDiscoverSubgenreGroups,
+  isDiscoverPageTrackReady,
+  isDiscoverSubgenreChipSelected,
+  parentHasActiveSubgenreRefinement,
+  resolveDiscoverGenreFilterPage,
+  resolveDiscoverPageDragLock,
+  resolveDiscoverPageDragRelease,
+  stepDiscoverGenreFilterPage,
+  type DiscoverGenreFilterPage,
+} from "@/lib/discover-subgenre-chips";
+import {
+  toggleSelectedSubgenre,
+  type SelectedSubgenresByGenre,
+} from "@shared/home-feed-subgenre-filter";
 
 const MENU_MAX_WIDTH = 320;
 const VIEWPORT_GUTTER = 8;
@@ -30,7 +58,36 @@ const FEED_MODE_LABELS: Record<FeedSortMode, string> = {
 
 /** Shared compact section chrome for the collapsed Discover menu. */
 const discoverMenuSectionClass = "px-3 py-2.5";
-const discoverMenuHeadingClass = "mb-2 text-sm font-semibold text-white";
+/** Keeps the last Genres/Status controls scrollable above sticky Done. */
+const discoverDoneClearanceClass = "pb-14";
+const discoverGenrePillClass =
+  "ios-press inline-flex min-h-9 min-w-0 w-full items-center justify-center gap-1 whitespace-normal rounded-full px-2 py-1.5 text-center text-xs leading-tight transition-colors";
+const DISCOVER_PAGE_SNAP_MS = 180;
+
+function DiscoverPageArrow({
+  direction,
+  onPress,
+  className,
+}: {
+  direction: "prev" | "next";
+  onPress: () => void;
+  className?: string;
+}) {
+  const Icon = direction === "next" ? ChevronRight : ChevronLeft;
+  return (
+    <button
+      type="button"
+      aria-label={direction === "next" ? "Next genre refinement" : "Previous genre refinement"}
+      onClick={onPress}
+      className={cn(
+        "ios-press inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-white/45 transition-colors hover:text-white/80",
+        className,
+      )}
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" strokeWidth={2} />
+    </button>
+  );
+}
 
 const feedModeCellBase =
   "ios-press flex min-h-[3.5rem] w-full flex-col items-center justify-center gap-0.5 rounded-lg border py-1.5 px-1 text-center transition-all touch-manipulation [-webkit-tap-highlight-color:transparent] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/45 focus-visible:ring-offset-0";
@@ -215,6 +272,8 @@ interface GenreFilterProps {
   sortMode?: FeedSortMode;
   onSortChange?: (mode: FeedSortMode) => void;
   onOpenChange?: (open: boolean) => void;
+  selectedSubgenresByGenre?: SelectedSubgenresByGenre;
+  onSubgenresChange?: (next: SelectedSubgenresByGenre) => void;
 }
 
 const genres = GENRE_ENTRIES.map((g) => ({
@@ -232,6 +291,8 @@ export function GenreFilter({
   sortMode,
   onSortChange,
   onOpenChange,
+  selectedSubgenresByGenre = {},
+  onSubgenresChange,
 }: GenreFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -241,6 +302,43 @@ export function GenreFilter({
     width: number;
     maxHeight: number;
   } | null>(null);
+  const [activeGenreFilterPage, setActiveGenreFilterPage] =
+    useState<DiscoverGenreFilterPage>(DISCOVER_GENRES_PAGE);
+  const [genrePageWidthPx, setGenrePageWidthPx] = useState(0);
+  const [genrePageDragOffsetPx, setGenrePageDragOffsetPx] = useState(0);
+  const [genrePageSnapping, setGenrePageSnapping] = useState(false);
+  const genrePageViewportRef = useRef<HTMLDivElement>(null);
+  const genrePageDragRef = useRef<{
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastTs: number;
+    velocityX: number;
+    lock: "undecided" | "horizontal" | "vertical";
+  } | null>(null);
+  const genrePagePendingStepRef = useRef<1 | -1 | 0>(0);
+  const suppressGenrePageClickRef = useRef(false);
+
+  const genreFilterPages = useMemo(
+    () => getDiscoverGenreFilterPages(selectedGenres),
+    [selectedGenres],
+  );
+  const resolvedGenreFilterPage = resolveDiscoverGenreFilterPage(
+    activeGenreFilterPage,
+    genreFilterPages,
+  );
+  const hasGenreRefinementPages = genreFilterPages.length > 1;
+  const adjacentGenrePages = useMemo(
+    () => getDiscoverAdjacentGenreFilterPages(resolvedGenreFilterPage, genreFilterPages),
+    [resolvedGenreFilterPage, genreFilterPages],
+  );
+  const subgenreGroupsByParent = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getDiscoverSubgenreGroups>[number]>();
+    for (const group of getDiscoverSubgenreGroups(selectedGenres)) {
+      map.set(group.parentId, group);
+    }
+    return map;
+  }, [selectedGenres]);
 
   const isAllSelected = selectedGenres.length === 0;
   const collapsedLabel = useMemo(() => {
@@ -288,6 +386,174 @@ export function GenreFilter({
     }
   };
 
+  const resetGenrePageDrag = useCallback(() => {
+    genrePageDragRef.current = null;
+    genrePagePendingStepRef.current = 0;
+    setGenrePageDragOffsetPx(0);
+    setGenrePageSnapping(false);
+  }, []);
+
+  const applyGenreFilterPageStep = useCallback((direction: 1 | -1) => {
+    setActiveGenreFilterPage((page) =>
+      stepDiscoverGenreFilterPage(page, getDiscoverGenreFilterPages(selectedGenres), direction),
+    );
+  }, [selectedGenres]);
+
+  const goGenreFilterPage = useCallback((direction: 1 | -1) => {
+    resetGenrePageDrag();
+    applyGenreFilterPageStep(direction);
+  }, [applyGenreFilterPageStep, resetGenrePageDrag]);
+
+  const prefersReducedMotion = () =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const commitGenrePageDragRelease = useCallback(
+    (offsetPx: number, velocityXPxPerMs: number, pageWidthPx = genrePageWidthPx) => {
+      const direction = resolveDiscoverPageDragRelease({
+        offsetPx,
+        pageWidthPx,
+        velocityXPxPerMs,
+      });
+      if (direction === 0 || pageWidthPx <= 0) {
+        if (prefersReducedMotion() || offsetPx === 0) {
+          resetGenrePageDrag();
+          return;
+        }
+        genrePagePendingStepRef.current = 0;
+        setGenrePageSnapping(true);
+        setGenrePageDragOffsetPx(0);
+        return;
+      }
+      if (prefersReducedMotion()) {
+        goGenreFilterPage(direction);
+        return;
+      }
+      const targetOffset = direction === 1 ? -pageWidthPx : pageWidthPx;
+      if (offsetPx === targetOffset) {
+        goGenreFilterPage(direction);
+        return;
+      }
+      genrePagePendingStepRef.current = direction;
+      setGenrePageSnapping(true);
+      setGenrePageDragOffsetPx(targetOffset);
+    },
+    [genrePageWidthPx, goGenreFilterPage, resetGenrePageDrag],
+  );
+
+  const onGenrePageSnapEnd = () => {
+    if (!genrePageSnapping) return;
+    const step = genrePagePendingStepRef.current;
+    genrePagePendingStepRef.current = 0;
+    setGenrePageSnapping(false);
+    setGenrePageDragOffsetPx(0);
+    if (step === 1 || step === -1) {
+      applyGenreFilterPageStep(step);
+    }
+  };
+
+  useLayoutEffect(() => {
+    const el = genrePageViewportRef.current;
+    if (!el || !hasGenreRefinementPages) {
+      setGenrePageWidthPx(0);
+      return;
+    }
+    const measure = () => setGenrePageWidthPx(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasGenreRefinementPages, isOpen, resolvedGenreFilterPage]);
+
+  useEffect(() => {
+    const el = genrePageViewportRef.current;
+    if (!el || !hasGenreRefinementPages) return;
+
+    const onMove = (event: globalThis.TouchEvent) => {
+      const drag = genrePageDragRef.current;
+      if (!drag) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - drag.startX;
+      const dy = touch.clientY - drag.startY;
+      if (drag.lock === "undecided") {
+        drag.lock = resolveDiscoverPageDragLock(dx, dy);
+      }
+      if (drag.lock !== "horizontal") return;
+      event.preventDefault();
+      const now = event.timeStamp || Date.now();
+      const dt = now - drag.lastTs;
+      if (dt > 0) {
+        drag.velocityX = (touch.clientX - drag.lastX) / dt;
+      }
+      drag.lastX = touch.clientX;
+      drag.lastTs = now;
+      setGenrePageDragOffsetPx(clampDiscoverPageDragOffset(dx, el.clientWidth));
+    };
+
+    el.addEventListener("touchmove", onMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onMove);
+  }, [hasGenreRefinementPages, isOpen]);
+
+  const onGenrePageTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (!hasGenreRefinementPages || genrePageSnapping) return;
+    const touch = event.changedTouches[0] ?? event.touches[0];
+    if (!touch) return;
+    const now = event.timeStamp || Date.now();
+    genrePageDragRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastX: touch.clientX,
+      lastTs: now,
+      velocityX: 0,
+      lock: "undecided",
+    };
+  };
+
+  const onGenrePageTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const drag = genrePageDragRef.current;
+    genrePageDragRef.current = null;
+    if (!drag || !hasGenreRefinementPages) return;
+    if (drag.lock !== "horizontal") {
+      setGenrePageDragOffsetPx(0);
+      return;
+    }
+    suppressGenrePageClickRef.current = true;
+    const touch = event.changedTouches[0];
+    const pageWidth = genrePageViewportRef.current?.clientWidth || genrePageWidthPx;
+    const offset = touch
+      ? clampDiscoverPageDragOffset(touch.clientX - drag.startX, pageWidth)
+      : genrePageDragOffsetPx;
+    commitGenrePageDragRelease(offset, drag.velocityX, pageWidth);
+  };
+
+  const onGenrePageClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!suppressGenrePageClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressGenrePageClickRef.current = false;
+  };
+
+  const onGenrePageTouchCancel = () => {
+    genrePageDragRef.current = null;
+    if (genrePageSnapping) return;
+    setGenrePageDragOffsetPx(0);
+  };
+
+  useLayoutEffect(() => {
+    if (activeGenreFilterPage !== resolvedGenreFilterPage) {
+      setActiveGenreFilterPage(resolvedGenreFilterPage);
+      resetGenrePageDrag();
+    }
+  }, [activeGenreFilterPage, resolvedGenreFilterPage, resetGenrePageDrag]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setActiveGenreFilterPage(DISCOVER_GENRES_PAGE);
+    resetGenrePageDrag();
+  }, [isOpen, resetGenrePageDrag]);
+
   const updateMenuPos = useCallback(() => {
     const el = triggerRef.current;
     if (!el || !isOpen) {
@@ -315,7 +581,7 @@ export function GenreFilter({
 
   useLayoutEffect(() => {
     updateMenuPos();
-  }, [updateMenuPos, isOpen, collapsedLabel, selectedGenres.length, identificationFilter, sortMode]);
+  }, [updateMenuPos, isOpen, collapsedLabel, selectedGenres.length, identificationFilter, sortMode, resolvedGenreFilterPage]);
 
   useEffect(() => {
     onOpenChange?.(isOpen);
@@ -335,15 +601,24 @@ export function GenreFilter({
   if (isCollapsed) {
     const menuContent = (
       <>
+        <div className={discoverDoneClearanceClass} data-discover-done-clearance>
         {sortMode != null && onSortChange ? (
-          <div className={cn("border-b border-white/20", discoverMenuSectionClass)}>
-            <h3 id="discover-feed-mode-heading" className={discoverMenuHeadingClass}>
-              Feed
-            </h3>
+          <div className={discoverMenuSectionClass}>
+            <div
+              className={DISCOVER_MENU_CONTENT_INSET_CLASS}
+              data-discover-shared-content="feed"
+            >
+            <div className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}>
+              <h3 id="discover-feed-mode-heading" className={DISCOVER_MENU_HEADING_TEXT_CLASS}>
+                Feed
+              </h3>
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+            </div>
             <div
               role="group"
               aria-labelledby="discover-feed-mode-heading"
-              className="grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/35 p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-md"
+              className="grid grid-cols-2 gap-1.5"
             >
               <FeedModeMenuButton
                 variant="trending"
@@ -382,16 +657,20 @@ export function GenreFilter({
                 onPress={() => onSortChange("random")}
               />
             </div>
+            </div>
           </div>
         ) : null}
 
-        <div
-          className={cn(
-            discoverMenuSectionClass,
-            sortMode != null && onSortChange && "border-b border-white/20",
-          )}
-        >
-          <h3 className={discoverMenuHeadingClass}>Status</h3>
+        <div className={discoverMenuSectionClass}>
+          <div
+            className={DISCOVER_MENU_CONTENT_INSET_CLASS}
+            data-discover-shared-content="status"
+          >
+          <div className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}>
+            <h3 className={DISCOVER_MENU_HEADING_TEXT_CLASS}>Status</h3>
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </div>
           <div className="flex gap-1.5">
             <button
               type="button"
@@ -422,43 +701,220 @@ export function GenreFilter({
               Unidentified
             </button>
           </div>
+          </div>
         </div>
 
-        <div className={discoverMenuSectionClass}>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-white">Genres</h3>
-            <button
-              type="button"
-              onClick={() => onGenresChange([])}
-              className={`ios-press shrink-0 rounded-full px-2.5 py-1 text-xs transition-colors ${
-                isAllSelected
-                  ? "bg-gray-100 text-gray-800"
-                  : "bg-white/20 text-white hover:bg-white/30"
-              }`}
-            >
-              All
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {genres.map((genre) => {
-              const isSelected = selectedGenres.includes(genre.id);
+        <div className={`${discoverMenuSectionClass} touch-pan-y`} data-discover-genre-page={resolvedGenreFilterPage}>
+          {(() => {
+            const renderGenrePage = (pageId: DiscoverGenreFilterPage, isCurrent: boolean) => {
+              if (pageId === DISCOVER_GENRES_PAGE) {
+                return (
+                  <>
+                    <div
+                      className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}
+                      data-discover-genre-heading="genres"
+                    >
+                      <h3 className={DISCOVER_MENU_HEADING_TEXT_CLASS}>Genres</h3>
+                      <span aria-hidden="true" />
+                      <div className="justify-self-end">
+                        {!isAllSelected ? (
+                          <button
+                            type="button"
+                            aria-label="Clear genre filters"
+                            onClick={() => {
+                              setActiveGenreFilterPage(DISCOVER_GENRES_PAGE);
+                              resetGenrePageDrag();
+                              onGenresChange([]);
+                            }}
+                            className="ios-press shrink-0 min-h-9 px-2.5 text-xs font-medium text-white/55 transition-colors hover:text-white/80"
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className={DISCOVER_GENRE_PAGE_GRID_CLASS} data-discover-genre-grid="parent">
+                      {genres.map((genre) => {
+                        const isSelected = selectedGenres.includes(genre.id);
+                        const showRefinementMark =
+                          isSelected &&
+                          parentHasActiveSubgenreRefinement(selectedSubgenresByGenre, genre.id);
+                        return (
+                          <button
+                            type="button"
+                            key={genre.id}
+                            aria-pressed={isSelected}
+                            onClick={() => toggleGenre(genre.id)}
+                            className={cn(
+                              discoverGenrePillClass,
+                              isSelected
+                                ? `${genre.color || "text-white"}`
+                                : "bg-white/20 text-white hover:bg-white/30",
+                            )}
+                            style={isSelected && genre.bgColor ? { backgroundColor: genre.bgColor } : {}}
+                          >
+                            {genre.label}
+                            {showRefinementMark ? (
+                              <ArrowLeftRight
+                                aria-hidden="true"
+                                className="pointer-events-none h-2 w-2 shrink-0 opacity-45"
+                                strokeWidth={2.25}
+                              />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              }
+              const group = subgenreGroupsByParent.get(pageId);
+              if (!group) return null;
+              const headingId = isCurrent ? "discover-subgenre-heading" : undefined;
               return (
-                <button
-                  type="button"
-                  key={genre.id}
-                  onClick={() => toggleGenre(genre.id)}
-                  className={`ios-press min-h-9 rounded-full px-2 py-1.5 text-xs transition-colors ${
-                    isSelected
-                      ? `${genre.color || "text-white"}`
-                      : "bg-white/20 text-white hover:bg-white/30"
-                  }`}
-                  style={isSelected && genre.bgColor ? { backgroundColor: genre.bgColor } : {}}
-                >
-                  {genre.label}
-                </button>
+                <>
+                  <div
+                    className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}
+                    data-discover-genre-heading={group.parentId}
+                  >
+                    <h3 id={headingId} className={DISCOVER_MENU_HEADING_TEXT_CLASS}>
+                      {group.label}
+                    </h3>
+                    <span aria-hidden="true" />
+                    <span aria-hidden="true" />
+                  </div>
+                  <div
+                    role={isCurrent ? "group" : undefined}
+                    aria-labelledby={headingId}
+                    className={DISCOVER_GENRE_PAGE_GRID_CLASS}
+                    data-discover-genre-grid="child"
+                  >
+                    {group.children.map((child) => {
+                      const childSelected = isDiscoverSubgenreChipSelected(
+                        selectedSubgenresByGenre,
+                        group.parentId,
+                        child.id,
+                      );
+                      return (
+                        <button
+                          type="button"
+                          key={child.id}
+                          aria-pressed={childSelected}
+                          aria-label={`Filter ${group.label} to ${child.label}`}
+                          onClick={() => {
+                            if (!onSubgenresChange) return;
+                            onSubgenresChange(
+                              toggleSelectedSubgenre(
+                                selectedGenres,
+                                selectedSubgenresByGenre,
+                                group.parentId,
+                                child.id,
+                              ),
+                            );
+                          }}
+                          className={cn(
+                            discoverGenrePillClass,
+                            childSelected ? group.textClass : "bg-white/20 text-white hover:bg-white/30",
+                          )}
+                          style={
+                            childSelected && group.bgColor
+                              ? { backgroundColor: group.bgColor }
+                              : undefined
+                          }
+                        >
+                          {child.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               );
-            })}
-          </div>
+            };
+
+            const renderSharedGenrePage = (
+              pageId: DiscoverGenreFilterPage,
+              isCurrent: boolean,
+            ) => (
+              <div
+                className={DISCOVER_GENRE_PAGE_FRAME_CLASS}
+                data-discover-genre-page-frame
+                data-discover-shared-content="genres"
+              >
+                {renderGenrePage(pageId, isCurrent)}
+              </div>
+            );
+
+            if (!hasGenreRefinementPages) {
+              return renderSharedGenrePage(DISCOVER_GENRES_PAGE, true);
+            }
+
+            const pageWidth = genrePageWidthPx;
+            const strip = (
+              <div
+                ref={genrePageViewportRef}
+                data-discover-genre-pager
+                className="overflow-x-hidden select-none"
+                onTouchStart={onGenrePageTouchStart}
+                onTouchEnd={onGenrePageTouchEnd}
+                onTouchCancel={onGenrePageTouchCancel}
+                onClickCapture={onGenrePageClickCapture}
+              >
+                {isDiscoverPageTrackReady(pageWidth) ? (
+                  <div
+                    className={cn(
+                      "flex",
+                      genrePageSnapping &&
+                        "motion-safe:transition-transform motion-reduce:transition-none",
+                    )}
+                    style={{
+                      width: pageWidth * 3,
+                      transform: `translateX(${discoverPageStripTranslatePx(pageWidth, genrePageDragOffsetPx)}px)`,
+                      transitionDuration: genrePageSnapping ? `${DISCOVER_PAGE_SNAP_MS}ms` : undefined,
+                      transitionTimingFunction: genrePageSnapping ? "ease-out" : undefined,
+                    }}
+                    onTransitionEnd={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      onGenrePageSnapEnd();
+                    }}
+                  >
+                    <div className="shrink-0" style={{ width: pageWidth }}>
+                      {renderSharedGenrePage(adjacentGenrePages.previous, false)}
+                    </div>
+                    <div className="shrink-0" style={{ width: pageWidth }}>
+                      {renderSharedGenrePage(adjacentGenrePages.current, true)}
+                    </div>
+                    <div className="shrink-0" style={{ width: pageWidth }}>
+                      {renderSharedGenrePage(adjacentGenrePages.next, false)}
+                    </div>
+                  </div>
+                ) : (
+                  renderSharedGenrePage(adjacentGenrePages.current, true)
+                )}
+              </div>
+            );
+
+            return (
+              <div className="relative">
+                <div
+                  data-discover-page-arrows
+                  className="pointer-events-none absolute inset-0 z-10"
+                >
+                  <DiscoverPageArrow
+                    direction="prev"
+                    onPress={() => goGenreFilterPage(-1)}
+                    className={cn("pointer-events-auto absolute left-0", DISCOVER_PAGE_ARROW_Y_CLASS)}
+                  />
+                  <DiscoverPageArrow
+                    direction="next"
+                    onPress={() => goGenreFilterPage(1)}
+                    className={cn("pointer-events-auto absolute right-0", DISCOVER_PAGE_ARROW_Y_CLASS)}
+                  />
+                </div>
+                {strip}
+              </div>
+            );
+          })()}
+        </div>
         </div>
 
         <div className="sticky bottom-0 border-t border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-xl">
@@ -497,6 +953,7 @@ export function GenreFilter({
           ) : null}
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{collapsedLabel}</span>
           <svg
+            aria-hidden="true"
             className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
             fill="none"
             stroke="currentColor"

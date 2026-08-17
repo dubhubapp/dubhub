@@ -50,7 +50,7 @@ export const POST_SUBGENRES_BY_PARENT: Record<
     { id: "deep_house", label: "Deep House" },
     { id: "future_house", label: "Future House" },
     { id: "bass_house", label: "Bass House" },
-    { id: "progressive_house", label: "Progressive House" },
+    { id: "progressive_house", label: "Prog. House" },
     { id: "electro_house", label: "Electro House" },
     { id: "jackin_house", label: "Jackin' House" },
     { id: "disco_house", label: "Disco House" },

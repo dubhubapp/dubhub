@@ -40,7 +40,7 @@ const LOCKED_TAXONOMY: Record<CanonicalGenreId, { id: string; label: string }[]>
     { id: "deep_house", label: "Deep House" },
     { id: "future_house", label: "Future House" },
     { id: "bass_house", label: "Bass House" },
-    { id: "progressive_house", label: "Progressive House" },
+    { id: "progressive_house", label: "Prog. House" },
     { id: "electro_house", label: "Electro House" },
     { id: "jackin_house", label: "Jackin' House" },
     { id: "disco_house", label: "Disco House" },
@@ -143,6 +143,9 @@ describe("isValidSubgenre", () => {
     assert.equal(isValidSubgenre("dnb", "not_a_real_subgenre"), false);
     assert.equal(isValidSubgenre("dnb", "Jump Up"), false);
     assert.equal(isValidSubgenre("ukg", "2-Step"), false);
+    assert.equal(isValidSubgenre("house", "progressive_house"), true);
+    assert.equal(isValidSubgenre("house", "Prog. House"), false);
+    assert.equal(isValidSubgenre("house", "Progressive House"), false);
   });
 
   it("returns false for unknown / empty parent or child", () => {
@@ -176,6 +179,8 @@ describe("getSubgenreLabel", () => {
     assert.equal(getSubgenreLabel("future_house"), "Future House");
     assert.equal(getSubgenreLabel("jump_up"), "Jump Up");
     assert.equal(getSubgenreLabel("4x4"), "4x4");
+    assert.equal(getSubgenreLabel("progressive_house"), "Prog. House");
+    assert.notEqual(getSubgenreLabel("progressive_house"), "Progressive House");
   });
 
   it("returns null for unknown or empty IDs", () => {
