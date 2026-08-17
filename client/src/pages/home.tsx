@@ -61,7 +61,19 @@ import {
   getHomeFeedSessionBootstrap,
   saveHomeFeedSession,
 } from "@/lib/home-feed-session";
+import {
+  applySelectedGenresToSubgenreState,
+  postMatchesGenreFilter,
+  sanitizeSelectedSubgenresByGenre,
+  serializeSubgenreFilterQuery,
+  type SelectedSubgenresByGenre,
+} from "@shared/home-feed-subgenre-filter";
+import {
+  shouldPreserveHomeFeedActivePostOnChromeChange,
+  shouldReconcilePreservedHomeFeedActivePost,
+} from "@/lib/home-feed-chrome-continuity";
 import { consumeProfileReturnReopenComments } from "@/lib/profile-navigation-return";
+import { getHomeFeedEmptyCopy } from "@/lib/home-feed-empty-copy";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
 const WELCOME_MESSAGES = [
@@ -163,6 +175,8 @@ function readHomeTapTopLayoutSnapshot(): Record<string, unknown> {
 function HomeFeedTopChrome({
   selectedGenres,
   onGenresChange,
+  selectedSubgenresByGenre,
+  onSubgenresChange,
   identificationFilter,
   onIdentificationChange,
   sortMode,
@@ -172,6 +186,8 @@ function HomeFeedTopChrome({
 }: {
   selectedGenres: string[];
   onGenresChange: (next: string[]) => void;
+  selectedSubgenresByGenre: SelectedSubgenresByGenre;
+  onSubgenresChange: (next: SelectedSubgenresByGenre) => void;
   identificationFilter: "all" | "identified" | "unidentified";
   onIdentificationChange: (next: "all" | "identified" | "unidentified") => void;
   sortMode: FeedSortMode;
@@ -241,6 +257,8 @@ function HomeFeedTopChrome({
             <GenreFilter
               selectedGenres={selectedGenres}
               onGenresChange={onGenresChange}
+              selectedSubgenresByGenre={selectedSubgenresByGenre}
+              onSubgenresChange={onSubgenresChange}
               identificationFilter={identificationFilter}
               onIdentificationChange={onIdentificationChange}
               sortMode={sortMode}
@@ -737,6 +755,9 @@ export default function Home() {
   const feedSessionPersistReadyRef = useRef(false);
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>(feedSessionBootstrap.selectedGenres);
+  const [selectedSubgenresByGenre, setSelectedSubgenresByGenre] = useState<SelectedSubgenresByGenre>(
+    feedSessionBootstrap.selectedSubgenresByGenre,
+  );
   const [identificationFilter, setIdentificationFilter] = useState<"all" | "identified" | "unidentified">(
     feedSessionBootstrap.identificationFilter,
   );
@@ -832,6 +853,8 @@ export default function Home() {
   /** True from the moment sort/filter changes until real (non-placeholder) query data arrives. */
   const feedChromeResetPendingRef = useRef(false);
   const [feedChromeResetPending, setFeedChromeResetPending] = useState(false);
+  /** Same-first-post chrome change: skip loader/unmount; re-check first row when real data arrives. */
+  const feedChromeContinuityPendingRef = useRef(false);
   /** Prior feed chrome key so order-restore skips the frame sort/filter changed (not a pure reorder). */
   const prevFeedChromeKeyRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
@@ -847,28 +870,47 @@ export default function Home() {
   } | null>(null);
 
   const genresKey = [...selectedGenres].sort().join(",");
+  const subgenresKey = serializeSubgenreFilterQuery(selectedGenres, selectedSubgenresByGenre);
+  const feedChromeKey = `${sortMode}\0${identificationFilter}\0${genresKey}\0${subgenresKey}`;
+
+  const handleGenresChange = useCallback((next: string[]) => {
+    setSelectedGenres(next);
+    setSelectedSubgenresByGenre((prev) => applySelectedGenresToSubgenreState(next, prev));
+  }, []);
+
+  const handleSubgenresChange = useCallback((next: SelectedSubgenresByGenre) => {
+    setSelectedSubgenresByGenre(sanitizeSelectedSubgenresByGenre(selectedGenres, next));
+  }, [selectedGenres]);
 
   const feedSessionSavePayloadRef = useRef({
     sortMode: feedSessionBootstrap.sortMode,
     selectedGenres: feedSessionBootstrap.selectedGenres,
+    selectedSubgenresByGenre: feedSessionBootstrap.selectedSubgenresByGenre,
     identificationFilter: feedSessionBootstrap.identificationFilter,
     activePostId: feedSessionBootstrap.activePostId,
   });
   feedSessionSavePayloadRef.current = {
     sortMode,
     selectedGenres,
+    selectedSubgenresByGenre,
     identificationFilter,
     activePostId,
   };
 
   const persistFeedSessionSnapshot = useCallback(() => {
-    const { sortMode: sm, selectedGenres: sg, identificationFilter: idf, activePostId: apid } =
-      feedSessionSavePayloadRef.current;
+    const {
+      sortMode: sm,
+      selectedGenres: sg,
+      selectedSubgenresByGenre: ssg,
+      identificationFilter: idf,
+      activePostId: apid,
+    } = feedSessionSavePayloadRef.current;
     const scrollTop = videoFeedRef.current?.scrollTop ?? 0;
     saveHomeFeedSession(
       buildHomeFeedSessionSnapshot({
         sortMode: sm,
         selectedGenres: sg,
+        selectedSubgenresByGenre: ssg,
         identificationFilter: idf,
         activePostId: apid,
         scrollTop,
@@ -889,7 +931,7 @@ export default function Home() {
     }
     if (feedSessionRestorePendingRef.current) return;
     persistFeedSessionSnapshot();
-  }, [sortMode, genresKey, identificationFilter, persistFeedSessionSnapshot]);
+  }, [sortMode, genresKey, subgenresKey, identificationFilter, persistFeedSessionSnapshot]);
 
   useEffect(() => {
     const userId = currentUser?.id;
@@ -1108,6 +1150,7 @@ export default function Home() {
           if (mode === "trending" || mode === "hottest" || mode === "newest") {
             setIdentificationFilter("all");
             setSelectedGenres([]);
+            setSelectedSubgenresByGenre({});
           }
           traceSortTap("sort/handleFeedSortChange(random-exit-delayed)");
           setSortMode(mode);
@@ -1176,8 +1219,8 @@ export default function Home() {
     window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
   }, [sortMode, randomViewExiting, randomPost?.id, randomLoading, genreMenuOpen]);
 
-  const postsQuery = useInfiniteQuery<FeedPage, Error, InfiniteData<FeedPage>, readonly [string, { genresKey: string; identification: "all" | "identified" | "unidentified"; sortMode: FeedSortMode }, string | undefined], string | null>({
-    queryKey: ["/api/posts", { genresKey, identification: identificationFilter, sortMode }, currentUser?.id],
+  const postsQuery = useInfiniteQuery<FeedPage, Error, InfiniteData<FeedPage>, readonly [string, { genresKey: string; subgenresKey: string; identification: "all" | "identified" | "unidentified"; sortMode: FeedSortMode }, string | undefined], string | null>({
+    queryKey: ["/api/posts", { genresKey, subgenresKey, identification: identificationFilter, sortMode }, currentUser?.id],
     placeholderData: (previousData) => previousData,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }): Promise<FeedPage> => {
@@ -1191,6 +1234,9 @@ export default function Home() {
       const params = new URLSearchParams();
       if (selectedGenres.length > 0) {
         params.append("genres", selectedGenres.join(","));
+      }
+      if (subgenresKey) {
+        params.append("subgenres", subgenresKey);
       }
       params.append("identification", identificationFilter);
       const serverSortMode: "trending" | "hottest" | "newest" =
@@ -1291,10 +1337,8 @@ export default function Home() {
       return true; // "all" => both
     };
 
-    const genreWhere = (post: PostWithUser) => {
-      if (selectedGenres.length === 0) return true;
-      return selectedGenres.includes((post.genre ?? "").toString().trim().toLowerCase());
-    };
+    const genreWhere = (post: PostWithUser) =>
+      postMatchesGenreFilter(post, selectedGenres, selectedSubgenresByGenre);
 
     const normalizeCreatedAt = (value: any) => {
       const d = value instanceof Date ? value : new Date(value);
@@ -1310,7 +1354,7 @@ export default function Home() {
 
     // Trending/Hottest: server order frozen for the session; engagement updates counts only.
     return filtered;
-  }, [posts, identificationFilter, selectedGenres, sortMode]);
+  }, [posts, identificationFilter, selectedGenres, selectedSubgenresByGenre, sortMode]);
 
   const uiPostsNewest201TraceRef = useRef(uiPosts);
   uiPostsNewest201TraceRef.current = uiPosts;
@@ -1357,13 +1401,14 @@ export default function Home() {
 
     pendingFeedScrollRestoreRef.current = null;
     feedSessionRestorePendingRef.current = false;
-    prevFeedChromeKeyRef.current = `${sortMode}\0${identificationFilter}\0${genresKey}`;
+    prevFeedChromeKeyRef.current = feedChromeKey;
     bumpPlaybackRecovery();
   }, [
     uiPosts,
     sortMode,
     identificationFilter,
     genresKey,
+    subgenresKey,
     isInitialFeedLoad,
     suppressPlaceholderFeedRows,
     isPlaceholderData,
@@ -1784,16 +1829,45 @@ export default function Home() {
   const prevUiPostsOrderKeyRef = useRef<string | null>(null);
 
   // Sort/filter: scroll to top + reset active/highlight before paint so order-restore and
-  // nearest-active logic never run against a stale viewport or treat a chrome change as pure reorder.
+  // nearest-active logic never run against a stale viewport or treat a chrome change as a pure reorder.
+  // Same-first-post exception: if the already-filtered top row is still the active post and the
+  // viewport is already there, keep the mounted card (query still changes; real data re-checks).
   useLayoutEffect(() => {
     if (sortMode === "random") return;
     if (feedChromeResetSkippedForRestoreRef.current) {
       feedChromeResetSkippedForRestoreRef.current = false;
-      prevFeedChromeKeyRef.current = `${sortMode}\0${identificationFilter}\0${genresKey}`;
+      prevFeedChromeKeyRef.current = feedChromeKey;
       return;
     }
     const el = videoFeedRef.current;
     const u = uiPostsNewest201TraceRef.current;
+    const activeId = newest201ActivePostIdRef.current;
+    const viewportAtTop = !!el && isHomeFeedSnappedToFirstPost(el);
+    const preserveSameFirst = shouldPreserveHomeFeedActivePostOnChromeChange({
+      activePostId: activeId,
+      firstEligiblePostId: u[0]?.id ?? null,
+      viewportAtTop,
+    });
+    if (preserveSameFirst) {
+      feedChromeContinuityPendingRef.current = true;
+      prevUiPostsOrderKeyRef.current = null;
+      if (feedChromeResetPendingRef.current) {
+        feedChromeResetPendingRef.current = false;
+        setFeedChromeResetPending(false);
+      }
+      newest201Trace("scroll/sort-filter-reset", {
+        branch: "preserve-same-first",
+        targetTop: el?.scrollTop ?? null,
+        scrollTopBefore: el?.scrollTop ?? null,
+        scrollTopAfter: el?.scrollTop ?? null,
+        activePostId: activeId,
+        uiPosts0: u[0]?.id ?? null,
+        index201: newest201IndexOf(u),
+        sortMode,
+      });
+      return;
+    }
+    feedChromeContinuityPendingRef.current = false;
     const scrollBefore = el?.scrollTop ?? null;
     if (el) {
       el.scrollTo({ top: 0, behavior: "auto" });
@@ -1803,7 +1877,7 @@ export default function Home() {
       targetTop: 0,
       scrollTopBefore: scrollBefore,
       scrollTopAfter: scrollAfter,
-      activePostId: newest201ActivePostIdRef.current,
+      activePostId: activeId,
       uiPosts0: u[0]?.id ?? null,
       index201: newest201IndexOf(u),
       sortMode,
@@ -1812,7 +1886,7 @@ export default function Home() {
     lastScrolledPostId.current = null;
     newest201Trace("setActivePostId/feed-chrome-reset", {
       sortMode,
-      prev: newest201ActivePostIdRef.current,
+      prev: activeId,
       next: null as string | null,
       uiPosts0: u[0]?.id ?? null,
       scrollTop: el?.scrollTop ?? scrollAfter,
@@ -1822,11 +1896,11 @@ export default function Home() {
     prevUiPostsOrderKeyRef.current = null;
     feedChromeResetPendingRef.current = true;
     setFeedChromeResetPending(true);
-  }, [sortMode, identificationFilter, genresKey]);
+  }, [sortMode, identificationFilter, genresKey, subgenresKey]);
 
   useLayoutEffect(() => {
     if (sortMode === "random") return;
-    const chromeKeyNow = `${sortMode}\0${identificationFilter}\0${genresKey}`;
+    const chromeKeyNow = feedChromeKey;
     const prevChromeKey = prevFeedChromeKeyRef.current;
     prevFeedChromeKeyRef.current = chromeKeyNow;
 
@@ -1837,6 +1911,8 @@ export default function Home() {
     if (prevChromeKey !== null && chromeKeyNow !== prevChromeKey) return;
 
     if (isPlaceholderData || suppressPlaceholderFeedRows) return;
+
+    if (feedChromeContinuityPendingRef.current) return;
 
     if (prev === null || prev === orderKey || !activePostId) return;
 
@@ -1879,8 +1955,45 @@ export default function Home() {
     sortMode,
     identificationFilter,
     genresKey,
+    subgenresKey,
     isPlaceholderData,
     suppressPlaceholderFeedRows,
+  ]);
+
+  // After a same-first preserve, real query data may still replace row 0. Switch with existing
+  // setActivePostId ownership so the old post cannot keep playing behind the new first card.
+  useLayoutEffect(() => {
+    if (!feedChromeContinuityPendingRef.current) return;
+    if (feedSessionRestorePendingRef.current) return;
+    if (!isAppForegroundActive) return;
+    if (isPlaceholderData || suppressPlaceholderFeedRows) return;
+    if (sortMode === "random" || uiPosts.length === 0) {
+      feedChromeContinuityPendingRef.current = false;
+      return;
+    }
+    const firstId = uiPosts[0]?.id ?? null;
+    const shouldSwitch = shouldReconcilePreservedHomeFeedActivePost({
+      isPlaceholderData: false,
+      activePostId,
+      firstEligiblePostId: firstId,
+    });
+    feedChromeContinuityPendingRef.current = false;
+    if (!shouldSwitch || !firstId || firstId === activePostId) return;
+    newest201Trace("setActivePostId/chrome-continuity-reconcile", {
+      sortMode,
+      prev: activePostId,
+      next: firstId,
+      uiPosts0: firstId,
+      index201: newest201IndexOf(uiPosts),
+    });
+    setActivePostId(firstId);
+  }, [
+    isPlaceholderData,
+    suppressPlaceholderFeedRows,
+    uiPosts,
+    activePostId,
+    sortMode,
+    isAppForegroundActive,
   ]);
 
   const handleHomeFeedPullRefresh = useCallback(async () => {
@@ -2518,6 +2631,9 @@ export default function Home() {
           if (selectedGenres.length > 0) {
             params.append("genres", selectedGenres.join(","));
           }
+          if (subgenresKey) {
+            params.append("subgenres", subgenresKey);
+          }
           params.append("identification", "unidentified");
           // Use server "newest" ordering for a stable scan; we randomize by shuffling client-side.
           params.append("sort", "newest");
@@ -2613,7 +2729,7 @@ export default function Home() {
     // (e.g. re-enter Random after exhaustion → same effect tick would otherwise no-op forever).
     void loadNextRandom({ afterRestart: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortMode, genresKey]);
+  }, [sortMode, genresKey, subgenresKey]);
 
   /** Genre menu dice: switching to Random delegates to {@link handleFeedSortChange}; tapping again starts a new session instead of silently no-op'ing while already Random. */
   const handleGenreMenuSortChange = (mode: FeedSortMode) => {
@@ -2736,6 +2852,7 @@ export default function Home() {
     ) {
       deepLinkFiltersNeutralizedRef.current = postId;
       if (selectedGenres.length > 0) setSelectedGenres([]);
+      setSelectedSubgenresByGenre({});
       if (identificationFilter !== "all") setIdentificationFilter("all");
       return;
     }
@@ -3011,7 +3128,9 @@ export default function Home() {
       <div className="flex-1 relative bg-background overflow-hidden">
         <HomeFeedTopChrome
           selectedGenres={selectedGenres}
-          onGenresChange={setSelectedGenres}
+              onGenresChange={handleGenresChange}
+          selectedSubgenresByGenre={selectedSubgenresByGenre}
+          onSubgenresChange={handleSubgenresChange}
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           sortMode="random"
@@ -3126,11 +3245,19 @@ export default function Home() {
   }
 
   if (uiPosts.length === 0) {
+    const emptyCopy = getHomeFeedEmptyCopy({
+      identificationFilter,
+      selectedGenres,
+      selectedSubgenresByGenre,
+      postsLength: posts.length,
+    });
     return (
       <div className="flex-1 relative bg-background">
         <HomeFeedTopChrome
           selectedGenres={selectedGenres}
-          onGenresChange={setSelectedGenres}
+              onGenresChange={handleGenresChange}
+          selectedSubgenresByGenre={selectedSubgenresByGenre}
+          onSubgenresChange={handleSubgenresChange}
           identificationFilter={identificationFilter}
           onIdentificationChange={setIdentificationFilter}
           sortMode={sortMode}
@@ -3143,22 +3270,8 @@ export default function Home() {
         />
         <div className="h-full flex items-center justify-center pt-32">
           <div className="text-center text-muted-foreground">
-            {identificationFilter !== "all" || selectedGenres.length > 0 ? (
-              <>
-                <p className="text-lg mb-2">No matching posts</p>
-                <p className="text-sm">Try changing your filters</p>
-              </>
-            ) : posts.length === 0 ? (
-              <>
-                <p className="text-lg mb-2">No posts yet. Be the first to upload!</p>
-                <p className="text-sm">Try selecting different filters</p>
-              </>
-            ) : (
-              <>
-                <p className="text-lg mb-2">No matching posts</p>
-                <p className="text-sm">Try changing your filters</p>
-              </>
-            )}
+            <p className="text-lg mb-2">{emptyCopy.title}</p>
+            <p className="text-sm">{emptyCopy.subtitle}</p>
           </div>
         </div>
         {hintOverlay}
@@ -3170,7 +3283,9 @@ export default function Home() {
     <div className="flex-1 relative bg-background overflow-hidden">
       <HomeFeedTopChrome
         selectedGenres={selectedGenres}
-        onGenresChange={setSelectedGenres}
+              onGenresChange={handleGenresChange}
+        selectedSubgenresByGenre={selectedSubgenresByGenre}
+        onSubgenresChange={handleSubgenresChange}
         identificationFilter={identificationFilter}
         onIdentificationChange={setIdentificationFilter}
         sortMode={sortMode}

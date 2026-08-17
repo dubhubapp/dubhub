@@ -1,6 +1,10 @@
 import type { FeedSortMode } from "@/components/genre-filter";
 import { GENRE_ENTRIES } from "@/lib/genre-styles";
 import { homeSearchHasPostOrTrack } from "@/lib/home-deeplink-url";
+import {
+  sanitizeSelectedSubgenresByGenre,
+  type SelectedSubgenresByGenre,
+} from "@shared/home-feed-subgenre-filter";
 
 export type HomeFeedIdentificationFilter = "all" | "identified" | "unidentified";
 
@@ -8,6 +12,7 @@ export type HomeFeedIdentificationFilter = "all" | "identified" | "unidentified"
 export type HomeFeedSessionState = {
   sortMode: Exclude<FeedSortMode, "random">;
   selectedGenres: string[];
+  selectedSubgenresByGenre: SelectedSubgenresByGenre;
   identificationFilter: HomeFeedIdentificationFilter;
   activePostId: string | null;
   scrollTop: number;
@@ -17,6 +22,7 @@ export type HomeFeedSessionBootstrap = {
   restoreSession: boolean;
   sortMode: FeedSortMode;
   selectedGenres: string[];
+  selectedSubgenresByGenre: SelectedSubgenresByGenre;
   identificationFilter: HomeFeedIdentificationFilter;
   activePostId: string | null;
   scrollTop: number;
@@ -68,9 +74,14 @@ function parseScrollTop(value: unknown): number {
 export function sanitizeHomeFeedSessionState(raw: unknown): HomeFeedSessionState | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
+  const selectedGenres = parseSelectedGenres(o.selectedGenres);
   return {
     sortMode: parseSortedSortMode(o.sortMode),
-    selectedGenres: parseSelectedGenres(o.selectedGenres),
+    selectedGenres,
+    selectedSubgenresByGenre: sanitizeSelectedSubgenresByGenre(
+      selectedGenres,
+      o.selectedSubgenresByGenre,
+    ),
     identificationFilter: parseIdentificationFilter(o.identificationFilter),
     activePostId: parseActivePostId(o.activePostId),
     scrollTop: parseScrollTop(o.scrollTop),
@@ -134,14 +145,20 @@ export function clearHomeFeedSession(): void {
 export function buildHomeFeedSessionSnapshot(input: {
   sortMode: FeedSortMode;
   selectedGenres: string[];
+  selectedSubgenresByGenre?: SelectedSubgenresByGenre;
   identificationFilter: HomeFeedIdentificationFilter;
   activePostId: string | null;
   scrollTop: number;
 }): HomeFeedSessionState {
+  const selectedSubgenresByGenre = sanitizeSelectedSubgenresByGenre(
+    input.selectedGenres,
+    input.selectedSubgenresByGenre,
+  );
   if (input.sortMode === "random") {
     return {
       sortMode: "trending",
       selectedGenres: input.selectedGenres,
+      selectedSubgenresByGenre,
       identificationFilter: input.identificationFilter,
       activePostId: null,
       scrollTop: 0,
@@ -150,6 +167,7 @@ export function buildHomeFeedSessionSnapshot(input: {
   return {
     sortMode: input.sortMode,
     selectedGenres: input.selectedGenres,
+    selectedSubgenresByGenre,
     identificationFilter: input.identificationFilter,
     activePostId: input.activePostId,
     scrollTop: parseScrollTop(input.scrollTop),
@@ -161,6 +179,7 @@ export function getHomeFeedSessionBootstrap(search: string): HomeFeedSessionBoot
     restoreSession: false,
     sortMode: "trending",
     selectedGenres: [],
+    selectedSubgenresByGenre: {},
     identificationFilter: "all",
     activePostId: null,
     scrollTop: 0,
@@ -175,6 +194,7 @@ export function getHomeFeedSessionBootstrap(search: string): HomeFeedSessionBoot
     restoreSession: true,
     sortMode: resolveSortModeForRestore(search, saved.sortMode),
     selectedGenres: saved.selectedGenres,
+    selectedSubgenresByGenre: saved.selectedSubgenresByGenre,
     identificationFilter: saved.identificationFilter,
     activePostId: saved.activePostId,
     scrollTop: saved.scrollTop,

@@ -143,15 +143,9 @@ describe("create/read/moderator SQL contracts", () => {
     );
   });
 
-  it("genre filter predicate remains based on posts.genre only", () => {
-    assert.match(
-      storageSrc,
-      /const genreWhere =\s*normalizedGenres\.length > 0\s*\? sql`lower\(p\.genre\) IN/,
-    );
-    const genreWhereBlock = storageSrc.match(
-      /const genreWhere =[\s\S]*?;\n/,
-    )?.[0];
-    assert.ok(genreWhereBlock);
-    assert.doesNotMatch(genreWhereBlock, /subgenre/);
+  it("parent-only genre filter keeps lower(p.genre) IN when no children are active", () => {
+    assert.match(storageSrc, /planGetPostsGenreWhere\(/);
+    assert.match(storageSrc, /kind === "parent_in"/);
+    assert.match(storageSrc, /sql`lower\(p\.genre\) IN/);
   });
 });

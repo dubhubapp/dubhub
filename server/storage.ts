@@ -15,6 +15,8 @@ import { supabase } from "./supabaseClient";
 import { logEvent } from "./events";
 import { mapPostThumbnailUrl } from "./postThumbnailUrl";
 import { mapStoredSubgenre } from "./post-subgenre";
+import { planGetPostsGenreWhere } from "./get-posts-genre-filter";
+import type { SelectedSubgenresByGenre } from "@shared/home-feed-subgenre-filter";
 import { enableArtistReleaseAlertWithDemandDedup } from "./artist-release-alert-demand-enable";
 import {
   canArtistDeliverReleaseAlerts,
@@ -147,6 +149,7 @@ export interface IStorage {
     currentUserId?: string,
     options?: {
       genres?: string[];
+      subgenres?: SelectedSubgenresByGenre;
       identification?: "all" | "identified" | "unidentified";
       sortMode?: "hottest" | "newest" | "trending";
     }
@@ -473,6 +476,7 @@ export class DatabaseStorage implements IStorage {
     currentUserId?: string,
     options?: {
       genres?: string[];
+      subgenres?: SelectedSubgenresByGenre;
       identification?: "all" | "identified" | "unidentified";
       sortMode?: "hottest" | "newest" | "trending";
     }
@@ -494,14 +498,23 @@ export class DatabaseStorage implements IStorage {
       const sortMode = options?.sortMode ?? "hottest";
       const pageLimit = Math.max(1, Math.min(limit, 50));
 
-      const normalizedGenres = selectedGenres
-        .map((g) => (g ?? "").toString().trim().toLowerCase())
-        .filter((g) => !!g && g !== "all");
-
-      const genreWhere =
-        normalizedGenres.length > 0
-          ? sql`lower(p.genre) IN (${sql.join(normalizedGenres.map((g) => sql`${g}`), sql`, `)})`
-          : sql`TRUE`;
+      const genrePlan = planGetPostsGenreWhere(selectedGenres, options?.subgenres);
+      let genreWhere = sql`TRUE`;
+      if (genrePlan.kind === "parent_in") {
+        genreWhere = sql`lower(p.genre) IN (${sql.join(genrePlan.parents.map((g) => sql`${g}`), sql`, `)})`;
+      } else if (genrePlan.kind === "parent_clauses") {
+        genreWhere = sql`(${sql.join(
+          genrePlan.clauses.map((clause) =>
+            clause.subgenres.length === 0
+              ? sql`lower(p.genre) = ${clause.parent}`
+              : sql`(lower(p.genre) = ${clause.parent} AND p.subgenre IN (${sql.join(
+                  clause.subgenres.map((id) => sql`${id}`),
+                  sql`, `,
+                )}))`,
+          ),
+          sql` OR `,
+        )})`;
+      }
 
       const identifiedWhere = sql`(
         p.verification_status IN ('identified', 'community', 'community_approved')

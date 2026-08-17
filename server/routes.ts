@@ -29,6 +29,7 @@ import {
   parseSuggestedGenreFromReportDescription,
 } from "@shared/report-genre";
 import { parseCreatePostSubgenre } from "./post-subgenre";
+import { parseSubgenreFilterQuery } from "@shared/home-feed-subgenre-filter";
 import {
   COMMENT_ATTACHED_TO_IDENTIFICATION_MESSAGE,
   COMMENT_DELETED_INTERACTION_MESSAGE,
@@ -1749,6 +1750,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? genresQuery.map((g) => (g ?? "").toString()).flatMap((g) => g.split(",")).map((x) => x.trim()).filter(Boolean)
             : [];
 
+      const subgenresQuery = req.query.subgenres;
+      const subgenresRaw =
+        typeof subgenresQuery === "string"
+          ? subgenresQuery
+          : Array.isArray(subgenresQuery)
+            ? subgenresQuery
+                .map((g) => (g ?? "").toString())
+                .flatMap((g) => g.split(","))
+                .map((x) => x.trim())
+                .filter(Boolean)
+                .join(",")
+            : "";
+      const selectedSubgenresByGenre = parseSubgenreFilterQuery(subgenresRaw, selectedGenres);
+
       const identificationFilter =
         req.query.identification === "identified" || req.query.identification === "unidentified" || req.query.identification === "all"
           ? (req.query.identification as "all" | "identified" | "unidentified")
@@ -1784,6 +1799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const page = await storage.getPosts(limit, cursor, currentUserId ?? undefined, {
         genres: selectedGenres,
+        subgenres: selectedSubgenresByGenre,
         identification: identificationFilter,
         sortMode,
       });

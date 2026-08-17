@@ -33,9 +33,10 @@ describe("genre pill trusted subgenre resolution", () => {
     assert.equal(resolveTrustedSubgenreLabel("House", "brostep"), null);
   });
 
-  it('Dubstep + brostep resolves visible child label "Brostep"', () => {
-    assert.equal(resolveTrustedSubgenreLabel("Dubstep", "brostep"), "Brostep");
-    assert.equal(resolveTrustedSubgenreLabel("dubstep", "brostep"), "Brostep");
+  it('House + progressive_house resolves visible child label "Prog. House"', () => {
+    assert.equal(resolveTrustedSubgenreLabel("House", "progressive_house"), "Prog. House");
+    assert.notEqual(resolveTrustedSubgenreLabel("House", "progressive_house"), "Progressive House");
+    assert.notEqual(resolveTrustedSubgenreLabel("House", "progressive_house"), "progressive_house");
   });
 
   it("style is still derived from parent Dubstep, not the child", () => {
