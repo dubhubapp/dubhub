@@ -418,7 +418,11 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                       Confirm or deny the first or most relevant comment that tagged you.
                     </p>
                   </div>
-                  <RadioGroup value={selectedCommentId} onValueChange={setSelectedCommentId}>
+                  <RadioGroup
+                    value={selectedCommentId}
+                    onValueChange={setSelectedCommentId}
+                    className="max-w-full overflow-x-hidden"
+                  >
                     {sortedComments.map((comment) => {
                       const isSelected = selectedCommentId === comment.id;
                       const isOldest = comment.id === oldestCommentId;
@@ -437,7 +441,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                       return (
                         <div
                           key={comment.id}
-                          className={`flex items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
+                          className={`flex min-w-0 max-w-full items-start space-x-3 rounded-lg border transition-colors ${highlightClass} ${
                             isSelected
                               ? selectionRingClass
                               : ""
@@ -445,14 +449,14 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                             isSelected && !isOldest && !isFirstTag
                               ? "border-white/95 bg-white/8 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)] ring-0"
                               : ""
-                          } ${isReply ? "ml-3 border-l-2 border-l-white/25" : ""}`}
+                          } ${isReply ? "border-l-2 border-l-white/25 pb-3 pl-6 pr-3 pt-3" : "p-3"}`}
                         >
-                          <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} />
-                          <Label htmlFor={comment.id} className="flex-1 cursor-pointer">
-                            <div className="mb-2 flex items-center gap-2">
-                              <div className="flex items-center gap-2">
+                          <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} className="mt-0.5 shrink-0" />
+                          <Label htmlFor={comment.id} className="min-w-0 flex-1 cursor-pointer">
+                            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
                                 <div
-                                  className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center border ${
+                                  className={`w-8 h-8 shrink-0 rounded-full overflow-hidden flex items-center justify-center border ${
                                     comment.user.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary/20"
                                   }`}
                                 >
@@ -466,9 +470,9 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                     <User className="w-4 h-4 text-primary" />
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
                                   <span
-                                    className={`font-medium text-sm ${
+                                    className={`min-w-0 break-words font-medium text-sm ${
                                       comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
                                     }`}
                                   >
@@ -480,7 +484,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                   />
                                 </div>
                               </div>
-                              <div className="flex flex-wrap items-center gap-1">
+                              <div className="flex min-w-0 flex-wrap items-center gap-1">
                                 {isReply && (
                                   <span className="whitespace-nowrap rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
                                     {comment.parentAuthorUsername
@@ -512,11 +516,11 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                 )}
                               </div>
                             </div>
-                            <p className="text-sm text-white/92">
+                            <p className="break-words text-sm text-white/92">
                               {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
                             </p>
                             {comment.taggedArtist && (
-                              <p className="mt-1 text-xs text-white/65">
+                              <p className="mt-1 break-words text-xs text-white/65">
                                 Tagged artist:{" "}
                                 <span
                                   className={

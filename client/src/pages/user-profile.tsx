@@ -52,7 +52,12 @@ import {
   PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS,
   PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS,
 } from "@/lib/profile-primary-nav-presentation";
-import { formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
+import { cn, formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
+import { APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS } from "@/lib/app-material";
+import {
+  SETTINGS_ROW_SUBTITLE_CLASS,
+  SETTINGS_ROWS_STACK_CLASS,
+} from "@/lib/settings-presentation";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
@@ -79,6 +84,15 @@ import {
   PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT,
   setProfileNotificationsTabOpen,
 } from "@/lib/in-app-notification-suppression";
+
+/**
+ * Profile Notifications only.
+ * Full-width parent owns separators. This surface is inset (`mx-2`) so radii sit inside
+ * the overflow viewport, with `px-2` so thumbnail/text sit inside the same rounded press fill.
+ * No `-mx-2`, no ::before.
+ */
+const PROFILE_NOTIFICATION_ROW_SURFACE_CLASS =
+  "mx-2 flex min-h-11 cursor-pointer items-start gap-3 rounded-lg px-2 py-3 text-left bg-transparent hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0a83ff]/45 active:bg-black/[0.04] dark:active:bg-white/[0.04] [@media(hover:hover)]:hover:bg-black/[0.03] dark:[@media(hover:hover)]:hover:bg-white/[0.03]" as const;
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -3182,33 +3196,34 @@ export default function UserProfile() {
               {userType !== "moderator" && unreadCount > 0 && (
                 <div className="flex justify-end mb-4">
                   <Button
-                    variant="outline"
-                    size="sm"
+                    type="button"
+                    variant="ghost"
                     onClick={() => markAllNotificationsAsReadMutation.mutate({ silent: false })}
                     data-testid="mark-all-read"
                     disabled={markAllNotificationsAsReadMutation.isPending}
+                    className={APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS}
                   >
                     Mark all as read
                   </Button>
                 </div>
               )}
               {isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0 ? (
-                <div className="text-center py-10">
-                  <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-7 w-7" />
-                  <p className="text-gray-400">Loading notifications...</p>
+                <div className="py-10 text-center">
+                  <InlineSpinner className="mx-auto mb-2" sizeClassName="h-6 w-6" />
+                  <p className="text-sm text-muted-foreground">Loading notifications...</p>
                 </div>
               ) : hasLoadedNotifications && visibleNotifications.length === 0 ? (
-                <div className="text-center py-12">
-                  <Bell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                <div className="px-1 py-12 text-center">
+                  <Bell className="mx-auto mb-3 h-8 w-8 text-muted-foreground/45" aria-hidden />
                   {notifications.length === 0 ? (
                     <>
-                      <p className="text-gray-400 text-lg mb-2">No notifications yet</p>
-                      <p className="text-gray-500 text-sm">You'll see activity updates here</p>
+                      <p className="mb-1 text-sm font-medium text-foreground">No notifications yet</p>
+                      <p className="text-sm text-muted-foreground">You'll see activity updates here</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-400 text-lg mb-2">Nothing to show here</p>
-                      <p className="text-gray-500 text-sm">
+                      <p className="mb-1 text-sm font-medium text-foreground">Nothing to show here</p>
+                      <p className="text-sm text-muted-foreground">
                         These updates are hidden by your notification settings. Turn categories back on under Settings → Notifications.
                       </p>
                     </>
@@ -3234,7 +3249,7 @@ export default function UserProfile() {
                       />
                     )}
                   </div>
-                  <div className="space-y-3">
+                  <div className={SETTINGS_ROWS_STACK_CLASS}>
                     {visibleNotifications.map((group) => {
                     const notification = group.representative;
                     const hasUnread = group.unreadCount > 0;
@@ -3247,26 +3262,28 @@ export default function UserProfile() {
                       getEffectiveNotificationType(notificationRowFields(notification)) ===
                       "release_alert_enabled";
                     const summaryText = getGroupedNotificationMessage(group);
-                    const baseClass = "flex gap-3 p-3 rounded-lg border transition-colors cursor-pointer";
-                    const styleClass = isCollabResponse
+                    const toneClass = isCollabResponse
                       ? isAcceptance
-                        ? !hasUnread
-                          ? "border-green-600/40 bg-green-500/5 hover:bg-green-500/10"
-                          : "border-green-500/60 bg-green-500/15 hover:bg-green-500/25 ring-1 ring-green-500/20"
-                        : !hasUnread
-                          ? "border-amber-600/40 bg-amber-500/5 hover:bg-amber-500/10"
-                          : "border-amber-500/60 bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-500/20"
+                        ? hasUnread
+                          ? "bg-green-500/[0.1]"
+                          : "bg-green-500/[0.04]"
+                        : hasUnread
+                          ? "bg-amber-500/[0.1]"
+                          : "bg-amber-500/[0.04]"
                       : isRelease
-                        ? !hasUnread
-                          ? "border-amber-400/50 bg-amber-500/10 hover:bg-amber-500/15"
-                          : "border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-400/30"
-                        : !hasUnread
-                        ? "border-gray-700 bg-surface hover:bg-gray-800"
-                        : "border-primary/30 bg-primary/10 hover:bg-primary/20";
+                        ? hasUnread
+                          ? "bg-amber-500/[0.1]"
+                          : "bg-amber-500/[0.05]"
+                        : hasUnread
+                          ? "bg-white/[0.035]"
+                          : "";
                       return (
+                        <div key={group.id} className="w-full">
                         <div
-                          key={group.id}
-                          className={`${baseClass} ${styleClass}`}
+                          className={cn(
+                            PROFILE_NOTIFICATION_ROW_SURFACE_CLASS,
+                            toneClass,
+                          )}
                           onClick={() => handleGroupedNotificationClick(group)}
                           data-testid={`notification-${notification.id}`}
                         >
@@ -3343,7 +3360,11 @@ export default function UserProfile() {
                             })()
                           ) : (
                           <p
-                            className={`text-sm whitespace-pre-line ${isCollabResponse || isRelease ? "font-medium text-foreground" : "text-foreground"}`}
+                            className={`text-sm whitespace-pre-line ${
+                              isCollabResponse || isRelease || hasUnread
+                                ? "font-medium text-foreground"
+                                : "text-foreground/90"
+                            }`}
                           >
                             {summaryText ? (
                               summaryText
@@ -3365,7 +3386,7 @@ export default function UserProfile() {
                             )}
                           </p>
                           )}
-                          <p className="text-xs text-muted-foreground mt-1">
+                          <p className={SETTINGS_ROW_SUBTITLE_CLASS}>
                             {formatTimeAgo(notification.createdAt)}
                           </p>
                         </div>
@@ -3386,6 +3407,7 @@ export default function UserProfile() {
                           {group.unreadCount > 0 && (
                             <div className={`w-2 h-2 rounded-full ${isCollabResponse ? (isAcceptance ? "bg-green-500" : "bg-amber-500") : isRelease ? "bg-amber-400" : "bg-primary"}`}></div>
                           )}
+                        </div>
                         </div>
                         </div>
                       );

@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { ReleasePreviewCard } from "./release-preview-card";
-import { getGenreChipStyle, getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
+import { getGenreChipStyle, getGenreGlowPillStyle, STATUS_GLOW_PILL_BG, STATUS_GLOW_PILL_CLASS } from "@/lib/genre-styles";
 import {
   genrePillMemoFieldsDiffer,
   getGenrePillAriaLabel,
@@ -2189,8 +2189,7 @@ function VideoCardInner({
 
   const getStatusBadge = () => {
     /** Same footprint as `post-genre-tag`: padding, type size, leading, radius; glow from `getGenreGlowPillStyle`. */
-    const statusPillBase =
-      "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
+    const statusPillBase = STATUS_GLOW_PILL_CLASS;
     const iconBaseClass = "h-3 w-3 shrink-0";
     const renderStatus = (
       icon: JSX.Element,

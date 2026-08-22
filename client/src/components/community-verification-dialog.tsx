@@ -15,7 +15,19 @@ import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { useUser } from "@/lib/user-context";
-import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
+import {
+  ID_MARKING_DIALOG_CONTENT_CLASS,
+  ID_MARKING_DIALOG_OVERLAY_CLASS,
+  ID_MARKING_PICKER_FIRST_PILL_CLASS,
+  ID_MARKING_PICKER_OLDEST_PILL_CLASS,
+  ID_MARKING_PICKER_ROW_CLASS,
+  ID_MARKING_PICKER_ROW_REPLY_CLASS,
+  ID_MARKING_PICKER_ROW_SELECTED_CLASS,
+} from "./id-marking-dialog-styles";
+import {
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+} from "@/lib/app-material";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
 
 interface CommunityVerificationDialogProps {
@@ -59,8 +71,6 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
 
   const oldestCommentId = sortedComments[0]?.id ?? null;
   const firstCommentId = sortedComments.find((comment) => !!comment.taggedArtist)?.id ?? null;
-  const selectedIsOldest = selectedCommentId !== "" && selectedCommentId === oldestCommentId;
-  const selectedIsFirstComment = selectedCommentId !== "" && selectedCommentId === firstCommentId;
 
   const formatCommentTimestamp = (value: Date | string | null | undefined) => {
     if (!value) return "Unknown time";
@@ -156,32 +166,14 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                 const isOldest = comment.id === oldestCommentId;
                 const isFirstComment = comment.id === firstCommentId;
 
-                const highlightClass = isFirstComment
-                  ? "border-[#FFD700]/80 bg-[#FFD700]/10 shadow-[0_0_22px_rgba(255,215,0,0.55)]"
-                  : isOldest
-                    ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
-                    : "border-white/20 hover:bg-white/10";
-
-                const selectionRingClass = isSelected
-                  ? isFirstComment
-                    ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
-                    : isOldest
-                      ? "ring-2 ring-[#3B82F6]/95 shadow-[0_0_24px_rgba(59,130,246,0.65)]"
-                      : "ring-2 ring-white shadow-[0_0_28px_rgba(255,255,255,0.45)]"
-                  : "";
-
                 const isReply = comment.selectionDepth > 0;
 
                 return (
                   <div
                     key={comment.id}
-                    className={`flex min-w-0 items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
-                      isSelected ? selectionRingClass : ""
-                    } ${
-                      isSelected && !isOldest && !isFirstComment
-                        ? "bg-white/8 border-white/95 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)]"
-                        : ""
-                    } ${isReply ? "ml-3 border-l-2 border-l-white/25" : ""}`}
+                    className={`${ID_MARKING_PICKER_ROW_CLASS} ${
+                      isSelected ? ID_MARKING_PICKER_ROW_SELECTED_CLASS : ""
+                    } ${isReply ? ID_MARKING_PICKER_ROW_REPLY_CLASS : ""}`}
                   >
                     <RadioGroupItem
                       value={comment.id}
@@ -230,24 +222,12 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
                                 </span>
                               )}
                               {isOldest && (
-                                <span
-                                  className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                                    isSelected && !isFirstComment
-                                      ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
-                                      : "border-[#3B82F6] bg-[#3B82F6] text-white"
-                                  }`}
-                                >
+                                <span className={ID_MARKING_PICKER_OLDEST_PILL_CLASS}>
                                   Oldest Comment
                                 </span>
                               )}
                               {isFirstComment && (
-                                <span
-                                  className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                                    isSelected
-                                      ? "border-[#FFD700]/90 bg-[#FFD700]/35 text-white shadow-[0_0_16px_rgba(255,215,0,0.55)]"
-                                      : "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]"
-                                  }`}
-                                >
+                                <span className={ID_MARKING_PICKER_FIRST_PILL_CLASS}>
                                   First Comment
                                 </span>
                               )}
@@ -276,22 +256,15 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
               <Button
                 variant="outline"
                 onClick={onClose}
-                className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
                 data-testid="button-cancel-verification"
               >
                 Cancel
               </Button>
               <Button
-                variant="outline"
                 onClick={() => verifyMutation.mutate()}
                 disabled={!selectedCommentId || verifyMutation.isPending}
-                className={
-                  selectedIsFirstComment
-                    ? "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)] hover:bg-[#FFD700]/35 hover:text-white"
-                    : selectedIsOldest
-                      ? "border-[#3B82F6] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.40)] hover:bg-[#1D4ED8]/90 hover:text-white"
-                      : "border-white bg-white text-black shadow-[0_0_14px_rgba(255,255,255,0.22)] hover:bg-white/90 hover:text-black"
-                }
+                className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
                 data-testid="button-submit-verification"
               >
                 {verifyMutation.isPending ? "Submitting..." : "Submit for Review"}

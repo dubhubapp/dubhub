@@ -102,6 +102,10 @@ export const STATUS_GLOW_PILL_BG = {
   underReview: "#ca8a04",
 } as const;
 
+/** Shared Identified / Unidentified / Under-review pill chrome (Home post + Comments). */
+export const STATUS_GLOW_PILL_CLASS =
+  "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
+
 export function getGenreGlowPillStyle(bgColor: string, _textClass: string): CSSProperties {
   const { r, g, b } = hexToRgb(bgColor);
   const lum = relativeLuminance(r, g, b);

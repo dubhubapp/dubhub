@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   useMutation,
@@ -17,7 +18,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2 } from "lucide-react";
+import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2, Pin } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,8 +56,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
-import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
+import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG, STATUS_GLOW_PILL_CLASS } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
+import { useDelayedReleaseFeedSkeleton } from "@/lib/use-delayed-release-feed-skeleton";
 import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay, cn } from "@/lib/utils";
@@ -133,6 +135,33 @@ const MENTION_GLOBAL_SEARCH_DEBOUNCE_MS = 180;
 /** Comment ⋯ menu (delete / report) — keep inset from screen edges on mobile. */
 const COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS =
   "z-[70] min-w-[10rem] max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-1 text-gray-900 shadow-lg dark:border-border dark:bg-popover dark:text-popover-foreground";
+
+/** Local Comments sheet fill — opaque navy; do not use the shared 20px-blur sheet token. */
+const COMMENTS_SHEET_SURFACE_CLASS =
+  "bottom-0 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[#141a2e] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-sm dark:[background-image:linear-gradient(180deg,rgba(46,62,118,0.32)_0%,rgba(20,26,46,0)_38%)] [&>div:first-child]:bg-black/25 dark:[&>div:first-child]:bg-white/22";
+
+const COMMENTS_HEADER_ICON_BUTTON_CLASS =
+  "inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full border border-black/5 bg-black/[0.04] text-gray-500 transition-colors hover:bg-black/[0.07] hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-1 dark:border-white/10 dark:bg-white/[0.06] dark:text-white/80 dark:hover:bg-white/[0.1] dark:hover:text-white dark:focus-visible:ring-[#0a83ff]/45 dark:focus-visible:ring-offset-[#141a2e]";
+
+/** Canonical Home Identified pill chrome — presentation only. */
+const COMMENTS_IDENTIFIED_PILL_CLASS = STATUS_GLOW_PILL_CLASS;
+
+const COMMENTS_IDENTIFIED_PILL_STYLE = getGenreGlowPillStyle(
+  STATUS_GLOW_PILL_BG.identified,
+  "text-white",
+);
+
+const COMMENTS_THREAD_LINK_CLASS =
+  "text-xs font-medium text-[#0a83ff] hover:text-[#3b9bff] dark:text-[#5babff] dark:hover:text-[#7cbcff]";
+
+const COMMENTS_TAGGED_ROW_CLASS =
+  "rounded-lg border border-amber-400/25 bg-amber-500/[0.05] p-2";
+
+const COMMENTS_NORMAL_ROW_CLASS =
+  "border-b border-black/[0.05] pb-2 dark:border-white/[0.06]";
+
+const COMMENTS_PIN_ICON_CLASS =
+  "pointer-events-none absolute right-0 top-0.5 h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-white/55";
 
 function getAppViewportHostEl(): HTMLElement | null {
   if (typeof document === "undefined") return null;
@@ -836,6 +865,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
 
   const shouldShowCommentsLoadingState =
     isOpen && commentsData === undefined && (isLoadingComments || isFetchingComments);
+  const showCommentsSkeleton = useDelayedReleaseFeedSkeleton(shouldShowCommentsLoadingState);
 
   // Get verified artists for auto-complete
   const { data: verifiedArtists = [] } = useQuery<any[]>({
@@ -1432,10 +1462,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
       <DrawerContent
         ref={drawerContentRef}
         overlayClassName={cn(drawerStackZ, "bg-transparent")}
-        className={cn(
-          "bottom-0 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[color:var(--dark)] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-md",
-          drawerStackZ,
-        )}
+        className={cn(COMMENTS_SHEET_SURFACE_CLASS, drawerStackZ)}
         style={
           commentsSheetMaxPx != null
             ? {
@@ -1450,17 +1477,17 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
         <DrawerTitle className="sr-only">Comments for track</DrawerTitle>
         <DrawerDescription className="sr-only">View and add comments for this track</DrawerDescription>
         {/* Header */}
-        <div className="relative flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-border">
-          <div className="h-8 w-[4.5rem]" aria-hidden />
-          <h3 className="pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 text-base font-semibold text-gray-900 dark:text-white">
+        <div className="relative flex items-center justify-between border-b border-black/5 px-4 py-3 dark:border-white/[0.08]">
+          <div className="relative z-20 h-8 w-[4.5rem]" aria-hidden />
+          <h3 className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 text-base font-semibold text-gray-900 dark:text-white">
             Comments
           </h3>
-          <div className="flex items-center gap-1">
+          <div className="relative z-20 flex items-center gap-1">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/80 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)]"
+                  className={COMMENTS_HEADER_ICON_BUTTON_CLASS}
                   aria-label="Sort comments"
                   data-testid="comments-filter-menu-trigger"
                 >
@@ -1499,7 +1526,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
               variant="ghost"
               size="sm"
               onClick={handleClose}
-              className="h-7 w-7 rounded-full p-0 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-white/10"
+              className={cn(COMMENTS_HEADER_ICON_BUTTON_CLASS, "h-7 w-7")}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -1509,8 +1536,14 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
         {/* Comments List */}
         <div
           ref={commentsListRef}
-          className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 pb-2.5 pt-2 sm:px-4 sm:pb-3 sm:pt-2.5"
+          className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5 sm:px-4 sm:pb-3"
         >
+          {/*
+            Ordinary inset inside the scroll content (not on the overflow
+            viewport): 16px matches row pb-2 + space-y-2 so the first Identified
+            glow is fully visible below the header divider.
+          */}
+          <div className="space-y-2 pt-4">
           {(() => {
             let filteredComments = [...comments];
             
@@ -1569,6 +1602,9 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
             });
 
             if (shouldShowCommentsLoadingState) {
+              if (!showCommentsSkeleton) {
+                return null;
+              }
               return (
                 <div className="min-h-[9rem] px-1 py-1.5 sm:px-0">
                   <div className="space-y-3.5" aria-hidden>
@@ -1603,13 +1639,21 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
             const pinnedVerifiedReply = verifiedReplyPin?.comment ?? null;
             const pinnedReplyIsDeleted =
               pinnedVerifiedReply != null && isDeletedCommentBody(pinnedVerifiedReply.body);
+            const isIdentificationPinnedComment = (c: (typeof filteredComments)[number]) =>
+              (!!artistConfirmationCommentId && c.id === artistConfirmationCommentId) ||
+              post.verifiedCommentId === c.id;
+            const identificationClusterComments = filteredComments.filter(isIdentificationPinnedComment);
+            const remainingComments = filteredComments.filter((c) => !isIdentificationPinnedComment(c));
+
+            let renderTopLevelComment: (comment: (typeof filteredComments)[number]) => ReactNode =
+              () => null;
 
             return (
               <>
                 {pinnedVerifiedReply && !pinnedReplyIsDeleted && (
                   <div
                     data-testid="pinned-verified-reply"
-                    className="mb-3 flex items-start space-x-2 rounded-lg border-2 border-green-500 bg-green-50/40 p-2 dark:border-green-500/75 dark:bg-green-500/[0.11]"
+                    className={cn("flex items-start space-x-2", COMMENTS_NORMAL_ROW_CLASS)}
                   >
                     <button
                       type="button"
@@ -1639,8 +1683,9 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                         }`}
                       />
                     </button>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                    <div className="relative min-w-0 flex-1">
+                      <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pr-5">
                         <div className="flex items-center space-x-1">
                           <span
                             className={`cursor-pointer text-xs font-medium hover:underline sm:text-[13px] ${
@@ -1677,8 +1722,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                           post.verificationStatus === "community_approved") &&
                           !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                             <span
-                              className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                              style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                              className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                               data-testid="badge-pinned-community-identified"
                             >
                               <Users className="h-3 w-3 shrink-0" />
@@ -1688,8 +1733,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                         {post.verificationStatus === "identified" &&
                           !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                             <span
-                              className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                              style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                              className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                               data-testid="badge-pinned-identified"
                             >
                               <Check className="h-3 w-3 shrink-0 text-white" />
@@ -1698,20 +1743,20 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                           )}
                         {isArtistVerifiedPost && (
                           <span
-                            className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                            style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                            className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                             data-testid="badge-pinned-artist-identified"
                           >
                             <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
                             Identified
                           </span>
                         )}
-                        <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/60">
+                        <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/40">
                           {formatTimeAgo(pinnedVerifiedReply.createdAt)}
                         </span>
                       </div>
                       <p
-                        className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white"
+                        className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white/85"
                         onPointerDown={handleCommentBodyPointerDown}
                       >
                         {highlightArtistMentions(pinnedVerifiedReply.body, pinnedVerifiedReply.tagStatus)}
@@ -1719,7 +1764,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                     </div>
                   </div>
                 )}
-                {filteredComments.map((comment) => {
+                {(() => {
+            renderTopLevelComment = (comment: (typeof filteredComments)[number]) => {
               const commentIsDeleted = isDeletedCommentBody(comment.body);
               const isOwnComment = !!contextUser?.id && comment.userId === contextUser.id;
               const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment
@@ -1731,20 +1777,21 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                 artistVerifiedBy &&
                 ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
 
+              const isPinnedIdentificationComment =
+                isArtistConfirmationComment || isVerifiedComment;
               const highlightClass = commentIsDeleted
                 ? ""
-                : isArtistConfirmationComment
-                ? "rounded-lg border-2 border-[#FFD700] bg-amber-50/70 p-2 dark:bg-amber-500/[0.14] dark:shadow-[inset_0_0_0_1px_rgba(250,204,21,0.2)]"
-                : isVerifiedComment
-                ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-2 dark:border-green-500/75 dark:bg-green-500/[0.11]"
                 : isTaggedSuggestion
-                  ? "rounded-lg border border-amber-300 bg-amber-50/30 p-2 dark:border-amber-500/45 dark:bg-amber-500/[0.09]"
-                  : "";
+                  ? COMMENTS_TAGGED_ROW_CLASS
+                  : COMMENTS_NORMAL_ROW_CLASS;
               return (
                 <div
                   key={comment.id}
                   data-comment-id={comment.id}
-                  className={`flex items-start space-x-2 ${highlightClass}`}
+                  className={cn(
+                    "flex items-start space-x-2",
+                    highlightClass || "border-b border-black/[0.05] pb-2 dark:border-white/[0.06]",
+                  )}
                 >
                   <button
                     type="button"
@@ -1773,8 +1820,11 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                       }`}
                     />
                   </button>
-                  <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <div className="relative min-w-0 flex-1">
+                {isPinnedIdentificationComment ? (
+                  <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
+                ) : null}
+                <div className={cn("flex flex-wrap items-center gap-x-1.5 gap-y-0.5", isPinnedIdentificationComment && "pr-5")}>
                   <div className="flex items-center space-x-1">
                     <span 
                       className={`text-xs font-medium cursor-pointer hover:underline sm:text-[13px] ${
@@ -1803,8 +1853,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                   {/* Artist identified badge: match post-level identified treatment */}
                   {!commentIsDeleted && isArtistConfirmationComment && isArtistVerifiedPost && !isVerifiedComment && (
                     <span
-                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                      className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                       data-testid={`badge-artist-verified-${comment.id}`}
                     >
                       <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
@@ -1826,8 +1876,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                     post.verifiedCommentId === comment.id &&
                     !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <span
-                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                      className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                       data-testid={`badge-community-identified-${comment.id}`}
                     >
                       <Users className="h-3 w-3 shrink-0" />
@@ -1837,8 +1887,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                   {/* Moderator identified badge: match post-level identified treatment */}
                   {!commentIsDeleted && isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <span
-                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                      className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                       data-testid={`badge-identified-${comment.id}`}
                     >
                       <Check className="h-3 w-3 shrink-0 text-white" />
@@ -1848,8 +1898,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                   {/* Artist-selected verified comment: same identified treatment as post-level artist state */}
                   {!commentIsDeleted && isVerifiedComment && isArtistVerifiedPost && (
                     <span
-                      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15"
-                      style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                      className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                     >
                       <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
                       Identified
@@ -1862,7 +1912,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                       <span className="text-xs text-red-600 font-medium dark:text-red-400">Denied</span>
                     </div>
                   )}
-                  <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/60">
+                  <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/40">
                     {formatTimeAgo(comment.createdAt)}
                   </span>
                 </div>
@@ -1872,7 +1922,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                   </p>
                 ) : (
                   <p
-                    className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white"
+                    className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white/85"
                     onPointerDown={handleCommentBodyPointerDown}
                   >
                     {highlightArtistMentions(comment.body, comment.tagStatus)}
@@ -1886,7 +1936,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                         className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs dark:hover:bg-muted ${
                           comment.userVote === "upvote"
                             ? "text-pink-600 bg-pink-50 dark:bg-pink-950/50 dark:text-pink-400"
-                            : "text-gray-500 dark:text-white/70"
+                            : "text-gray-500 dark:text-white/40"
                         }`}
                         onClick={() => handleToggleCommentLike(comment.id)}
                         data-testid={`button-like-${comment.id}`}
@@ -1898,7 +1948,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                         <span>{comment.voteScore ?? 0}</span>
                       </button>
                       <button
-                        className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/70 dark:hover:text-white"
+                        className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/40 dark:hover:text-white/70"
                         onPointerDown={(e) => {
                           e.preventDefault();
                         }}
@@ -1959,7 +2009,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                     if (visibleCount === 0) {
                       return (
                         <button
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                          className={COMMENTS_THREAD_LINK_CLASS}
                           onClick={() =>
                             setVisibleReplyCountByParent((prev) => ({
                               ...prev,
@@ -1975,7 +2025,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
 
                     return (
                       <button
-                        className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        className={COMMENTS_THREAD_LINK_CLASS}
                         onClick={() =>
                           setVisibleReplyCountByParent((prev) => ({
                             ...prev,
@@ -2007,11 +2057,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                         <div
                           key={reply.id}
                           data-comment-id={reply.id}
-                          className={`flex items-start space-x-2 ${
-                            !replyIsDeleted && isVerifiedReply
-                              ? "rounded-lg border-2 border-green-500 bg-green-50/40 p-1.5 dark:border-green-500/75 dark:bg-green-500/[0.11]"
-                              : ""
-                          }`}
+                          className="flex items-start space-x-2"
                         >
                           <button
                             type="button"
@@ -2040,8 +2086,11 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                               }`}
                             />
                           </button>
-                          <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-1.5">
+                          <div className="relative min-w-0 flex-1">
+                            {isVerifiedReply || isArtistConfirmationReply ? (
+                              <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
+                            ) : null}
+                          <div className={cn("flex items-center space-x-1.5", (isVerifiedReply || isArtistConfirmationReply) && "pr-5")}>
                             <div className="flex items-center space-x-1">
                               <span 
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
@@ -2069,8 +2118,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                             </div>
                             {!replyIsDeleted && isArtistConfirmationReply && isArtistVerifiedPost && !isVerifiedReply && (
                               <span
-                                className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] leading-snug ring-1 ring-white/15"
-                                style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                                className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                                 data-testid={`badge-artist-verified-${reply.id}`}
                               >
                                 <GoldVerifiedTick className="h-2.5 w-2.5 shrink-0 text-[#FFD700]" />
@@ -2083,8 +2132,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                               isVerifiedReply &&
                               !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                                 <span
-                                  className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] leading-snug ring-1 ring-white/15"
-                                  style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                                  className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                                   data-testid={`badge-community-identified-${reply.id}`}
                                 >
                                   <Users className="h-2.5 w-2.5 shrink-0" />
@@ -2096,8 +2145,8 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                               post.verificationStatus === "identified" &&
                               !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                                 <span
-                                  className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] leading-snug ring-1 ring-white/15"
-                                  style={getGenreGlowPillStyle(STATUS_GLOW_PILL_BG.identified, "text-white")}
+                                  className={COMMENTS_IDENTIFIED_PILL_CLASS}
+                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
                                   data-testid={`badge-identified-${reply.id}`}
                                 >
                                   <Check className="h-2.5 w-2.5 shrink-0 text-white" />
@@ -2118,7 +2167,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                                 <span className="text-xs font-medium text-red-600 dark:text-red-400">Denied</span>
                               </div>
                             )}
-                            <span className="text-xs text-gray-500 dark:text-white/60">
+                            <span className="text-xs text-gray-500 dark:text-white/40">
                               {formatTimeAgo(reply.createdAt)}
                             </span>
                           </div>
@@ -2128,7 +2177,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                             </p>
                           ) : (
                             <p
-                              className="mt-0.5 text-xs text-gray-700 dark:text-white"
+                              className="mt-0.5 text-xs text-gray-700 dark:text-white/80"
                               onPointerDown={handleCommentBodyPointerDown}
                             >
                               {highlightArtistMentions(reply.body, reply.tagStatus)}
@@ -2141,7 +2190,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                                   className={`flex items-center space-x-1 rounded-full px-2 py-0.5 text-xs hover:bg-gray-100 dark:hover:bg-muted ${
                                     reply.userVote === "upvote"
                                       ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
-                                      : "text-gray-500 dark:text-white/70"
+                                      : "text-gray-500 dark:text-white/40"
                                   }`}
                                   onClick={() => handleToggleCommentLike(reply.id)}
                                   data-testid={`button-like-${reply.id}`}
@@ -2154,7 +2203,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                                 </button>
                                 {!commentIsDeleted ? (
                                   <button
-                                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/70 dark:hover:text-white"
+                                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/40 dark:hover:text-white/70"
                                     onPointerDown={(e) => {
                                       e.preventDefault();
                                     }}
@@ -2217,7 +2266,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                       comment.replies.length && (
                       <button
                         type="button"
-                        className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        className={COMMENTS_THREAD_LINK_CLASS}
                         onClick={() =>
                           setVisibleReplyCountByParent((prev) => ({
                             ...prev,
@@ -2237,28 +2286,37 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                 </div>
               </div>
               );
-            })}
+            };
+
+            return (
+              <>
+                {identificationClusterComments.map((c) => renderTopLevelComment(c))}
+              </>
+            );
+            })()}
+                {remainingComments.map((c) => renderTopLevelComment(c))}
               </>
             );
           })()}
+          </div>
         </div>
 
         {/* Comment Input */}
-        <div className="border-t border-gray-200 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 dark:border-border sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
+        <div className="relative z-20 border-t border-black/5 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 dark:border-white/[0.08] sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
           {/* Reply indicator */}
           {replyingTo && (
-            <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 dark:border-blue-500/35 dark:bg-blue-950/45">
+            <div className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] p-2.5 dark:border-white/10 dark:bg-white/[0.05]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <span className="text-xs text-blue-600 dark:text-blue-400">Replying to</span>
-                  <span className="text-xs font-medium text-blue-800 dark:text-blue-200">{formatUsernameDisplay(replyingTo.username)}</span>
+                  <span className="text-xs text-white/55">Replying to</span>
+                  <span className="text-xs font-medium text-white/85">{formatUsernameDisplay(replyingTo.username)}</span>
                 </div>
                 <button 
                   onClick={() => {
                     setReplyingTo(null);
                     setNewComment('');
                   }}
-                  className="text-blue-400 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                  className="text-white/40 hover:text-white/70"
                   data-testid="cancel-reply"
                 >
                   <X className="w-4 h-4" />
@@ -2440,7 +2498,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                           ? "Tag yourself if this is your ID..."
                           : "What do you think?"
                     }
-                    className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-y-auto rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/20 dark:bg-white/10 dark:text-white dark:placeholder:text-white/45 dark:ring-offset-[color:var(--dark)]"
+                    className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-y-auto rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
                     disabled={addCommentMutation.isPending}
                     data-testid="comment-input"
                     maxLength={INPUT_LIMITS.commentBody}
@@ -2459,7 +2517,7 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
                     newComment.length > INPUT_LIMITS.commentBody ||
                     addCommentMutation.isPending
                   }
-                  className="h-10 w-10 flex-shrink-0 rounded-full p-0"
+                  className="h-10 w-10 flex-shrink-0 rounded-full p-0 bg-white/90 text-slate-900 hover:bg-white disabled:bg-white/15 disabled:text-white/35 disabled:opacity-100"
                   data-testid="comment-submit"
                 >
                   <Send className="w-4 h-4" />

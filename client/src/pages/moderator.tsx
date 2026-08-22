@@ -38,7 +38,18 @@ import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-bad
 import { ModeratorShieldIcon } from "@/components/moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
-import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "@/components/id-marking-dialog-styles";
+import {
+  ID_MARKING_DIALOG_CONTENT_CLASS,
+  ID_MARKING_DIALOG_OVERLAY_CLASS,
+  ID_MARKING_PICKER_OLDEST_PILL_CLASS,
+  ID_MARKING_PICKER_ROW_CLASS,
+  ID_MARKING_PICKER_ROW_REPLY_CLASS,
+  ID_MARKING_PICKER_ROW_SELECTED_CLASS,
+} from "@/components/id-marking-dialog-styles";
+import {
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+} from "@/lib/app-material";
 import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
@@ -1455,24 +1466,12 @@ export default function ModeratorPage() {
                     const isSelected = selectedCommentId === comment.id;
                     const isOldest = comment.id === oldestPostCommentId;
                     const isReply = comment.selectionDepth > 0;
-                    const highlightClass = isOldest
-                      ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
-                      : "border-white/20 hover:bg-white/10";
-                    const selectionRingClass = isSelected
-                      ? isOldest
-                        ? "ring-2 ring-[#3B82F6]/95 shadow-[0_0_24px_rgba(59,130,246,0.65)]"
-                        : "ring-2 ring-white shadow-[0_0_28px_rgba(255,255,255,0.45)]"
-                      : "";
                     return (
                       <div
                         key={comment.id}
-                        className={`flex min-w-0 items-start space-x-3 rounded-lg border p-3 transition-colors ${highlightClass} ${
-                          isSelected ? selectionRingClass : ""
-                        } ${
-                          isSelected && !isOldest
-                            ? "border-white/95 bg-white/8 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)]"
-                            : ""
-                        } ${isReply ? "ml-3 border-l-2 border-l-white/25" : ""}`}
+                        className={`${ID_MARKING_PICKER_ROW_CLASS} ${
+                          isSelected ? ID_MARKING_PICKER_ROW_SELECTED_CLASS : ""
+                        } ${isReply ? ID_MARKING_PICKER_ROW_REPLY_CLASS : ""}`}
                       >
                         <RadioGroupItem
                           value={comment.id}
@@ -1521,13 +1520,7 @@ export default function ModeratorPage() {
                                     </span>
                                   )}
                                   {isOldest && (
-                                    <span
-                                      className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                                        isSelected
-                                          ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
-                                          : "border-[#3B82F6] bg-[#3B82F6] text-white"
-                                      }`}
-                                    >
+                                    <span className={ID_MARKING_PICKER_OLDEST_PILL_CLASS}>
                                       Oldest Comment
                                     </span>
                                   )}
@@ -1563,7 +1556,7 @@ export default function ModeratorPage() {
                     setSelectedPost(null);
                     setSelectedCommentId("");
                   }}
-                  className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                  className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
                   data-testid="button-cancel-selection"
                 >
                   Cancel
@@ -1584,7 +1577,7 @@ export default function ModeratorPage() {
                     communityApproveMutation.isPending ||
                     confirmVerificationMutation.isPending
                   }
-                  className="border-white/25 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+                  className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
                   data-testid="button-keep-community-selection"
                 >
                   <Handshake className="mr-2 h-4 w-4" />
@@ -1593,7 +1586,7 @@ export default function ModeratorPage() {
                     : "Keep as Community Identified"}
                 </Button>
                 <Button
-                  className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                  className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
                   onClick={() => {
                     if (selectedCommentId && selectedPost) {
                       confirmVerificationMutation.mutate({
