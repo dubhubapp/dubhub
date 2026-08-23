@@ -12,13 +12,25 @@ import type { CommentWithUser } from "@shared/schema";
 import { useUser } from "@/lib/user-context";
 import { formatDate } from "@/pages/release-tracker";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { commentMentionsUsername } from "@shared/mentionParsing";
 import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
-import { ID_MARKING_DIALOG_CONTENT_CLASS, ID_MARKING_DIALOG_OVERLAY_CLASS } from "./id-marking-dialog-styles";
+import {
+  ID_MARKING_DIALOG_CONTENT_CLASS,
+  ID_MARKING_DIALOG_OVERLAY_CLASS,
+  ID_MARKING_PICKER_FIRST_PILL_CLASS,
+  ID_MARKING_PICKER_META_PILL_CLASS,
+  ID_MARKING_PICKER_OLDEST_PILL_CLASS,
+  ID_MARKING_PICKER_ROW_SELECTED_CLASS,
+} from "./id-marking-dialog-styles";
+import {
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+} from "@/lib/app-material";
 import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
 import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
@@ -378,9 +390,9 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
         <div ref={initialFocusRef} tabIndex={-1} />
         {step === "verify" ? (
           <>
-            <DialogHeader className="space-y-1.5 text-center">
-              <DialogTitle className="text-lg font-semibold text-white">Artist Identification</DialogTitle>
-              <DialogDescription className="text-sm text-white/75">
+            <DialogHeader className="space-y-1 text-center">
+              <DialogTitle className="text-lg font-semibold tracking-tight text-white">Artist Identification</DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-white/65">
                 You were tagged in this post. Select the correct ID, then confirm or deny.
               </DialogDescription>
             </DialogHeader>
@@ -388,11 +400,9 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
             <div className="mt-4 min-h-[24rem]">
               {isLoading ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
-                  <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
-                    <p className="text-sm font-medium text-white">
-                      Confirm or deny the first or most relevant comment that tagged you.
-                    </p>
-                  </div>
+                  <p className="text-sm leading-relaxed text-white/65">
+                    Confirm or deny the first or most relevant comment that tagged you.
+                  </p>
                   <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15">
                     <div className="flex flex-col items-center gap-2 text-white/75">
                       <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
@@ -402,22 +412,18 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                 </div>
               ) : commentsList.length === 0 ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
-                  <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
-                    <p className="text-sm font-medium text-white">
-                      Confirm or deny the first or most relevant comment that tagged you.
-                    </p>
-                  </div>
+                  <p className="text-sm leading-relaxed text-white/65">
+                    Confirm or deny the first or most relevant comment that tagged you.
+                  </p>
                   <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
                     <p>No comments yet. Select a comment to respond to.</p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
-                    <p className="text-sm font-medium text-white">
-                      Confirm or deny the first or most relevant comment that tagged you.
-                    </p>
-                  </div>
+                  <p className="text-sm leading-relaxed text-white/65">
+                    Confirm or deny the first or most relevant comment that tagged you.
+                  </p>
                   <RadioGroup
                     value={selectedCommentId}
                     onValueChange={setSelectedCommentId}
@@ -428,28 +434,14 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                       const isOldest = comment.id === oldestCommentId;
                       const isFirstTag = comment.id === firstTaggedCommentId;
                       const isReply = comment.selectionDepth > 0;
-                      const selectionRingClass = isFirstTag
-                        ? "ring-2 ring-[#FFD700]/90 shadow-[0_0_26px_rgba(255,215,0,0.55)]"
-                        : isOldest
-                          ? "ring-2 ring-[#3B82F6]/95 ring-offset-2 ring-offset-background shadow-[0_0_24px_rgba(59,130,246,0.65)]"
-                          : "";
-                      const highlightClass = isFirstTag
-                        ? "border-[#FFD700]/80 bg-amber-500/10 shadow-[0_0_22px_rgba(255,215,0,0.55)]"
-                        : isOldest
-                        ? "border-[#3B82F6]/75 bg-[#3B82F6]/10 shadow-[0_0_22px_rgba(59,130,246,0.60)]"
-                        : "border-border hover:bg-accent/50";
                       return (
                         <div
                           key={comment.id}
-                          className={`flex min-w-0 max-w-full items-start space-x-3 rounded-lg border transition-colors ${highlightClass} ${
-                            isSelected
-                              ? selectionRingClass
-                              : ""
-                          } ${
-                            isSelected && !isOldest && !isFirstTag
-                              ? "border-white/95 bg-white/8 shadow-[0_0_0_4px_rgba(255,255,255,0.55),0_0_22px_rgba(255,255,255,0.22)] ring-0"
-                              : ""
-                          } ${isReply ? "border-l-2 border-l-white/25 pb-3 pl-6 pr-3 pt-3" : "p-3"}`}
+                          className={cn(
+                            "flex min-w-0 max-w-full items-start space-x-3 rounded-lg border border-white/12 bg-white/[0.03] transition-colors hover:bg-white/[0.05]",
+                            isSelected && ID_MARKING_PICKER_ROW_SELECTED_CLASS,
+                            isReply ? "border-l-2 border-l-white/25 pb-3 pl-6 pr-3 pt-3" : "p-3",
+                          )}
                         >
                           <RadioGroupItem value={comment.id} id={comment.id} data-testid={`radio-artist-comment-${comment.id}`} className="mt-0.5 shrink-0" />
                           <Label htmlFor={comment.id} className="min-w-0 flex-1 cursor-pointer">
@@ -472,7 +464,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                 </div>
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span
-                                    className={`min-w-0 break-words font-medium text-sm ${
+                                    className={`min-w-0 break-words text-sm font-semibold ${
                                       comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
                                     }`}
                                   >
@@ -486,31 +478,19 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                               </div>
                               <div className="flex min-w-0 flex-wrap items-center gap-1">
                                 {isReply && (
-                                  <span className="whitespace-nowrap rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
+                                  <span className={ID_MARKING_PICKER_META_PILL_CLASS}>
                                     {comment.parentAuthorUsername
                                       ? `Reply to ${formatUsernameDisplay(comment.parentAuthorUsername)}`
                                       : "Reply"}
                                   </span>
                                 )}
                                 {isOldest && (
-                                  <span
-                                    className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                                      isSelected && !isFirstTag
-                                        ? "border-[#1D4ED8] bg-[#1D4ED8] text-white shadow-[0_0_14px_rgba(29,78,216,0.50)]"
-                                        : "border-[#3B82F6] bg-[#3B82F6] text-white"
-                                    }`}
-                                  >
+                                  <span className={ID_MARKING_PICKER_OLDEST_PILL_CLASS}>
                                     Oldest Comment
                                   </span>
                                 )}
                                 {isFirstTag && (
-                                  <span
-                                    className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                                      isSelected
-                                        ? "border-[#FFD700]/90 bg-[#FFD700]/35 text-white shadow-[0_0_16px_rgba(255,215,0,0.55)]"
-                                        : "border-[#FFD700]/80 bg-[#FFD700]/25 text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]"
-                                    }`}
-                                  >
+                                  <span className={ID_MARKING_PICKER_FIRST_PILL_CLASS}>
                                     First Tag
                                   </span>
                                 )}
@@ -533,8 +513,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                                 </span>
                               </p>
                             )}
-                            <div className="mt-2 flex items-center gap-1 text-[11px] text-white/65">
-                              <Clock3 className="h-3.5 w-3.5" />
+                            <div className="mt-2 flex items-center gap-1 text-[11px] text-white/50">
+                              <Clock3 className="h-3.5 w-3.5 shrink-0" />
                               <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                             </div>
                           </Label>
@@ -544,23 +524,23 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                   </RadioGroup>
 
                   <div className="space-y-2">
-                    <Label htmlFor="artist-title" className="text-white/85">Title (optional)</Label>
+                    <Label htmlFor="artist-title" className="text-sm text-white/75">Title (optional)</Label>
                     <Input
                       id="artist-title"
                       placeholder="Track title"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      className="border-white/20 bg-black/20 text-white placeholder:text-white/45"
+                      className="h-10 min-w-0 rounded-[15px] border border-white/15 bg-white/[0.06] text-white placeholder:text-white/40 focus-visible:ring-1 focus-visible:ring-[#0a83ff]/50 focus-visible:ring-offset-0"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="artist-collaborators" className="text-white/85">Collaborators (optional)</Label>
+                    <Label htmlFor="artist-collaborators" className="text-sm text-white/75">Collaborators (optional)</Label>
                     <Input
                       id="artist-collaborators"
                       placeholder="e.g. Artist A, Artist B"
                       value={collaborators}
                       onChange={(e) => setCollaborators(e.target.value)}
-                      className="border-white/20 bg-black/20 text-white placeholder:text-white/45"
+                      className="h-10 min-w-0 rounded-[15px] border border-white/15 bg-white/[0.06] text-white placeholder:text-white/40 focus-visible:ring-1 focus-visible:ring-[#0a83ff]/50 focus-visible:ring-offset-0"
                     />
                   </div>
 
@@ -568,7 +548,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                     <Button
                       variant="outline"
                       onClick={handleClose}
-                      className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                      className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
                       data-testid="button-cancel-artist-verification"
                     >
                       Cancel
@@ -577,6 +557,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                       variant="destructive"
                       onClick={handleDeny}
                       disabled={!selectedCommentId || denyMutation.isPending}
+                      className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
                       data-testid="button-artist-deny"
                     >
                       {denyMutation.isPending ? "Denying..." : "Deny"}
@@ -584,6 +565,7 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                     <Button
                       onClick={handleConfirm}
                       disabled={!selectedCommentId || confirmMutation.isPending}
+                      className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
                       data-testid="button-artist-confirm"
                     >
                       {confirmMutation.isPending ? "Confirming..." : "Confirm"}
@@ -595,18 +577,21 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
           </>
         ) : (
           <>
-            <DialogHeader className="space-y-1.5 text-left">
-              <DialogTitle className="text-lg font-semibold text-white">Attach this post to an existing release?</DialogTitle>
-              <DialogDescription className="text-sm text-white/75">
+            <DialogHeader className="space-y-1 text-left">
+              <DialogTitle className="text-lg font-semibold tracking-tight text-white">Attach this post to an existing release?</DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-white/65">
                 You have upcoming releases. Attach this post so listeners see it on your Releases tab.
               </DialogDescription>
             </DialogHeader>
             <div className="mt-4 space-y-4">
-              <RadioGroup value={selectedReleaseId} onValueChange={setSelectedReleaseId}>
+              <RadioGroup value={selectedReleaseId} onValueChange={setSelectedReleaseId} className="max-w-full overflow-x-hidden">
                 {attachOptions.map((rel) => (
                   <div
                     key={rel.id}
-                    className="flex min-w-0 items-start gap-3 rounded-lg border border-white/15 bg-black/15 p-3 transition-colors hover:bg-white/10"
+                    className={cn(
+                      "flex min-w-0 max-w-full items-start gap-3 rounded-lg border border-white/12 bg-white/[0.03] p-3 transition-colors hover:bg-white/[0.05]",
+                      selectedReleaseId === rel.id && ID_MARKING_PICKER_ROW_SELECTED_CLASS,
+                    )}
                   >
                     <RadioGroupItem value={rel.id} id={rel.id} className="mt-0.5 shrink-0" />
                     <Label htmlFor={rel.id} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
@@ -635,13 +620,13 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                 <Button
                   variant="outline"
                   onClick={handleClose}
-                  className="w-full border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white sm:w-auto"
+                  className={cn("w-full sm:w-auto", APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS)}
                   data-testid="button-attach-skip"
                 >
                   Skip
                 </Button>
                 <Button
-                  className="w-full sm:w-auto"
+                  className={cn("w-full sm:w-auto", APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS)}
                   onClick={() => attachMutation.mutate()}
                   disabled={!selectedReleaseId || attachMutation.isPending}
                   data-testid="button-attach-confirm"

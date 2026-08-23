@@ -45,16 +45,27 @@ import {
   PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS,
 } from "@/lib/profile-posts-filter-presentation";
 import {
+  PROFILE_PRIMARY_NAV_GROUP_CLASS,
   PROFILE_PRIMARY_NAV_ICON_CLASS,
   PROFILE_PRIMARY_NAV_LABEL_CLASS,
   PROFILE_PRIMARY_NAV_LIST_CLASS,
-  PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS,
-  PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS,
+  PROFILE_PRIMARY_NAV_SHELL_CLASS,
   PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS,
 } from "@/lib/profile-primary-nav-presentation";
+import {
+  PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS,
+  PROFILE_BANNER_BOTTOM_FADE_STYLE,
+  PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS,
+  PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE,
+  PROFILE_BANNER_UPLOADED_SCRIM_STYLE,
+  ProfileBannerDefaultGradient,
+  ProfileBannerLoadingPlaceholder,
+  profilePageCanvasClass,
+} from "@/lib/profile-banner-presentation";
 import { cn, formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
 import { APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS } from "@/lib/app-material";
 import {
+  SETTINGS_NAV_ROW_CLASS,
   SETTINGS_ROW_SUBTITLE_CLASS,
   SETTINGS_ROWS_STACK_CLASS,
 } from "@/lib/settings-presentation";
@@ -117,54 +128,6 @@ function validateProfileImageFile(file: File): string | null {
 function getProfileBannerStoragePath(userId: string, accountType: string): string {
   const folder = accountType === "artist" ? "artists" : "users";
   return `${folder}/${userId}_banner.png`;
-}
-
-/** Profile shell surface — matches `--dark` in index.css / Capacitor underlay (#0f1324). */
-const PROFILE_SURFACE_DARK = "#0f1324";
-
-const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
-  background: `linear-gradient(to bottom, rgba(15,19,36,0) 0%, rgba(15,19,36,0.65) 45%, rgba(15,19,36,0.92) 72%, var(--dark) 86%, var(--dark) 100%)`,
-};
-
-function ProfileBannerDefaultGradient() {
-  return (
-    <>
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)]"
-        style={{
-          background:
-            "linear-gradient(180deg, hsl(227, 88%, 52%) 0%, rgba(30,56,249,0.55) 6%, hsl(222, 70%, 40%) 14%, rgba(15,19,36,0.88) 32%, #0f1324 48%, #0f1324 90%, #0f1324 100%)",
-        }}
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] overflow-hidden"
-        aria-hidden
-      >
-        <div
-          className="absolute -left-[10%] -top-[18%] h-[58%] w-[56%] rounded-full blur-3xl"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(74,233,223,0.32) 0%, rgba(74,233,223,0.1) 38%, transparent 70%)",
-          }}
-        />
-        <div
-          className="absolute -right-[6%] -top-[8%] h-[50%] w-[48%] rounded-full blur-3xl"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(99,102,241,0.26) 0%, rgba(99,102,241,0.07) 40%, transparent 72%)",
-          }}
-        />
-        <div
-          className="absolute left-[28%] top-[2%] h-[34%] w-[38%] rounded-full blur-2xl"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(30,56,249,0.28) 0%, rgba(30,56,249,0.06) 45%, transparent 74%)",
-          }}
-        />
-      </div>
-    </>
-  );
 }
 
 function notificationRowFields(n: NotificationWithUser) {
@@ -261,7 +224,7 @@ const PROFILE_OVERVIEW_SECTIONS_CLASS =
 const PROFILE_IMPACT_MODE_TAB_BASE =
   "ios-press relative flex min-h-11 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 const PROFILE_IMPACT_MODE_TAB_ACTIVE =
-  "font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:rounded-full after:bg-accent";
+  "font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:rounded-full after:bg-[#0a83ff]";
 const PROFILE_IMPACT_MODE_TAB_INACTIVE = "font-medium text-white/55 hover:text-white/80";
 
 /** Matches public profile fav-genre pill footprint. */
@@ -289,7 +252,7 @@ function ProfileRepOverviewSkeleton() {
     <div className="space-y-2" aria-busy="true" data-testid="profile-rep-skeleton">
       <DubHubSkeletonBar tone="default" className="h-4 w-28" />
       <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
-      <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
+      <DubHubSkeletonBar tone="mid" className="h-2 w-full rounded-full" />
     </div>
   );
 }
@@ -1173,7 +1136,8 @@ export default function UserProfile() {
   }, [bannerUrl]);
 
   const hasProfileBanner = Boolean(bannerUrl?.trim());
-  const showBannerDefaultGradient = !hasProfileBanner || bannerImageFailed || !bannerImageReady;
+  const showBannerLoadingPlaceholder = hasProfileBanner && !bannerImageFailed && !bannerImageReady;
+  const showBannerDefaultGradient = !hasProfileBanner || bannerImageFailed;
   const showUploadedBannerImage = hasProfileBanner && !bannerImageFailed;
 
   const profileImageMutation = useMutation({
@@ -2457,16 +2421,18 @@ export default function UserProfile() {
   };
 
   const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
+  const hasReadyUploadedBanner = showUploadedBannerImage && bannerImageReady;
 
   return (
-    <div className="min-h-0 min-w-0 w-full flex-1 bg-[var(--dark)] overflow-x-hidden overflow-y-auto overscroll-y-contain">
+    <div className={`min-h-0 min-w-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain ${profilePageCanvasClass(hasReadyUploadedBanner)}`}>
       <div className="px-6 pb-8">
         <div className="max-w-md mx-auto">
-          {/* Profile banner — Phase A default gradient; Phase B optional uploaded image */}
+          {/* Profile banner — uploaded image dominant; contained fade into navy (C5C) */}
           <section
-            className="relative -mx-6 mb-6 overflow-hidden bg-[var(--dark)]"
+            className="relative -mx-6 mb-3 overflow-hidden bg-[#0f1324]"
             data-testid="profile-banner"
           >
+            {showBannerLoadingPlaceholder ? <ProfileBannerLoadingPlaceholder /> : null}
             {showBannerDefaultGradient ? <ProfileBannerDefaultGradient /> : null}
             {showUploadedBannerImage ? (
               <img
@@ -2481,9 +2447,16 @@ export default function UserProfile() {
             <div
               className={`pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] ${
                 showUploadedBannerImage && bannerImageReady
-                  ? "bg-black/40"
-                  : "bg-gradient-to-b from-slate-950/45 via-slate-900/32 to-slate-950/35"
+                  ? ""
+                  : showBannerLoadingPlaceholder
+                    ? "bg-transparent"
+                    : "bg-gradient-to-b from-slate-950/35 via-slate-900/22 to-slate-950/28"
               }`}
+              style={
+                showUploadedBannerImage && bannerImageReady
+                  ? PROFILE_BANNER_UPLOADED_SCRIM_STYLE
+                  : undefined
+              }
               aria-hidden
             />
             {showUploadedBannerImage && bannerImageReady ? (
@@ -2492,11 +2465,19 @@ export default function UserProfile() {
                 aria-hidden
               />
             ) : null}
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-48"
-              style={PROFILE_BANNER_BOTTOM_FADE_STYLE}
-              aria-hidden
-            />
+            {showUploadedBannerImage && bannerImageReady ? (
+              <div
+                className={PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS}
+                style={PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE}
+                aria-hidden
+              />
+            ) : (
+              <div
+                className={`pointer-events-none absolute inset-x-0 bottom-0 ${PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS}`}
+                style={PROFILE_BANNER_BOTTOM_FADE_STYLE}
+                aria-hidden
+              />
+            )}
 
             <DropdownMenu open={isBannerMenuOpen} onOpenChange={setIsBannerMenuOpen}>
               <DropdownMenuTrigger asChild>
@@ -2672,9 +2653,9 @@ export default function UserProfile() {
             </div>
           </section>
 
-          {/* Tabs */}
+          {/* Tabs — non-sticky document tabs below banner (C5B.2) */}
           <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-5">
-            <div className={PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS}>
+            <div className={PROFILE_PRIMARY_NAV_SHELL_CLASS}>
               <TabsList
                 className={PROFILE_PRIMARY_NAV_LIST_CLASS}
                 data-testid="profile-tabs"
@@ -2684,24 +2665,30 @@ export default function UserProfile() {
                   data-testid="tab-profile"
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <User className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
-                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Overview</span>
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
+                    <User className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Overview</span>
+                  </span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="posts"
                   data-testid="tab-posts"
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <Upload className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
-                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Posts</span>
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
+                    <Upload className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Posts</span>
+                  </span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="liked"
                   data-testid="tab-liked"
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <Heart className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
-                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Likes</span>
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
+                    <Heart className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Likes</span>
+                  </span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="notifications"
@@ -2713,9 +2700,11 @@ export default function UserProfile() {
                   }
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <Bell className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
-                  <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS} aria-hidden>
-                    Notif.
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
+                    <Bell className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS} aria-hidden>
+                      Notif.
+                    </span>
                   </span>
                   {unreadCount > 0 && (
                     <span
@@ -2727,7 +2716,6 @@ export default function UserProfile() {
                   )}
                 </TabsTrigger>
               </TabsList>
-              <div className={PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS} aria-hidden />
             </div>
 
             <TabsContent value="profile" className={PROFILE_OVERVIEW_SECTIONS_CLASS}>
@@ -2884,7 +2872,7 @@ export default function UserProfile() {
             <Button
               variant="ghost"
               type="button"
-              className="ios-press min-h-11 w-full rounded-none border-0 bg-transparent px-0 py-0 text-left hover:bg-white/[0.03] flex items-center justify-between h-auto"
+              className={cn(SETTINGS_NAV_ROW_CLASS, "h-auto justify-between")}
               data-testid="button-settings"
               onClick={() => navigate("/settings")}
             >

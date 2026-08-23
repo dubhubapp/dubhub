@@ -21,10 +21,10 @@ describe("profile-posts-filter-presentation", () => {
     assert.match(PROFILE_POSTS_FILTER_TAB_BASE_CLASS, /flex-1/);
   });
 
-  it("uses bright active text + teal underline on the label", () => {
+  it("uses bright active text + interactive blue underline on the label", () => {
     assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /font-semibold/);
     assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /text-foreground/);
-    assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-accent/);
+    assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-\[#0a83ff\]/);
     assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:h-\[2px\]/);
     assert.doesNotMatch(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /(?:^|\s)bg-accent(?:\s|$)|(?:^|\s)bg-primary(?:\s|$)/);
     assert.match(PROFILE_POSTS_FILTER_LABEL_CLASS, /truncate/);

@@ -19,11 +19,11 @@
                                 <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                             </imageView>
                             <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubLaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="dh-logo-iv">
-                                <rect key="frame" x="54.5" y="376" width="284" height="100"/>
+                                <rect key="frame" x="141.5" y="371" width="110" height="110"/>
                             </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="BVo-6i-8nQ"/>
-                        <color key="backgroundColor" red="0.0" green="0.11372549019607843" blue="0.9725490196078431" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="0.058823529411764705" green="0.074509803921568627" blue="0.14117647058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="dh-bg-iv" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="bg-top"/>
                             <constraint firstItem="dh-bg-iv" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="bg-bottom"/>
@@ -31,8 +31,8 @@
                             <constraint firstItem="dh-bg-iv" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="bg-trailing"/>
                             <constraint firstItem="dh-logo-iv" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="cX-logo"/>
                             <constraint firstItem="dh-logo-iv" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="cY-logo"/>
-                            <constraint firstItem="dh-logo-iv" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.72" id="w-logo"/>
-                            <constraint firstItem="dh-logo-iv" firstAttribute="height" secondItem="dh-logo-iv" secondAttribute="width" multiplier="0.7266903915" id="aspect-logo"/>
+                            <constraint firstItem="dh-logo-iv" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.28" id="w-logo"/>
+                            <constraint firstItem="dh-logo-iv" firstAttribute="height" secondItem="dh-logo-iv" secondAttribute="width" id="aspect-logo"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -43,6 +43,6 @@
     </scenes>
     <resources>
         <image name="DubHubLaunchGradient" width="1" height="256"/>
-        <image name="DubHubLaunchLogo" width="1260" height="916"/>
+        <image name="DubHubLaunchLogo" width="217" height="271"/>
     </resources>
 </document>

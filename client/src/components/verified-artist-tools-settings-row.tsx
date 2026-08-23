@@ -20,7 +20,12 @@ import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools
 import { PAYWALL_UI_COPY } from "@/lib/verified-artist-tools-paywall-copy";
 import { restoreVerifiedArtistToolsPurchases } from "@/lib/verified-artist-tools-restore";
 import { retryAuthoritativeSubscriptionStatus } from "@/lib/subscription-sync";
-import { SETTINGS_VAT_INSET_CLASS } from "@/lib/settings-presentation";
+import {
+  SETTINGS_VAT_ACTION_PRIMARY_CLASS,
+  SETTINGS_VAT_ACTION_SECONDARY_CLASS,
+  SETTINGS_VAT_ACTIONS_CLASS,
+  SETTINGS_VAT_INSET_CLASS,
+} from "@/lib/settings-presentation";
 import { useQueryClient } from "@tanstack/react-query";
 
 type Props = {
@@ -122,7 +127,7 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
       <div
         className={
           surface === "inset"
-            ? `${SETTINGS_VAT_INSET_CLASS} space-y-2`
+            ? SETTINGS_VAT_INSET_CLASS
             : "w-full rounded-xl border border-white/10 bg-black/30 p-4 space-y-2 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
         }
         data-testid="settings-verified-artist-tools-loading"
@@ -157,17 +162,15 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
           <Sparkles className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p id="settings-vat-title" className="text-sm font-medium text-foreground">
-              {view.title}
-            </p>
-            <span
-              className="text-xs font-medium text-muted-foreground shrink-0"
-              data-testid="settings-vat-status"
-            >
-              {view.statusLabel}
-            </span>
-          </div>
+          <p id="settings-vat-title" className="text-sm font-medium text-foreground">
+            {view.title}
+          </p>
+          <p
+            className="mt-0.5 text-xs font-medium text-muted-foreground"
+            data-testid="settings-vat-status"
+          >
+            {view.statusLabel}
+          </p>
           {view.detail ? (
             <p
               className="mt-1 text-xs leading-relaxed text-muted-foreground"
@@ -176,117 +179,114 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
               {view.detail}
             </p>
           ) : null}
-        </div>
-      </div>
 
-      {view.showPlanSummary ? (
-        <div className="space-y-1.5" data-testid="settings-vat-plan-summary">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
-            Included with your plan
-          </p>
-          <ul className="space-y-1">
-            {view.planSummaryLines.map((line) => (
-              <li
-                key={line}
-                className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
+          {view.showPlanSummary ? (
+            <div className="mt-2 space-y-1.5" data-testid="settings-vat-plan-summary">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                Included with your plan
+              </p>
+              <ul className="space-y-1">
+                {view.planSummaryLines.map((line) => (
+                  <li
+                    key={line}
+                    className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
+                  >
+                    <Check
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className={SETTINGS_VAT_ACTIONS_CLASS} data-testid="settings-vat-actions">
+            {view.showUpgrade ? (
+              <Button
+                ref={upgradeButtonRef}
+                type="button"
+                variant="outline"
+                className={SETTINGS_VAT_ACTION_PRIMARY_CLASS}
+                onClick={onUpgrade}
+                data-testid="settings-vat-upgrade"
               >
-                <Check
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#4ae9df]"
-                  aria-hidden
-                />
-                <span>{line}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+                Upgrade
+              </Button>
+            ) : null}
+            {view.showManage ? (
+              <Button
+                type="button"
+                variant="outline"
+                className={SETTINGS_VAT_ACTION_SECONDARY_CLASS}
+                onClick={() => openIosManageSubscriptions()}
+                data-testid="settings-vat-manage"
+              >
+                {PAYWALL_UI_COPY.manageSubscription}
+              </Button>
+            ) : null}
+            {view.showRetry ? (
+              <Button
+                type="button"
+                variant="outline"
+                className={SETTINGS_VAT_ACTION_PRIMARY_CLASS}
+                disabled={retrying}
+                onClick={() => void onRetry()}
+                data-testid="settings-vat-retry"
+              >
+                {retrying ? "Refreshing…" : "Retry"}
+              </Button>
+            ) : null}
+            {view.showRestore ? (
+              <Button
+                type="button"
+                variant="outline"
+                className={SETTINGS_VAT_ACTION_SECONDARY_CLASS}
+                disabled={restoring}
+                onClick={() => void onRestore()}
+                data-testid="settings-vat-restore"
+              >
+                {restoring ? "Restoring…" : PAYWALL_UI_COPY.restorePurchases}
+              </Button>
+            ) : null}
+          </div>
 
-      <div className="flex flex-wrap gap-2">
-        {view.showUpgrade ? (
-          <Button
-            ref={upgradeButtonRef}
-            type="button"
-            size="sm"
-            className="h-9 min-h-9"
-            onClick={onUpgrade}
-            data-testid="settings-vat-upgrade"
-          >
-            Upgrade
-          </Button>
-        ) : null}
-        {view.showManage ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 min-h-9 border-white/15 bg-black/20"
-            onClick={() => openIosManageSubscriptions()}
-            data-testid="settings-vat-manage"
-          >
-            {PAYWALL_UI_COPY.manageSubscription}
-          </Button>
-        ) : null}
-        {view.showRetry ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 min-h-9 border-white/15 bg-black/20"
-            disabled={retrying}
-            onClick={() => void onRetry()}
-            data-testid="settings-vat-retry"
-          >
-            {retrying ? "Refreshing…" : "Retry"}
-          </Button>
-        ) : null}
-        {view.showRestore ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-9 min-h-9 text-muted-foreground"
-            disabled={restoring}
-            onClick={() => void onRestore()}
-            data-testid="settings-vat-restore"
-          >
-            {restoring ? "Restoring…" : PAYWALL_UI_COPY.restorePurchases}
-          </Button>
-        ) : null}
+          {view.showLegalLinks ? (
+            <div
+              className="mt-2 space-y-1 pt-2 border-t border-border dark:border-white/[0.08]"
+              data-testid="settings-vat-legal"
+            >
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Billing is managed through Apple.
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                <a
+                  href={DUBHUB_TERMS_OF_USE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  data-testid="settings-vat-terms"
+                >
+                  Terms of Use
+                </a>
+                <span aria-hidden className="mx-1.5 text-muted-foreground/60">
+                  ·
+                </span>
+                <a
+                  href={DUBHUB_PRIVACY_POLICY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  data-testid="settings-vat-privacy"
+                >
+                  Privacy Policy
+                </a>
+              </p>
+            </div>
+          ) : null}
+        </div>
       </div>
-
-      {view.showLegalLinks ? (
-        <div
-          className="space-y-1 pt-1 border-t border-white/10"
-          data-testid="settings-vat-legal"
-        >
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Billing is managed through Apple.
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            <a
-              href={DUBHUB_TERMS_OF_USE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-foreground"
-              data-testid="settings-vat-terms"
-            >
-              Terms of Use
-            </a>
-            <span aria-hidden className="mx-1.5 text-muted-foreground/60">
-              ·
-            </span>
-            <a
-              href={DUBHUB_PRIVACY_POLICY_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-foreground"
-              data-testid="settings-vat-privacy"
-            >
-              Privacy Policy
-            </a>
-          </p>
-        </div>
-      ) : null}
     </section>
   );
 }

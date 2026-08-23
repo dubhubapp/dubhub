@@ -145,6 +145,273 @@ html.theme-transitioning .bg-surface {
   --dark: hsl(227, 45%, 9%);
 }
 
+/*
+ * Login/auth canvas: keep controls on the hardcoded navy surface even when
+ * the saved app preference is Light Mode. Tokens match `.dark` above.
+ * Does not write `dubhub-theme`. Does not change `html` / authenticated shell.
+ */
+.dubhub-auth-surface {
+  color-scheme: dark;
+  --background: hsl(227, 42%, 11%);
+  --foreground: hsl(210, 25%, 96%);
+  --muted: hsl(227, 28%, 18%);
+  --muted-foreground: hsl(215, 14%, 68%);
+  --popover: hsl(227, 38%, 13%);
+  --popover-foreground: hsl(210, 25%, 96%);
+  --card: hsl(227, 32%, 14%);
+  --card-foreground: hsl(210, 25%, 96%);
+  --border: hsl(227, 22%, 26%);
+  --input: hsl(227, 28%, 20%);
+  --primary: hsl(210, 25%, 96%);
+  --primary-foreground: hsl(227, 42%, 13%);
+  --secondary: hsl(180, 45%, 32%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --accent: hsl(180, 45%, 32%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 45%, 38%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --ring: hsl(227, 35%, 45%);
+  --surface: hsl(227, 28%, 16%);
+  --dark: hsl(227, 45%, 9%);
+}
+
+.dubhub-auth-surface input:-webkit-autofill,
+.dubhub-auth-surface input:-webkit-autofill:hover,
+.dubhub-auth-surface input:-webkit-autofill:focus,
+.dubhub-auth-surface input:-webkit-autofill:active {
+  -webkit-text-fill-color: hsl(210, 25%, 96%);
+  caret-color: hsl(210, 25%, 96%);
+  box-shadow: 0 0 0 1000px hsl(227, 28%, 20%) inset;
+  transition: background-color 99999s ease-out;
+}
+
+/*
+ * Pre-login atmospheric canvas — AuthPage + onboarding.
+ * Does not alter .dubhub-auth-surface tokens or shared ui primitives.
+ */
+.dubhub-prelogin-auth {
+  background-color: #0f1324;
+  background-image:
+    radial-gradient(
+      ellipse 140% 85% at 50% -28%,
+      rgba(10, 131, 255, 0.22) 0%,
+      rgba(0, 29, 249, 0.1) 38%,
+      transparent 68%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(22, 38, 92, 0.42) 0%,
+      rgba(15, 22, 48, 0.22) 28%,
+      rgba(15, 19, 36, 0.08) 52%,
+      #0f1324 78%
+    );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/**
+ * Onboarding New Release miniature — indigo translucent surface without blur.
+ */
+.dubhub-prelogin-mini-surface {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: rgba(44, 54, 92, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 2px 10px rgba(0, 0, 0, 0.28);
+}
+
+.dubhub-prelogin-auth .dubhub-prelogin-field {
+  height: 2.8125rem;
+  border-radius: 15px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.06);
+  background-color: rgba(44, 54, 92, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 2px 10px rgba(0, 0, 0, 0.28);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-prelogin-auth .dubhub-prelogin-field {
+    background-color: rgba(48, 58, 102, 0.54);
+    -webkit-backdrop-filter: blur(20px) saturate(1.45);
+    backdrop-filter: blur(20px) saturate(1.45);
+  }
+}
+
+.dubhub-prelogin-auth .dubhub-prelogin-field:focus,
+.dubhub-prelogin-auth .dubhub-prelogin-field:focus-visible {
+  outline: none;
+  border-color: rgba(10, 131, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+    0 0 0 1px rgba(10, 131, 255, 0.3),
+    0 0 20px rgba(0, 29, 249, 0.17);
+}
+
+.dubhub-prelogin-auth .dubhub-prelogin-field[aria-invalid="true"],
+.dubhub-prelogin-auth .dubhub-prelogin-field.dubhub-prelogin-field-invalid {
+  border-color: rgba(239, 68, 68, 0.65);
+}
+
+.dubhub-prelogin-auth input.dubhub-prelogin-field:-webkit-autofill,
+.dubhub-prelogin-auth input.dubhub-prelogin-field:-webkit-autofill:hover,
+.dubhub-prelogin-auth input.dubhub-prelogin-field:-webkit-autofill:focus,
+.dubhub-prelogin-auth input.dubhub-prelogin-field:-webkit-autofill:active {
+  -webkit-text-fill-color: hsl(210, 25%, 96%);
+  caret-color: hsl(210, 25%, 96%);
+  box-shadow:
+    0 0 0 1000px rgba(40, 50, 88, 0.94) inset,
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  transition: background-color 99999s ease-out;
+}
+
+/* Portaled Account Type menu — Sign Up; same indigo glass family. */
+.dubhub-prelogin-select-content {
+  border-radius: 15px;
+  border-color: rgba(255, 255, 255, 0.08);
+  background-color: rgba(28, 36, 68, 0.96);
+  color: hsl(210, 25%, 96%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 14px 36px rgba(0, 0, 0, 0.48);
+  color-scheme: dark;
+  overflow: hidden;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-prelogin-select-content {
+    background-color: rgba(32, 42, 78, 0.78);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+  }
+}
+
+/* Bright ceramic-white primary CTA — auth forms, Account Created Dialog, onboarding Get started. */
+.dubhub-prelogin-auth .dubhub-prelogin-primary-cta,
+.dubhub-prelogin-dialog-content .dubhub-prelogin-primary-cta {
+  height: 2.75rem;
+  border-radius: 15px;
+  border: 0;
+  color: hsl(227, 42%, 13%);
+  background-color: #f7f8fb;
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(242, 245, 250, 0.98) 55%,
+    rgba(230, 235, 244, 0.96) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(15, 19, 36, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
+.dubhub-prelogin-auth .dubhub-prelogin-primary-cta:hover:not(:disabled),
+.dubhub-prelogin-dialog-content .dubhub-prelogin-primary-cta:hover:not(:disabled) {
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(246, 248, 252, 0.98) 55%,
+    rgba(236, 240, 248, 0.96) 100%
+  );
+}
+
+.dubhub-prelogin-auth .dubhub-prelogin-primary-cta:disabled,
+.dubhub-prelogin-dialog-content .dubhub-prelogin-primary-cta:disabled {
+  opacity: 0.42;
+  color: hsl(227, 18%, 42%);
+  background-color: rgba(186, 194, 214, 0.55);
+  background-image: none;
+  box-shadow: none;
+}
+
+/**
+ * After a feedback-bearing Sign Up group, next-field gap comes only from
+ * PRELOGIN_FEEDBACK_TO_NEXT_FIELD_CLASS (mb-3) — not from space-y as well.
+ */
+.dubhub-prelogin-auth .dubhub-prelogin-signup-field-stack > .dubhub-prelogin-feedback-group + :not([hidden]) {
+  margin-top: 0;
+}
+
+/**
+ * Auth page short-height (e.g. iPhone SE ~667px): compact decorative chrome only.
+ * Does not shrink field or CTA tap targets.
+ */
+@media (max-height: 700px) {
+  .dubhub-prelogin-auth-page {
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-bottom: 0.75rem;
+  }
+
+  .dubhub-prelogin-auth .dubhub-prelogin-auth-logo {
+    height: 4.75rem !important;
+  }
+
+  .dubhub-prelogin-auth .dubhub-prelogin-signup-field-stack > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.625rem;
+  }
+
+  .dubhub-prelogin-auth .dubhub-prelogin-signup-field-stack > .dubhub-prelogin-feedback-group + :not([hidden]) {
+    margin-top: 0;
+  }
+
+  .dubhub-prelogin-auth .dubhub-prelogin-signup-header {
+    padding-top: 0.25rem;
+    padding-bottom: 0.375rem;
+  }
+
+  .dubhub-prelogin-auth .dubhub-prelogin-signup-logo-gap {
+    margin-bottom: 0.375rem;
+  }
+
+  /* Prefer top-flow on short screens so centring cannot clip Sign In panels. */
+  .dubhub-prelogin-auth .dubhub-prelogin-signin-center-inner {
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* Account Created Dialog — overlay dim (optional light blur). */
+.dubhub-prelogin-dialog-overlay {
+  background-color: rgba(0, 0, 0, 0.55) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-prelogin-dialog-overlay {
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* Account Created Dialog — substantial indigo glass panel. */
+.dubhub-prelogin-dialog-content {
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(20, 26, 48, 0.97) !important;
+  color: hsl(210, 25%, 96%);
+  color-scheme: dark;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 18px 48px rgba(0, 0, 0, 0.55) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-prelogin-dialog-content {
+    background-color: rgba(22, 30, 56, 0.94) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.25);
+    backdrop-filter: blur(16px) saturate(1.25);
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -394,4 +661,507 @@ html.theme-transitioning .bg-surface {
   .trim-editor-touch-none {
     touch-action: none;
   }
+}
+
+/**
+ * Slice C1 — Releases Tracker route-scoped atmosphere (authenticated, dark only).
+ * Quieter than pre-login auth canvas. Never apply on Home / video feed.
+ */
+.dark .dubhub-app-releases-canvas {
+  background-color: #0f1324;
+  background-image:
+    radial-gradient(
+      ellipse 120% 70% at 50% -35%,
+      rgba(10, 131, 255, 0.14) 0%,
+      rgba(0, 29, 249, 0.06) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(22, 38, 92, 0.28) 0%,
+      rgba(15, 22, 48, 0.12) 32%,
+      rgba(15, 19, 36, 0.04) 58%,
+      #0f1324 100%
+    );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/**
+ * Profile WITH uploaded banner (C5C / C5C.2).
+ * Immediate body under banner = navy base (matches contained dissolve endpoint).
+ * Indigo atmosphere starts well below the hero — not a colour shift at the section edge.
+ * Contained fade only; no outer bleed / tab overlays.
+ */
+.dark .dubhub-app-profile-canvas-with-banner {
+  background-color: #0f1324;
+  background-image:
+    radial-gradient(
+      ellipse 110% 48% at 50% 88%,
+      rgba(10, 131, 255, 0.07) 0%,
+      rgba(0, 29, 249, 0.03) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      #0f1324 0%,
+      #0f1324 52%,
+      rgba(22, 38, 92, 0.12) 72%,
+      rgba(15, 22, 48, 0.06) 86%,
+      #0f1324 100%
+    );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/* Light: solid theme background — no dark atmosphere slabs. */
+:root:not(.dark) .dubhub-app-profile-canvas-with-banner,
+.light .dubhub-app-profile-canvas-with-banner {
+  background-color: hsl(var(--background));
+  background-image: none;
+}
+
+.dark .dubhub-app-releases-sticky {
+  background-color: rgba(15, 22, 48, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.dark .dubhub-app-releases-sticky-fade {
+  background-color: rgba(15, 22, 48, 0.32);
+}
+
+.dark .dubhub-app-releases-fab-underlay {
+  background-color: #0f1324;
+}
+
+.dark .dubhub-app-releases-fab-fade {
+  background-image: linear-gradient(
+    to top,
+    #0f1324 0%,
+    rgba(15, 19, 36, 0.92) 45%,
+    transparent 100%
+  );
+}
+
+/* Light mode: canvas/sticky stay on theme tokens; underlays remain opaque background. */
+:root:not(.dark) .dubhub-app-releases-fab-underlay,
+.light .dubhub-app-releases-fab-underlay {
+  background-color: hsl(var(--background));
+}
+
+:root:not(.dark) .dubhub-app-releases-fab-fade,
+.light .dubhub-app-releases-fab-fade {
+  background-image: linear-gradient(
+    to top,
+    hsl(var(--background)) 0%,
+    hsl(var(--background) / 0.9) 45%,
+    transparent 100%
+  );
+}
+
+/**
+ * Slice C2 — opt-in Dialog / Sheet overlay material (authenticated).
+ * Consumers must apply classes deliberately — not wired into ui/dialog defaults.
+ * Surface uses translucency + hairline + shadow; NO surface backdrop-filter
+ * (avoids stacking with sticky chrome / page blur).
+ */
+.dubhub-app-overlay-backdrop {
+  background-color: rgba(8, 12, 28, 0.58) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-app-overlay-backdrop {
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+}
+
+.dark .dubhub-app-overlay-surface {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(20, 26, 48, 0.97) !important;
+  color: hsl(210, 25%, 96%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 18px 48px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark .dubhub-app-sheet-surface {
+  border-radius: 22px 22px 0 0 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(18, 24, 48, 0.72) !important;
+  background-image: linear-gradient(
+    180deg,
+    rgba(36, 48, 88, 0.5) 0%,
+    rgba(18, 24, 48, 0.68) 42%,
+    rgba(12, 16, 32, 0.82) 100%
+  );
+  color: hsl(210, 25%, 96%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 -8px 32px rgba(0, 0, 0, 0.28) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dark .dubhub-app-sheet-surface {
+    background-color: rgba(18, 24, 48, 0.58) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    backdrop-filter: blur(20px) saturate(1.2);
+  }
+}
+
+.dubhub-app-sheet-backdrop {
+  background-color: rgba(8, 12, 28, 0.42) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-app-sheet-backdrop {
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* Light: coherent raised surface — not stranded dark indigo. */
+:root:not(.dark) .dubhub-app-overlay-surface,
+.light .dubhub-app-overlay-surface {
+  border-radius: 22px !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background-color: hsl(var(--background) / 0.98) !important;
+  color: hsl(var(--foreground));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 18px 40px rgba(15, 23, 42, 0.18) !important;
+}
+
+:root:not(.dark) .dubhub-app-sheet-surface,
+.light .dubhub-app-sheet-surface {
+  border-radius: 22px 22px 0 0 !important;
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--background) / 0.82) !important;
+  background-image: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.92) 0%,
+    hsl(var(--background) / 0.78) 100%
+  );
+  color: hsl(var(--foreground));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 -8px 28px rgba(15, 23, 42, 0.1) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root:not(.dark) .dubhub-app-sheet-surface,
+  .light .dubhub-app-sheet-surface {
+    background-color: hsl(var(--background) / 0.72) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+  }
+}
+
+:root:not(.dark) .dubhub-app-overlay-backdrop,
+.light .dubhub-app-overlay-backdrop {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+}
+
+:root:not(.dark) .dubhub-app-sheet-backdrop,
+.light .dubhub-app-sheet-backdrop {
+  background-color: rgba(15, 23, 42, 0.32) !important;
+}
+
+.dark .dubhub-app-segment-active {
+  background-color: #0a83ff;
+  background-image: linear-gradient(
+    180deg,
+    rgba(80, 170, 255, 0.95) 0%,
+    #0a83ff 48%,
+    rgba(8, 110, 220, 0.98) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 40, 100, 0.25),
+    0 2px 8px rgba(10, 131, 255, 0.22);
+}
+
+:root:not(.dark) .dubhub-app-segment-active,
+.light .dubhub-app-segment-active {
+  background-color: #0a83ff;
+  background-image: linear-gradient(
+    180deg,
+    rgba(80, 170, 255, 0.98) 0%,
+    #0a83ff 55%,
+    rgba(8, 110, 220, 1) 100%
+  );
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 8px rgba(10, 131, 255, 0.2);
+}
+
+.dubhub-app-release-form-top {
+  padding-top: calc(env(safe-area-inset-top, 0px) + clamp(0.75rem, 2.8vw, 1.25rem));
+}
+
+.dubhub-app-release-detail-top {
+  padding-top: calc(env(safe-area-inset-top, 0px) + clamp(0.75rem, 2.8vw, 1.25rem));
+}
+
+/**
+ * Slice C4B–C4B.2 — Release Detail artwork-derived atmosphere (opt-in).
+ * Base layer: branded blue → indigo → navy from frame 1 (covers parent bg-background).
+ * ::before: artwork/neutral wash. Cached = instant; cold = short opacity fade.
+ * Light mode: neutral theme background (no dark artwork island).
+ */
+.dark .dubhub-app-release-detail-canvas {
+  --release-atmosphere-rgb: 12, 58, 120;
+  position: relative;
+  isolation: isolate;
+  /* Opaque from first paint — never rely on parent shell bg-background. */
+  background-color: #0f1324;
+  background-image:
+    radial-gradient(
+      ellipse 140% 65% at 50% -10%,
+      rgba(10, 131, 255, 0.38) 0%,
+      transparent 58%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(12, 58, 120, 0.85) 0%,
+      rgba(18, 36, 78, 0.7) 24%,
+      rgba(15, 28, 58, 0.5) 48%,
+      rgba(15, 19, 36, 0.94) 74%,
+      #0f1324 100%
+    );
+  color: hsl(210, 25%, 96%);
+}
+
+.dark .dubhub-app-release-detail-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Top ceiling raised; lower fade preserved (posts → activity → navy). */
+  background-image:
+    radial-gradient(
+      ellipse 150% 55% at 50% -18%,
+      rgba(var(--release-atmosphere-rgb), 0.98) 0%,
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(var(--release-atmosphere-rgb), 0.94) 0%,
+      rgba(var(--release-atmosphere-rgb), 0.72) 14%,
+      rgba(var(--release-atmosphere-rgb), 0.42) 36%,
+      rgba(var(--release-atmosphere-rgb), 0.2) 55%,
+      rgba(var(--release-atmosphere-rgb), 0.08) 70%,
+      rgba(15, 19, 36, 0.92) 85%,
+      #0f1324 100%
+    );
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+/* Derived artwork / neutral — show wash when ready. */
+.dark .dubhub-app-release-detail-canvas[data-release-atmosphere="artwork"][data-atmosphere-ready="true"]::before,
+.dark .dubhub-app-release-detail-canvas[data-release-atmosphere="neutral"][data-atmosphere-ready="true"]::before {
+  opacity: 1;
+}
+
+/* Cached revisit: no opacity animation (prevents brand-base flash under fade-in). */
+.dark .dubhub-app-release-detail-canvas[data-atmosphere-instant="true"][data-release-atmosphere="artwork"]::before,
+.dark .dubhub-app-release-detail-canvas[data-atmosphere-instant="true"][data-release-atmosphere="neutral"]::before {
+  opacity: 1;
+  transition: none;
+}
+
+/* Brand mode: base layer already carries blue→navy; keep ::before off. */
+.dark .dubhub-app-release-detail-canvas[data-release-atmosphere="brand"]::before {
+  opacity: 0;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dark .dubhub-app-release-detail-canvas::before {
+    transition: none;
+  }
+}
+
+.dark .dubhub-app-release-detail-canvas > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas,
+.light .dubhub-app-release-detail-canvas {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  background-image: none;
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas::before,
+.light .dubhub-app-release-detail-canvas::before {
+  content: none;
+}
+
+.dark .dubhub-app-destructive-action-surface {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(28, 36, 68, 0.55) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:root:not(.dark) .dubhub-app-destructive-action-surface,
+.light .dubhub-app-destructive-action-surface {
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border)) !important;
+  background-color: hsl(var(--muted) / 0.6) !important;
+}
+
+/**
+ * Slice C3 — opt-in form canvas + field/select material (authenticated).
+ * No per-field backdrop-filter. Select menu may use solid indigo (no blur).
+ */
+.dark .dubhub-app-form-canvas {
+  background-color: #0f1324;
+  background-image:
+    radial-gradient(
+      ellipse 120% 70% at 50% -35%,
+      rgba(10, 131, 255, 0.12) 0%,
+      rgba(0, 29, 249, 0.05) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(22, 38, 92, 0.24) 0%,
+      rgba(15, 22, 48, 0.1) 32%,
+      rgba(15, 19, 36, 0.04) 58%,
+      #0f1324 100%
+    );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.dark .dubhub-app-field {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(28, 36, 68, 0.78) !important;
+  color: hsl(210, 25%, 96%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.dark .dubhub-app-field:focus,
+.dark .dubhub-app-field:focus-visible {
+  outline: none !important;
+  border-color: rgba(10, 131, 255, 0.55) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(10, 131, 255, 0.28);
+}
+
+.dark .dubhub-app-field[aria-invalid="true"],
+.dark .dubhub-app-field.dubhub-app-field-invalid {
+  border-color: rgba(239, 68, 68, 0.65) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(239, 68, 68, 0.25);
+}
+
+.dark .dubhub-app-field.dubhub-app-field-success {
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  background-color: rgba(20, 40, 32, 0.55) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(34, 197, 94, 0.22);
+}
+
+.dark .dubhub-app-select-content {
+  border-radius: 15px !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(22, 30, 56, 0.98) !important;
+  color: hsl(210, 25%, 96%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 14px 36px rgba(0, 0, 0, 0.48) !important;
+  overflow: hidden;
+}
+
+.dark .dubhub-app-artwork-picker {
+  border-radius: 18px;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background-color: rgba(22, 30, 56, 0.72) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 18px 40px -28px rgba(0, 0, 0, 0.85);
+}
+
+.dark .dubhub-app-form-primary:disabled,
+.dark .dubhub-app-form-primary[disabled] {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.28) !important;
+  background-image: none !important;
+  color: rgba(15, 23, 42, 0.45) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* Light form material — theme-coherent, not stranded indigo. */
+:root:not(.dark) .dubhub-app-form-canvas,
+.light .dubhub-app-form-canvas {
+  background-color: hsl(var(--background));
+}
+
+:root:not(.dark) .dubhub-app-field,
+.light .dubhub-app-field {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+:root:not(.dark) .dubhub-app-field:focus,
+:root:not(.dark) .dubhub-app-field:focus-visible,
+.light .dubhub-app-field:focus,
+.light .dubhub-app-field:focus-visible {
+  border-color: rgba(10, 131, 255, 0.55) !important;
+  box-shadow: 0 0 0 1px rgba(10, 131, 255, 0.25);
+}
+
+:root:not(.dark) .dubhub-app-field.dubhub-app-field-success,
+.light .dubhub-app-field.dubhub-app-field-success {
+  border-color: rgba(22, 163, 74, 0.55) !important;
+  background-color: rgba(240, 253, 244, 0.9) !important;
+}
+
+:root:not(.dark) .dubhub-app-select-content,
+.light .dubhub-app-select-content {
+  border-radius: 15px !important;
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--popover)) !important;
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16) !important;
+}
+
+:root:not(.dark) .dubhub-app-artwork-picker,
+.light .dubhub-app-artwork-picker {
+  border-radius: 18px;
+  background-color: hsl(var(--muted) / 0.5) !important;
+}
+
+:root:not(.dark) .dubhub-app-form-primary:disabled,
+:root:not(.dark) .dubhub-app-form-primary[disabled],
+.light .dubhub-app-form-primary:disabled,
+.light .dubhub-app-form-primary[disabled] {
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--muted)) !important;
+  color: hsl(var(--muted-foreground)) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
 }

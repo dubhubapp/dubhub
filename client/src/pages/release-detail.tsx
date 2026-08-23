@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { ArrowLeft, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
+import { ChevronLeft, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +19,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+  APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
+  APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS,
+} from "@/lib/app-material";
+import {
+  bootstrapReleaseAtmosphere,
+  releaseAtmosphereCssVarValue,
+  resolveReleaseArtworkAtmosphere,
+  type AtmosphereMode,
+  type AtmosphereRgb,
+} from "@/lib/release-artwork-atmosphere";
 import { useUser } from "@/lib/user-context";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
@@ -176,6 +195,64 @@ export default function ReleaseDetail() {
   const [releaseMenuOpen, setReleaseMenuOpen] = useState(false);
   const [galleryInitialPostId, setGalleryInitialPostId] = useState<string | null>(null);
   const [artworkLightboxOpen, setArtworkLightboxOpen] = useState(false);
+  /**
+   * C4B.2: bootstrap from current artwork URL during render (cache-first).
+   * Do not lock initial atmosphere to a null-URL mount — that caused brand flash
+   * after skeleton/placeholder when the URL was already known or cached.
+   */
+  const artworkAtmosphereUrl =
+    typeof release?.artworkUrl === "string" ? release.artworkUrl.trim() : "";
+  const atmosphereBoot = bootstrapReleaseAtmosphere(artworkAtmosphereUrl || null);
+  const [extractedAtmosphere, setExtractedAtmosphere] = useState<{
+    url: string;
+    rgb: AtmosphereRgb;
+    mode: AtmosphereMode;
+  } | null>(null);
+  const atmosphereRequestRef = useRef(0);
+
+  const atmosphereFromExtract =
+    extractedAtmosphere && extractedAtmosphere.url === artworkAtmosphereUrl
+      ? extractedAtmosphere
+      : null;
+
+  const atmosphereRgb = atmosphereFromExtract?.rgb ?? atmosphereBoot.rgb;
+  const atmosphereMode = atmosphereFromExtract?.mode ?? atmosphereBoot.mode;
+  const atmosphereReady = atmosphereFromExtract
+    ? true
+    : atmosphereBoot.ready;
+  /** Cached/sync ready = instant; cold extract completion uses short fade. */
+  const atmosphereInstant = atmosphereFromExtract
+    ? false
+    : atmosphereBoot.instant;
+
+  useEffect(() => {
+    const url = artworkAtmosphereUrl;
+
+    if (!url) {
+      setExtractedAtmosphere(null);
+      return;
+    }
+
+    // Sync cache/brand-ready path — no async work; drop stale extract for other URLs.
+    if (atmosphereBoot.ready) {
+      setExtractedAtmosphere((prev) => (prev && prev.url !== url ? null : prev));
+      return;
+    }
+
+    const requestId = ++atmosphereRequestRef.current;
+    let cancelled = false;
+    void resolveReleaseArtworkAtmosphere(url).then((result) => {
+      if (cancelled || requestId !== atmosphereRequestRef.current) return;
+      setExtractedAtmosphere({
+        url,
+        rgb: result.rgb,
+        mode: result.mode,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkAtmosphereUrl, atmosphereBoot.ready]);
 
   const removeSavedMutation = useMutation({
     mutationFn: async () => {
@@ -373,14 +450,31 @@ export default function ReleaseDetail() {
     <SwipeBackPage
       enabled={!galleryInitialPostId && !artworkLightboxOpen}
       onBack={handleBack}
-      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+      className={cn(
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]",
+        APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
+      )}
+      style={
+        {
+          ["--release-atmosphere-rgb"]: releaseAtmosphereCssVarValue(atmosphereRgb),
+        } as CSSProperties
+      }
+      data-atmosphere-ready={atmosphereReady ? "true" : "false"}
+      data-atmosphere-instant={atmosphereInstant ? "true" : "false"}
+      data-release-atmosphere={atmosphereMode}
+      data-testid="release-detail-atmosphere"
     >
-      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto">
+      <div className={cn(APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS, "px-4 pb-4 max-w-md mx-auto")}>
         <div className="mb-4 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" className="ios-press -ml-1" onClick={handleBack}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back
-          </Button>
+          <button
+            type="button"
+            onClick={handleBack}
+            aria-label="Back"
+            className={APP_MATERIAL_BACK_BUTTON_CLASS}
+            data-testid="release-detail-back"
+          >
+            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+          </button>
           <div className="flex min-w-0 items-center justify-end gap-2">
             {showSavedToReleasesStatus ? (
               <ReleaseSavedToReleasesStatus
@@ -695,15 +789,27 @@ export default function ReleaseDetail() {
         )}
 
         <AlertDialog open={removeSavedDialogOpen} onOpenChange={setRemoveSavedDialogOpen}>
-          <AlertDialogContent className="max-w-sm">
+          <AlertDialogContent
+            className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+            overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+          >
             <AlertDialogHeader>
-              <AlertDialogTitle>Remove from Saved Releases?</AlertDialogTitle>
-              <AlertDialogDescription>{REMOVE_SAVED_RELEASE_CONFIRM}</AlertDialogDescription>
+              <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+                Remove from Saved Releases?
+              </AlertDialogTitle>
+              <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+                {REMOVE_SAVED_RELEASE_CONFIRM}
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={removeSavedMutation.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel
+                disabled={removeSavedMutation.isPending}
+                className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              >
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
                 disabled={removeSavedMutation.isPending}
                 onClick={(e) => {
                   e.preventDefault();

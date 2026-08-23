@@ -22,6 +22,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
 
 const VIDEO_FEED_SCRUB_BOTTOM_VAR = "--video-feed-scrub-bottom";
 
@@ -421,17 +429,24 @@ export function BottomNavigation() {
         />
       </div>
       <AlertDialog open={showCancelPostDialog} onOpenChange={setShowCancelPostDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel posting?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Cancel posting?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
               Your current clip and edits will be discarded.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogCancel className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}>
+              Keep editing
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
               onClick={() => {
                 void handleConfirmCancelFromNav();
               }}

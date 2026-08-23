@@ -5,6 +5,10 @@
 
 import type { TrustLevelInfo } from "@shared/trust-level";
 import {
+  APP_MATERIAL_AUTH_STICKY_CLASS,
+  APP_MATERIAL_AUTH_STICKY_FADE_CLASS,
+} from "@/lib/app-material";
+import {
   STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS,
   STICKY_TAB_CHROME_CLASS,
   STICKY_TAB_CONTENT_TOP_GAP_CLASS,
@@ -26,8 +30,9 @@ export const LEADERBOARD_TIME_FILTERS: readonly {
   { value: "all", label: "All Time", testId: "filter-all" },
 ] as const;
 
-/** Sticky chrome — shared rhythm with Releases (geometry frozen). */
-export const LEADERBOARD_STICKY_CHROME_CLASS = STICKY_TAB_CHROME_CLASS;
+/** Sticky chrome — shared rhythm + authenticated premium sticky wash (C5B). */
+export const LEADERBOARD_STICKY_CHROME_CLASS =
+  `${STICKY_TAB_CHROME_CLASS} ${APP_MATERIAL_AUTH_STICKY_CLASS}` as const;
 
 /**
  * Overlay under sticky chrome: same blur as header, low fill alpha, ~48px tall,
@@ -35,7 +40,8 @@ export const LEADERBOARD_STICKY_CHROME_CLASS = STICKY_TAB_CHROME_CLASS;
  * Does not affect document flow / prize position.
  * Shared constant — Releases reuses the same class for bottom-nav parity.
  */
-export const LEADERBOARD_STICKY_FADE_CLASS = STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS;
+export const LEADERBOARD_STICKY_FADE_CLASS =
+  `${STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS} ${APP_MATERIAL_AUTH_STICKY_FADE_CLASS}` as const;
 
 export const LEADERBOARD_CONTENT_TOP_GAP_CLASS = STICKY_TAB_CONTENT_TOP_GAP_CLASS;
 
@@ -55,24 +61,42 @@ export const LEADERBOARD_PRIMARY_INACTIVE_CLASS =
   "font-medium text-white/55 hover:text-white/80" as const;
 export const LEADERBOARD_PRIMARY_LABEL_CLASS =
   "relative inline-block whitespace-nowrap px-0.5 pb-[5px]" as const;
+/** Generic selection underline — approved interactive blue (not teal accent). */
 export const LEADERBOARD_PRIMARY_INDICATOR_CLASS =
-  "after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:rounded-full after:bg-accent" as const;
+  "after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:rounded-full after:bg-[#0a83ff]" as const;
 
 /** Secondary timeframe tabs — same underline language as Releases secondary views. */
 export const LEADERBOARD_SECONDARY_ROW_CLASS = "flex min-h-11 items-end" as const;
 export const LEADERBOARD_SECONDARY_BUTTON_BASE_CLASS =
   "ios-press relative flex min-h-11 min-w-0 flex-1 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset" as const;
 export const LEADERBOARD_SECONDARY_ACTIVE_CLASS =
-  "font-semibold text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent" as const;
+  "font-semibold text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[#0a83ff]" as const;
 export const LEADERBOARD_SECONDARY_INACTIVE_CLASS =
   "font-medium text-white/55 hover:text-white/80" as const;
 
 /** Flat ranking row — no per-entry glass card shell. */
 export const LEADERBOARD_ROW_BASE_CLASS =
   "flex items-center gap-3 px-1 py-3 transition-colors" as const;
-export const LEADERBOARD_ROW_CURRENT_CLASS = "rounded-lg bg-primary/[0.08]" as const;
-export const LEADERBOARD_LIST_CLASS = "divide-y divide-white/10" as const;
-export const LEADERBOARD_SCORE_COLUMN_CLASS = "w-[68px] shrink-0 text-right" as const;
+/**
+ * Current-user row chrome — intentionally empty (C5B.2).
+ * Orientation is the `You` pill only; no wash/ring/border.
+ */
+export const LEADERBOARD_ROW_CURRENT_CLASS = "" as const;
+export const LEADERBOARD_LIST_CLASS = "divide-y divide-white/[0.08]" as const;
+/** Current-user "You" chip — restrained interactive blue. */
+export const LEADERBOARD_YOU_PILL_CLASS =
+  "inline-flex shrink-0 items-center rounded-full bg-[#0a83ff] px-1.5 py-0.5 text-[10px] font-medium leading-none text-white" as const;
+/**
+ * Score column — right-aligned with inset matching left rank comfort (C5B.1).
+ * `pr-3` balances page `px-4` + row `px-1` optical weight vs the w-10 rank slot.
+ */
+export const LEADERBOARD_SCORE_COLUMN_CLASS =
+  "w-[68px] shrink-0 pr-3 text-right" as const;
+
+/** Singular/plural unit for confirmed-ID scores (presentation only). */
+export function leaderboardIdsUnitLabel(count: number): "ID" | "IDs" {
+  return count === 1 ? "ID" : "IDs";
+}
 
 /** Lifted neutral track — recessive empty portion with clear fill separation. */
 export const LEADERBOARD_REP_TRACK_CLASS =

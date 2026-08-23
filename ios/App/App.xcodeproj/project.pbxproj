@@ -21,6 +21,13 @@
 		7A8E9F1A1FED79650016852C /* DubHubLaunchGradient.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */; };
 		7A8E9F1B1FED79650016852C /* DubHubLaunchGradient@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */; };
 		7A8E9F1C1FED79650016852C /* DubHubLaunchGradient@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */; };
+		D0B8B1301FED79650016852C /* DubHubPremiumLaunchBackground.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */; };
+		D0B8B1311FED79650016852C /* DubHubPremiumLaunchBackground@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */; };
+		D0B8B1321FED79650016852C /* DubHubPremiumLaunchBackground@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */; };
+		D0B8B1401FED79650016852C /* DubHubPremiumLaunchMark.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */; };
+		D0B8B1411FED79650016852C /* DubHubPremiumLaunchMark@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */; };
+		D0B8B1421FED79650016852C /* DubHubPremiumLaunchMark@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */; };
+		D0B8B1521FED79650016851F /* PremiumLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1501FED79650016851F /* PremiumLaunchScreen.storyboard */; };
 		A1B2C3D4E5F60718293A4B5C /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */; };
 
 		DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR01 /* HomeWidgetBridgePlugin.swift */; };
@@ -73,6 +80,13 @@
 		7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubLaunchGradient.png; sourceTree = "<group>"; };
 		7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchGradient@2x.png"; sourceTree = "<group>"; };
 		7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchGradient@3x.png"; sourceTree = "<group>"; };
+		D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubPremiumLaunchBackground.png; sourceTree = "<group>"; };
+		D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchBackground@2x.png"; sourceTree = "<group>"; };
+		D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchBackground@3x.png"; sourceTree = "<group>"; };
+		D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubPremiumLaunchMark.png; sourceTree = "<group>"; };
+		D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMark@2x.png"; sourceTree = "<group>"; };
+		D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMark@3x.png"; sourceTree = "<group>"; };
+		D0B8B1511FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/PremiumLaunchScreen.storyboard; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		F5B88A062FAA70BF005C500C /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -167,6 +181,7 @@
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				7A8E9F131FED79650016852C /* LaunchLogo */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
+				D0B8B1501FED79650016851F /* PremiumLaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
@@ -220,6 +235,12 @@
 				7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */,
 				7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */,
 				7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */,
+				D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */,
+				D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */,
+				D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */,
+				D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */,
+				D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */,
+				D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */,
 			);
 			path = LaunchLogo;
 			sourceTree = "<group>";
@@ -313,13 +334,13 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
-				7A8E9F1A1FED79650016852C /* DubHubLaunchGradient.png in Resources */,
-				7A8E9F1B1FED79650016852C /* DubHubLaunchGradient@2x.png in Resources */,
-				7A8E9F1C1FED79650016852C /* DubHubLaunchGradient@3x.png in Resources */,
-				7A8E9F141FED79650016852C /* DubHubLaunchLogo.png in Resources */,
-				7A8E9F151FED79650016852C /* DubHubLaunchLogo@2x.png in Resources */,
-				7A8E9F161FED79650016852C /* DubHubLaunchLogo@3x.png in Resources */,
+				D0B8B1521FED79650016851F /* PremiumLaunchScreen.storyboard in Resources */,
+				D0B8B1301FED79650016852C /* DubHubPremiumLaunchBackground.png in Resources */,
+				D0B8B1311FED79650016852C /* DubHubPremiumLaunchBackground@2x.png in Resources */,
+				D0B8B1321FED79650016852C /* DubHubPremiumLaunchBackground@3x.png in Resources */,
+				D0B8B1401FED79650016852C /* DubHubPremiumLaunchMark.png in Resources */,
+				D0B8B1411FED79650016852C /* DubHubPremiumLaunchMark@2x.png in Resources */,
+				D0B8B1421FED79650016852C /* DubHubPremiumLaunchMark@3x.png in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
@@ -396,6 +417,14 @@
 				504EC3111FED79650016851F /* Base */,
 			);
 			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		D0B8B1501FED79650016851F /* PremiumLaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D0B8B1511FED79650016851F /* Base */,
+			);
+			name = PremiumLaunchScreen.storyboard;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */

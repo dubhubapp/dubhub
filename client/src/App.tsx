@@ -31,7 +31,7 @@ import ReleaseEdit from "@/pages/release-edit";
 import UserProfile from "@/pages/user-profile";
 import PublicProfile from "@/pages/public-profile";
 import NotFound from "@/pages/not-found";
-import AuthPage from "@/pages/auth";
+import { UnauthenticatedEntry } from "@/components/pre-login-onboarding";
 import ResetPasswordPage from "@/pages/reset-password";
 import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
@@ -41,6 +41,11 @@ import SettingsNotificationsPage from "@/pages/settings-notifications";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
+import { SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS } from "@/lib/app-material";
+import {
+  SETTINGS_SHELL_ATMOSPHERE_CLASS,
+  isSettingsUtilityRoute,
+} from "@/lib/settings-presentation";
 import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
 import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
@@ -117,15 +122,35 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const isProfileShellRoute =
     location === "/profile" || /^\/profile\/[^/]+$/.test(location);
 
-  const shellClass =
+  const isReleaseFormBleedRoute =
+    location === "/releases/new" || /^\/releases\/[^/]+\/edit(?:\?|$)/.test(location);
+
+  const isReleaseDetailBleedRoute =
+    location !== "/releases/new" && /^\/releases\/[^/]+$/.test(location);
+
+  const isBleedRoute =
     location === "/" ||
     isProfileShellRoute ||
     location === "/releases" ||
-    location === "/leaderboard"
-      ? APP_MAIN_SHELL_BASE
-      : `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`;
+    isReleaseFormBleedRoute ||
+    isReleaseDetailBleedRoute ||
+    location === "/leaderboard";
+
+  const shellClass = isBleedRoute
+    ? APP_MAIN_SHELL_BASE
+    : `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`;
+
   return (
-    <div data-app-shell className={shellClass}>
+    <div
+      data-app-shell
+      className={
+        isSettingsUtilityRoute(location)
+          ? `${shellClass} ${SETTINGS_SHELL_ATMOSPHERE_CLASS}`
+          : location.split("?")[0] === "/submit-metadata"
+            ? `${shellClass} ${SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS}`
+            : shellClass
+      }
+    >
       {children}
     </div>
   );
@@ -678,9 +703,8 @@ function App() {
               <Route path="/auth-callback" component={AuthCallbackPage} />
               <Route path="/reset-password" component={ResetPasswordPage} />
               <Route>
-                <AuthPage
+                <UnauthenticatedEntry
                   onAuthSuccess={handleAuthSuccess}
-                  defaultToSignUp={false}
                   authBanner={profileGateBanner}
                 />
               </Route>

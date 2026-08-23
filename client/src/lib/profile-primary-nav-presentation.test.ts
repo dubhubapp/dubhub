@@ -4,40 +4,27 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  PROFILE_PRIMARY_NAV_GROUP_CLASS,
   PROFILE_PRIMARY_NAV_ICON_CLASS,
   PROFILE_PRIMARY_NAV_LABEL_CLASS,
   PROFILE_PRIMARY_NAV_LIST_CLASS,
-  PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS,
-  PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS,
+  PROFILE_PRIMARY_NAV_SHELL_CLASS,
   PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS,
 } from "./profile-primary-nav-presentation";
 import { PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS } from "./profile-posts-filter-presentation";
-import { STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS } from "./sticky-tab-chrome";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../pages/user-profile.tsx");
 const userProfileSrc = readFileSync(root, "utf8");
 
 describe("profile-primary-nav-presentation", () => {
-  it("uses Profile safe-area sticky top offset (not Leaderboard top-0 padding model)", () => {
-    assert.match(
-      PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS,
-      /sticky top-\[calc\(env\(safe-area-inset-top,0px\)\+0\.5rem\)\]/,
-    );
-    assert.doesNotMatch(PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS, /top-0/);
-    assert.doesNotMatch(
-      PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS,
-      /pt-\[calc\(env\(safe-area-inset-top/,
-    );
-  });
-
-  it("frosted shell without capsule border or radius", () => {
-    assert.match(PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS, /backdrop-blur-md/);
-    assert.match(PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS, /bg-\[var\(--dark\)\]\/80/);
-    assert.doesNotMatch(PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS, /rounded-2xl|border-white\/10/);
-  });
-
-  it("reuses proven sticky dissolve fade utility", () => {
-    assert.equal(PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS, STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS);
+  it("uses a non-sticky document shell without sticky chrome (C5B.2)", () => {
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /sticky/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /safe-area-inset-top/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /backdrop-blur/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /dubhub-app-releases-sticky/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /z-30/);
+    assert.match(PROFILE_PRIMARY_NAV_SHELL_CLASS, /-mx-6/);
+    assert.match(PROFILE_PRIMARY_NAV_SHELL_CLASS, /mb-3/);
   });
 
   it("keeps >=44pt equal-width triggers without segment fill", () => {
@@ -48,10 +35,13 @@ describe("profile-primary-nav-presentation", () => {
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /data-\[state=active\]:bg-transparent/);
   });
 
-  it("uses stronger primary underline than Posts secondary", () => {
-    assert.match(PROFILE_PRIMARY_NAV_LABEL_CLASS, /after:h-\[3px\]/);
+  it("uses brighter primary underline than Posts secondary with interactive blue", () => {
+    assert.match(PROFILE_PRIMARY_NAV_GROUP_CLASS, /after:h-\[3px\]/);
+    assert.match(PROFILE_PRIMARY_NAV_GROUP_CLASS, /after:bg-\[#0a83ff\]/);
     assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:h-\[2px\]/);
+    assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-\[#0a83ff\]/);
     assert.match(PROFILE_PRIMARY_NAV_ICON_CLASS, /h-3\.5 w-3\.5/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_LABEL_CLASS, /after:/);
   });
 });
 
@@ -73,17 +63,11 @@ describe("user-profile primary nav wiring", () => {
     assert.match(userProfileSrc, /Notif\./);
   });
 
-  it("removes old segmented fill chrome from primary triggers", () => {
-    assert.doesNotMatch(
-      userProfileSrc,
-      /data-\[state=active\]:bg-accent data-\[state=active\]:font-semibold data-\[state=active\]:text-accent-foreground data-\[state=active\]:shadow-\[0_0_0_1px_rgba\(34,211,238/,
-    );
-    assert.doesNotMatch(
-      userProfileSrc,
-      /rounded-2xl border border-white\/10 bg-black\/35 backdrop-blur-md p-1/,
-    );
-    assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_STICKY_SHELL_CLASS/);
+  it("wires non-sticky shell and drops sticky fade artefact", () => {
+    assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_SHELL_CLASS/);
     assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS/);
+    assert.doesNotMatch(userProfileSrc, /PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS/);
+    assert.doesNotMatch(userProfileSrc, /leaderboard-sticky-blur-dissolve/);
   });
 
   it("leaves Posts secondary filter and hero identity markers intact", () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Check, Heart, MessageCircle, Upload, User } from "lucide-react";
+import { ChevronLeft, Check, Heart, MessageCircle, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
@@ -25,6 +25,18 @@ import { type ReleaseFeedCardData } from "@/components/release-feed-card";
 import { prefetchReleaseDetail } from "@/lib/release-cache";
 import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-navigation";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+} from "@/lib/app-material";
+import {
+  PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS,
+  PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE,
+  PROFILE_BANNER_UPLOADED_SCRIM_STYLE,
+  ProfileBannerDefaultGradient,
+  ProfileBannerLoadingPlaceholder,
+  profilePageCanvasClass,
+} from "@/lib/profile-banner-presentation";
 import { ArtistReleaseAlertsButton } from "@/components/artist-release-alerts-button";
 import { ArtistProfileShareButton } from "@/components/artist-profile-share-button";
 import { ArtistProfileQuestionsPublic } from "@/components/artist-profile-questions-public";
@@ -35,17 +47,23 @@ import {
   type PublicReleasesResponse,
 } from "@/lib/public-profile-query";
 
-const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
-  background: `linear-gradient(to bottom, rgba(15,19,36,0) 0%, rgba(15,19,36,0.65) 45%, rgba(15,19,36,0.92) 72%, var(--dark) 86%, var(--dark) 100%)`,
-};
-
 const PROFILE_ACTIVITY_CARD_CLASS =
   "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
 
-const PUBLIC_PROFILE_PAGE_SCROLL_CLASS = cn(
-  APP_PAGE_SCROLL_CLASS,
-  "bg-[var(--dark)] overflow-x-hidden",
-);
+/** Compact Back chrome lane above identity (C5C) — ~44pt + safe-area. */
+const PUBLIC_PROFILE_BACK_LANE_CLASS =
+  "relative z-20 flex min-h-11 items-center px-3 pt-[env(safe-area-inset-top,0px)]";
+
+/** Hero begins after Back lane with ~6px separation (SE-safe). */
+const PUBLIC_PROFILE_HERO_BELOW_BACK_CLASS = "relative z-10 px-6 pb-5 pt-1.5";
+
+function publicProfilePageScrollClass(hasReadyUploadedBanner = false) {
+  return cn(
+    APP_PAGE_SCROLL_CLASS,
+    profilePageCanvasClass(hasReadyUploadedBanner),
+    "overflow-x-hidden",
+  );
+}
 
 /** Shared compact pill footprint for fav genre value beneath avatar. */
 const PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS =
@@ -57,47 +75,6 @@ const PUBLIC_PROFILE_SECTION_GAP_CLASS = "flex flex-col gap-5";
 function PublicArtistIdsStatIcon({ className }: { className?: string }) {
   return (
     <GoldVerifiedTick className={`text-white drop-shadow-none ${className ?? ""}`} glow="inline" />
-  );
-}
-
-function ProfileBannerDefaultGradient() {
-  return (
-    <>
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)]"
-        style={{
-          background:
-            "linear-gradient(180deg, hsl(227, 88%, 52%) 0%, rgba(30,56,249,0.55) 6%, hsl(222, 70%, 40%) 14%, rgba(15,19,36,0.88) 32%, #0f1324 48%, #0f1324 90%, #0f1324 100%)",
-        }}
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] overflow-hidden"
-        aria-hidden
-      >
-        <div
-          className="absolute -left-[10%] -top-[18%] h-[58%] w-[56%] rounded-full blur-3xl"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(74,233,223,0.32) 0%, rgba(74,233,223,0.1) 38%, transparent 70%)",
-          }}
-        />
-        <div
-          className="absolute -right-[6%] -top-[8%] h-[50%] w-[48%] rounded-full blur-3xl"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(99,102,241,0.26) 0%, rgba(99,102,241,0.07) 40%, transparent 72%)",
-          }}
-        />
-        <div
-          className="absolute left-[28%] top-[2%] h-[34%] w-[38%] rounded-full blur-2xl"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(30,56,249,0.28) 0%, rgba(30,56,249,0.06) 45%, transparent 74%)",
-          }}
-        />
-      </div>
-    </>
   );
 }
 
@@ -141,32 +118,28 @@ function PublicProfileKeyStatsSkeleton({ columns = 5 }: { columns?: 4 | 5 }) {
 
 function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
   return (
-    <SwipeBackPage onBack={onBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage onBack={onBack} className={publicProfilePageScrollClass(false)}>
       <div className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS)} aria-busy="true" aria-label="Loading profile">
         <div className="mx-auto max-w-md">
-          <section className="relative -mx-6 overflow-hidden bg-[var(--dark)]">
+          <section className="relative -mx-6 overflow-hidden bg-transparent">
             <ProfileBannerDefaultGradient />
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] bg-gradient-to-b from-slate-950/45 via-slate-900/32 to-slate-950/35"
-              aria-hidden
-            />
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-48"
-              style={PROFILE_BANNER_BOTTOM_FADE_STYLE}
-              aria-hidden
-            />
-            <button
-              type="button"
-              className="ios-press ios-press-soft absolute left-4 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-20 inline-flex items-center gap-0.5 text-sm font-medium text-white/90"
-              onClick={onBack}
-              aria-label="Back"
-            >
-              <ArrowLeft className="h-4 w-4 shrink-0" />
-              Back
-            </button>
-            <div className="relative z-10 px-6 pb-5 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
+            <div className={PUBLIC_PROFILE_BACK_LANE_CLASS} data-testid="public-profile-back-lane">
+              <button
+                type="button"
+                className={cn(
+                  APP_MATERIAL_BACK_BUTTON_CLASS,
+                  "ios-press-soft drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]",
+                )}
+                onClick={onBack}
+                aria-label="Back"
+                data-testid="public-profile-back"
+              >
+                <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} aria-hidden />
+              </button>
+            </div>
+            <div className={PUBLIC_PROFILE_HERO_BELOW_BACK_CLASS}>
               <div className="mb-4 flex items-start gap-4">
-                <DubHubSkeletonBar tone="teal" className="h-20 w-20 shrink-0 rounded-full" />
+                <DubHubSkeletonBar tone="mid" className="h-20 w-20 shrink-0 rounded-full" />
                 <div className="min-w-0 flex-1 space-y-2 pt-1">
                   <DubHubSkeletonBar tone="default" className="h-5 w-36 max-w-full" />
                   <DubHubSkeletonBar tone="faint" className="h-5 w-28 rounded-full" />
@@ -179,7 +152,7 @@ function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
             <div className="space-y-2" aria-hidden>
               <DubHubSkeletonBar tone="default" className="h-4 w-28" />
               <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
-              <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
+              <DubHubSkeletonBar tone="mid" className="h-2 w-full rounded-full" />
             </div>
             <div className="space-y-2" aria-hidden>
               <DubHubSkeletonBar tone="default" className="h-4 w-36" />
@@ -332,21 +305,23 @@ export default function PublicProfile() {
     ? "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-safe:ease-out"
     : "";
 
-  const showBannerDefaultGradient = !bannerUrl || bannerImageFailed || !bannerImageReady;
+  const showBannerLoadingPlaceholder = Boolean(bannerUrl) && !bannerImageFailed && !bannerImageReady;
+  const showBannerDefaultGradient = !bannerUrl || bannerImageFailed;
   const showUploadedBannerImage = Boolean(bannerUrl) && !bannerImageFailed;
+  const hasReadyUploadedBanner = showUploadedBannerImage && bannerImageReady;
 
   if (!routeUsername) {
     return (
-      <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+      <SwipeBackPage onBack={handleBack} className={publicProfilePageScrollClass(false)}>
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
           <p className="text-sm text-gray-400">Profile not found.</p>
           <button
             type="button"
-            className="ios-press mt-4 inline-flex items-center gap-1 text-sm text-gray-300"
+            className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, "ios-press mt-4")}
             onClick={handleBack}
+            aria-label="Back"
           >
-            <ArrowLeft className="h-4 w-4" />
-            Back
+            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} aria-hidden />
           </button>
         </div>
       </SwipeBackPage>
@@ -363,17 +338,17 @@ export default function PublicProfile() {
 
   if (isError || !profile) {
     return (
-      <SwipeBackPage onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+      <SwipeBackPage onBack={handleBack} className={publicProfilePageScrollClass(false)}>
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
           <p className="text-sm text-gray-400">This profile could not be found.</p>
           <button
             type="button"
-            className="ios-press mt-4 inline-flex items-center gap-1 text-sm text-gray-300"
+            className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, "ios-press mt-4")}
             onClick={handleBack}
             data-testid="public-profile-back"
+            aria-label="Back"
           >
-            <ArrowLeft className="h-4 w-4" />
-            Back
+            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} aria-hidden />
           </button>
         </div>
       </SwipeBackPage>
@@ -443,16 +418,25 @@ export default function PublicProfile() {
   const showArtistProfileActions = isShareableVerifiedArtist || showArtistReleaseAlerts;
 
   return (
-    <SwipeBackPage enabled={!avatarLightboxOpen} onBack={handleBack} className={PUBLIC_PROFILE_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage
+      enabled={!avatarLightboxOpen}
+      onBack={handleBack}
+      className={publicProfilePageScrollClass(hasReadyUploadedBanner)}
+    >
       <div
         className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS, enterMotionClass)}
         onAnimationEnd={() => setPlayEnterAnimation(false)}
       >
           <div className="mx-auto max-w-md">
             <section
-              className="relative -mx-6 overflow-hidden bg-[var(--dark)]"
+              className={`relative -mx-6 overflow-hidden ${
+                showUploadedBannerImage || showBannerLoadingPlaceholder
+                  ? "bg-[#0f1324]"
+                  : "bg-transparent"
+              }`}
               data-testid="public-profile-banner"
             >
+              {showBannerLoadingPlaceholder ? <ProfileBannerLoadingPlaceholder /> : null}
               {showBannerDefaultGradient ? <ProfileBannerDefaultGradient /> : null}
               {showUploadedBannerImage ? (
                 <img
@@ -464,38 +448,43 @@ export default function PublicProfile() {
                   data-testid="public-profile-banner-image"
                 />
               ) : null}
-              <div
-                className={`pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] ${
-                  showUploadedBannerImage && bannerImageReady
-                    ? "bg-black/40"
-                    : "bg-gradient-to-b from-slate-950/45 via-slate-900/32 to-slate-950/35"
-                }`}
-                aria-hidden
-              />
+              {showUploadedBannerImage && bannerImageReady ? (
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)]"
+                  style={PROFILE_BANNER_UPLOADED_SCRIM_STYLE}
+                  aria-hidden
+                />
+              ) : null}
               {showUploadedBannerImage && bannerImageReady ? (
                 <div
                   className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] bg-gradient-to-b from-slate-950/35 via-transparent to-transparent"
                   aria-hidden
                 />
               ) : null}
-              <div
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-48"
-                style={PROFILE_BANNER_BOTTOM_FADE_STYLE}
-                aria-hidden
-              />
+              {showUploadedBannerImage && bannerImageReady ? (
+                <div
+                  className={PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS}
+                  style={PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE}
+                  aria-hidden
+                />
+              ) : null}
 
-              <button
-                type="button"
-                className="ios-press ios-press-soft absolute left-4 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-20 inline-flex items-center gap-0.5 text-sm font-medium text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] hover:text-white"
-                onClick={handleBack}
-                data-testid="public-profile-back"
-                aria-label="Back"
-              >
-                <ArrowLeft className="h-4 w-4 shrink-0" />
-                Back
-              </button>
+              <div className={PUBLIC_PROFILE_BACK_LANE_CLASS} data-testid="public-profile-back-lane">
+                <button
+                  type="button"
+                  className={cn(
+                    APP_MATERIAL_BACK_BUTTON_CLASS,
+                    "ios-press-soft drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]",
+                  )}
+                  onClick={handleBack}
+                  data-testid="public-profile-back"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} aria-hidden />
+                </button>
+              </div>
 
-              <div className="relative z-10 px-6 pb-5 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
+              <div className={PUBLIC_PROFILE_HERO_BELOW_BACK_CLASS}>
                 <div className="mb-4 flex items-start gap-4">
                   <div className="flex shrink-0 flex-col items-center gap-2">
                     <div className="relative">
@@ -627,7 +616,7 @@ export default function PublicProfile() {
                   <div className="space-y-2" aria-busy="true" data-testid="public-profile-rep-skeleton">
                     <DubHubSkeletonBar tone="default" className="h-4 w-28" />
                     <DubHubSkeletonBar tone="faint" className="h-3 w-40" />
-                    <DubHubSkeletonBar tone="teal" className="h-2 w-full rounded-full" />
+                    <DubHubSkeletonBar tone="mid" className="h-2 w-full rounded-full" />
                   </div>
                 ) : (
                   <div data-testid="public-profile-rep">

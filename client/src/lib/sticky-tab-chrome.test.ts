@@ -60,14 +60,22 @@ describe("shared sticky tab chrome contract", () => {
     assert.equal(RELEASE_TRACKER_PRIMARY_ROW_CLASS, STICKY_TAB_PRIMARY_ROW_CLASS);
   });
 
-  it("Leaderboard and Releases share chrome, content-gap, and blur-dissolve fade", () => {
+  it("Leaderboard and Releases share chrome geometry; Releases may add material modifiers", () => {
     assert.equal(LEADERBOARD_STICKY_CHROME_CLASS, STICKY_TAB_CHROME_CLASS);
-    assert.equal(RELEASE_TRACKER_STICKY_CHROME_CLASS, STICKY_TAB_CHROME_CLASS);
+    assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /sticky top-0/);
+    assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /backdrop-blur-md/);
+    assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /safe-area-inset-top/);
+    assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /\+0\.25rem/);
+    assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /pb-1/);
+    assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /dubhub-app-releases-sticky/);
     assert.equal(LEADERBOARD_CONTENT_TOP_GAP_CLASS, STICKY_TAB_CONTENT_TOP_GAP_CLASS);
     assert.equal(RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS, STICKY_TAB_CONTENT_TOP_GAP_CLASS);
     assert.equal(STICKY_TAB_CONTENT_TOP_GAP_CLASS, "pt-2");
     assert.equal(LEADERBOARD_STICKY_FADE_CLASS, STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS);
-    assert.equal(RELEASE_TRACKER_STICKY_FADE_CLASS, STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS);
+    assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /leaderboard-sticky-blur-dissolve/);
+    assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /h-12/);
+    assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /backdrop-blur-md/);
+    assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /dubhub-app-releases-sticky-fade/);
     assert.match(STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS, /leaderboard-sticky-blur-dissolve/);
     assert.match(STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS, /h-12/);
     assert.match(STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS, /backdrop-blur-md/);
@@ -128,7 +136,8 @@ describe("Releases sticky polish parity", () => {
     assert.match(releasesSrc, /RELEASE_TRACKER_ADD_HREF/);
     assert.doesNotMatch(releasesSrc, /useLeaderboardScopeSwipe|leaderboard-scope-swipe/);
     assert.doesNotMatch(releasesSrc, /My Releases ↔|scope swipe/i);
-    assert.equal(RELEASE_TRACKER_STICKY_FADE_CLASS, LEADERBOARD_STICKY_FADE_CLASS);
+    assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /leaderboard-sticky-blur-dissolve/);
+    assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /dubhub-app-releases-sticky-fade/);
   });
 
   it("ArtworkReleaseBrowser keeps local top pad and Embla ownership", () => {

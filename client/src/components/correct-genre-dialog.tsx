@@ -16,6 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  APP_MATERIAL_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { GENRE_ENTRIES, getGenreChipStyle } from "@/lib/genre-styles";
@@ -107,10 +115,15 @@ export function CorrectGenreDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className={APP_MATERIAL_DIALOG_CONTENT_CLASS}
+        overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+      >
         <DialogHeader>
-          <DialogTitle>Correct post genre</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+            Correct post genre
+          </DialogTitle>
+          <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
             Current genre: <span className="font-medium text-foreground">{currentChip.label}</span>.
             {suggestedGenreId ? (
               <>
@@ -142,10 +155,19 @@ export function CorrectGenreDialog({
             </Select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose} disabled={correctMutation.isPending}>
+            <Button
+              variant="outline"
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              onClick={onClose}
+              disabled={correctMutation.isPending}
+            >
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={correctMutation.isPending || !selectedGenreId}>
+            <Button
+              className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
+              onClick={handleSubmit}
+              disabled={correctMutation.isPending || !selectedGenreId}
+            >
               {correctMutation.isPending ? "Saving…" : "Update genre"}
             </Button>
           </div>

@@ -25,7 +25,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ArrowLeft, Check } from "lucide-react";
+import { ChevronLeft, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
@@ -75,6 +75,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_FIELD_CLASS,
+  APP_MATERIAL_FIELD_SUCCESS_CLASS,
+  APP_MATERIAL_FORM_PRIMARY_TALL_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+  APP_MATERIAL_SELECT_CONTENT_CLASS,
+  APP_MATERIAL_SELECT_ITEM_CLASS,
+  APP_MATERIAL_SELECT_TRIGGER_CLASS,
+} from "@/lib/app-material";
 
 type FeedPageLike = {
   items?: PostWithUser[];
@@ -234,20 +250,19 @@ type TrackFieldKey =
   | "genre"
   | "subgenre";
 
-/** Turquoise outline is the primary success cue; tick is secondary. */
-const fieldSuccessOutlineClass =
-  "border-cyan-400/50 bg-cyan-950/20 shadow-[0_0_0_1px_rgba(34,211,238,0.35)] ring-1 ring-cyan-400/25";
+/** Semantic green success cue; tick is secondary. */
+const fieldSuccessOutlineClass = APP_MATERIAL_FIELD_SUCCESS_CLASS;
 
 function FieldCompleteCheck({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 ring-1 ring-cyan-400/20",
+        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500/15 ring-1 ring-green-400/30",
         className,
       )}
       aria-hidden
     >
-      <Check className="h-3 w-3 text-cyan-300/85" strokeWidth={2.25} />
+      <Check className="h-3 w-3 text-green-300/90" strokeWidth={2.25} />
     </span>
   );
 }
@@ -255,7 +270,7 @@ function FieldCompleteCheck({ className }: { className?: string }) {
 /** Optional field name primary; "Optional" muted secondary — local to this page. */
 function OptionalFieldLabel({ children }: { children: string }) {
   return (
-    <FormLabel className="flex items-baseline justify-between gap-3 text-sm font-medium text-gray-300">
+    <FormLabel className="flex items-baseline justify-between gap-3 text-sm font-medium text-foreground">
       <span>{children}</span>
       <span className="shrink-0 text-xs font-normal text-muted-foreground">Optional</span>
     </FormLabel>
@@ -1601,7 +1616,7 @@ export default function SubmitMetadata() {
     <div
       ref={pageScrollRef}
       className={cn(
-        "bg-dark max-w-full overflow-x-hidden touch-pan-y overscroll-x-none",
+        "max-w-full overflow-x-hidden touch-pan-y overscroll-x-none bg-transparent",
         APP_PAGE_SCROLL_CLASS,
       )}
     >
@@ -1641,17 +1656,17 @@ export default function SubmitMetadata() {
       <div className="app-page-top-pad w-full min-w-0 max-w-full p-5 pb-10 sm:p-6 sm:pb-12">
         <div className="mx-auto w-full min-w-0 max-w-md space-y-4">
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 text-gray-300 hover:text-white hover:bg-white/10 -ml-2"
+            <button
+              type="button"
+              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, "shrink-0")}
               onClick={handleBack}
+              aria-label="Back"
               data-testid="button-back-metadata"
             >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+              <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+            </button>
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold text-white tracking-tight">Track details</h1>
+              <h1 className="text-xl font-bold tracking-tight text-foreground">Track details</h1>
             </div>
             <Button
               type="button"
@@ -1756,15 +1771,16 @@ export default function SubmitMetadata() {
                   const success = showFieldSuccess("title", valid);
                   return (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Title *</FormLabel>
+                      <FormLabel className="text-sm font-medium text-foreground">Title *</FormLabel>
                       <div>
                         <div className="relative">
                           <FormControl>
                             <Input
                               placeholder="e.g., Amazing DnB track from Fabric"
                               className={cn(
-                                "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
-                                success ? fieldSuccessOutlineClass : "border-gray-600",
+                                APP_MATERIAL_FIELD_CLASS,
+                                "placeholder:text-muted-foreground pr-10 transition-[border-color,box-shadow,background-color]",
+                                success && fieldSuccessOutlineClass,
                               )}
                               data-testid="input-title"
                               maxLength={INPUT_LIMITS.postTitle}
@@ -1815,7 +1831,7 @@ export default function SubmitMetadata() {
                   const success = showFieldSuccess("genre", valid);
                   return (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-300">Genre *</FormLabel>
+                      <FormLabel className="text-sm font-medium text-foreground">Genre *</FormLabel>
                       <div className="relative">
                         <Select
                           value={field.value || undefined}
@@ -1855,17 +1871,18 @@ export default function SubmitMetadata() {
                               ref={field.ref}
                               aria-required={true}
                               className={cn(
-                                "w-full bg-surface text-white transition-[border-color,box-shadow,background-color]",
-                                success ? fieldSuccessOutlineClass : "border-gray-600",
+                                APP_MATERIAL_SELECT_TRIGGER_CLASS,
+                                "w-full transition-[border-color,box-shadow,background-color]",
+                                success && fieldSuccessOutlineClass,
                               )}
                               data-testid="select-genre"
                             >
                               <SelectValue placeholder="Select genre..." />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
+                          <SelectContent className={APP_MATERIAL_SELECT_CONTENT_CLASS}>
                             {genres.map((genre) => (
-                              <SelectItem key={genre.value} value={genre.value}>
+                              <SelectItem key={genre.value} value={genre.value} className={APP_MATERIAL_SELECT_ITEM_CLASS}>
                                 {genre.label}
                               </SelectItem>
                             ))}
@@ -1922,18 +1939,19 @@ export default function SubmitMetadata() {
                               ref={field.ref}
                               aria-required={false}
                               className={cn(
-                                "w-full bg-surface text-white transition-[border-color,box-shadow,background-color]",
-                                success ? fieldSuccessOutlineClass : "border-gray-600",
+                                APP_MATERIAL_SELECT_TRIGGER_CLASS,
+                                "w-full transition-[border-color,box-shadow,background-color]",
+                                success && fieldSuccessOutlineClass,
                               )}
                               data-testid="select-subgenre"
                             >
                               <SelectValue placeholder="Select sub-genre..." />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value={SUBMIT_SUBGENRE_NONE_VALUE}>None</SelectItem>
+                          <SelectContent className={APP_MATERIAL_SELECT_CONTENT_CLASS}>
+                            <SelectItem value={SUBMIT_SUBGENRE_NONE_VALUE} className={APP_MATERIAL_SELECT_ITEM_CLASS}>None</SelectItem>
                             {subgenreOptions.map((entry) => (
-                              <SelectItem key={entry.id} value={entry.id}>
+                              <SelectItem key={entry.id} value={entry.id} className={APP_MATERIAL_SELECT_ITEM_CLASS}>
                                 {entry.label}
                               </SelectItem>
                             ))}
@@ -1965,11 +1983,10 @@ export default function SubmitMetadata() {
                             <Textarea
                               placeholder="Anything else that could help identify the track?"
                               className={cn(
-                                "min-h-[72px] resize-none py-2 text-white placeholder-gray-400 transition-[border-color,box-shadow,background-color]",
+                                APP_MATERIAL_FIELD_CLASS,
+                                "min-h-[72px] resize-none py-2 placeholder:text-muted-foreground transition-[border-color,box-shadow,background-color]",
                                 success ? "pr-9" : "",
-                                success
-                                  ? fieldSuccessOutlineClass
-                                  : "border-gray-600 bg-surface",
+                                success && fieldSuccessOutlineClass,
                               )}
                               rows={3}
                               data-testid="textarea-description"
@@ -2026,9 +2043,10 @@ export default function SubmitMetadata() {
                             type="date"
                             max={getTodayInputValue()}
                             className={cn(
-                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start bg-surface px-3 py-0 pr-12 text-white text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
+                              APP_MATERIAL_FIELD_CLASS,
+                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start px-3 py-0 pr-12 text-white text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
                               "focus-visible:ring-offset-0",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                              success && fieldSuccessOutlineClass,
                               success && "ring-inset",
                             )}
                             data-testid="input-date"
@@ -2083,8 +2101,9 @@ export default function SubmitMetadata() {
                           <Input
                             placeholder="e.g., Fabric London, Printworks"
                             className={cn(
-                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                              APP_MATERIAL_FIELD_CLASS,
+                              "placeholder:text-muted-foreground pr-10 transition-[border-color,box-shadow,background-color]",
+                              success && fieldSuccessOutlineClass,
                             )}
                             data-testid="input-location"
                             maxLength={INPUT_LIMITS.postLocation}
@@ -2135,8 +2154,9 @@ export default function SubmitMetadata() {
                           <Input
                             placeholder="e.g., DJ Name"
                             className={cn(
-                              "bg-surface text-white placeholder-gray-400 pr-10 transition-[border-color,box-shadow,background-color]",
-                              success ? fieldSuccessOutlineClass : "border-gray-600",
+                              APP_MATERIAL_FIELD_CLASS,
+                              "placeholder:text-muted-foreground pr-10 transition-[border-color,box-shadow,background-color]",
+                              success && fieldSuccessOutlineClass,
                             )}
                             data-testid="input-dj"
                             maxLength={INPUT_LIMITS.postDjName}
@@ -2173,84 +2193,56 @@ export default function SubmitMetadata() {
                 }}
               />
 
-              {/* pt-3: intentional CTA separation beyond field stack space-y-3; keeps glow off Played by */}
+              {/* pt-3: intentional CTA separation beyond field stack space-y-3 */}
               <div className="pt-3">
-                <div
+                <Button
+                  type="submit"
                   className={cn(
-                    "relative w-full rounded-xl transition-[filter,box-shadow] duration-700",
-                    submitEnabled &&
-                      !submitBusy &&
-                      "shadow-[0_0_28px_rgba(34,211,238,0.38),0_0_56px_rgba(34,211,238,0.18)]",
+                    APP_MATERIAL_FORM_PRIMARY_TALL_CLASS,
+                    submitBusy && "opacity-90",
                   )}
+                  disabled={!submitEnabled}
+                  data-testid="button-submit"
                 >
-                  <div
-                    className={cn(
-                      "relative w-full overflow-hidden rounded-xl",
-                      submitEnabled && !submitBusy && "p-[2px]",
-                    )}
-                  >
-                    {submitEnabled && !submitBusy ? (
-                      <div
-                        className="pointer-events-none absolute inset-0 overflow-hidden rounded-[10px]"
-                        aria-hidden
-                      >
-                        <div
-                          className="absolute left-1/2 top-1/2 h-[240%] w-[240%] min-h-[260px] min-w-[260px] -translate-x-1/2 -translate-y-1/2 animate-submit-edge-trace"
-                          style={{
-                            background:
-                              "conic-gradient(from 0deg, rgba(34,211,238,0.08) 0deg, transparent 58deg, transparent 302deg, rgba(224,249,255,0.95) 322deg, rgba(103,232,249,0.65) 332deg, rgba(34,211,238,0.25) 342deg, transparent 352deg)",
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                    <Button
-                      type="submit"
-                      className={cn(
-                        "relative z-[2] w-full h-12 text-base font-semibold transition-colors duration-500 disabled:opacity-100",
-                        submitEnabled && !submitBusy ? "rounded-[10px]" : "rounded-xl",
-                        submitBusy
-                          ? "border-0 bg-primary/85 text-primary-foreground hover:bg-primary/85"
-                          : submitEnabled
-                            ? "border-0 bg-primary text-primary-foreground hover:bg-primary/92"
-                            : "cursor-not-allowed border border-white/10 bg-primary/20 text-primary-foreground/45 shadow-none hover:bg-primary/20",
-                      )}
-                      disabled={!submitEnabled}
-                      data-testid="button-submit"
-                    >
-                    {submitBusy ? (
-                      <>
-                        <InlineSpinner className="mr-2 border-white" sizeClassName="h-4 w-4" />
-                        {uploadCompleteOpeningPost
-                          ? "Opening post…"
-                          : uploadHandoff || uploadProgress >= 99
-                            ? "Processing video…"
-                            : isUploading
-                              ? "Uploading..."
-                              : "Submitting..."}
-                      </>
-                    ) : (
-                      "Submit Track ID"
-                    )}
-                  </Button>
-                </div>
-              </div>
+                  {submitBusy ? (
+                    <>
+                      <InlineSpinner className="mr-2 border-slate-700" sizeClassName="h-4 w-4" />
+                      {uploadCompleteOpeningPost
+                        ? "Opening post…"
+                        : uploadHandoff || uploadProgress >= 99
+                          ? "Processing video…"
+                          : isUploading
+                            ? "Uploading..."
+                            : "Submitting..."}
+                    </>
+                  ) : (
+                    "Submit Track ID"
+                  )}
+                </Button>
               </div>
             </form>
           </Form>
         </div>
       </div>
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel posting?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Cancel posting?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
               Your current clip and edits will be discarded.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogCancel className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}>
+              Keep editing
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
               onClick={() => {
                 void handleCancelPost();
               }}

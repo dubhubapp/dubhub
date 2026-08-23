@@ -1,8 +1,19 @@
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChevronLeft } from "lucide-react";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { ReleaseActivitySection } from "@/components/release-activity-section";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
+  APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS,
+} from "@/lib/app-material";
+import {
+  RELEASE_ATMOSPHERE_BRAND_RGB,
+  releaseAtmosphereCssVarValue,
+} from "@/lib/release-artwork-atmosphere";
+import { cn } from "@/lib/utils";
+import type { CSSProperties } from "react";
 
 type ReleaseDetailSkeletonProps = {
   onBack: () => void;
@@ -14,19 +25,37 @@ export function ReleaseDetailSkeleton({ onBack }: ReleaseDetailSkeletonProps) {
     <SwipeBackPage
       enabled
       onBack={onBack}
-      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]"
+      className={cn(
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]",
+        APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
+      )}
+      style={
+        {
+          ["--release-atmosphere-rgb"]: releaseAtmosphereCssVarValue(
+            RELEASE_ATMOSPHERE_BRAND_RGB,
+          ),
+        } as CSSProperties
+      }
+      data-atmosphere-ready="true"
+      data-atmosphere-instant="true"
+      data-release-atmosphere="brand"
+      data-testid="release-detail-skeleton"
     >
       <div
-        className="app-page-top-pad px-4 pb-4 max-w-md mx-auto"
+        className={cn(APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS, "px-4 pb-4 max-w-md mx-auto")}
         aria-busy="true"
         aria-label="Loading release"
-        data-testid="release-detail-skeleton"
       >
         <div className="mb-4 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" className="ios-press -ml-1" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back
-          </Button>
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className={APP_MATERIAL_BACK_BUTTON_CLASS}
+            data-testid="release-detail-skeleton-back"
+          >
+            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+          </button>
           <div className="h-9 w-9 shrink-0" aria-hidden />
         </div>
 

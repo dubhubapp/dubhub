@@ -7,6 +7,12 @@ import {
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_FIELD_CLASS,
+  APP_MATERIAL_LIST_ROW_SELECTED_CLASS,
+  APP_MATERIAL_SHEET_BACKDROP_CLASS,
+  APP_MATERIAL_SHEET_SURFACE_CLASS,
+} from "@/lib/app-material";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 import {
@@ -79,7 +85,7 @@ export function ReleaseTimezonePickerPanel({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search city, country, or timezone"
-          className="h-10 bg-black/40"
+          className={cn(APP_MATERIAL_FIELD_CLASS, "h-10")}
           autoComplete="off"
           autoCorrect="off"
           enterKeyHint="search"
@@ -159,8 +165,10 @@ export function ReleaseTimezonePickerSheet({
       <SheetContent
         side="bottom"
         showClose
+        overlayClassName={APP_MATERIAL_SHEET_BACKDROP_CLASS}
         className={cn(
-          "flex flex-col gap-0 overflow-hidden rounded-t-2xl border-white/10 bg-zinc-950 p-0",
+          APP_MATERIAL_SHEET_SURFACE_CLASS,
+          "flex flex-col gap-0 overflow-hidden border-white/10 p-0",
         )}
         style={{
           bottom: keyboardLiftPx > 0 ? keyboardLiftPx : 0,
@@ -213,7 +221,7 @@ function TimezoneRow(args: {
       onClick={args.onSelect}
       className={cn(
         "ios-press flex w-full flex-col items-start gap-0.5 rounded-xl px-3 py-3 text-left transition-colors",
-        args.selected ? "bg-accent/20" : "hover:bg-white/5",
+        args.selected ? APP_MATERIAL_LIST_ROW_SELECTED_CLASS : "hover:bg-white/5",
       )}
     >
       <span className="text-sm font-medium text-white">

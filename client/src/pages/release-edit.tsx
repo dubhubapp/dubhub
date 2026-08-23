@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Link as LinkIcon, MoreHorizontal, Trash2 } from "lucide-react";
+import { ChevronLeft, Link as LinkIcon, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,7 +17,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_DESTRUCTIVE_ACTION_SURFACE_CLASS,
+  APP_MATERIAL_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_FORM_PRIMARY_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+  APP_MATERIAL_RELEASE_FORM_TOP_CLASS,
+} from "@/lib/app-material";
 import { useUser } from "@/lib/user-context";
+import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -795,7 +809,7 @@ export default function ReleaseEdit() {
     <SwipeBackPage
       enabled={false}
       onBack={handleBack}
-      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)]"
+      className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)] dubhub-app-form-canvas"
     >
       <div
         ref={scrollContainerRef}
@@ -812,28 +826,39 @@ export default function ReleaseEdit() {
               : undefined,
         }}
       >
-      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto min-w-0 w-full">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" className="ios-press -ml-1" onClick={handleBack}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back to Releases
-          </Button>
+      <div className={cn(APP_MATERIAL_RELEASE_FORM_TOP_CLASS, "px-4 pb-4 max-w-md mx-auto min-w-0 w-full")}>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={handleBack}
+            aria-label="Back to Releases"
+            className={APP_MATERIAL_BACK_BUTTON_CLASS}
+            data-testid="release-edit-back"
+          >
+            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+          </button>
           {isOwner ? (
             <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="ios-press h-9 w-9 shrink-0"
+                  className="ios-press h-11 w-11 shrink-0 text-white hover:bg-white/10 hover:text-white"
                   aria-label="Release options"
                   data-testid="button-release-edit-menu"
                 >
                   <MoreHorizontal className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[12rem]">
+              <DropdownMenuContent
+                align="end"
+                className="min-w-[12rem] rounded-[15px] border-white/10 bg-[#141a30]/95 p-1.5 text-foreground shadow-[0_14px_36px_rgba(0,0,0,0.45)]"
+              >
                 <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
+                  className={cn(
+                    APP_MATERIAL_DESTRUCTIVE_ACTION_SURFACE_CLASS,
+                    "mx-0 my-0 cursor-pointer gap-2 px-3 py-2.5",
+                  )}
                   disabled={saving}
                   onSelect={(e) => {
                     e.preventDefault();
@@ -842,13 +867,13 @@ export default function ReleaseEdit() {
                   }}
                   data-testid="menu-delete-release"
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Release
+                  <Trash2 className="h-4 w-4 text-red-400" />
+                  <span className="font-medium text-red-400">Delete Release</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="h-9 w-9 shrink-0" aria-hidden />
+            <div className="h-11 w-11 shrink-0" aria-hidden />
           )}
         </div>
         <h1 className="text-xl font-bold mb-4">
@@ -1092,7 +1117,7 @@ export default function ReleaseEdit() {
 
         <div className="pt-6 pb-8">
           <Button
-            className="w-full"
+            className={APP_MATERIAL_FORM_PRIMARY_CLASS}
             size="lg"
             onClick={handleSave}
             disabled={saving}
@@ -1102,19 +1127,30 @@ export default function ReleaseEdit() {
         </div>
 
         <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
-          <DialogContent>
+          <DialogContent
+            className={APP_MATERIAL_DIALOG_CONTENT_CLASS}
+            overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+          >
             <DialogHeader>
-              <DialogTitle>Delete release?</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+                Delete release?
+              </DialogTitle>
+              <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
                 This will permanently remove the release and all its data (links, collaborators, attachments). You can’t undo this.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowDeleteModal(false)} disabled={deleting}>
+              <Button
+                variant="outline"
+                className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+              >
                 Cancel
               </Button>
               <Button
                 variant="destructive"
+                className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
                 onClick={async () => {
                   if (!releaseId || !release || release.artistId !== currentUser?.id) return;
                   setDeleting(true);

@@ -45,7 +45,7 @@ describe("Leaderboard presentation — primary / secondary nav", () => {
     assert.match(leaderboardSrc, /LEADERBOARD_PRIMARY_ROW_CLASS/);
     assert.match(leaderboardSrc, /LEADERBOARD_PRIMARY_INDICATOR_CLASS/);
     assert.equal(LEADERBOARD_PRIMARY_ROW_CLASS.includes("flex"), true);
-    assert.match(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /after:bg-accent/);
+    assert.match(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /after:bg-\[#0a83ff\]/);
   });
 
   it("replaces timeframe dropdown with This Month / This Year / All Time tabs", () => {
@@ -119,7 +119,7 @@ describe("Leaderboard presentation — sticky chrome + prize", () => {
 
 describe("Leaderboard presentation — rows + identity", () => {
   it("uses divider rows instead of per-entry card containers", () => {
-    assert.equal(LEADERBOARD_LIST_CLASS, "divide-y divide-white/10");
+    assert.equal(LEADERBOARD_LIST_CLASS, "divide-y divide-white/[0.08]");
     assert.match(leaderboardSrc, /LEADERBOARD_ROW_BASE_CLASS/);
     assert.doesNotMatch(LEADERBOARD_ROW_BASE_CLASS, /rounded-xl|border|bg-black\/25|backdrop-blur/);
     assert.doesNotMatch(leaderboardSrc, /bg-black\/25 backdrop-blur-md border-white\/10/);
@@ -137,9 +137,9 @@ describe("Leaderboard presentation — rows + identity", () => {
   it("preserves You chip + restrained current-user tint", () => {
     assert.match(leaderboardSrc, /You/);
     assert.match(leaderboardSrc, /highlightAsCurrent && \(\s*<span[\s\S]*?You[\s\S]*?<\/span>/);
-    assert.match(leaderboardSrc, /LEADERBOARD_ROW_CURRENT_CLASS/);
-    assert.match(LEADERBOARD_ROW_CURRENT_CLASS, /bg-primary\/\[0\.08\]/);
-    assert.doesNotMatch(LEADERBOARD_ROW_CURRENT_CLASS, /border-primary\/60/);
+    assert.match(leaderboardSrc, /LEADERBOARD_YOU_PILL_CLASS/);
+    assert.equal(LEADERBOARD_ROW_CURRENT_CLASS, "");
+    assert.doesNotMatch(LEADERBOARD_ROW_CURRENT_CLASS, /ring-|rounded-|border|bg-/);
   });
 
   it("preserves verified artist gold username colour", () => {
@@ -237,11 +237,11 @@ describe("Leaderboard reputation bar — semantics + premium treatment", () => {
     assert.doesNotMatch(leaderboardSrc, /leaderboard-rank-context|You're #|resolveLeaderboardRankContext/);
   });
 
-  it("shows visible metric label IDs (not CORRECT IDS / Correct IDs)", () => {
-    assert.match(leaderboardSrc, />\s*IDs\s*</);
+  it("shows visible metric label ID/IDs via pluralisation helper", () => {
+    assert.match(leaderboardSrc, /leaderboardIdsUnitLabel\(entry\.correct_ids\)/);
     assert.doesNotMatch(leaderboardSrc, />\s*Correct IDs\s*</);
-    assert.doesNotMatch(leaderboardSrc, /uppercase tracking-wide text-muted-foreground">\s*IDs/);
     assert.match(leaderboardSrc, /entry\.correct_ids/);
     assert.match(LEADERBOARD_SCORE_COLUMN_CLASS, /w-\[68px\]/);
+    assert.match(LEADERBOARD_SCORE_COLUMN_CLASS, /pr-3/);
   });
 });

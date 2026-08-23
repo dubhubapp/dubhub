@@ -5,9 +5,9 @@ export const ID_MARKING_DIALOG_CONTENT_CLASS =
   "w-[calc(100%-2rem)] max-w-[30rem] max-h-[80vh] overflow-y-auto rounded-2xl border border-white/20 bg-[#0f1324] p-5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:p-6";
 
 /**
- * Community + Moderator picker chrome. Cue pills are the frozen C8D.1
- * semantic system (Oldest = blue, First Comment/First Tag = gold).
- * Artist ID may import the pills in C8E; do not restyle ID_MARKING_DIALOG_* above.
+ * Picker chrome. Cue pills are the frozen C8D.1 semantic system
+ * (Oldest = blue, First Comment/First Tag = gold).
+ * Do not restyle ID_MARKING_DIALOG_* above.
  */
 export const ID_MARKING_PICKER_ROW_CLASS =
   "flex min-w-0 items-start space-x-3 rounded-lg border border-white/12 bg-white/[0.03] p-3 transition-colors hover:bg-white/[0.05]";

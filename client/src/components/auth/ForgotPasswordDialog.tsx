@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { getPasswordResetRedirectUrl } from "@/lib/password-validation";
+import { AUTH_SURFACE_CLASS } from "@/lib/auth-surface";
 
 interface ForgotPasswordDialogProps {
   open: boolean;
@@ -87,7 +88,11 @@ export function ForgotPasswordDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg">
+      <DialogContent
+        overlayClassName={AUTH_SURFACE_CLASS}
+        className={`${AUTH_SURFACE_CLASS} w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg`}
+        data-auth-surface=""
+      >
         <DialogHeader>
           <DialogTitle>Reset password</DialogTitle>
           <DialogDescription>
@@ -108,7 +113,7 @@ export function ForgotPasswordDialog({
             />
           </div>
           {errorMessage && (
-            <p className="text-sm text-red-600">{errorMessage}</p>
+            <p className="text-sm text-red-300">{errorMessage}</p>
           )}
           <Button type="submit" className="w-full" disabled={isLoading || resetCooldownRemaining > 0}>
             {isLoading

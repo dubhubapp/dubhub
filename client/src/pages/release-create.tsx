@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Link as LinkIcon } from "lucide-react";
+import { ChevronLeft, Link as LinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -13,7 +13,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_FORM_PRIMARY_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+  APP_MATERIAL_RELEASE_FORM_TOP_CLASS,
+} from "@/lib/app-material";
 import { useUser } from "@/lib/user-context";
+import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { ApiRequestError } from "@/lib/apiDiagnostics";
 import { useToast } from "@/hooks/use-toast";
@@ -710,7 +724,7 @@ export default function ReleaseCreate() {
     <SwipeBackPage
       enabled={false}
       onBack={handleBack}
-      className="flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)]"
+      className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)] dubhub-app-form-canvas"
     >
       <div
         ref={scrollContainerRef}
@@ -727,12 +741,17 @@ export default function ReleaseCreate() {
               : undefined,
         }}
       >
-      <div className="app-page-top-pad px-4 pb-4 max-w-md mx-auto min-w-0 w-full">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-1" onClick={handleBack}>
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back
-        </Button>
-        <h1 className="text-xl font-bold mb-4">Add Release</h1>
+      <div className={cn(APP_MATERIAL_RELEASE_FORM_TOP_CLASS, "px-4 pb-4 max-w-md mx-auto min-w-0 w-full")}>
+        <button
+          type="button"
+          onClick={handleBack}
+          aria-label="Back"
+          className={APP_MATERIAL_BACK_BUTTON_CLASS}
+          data-testid="release-create-back"
+        >
+          <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+        </button>
+        <h1 className="text-xl font-bold mb-4 mt-2">Add Release</h1>
 
         <form onSubmit={handleSubmit} className="space-y-8">
           <section className="space-y-4" aria-labelledby="release-create-core-heading">
@@ -914,7 +933,7 @@ export default function ReleaseCreate() {
                 <Button
                   type="button"
                   disabled
-                  className="w-full"
+                  className={APP_MATERIAL_FORM_PRIMARY_CLASS}
                   data-testid="release-create-submit-locked"
                 >
                   Create Release
@@ -940,7 +959,7 @@ export default function ReleaseCreate() {
               <Button
                 type="submit"
                 disabled={saving || capacityQuery.isLoading}
-                className="w-full"
+                className={APP_MATERIAL_FORM_PRIMARY_CLASS}
                 data-testid="release-create-submit"
               >
                 {saving ? "Creating…" : "Create Release"}
@@ -952,22 +971,29 @@ export default function ReleaseCreate() {
       </div>
 
       <AlertDialog open={zeroPostConfirmOpen} onOpenChange={setZeroPostConfirmOpen}>
-        <AlertDialogContent className="max-w-sm">
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>{CREATE_WITHOUT_POSTS_TITLE}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              {CREATE_WITHOUT_POSTS_TITLE}
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
               {CREATE_WITHOUT_POSTS_BODY}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={saving}
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
               data-testid="release-create-zero-posts-back"
             >
               {CREATE_WITHOUT_POSTS_BACK}
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={saving}
+              className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
               data-testid="release-create-zero-posts-confirm"
               onClick={(e) => {
                 e.preventDefault();
@@ -982,15 +1008,21 @@ export default function ReleaseCreate() {
       </AlertDialog>
 
       <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
-        <AlertDialogContent className="max-w-sm">
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>Discard release?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Discard release?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
               Your changes haven&apos;t been saved.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
               onClick={() => {
                 applyCreateDiscardChoice("keep");
               }}
@@ -998,7 +1030,7 @@ export default function ReleaseCreate() {
               Keep editing
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
               onClick={handleDiscardConfirm}
               data-testid="release-create-discard-confirm"
             >

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21701" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="NO" initialViewController="PLS-vc-001">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="21679"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="PLS-sc-001">
+            <objects>
+                <viewController statusBarHidden="NO" id="PLS-vc-001" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="PLS-vw-001">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubPremiumLaunchBackground" translatesAutoresizingMaskIntoConstraints="NO" id="PLS-bg-001">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubPremiumLaunchMark" translatesAutoresizingMaskIntoConstraints="NO" id="PLS-lg-001">
+                                <rect key="frame" x="141.5" y="371" width="110" height="110"/>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="PLS-sa-001"/>
+                        <color key="backgroundColor" red="0.058823529411764705" green="0.074509803921568627" blue="0.14117647058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="PLS-bg-001" firstAttribute="top" secondItem="PLS-vw-001" secondAttribute="top" id="PLS-c-bt"/>
+                            <constraint firstItem="PLS-bg-001" firstAttribute="bottom" secondItem="PLS-vw-001" secondAttribute="bottom" id="PLS-c-bb"/>
+                            <constraint firstItem="PLS-bg-001" firstAttribute="leading" secondItem="PLS-vw-001" secondAttribute="leading" id="PLS-c-bl"/>
+                            <constraint firstItem="PLS-bg-001" firstAttribute="trailing" secondItem="PLS-vw-001" secondAttribute="trailing" id="PLS-c-br"/>
+                            <constraint firstItem="PLS-lg-001" firstAttribute="centerX" secondItem="PLS-vw-001" secondAttribute="centerX" id="PLS-c-lx"/>
+                            <constraint firstItem="PLS-lg-001" firstAttribute="centerY" secondItem="PLS-vw-001" secondAttribute="centerY" id="PLS-c-ly"/>
+                            <constraint firstItem="PLS-lg-001" firstAttribute="width" secondItem="PLS-vw-001" secondAttribute="width" multiplier="0.28" id="PLS-c-lw"/>
+                            <constraint firstItem="PLS-lg-001" firstAttribute="height" secondItem="PLS-lg-001" secondAttribute="width" id="PLS-c-la"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="PLS-fr-001" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="53" y="375"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="DubHubPremiumLaunchBackground" width="1" height="256"/>
+        <image name="DubHubPremiumLaunchMark" width="217" height="271"/>
+    </resources>
+</document>

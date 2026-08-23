@@ -2,15 +2,15 @@
  * Settings root — concise grouped landing page (presentation / IA only).
  * Notifications, Feedback sheet, VAT lifecycle, and RC identity behaviour are frozen.
  *
- * Scroll ownership: SwipeBackPage uses APP_PAGE_SCROLL_CLASS so the page scrolls inside
- * the authenticated shell (same contract as Notifications / pre-regression Settings).
+ * Scroll ownership: SETTINGS_PAGE_SCROLL_CLASS (APP_PAGE_SCROLL_CLASS + transparent)
+ * so the page scrolls inside the authenticated shell. Atmosphere lives on the shell.
  */
 
 import { useState } from "react";
 import { useLocation } from "wouter";
 import {
-  ArrowLeft,
   Bell,
+  ChevronLeft,
   ChevronRight,
   KeyRound,
   LogOut,
@@ -21,7 +21,6 @@ import {
   MessageCircleQuestion,
   Wrench,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
@@ -32,18 +31,31 @@ import { playThemeToggleHaptic } from "@/lib/haptic";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { revenueCatIdentityDiagnosticsEnabled } from "@/lib/revenuecat-identity";
-import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+} from "@/lib/app-material";
+import { cn } from "@/lib/utils";
+import {
+  SETTINGS_BACK_BUTTON_CLASS,
+  SETTINGS_BACK_ICON_CLASS,
   SETTINGS_CHEVRON_CLASS,
+  SETTINGS_HEADER_TO_SECTIONS_CLASS,
+  SETTINGS_INTRO_ARTIST_COPY,
+  SETTINGS_INTRO_COMMUNITY_COPY,
   SETTINGS_LOGOUT_ROW_CLASS,
   SETTINGS_NAV_ROW_CLASS,
+  SETTINGS_PAGE_PAD_CLASS,
+  SETTINGS_PAGE_SCROLL_CLASS,
+  SETTINGS_SUBTITLE_CLASS,
+  SETTINGS_TITLE_AFTER_BACK_CLASS,
   SETTINGS_ROW_ICON_CLASS,
   SETTINGS_ROW_SUBTITLE_CLASS,
+  SETTINGS_ROW_TEXT_WRAP_CLASS,
   SETTINGS_ROW_TITLE_CLASS,
   SETTINGS_SECTION_LABEL_CLASS,
   SETTINGS_SECTIONS_STACK_CLASS,
   SETTINGS_SWITCH_ROW_CLASS,
-  SETTINGS_LOGOUT_SECTION_CLASS,
   SETTINGS_ROWS_STACK_CLASS,
 } from "@/lib/settings-presentation";
 
@@ -103,30 +115,33 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   };
 
   return (
-    <SwipeBackPage onBack={handleBack} className={`${APP_PAGE_SCROLL_CLASS} bg-background`}>
-      <div className="app-page-top-pad px-6 pb-8">
-        <div className={`max-w-md mx-auto ${SETTINGS_SECTIONS_STACK_CLASS}`}>
+    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+      <div className={SETTINGS_PAGE_PAD_CLASS}>
+        <div className="max-w-md mx-auto">
           <div>
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
+              type="button"
               onClick={handleBack}
-              className="mb-4 -ml-2 text-muted-foreground"
+              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              aria-label="Back"
               data-testid="button-settings-back"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+              <ChevronLeft
+                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                strokeWidth={2}
+                aria-hidden
+              />
+            </button>
+            <div className={SETTINGS_TITLE_AFTER_BACK_CLASS}>
               <SettingsIcon className="w-5 h-5 text-muted-foreground" />
               <h1 className="text-xl font-bold">Settings</h1>
             </div>
-            <p className="text-sm text-muted-foreground">Account, preferences, and subscription.</p>
+            <p className={SETTINGS_SUBTITLE_CLASS}>
+              {verifiedArtist ? SETTINGS_INTRO_ARTIST_COPY : SETTINGS_INTRO_COMMUNITY_COPY}
+            </p>
           </div>
 
+          <div className={`${SETTINGS_HEADER_TO_SECTIONS_CLASS} ${SETTINGS_SECTIONS_STACK_CLASS}`}>
           <section aria-labelledby="settings-section-preferences">
             <h2 id="settings-section-preferences" className={SETTINGS_SECTION_LABEL_CLASS}>
               Preferences
@@ -140,13 +155,15 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 aria-label="Notifications"
               >
                 <Bell className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className={`${SETTINGS_ROW_TITLE_CLASS} flex-1`}>Notifications</span>
+                <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                  Notifications
+                </span>
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
               </button>
 
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <Moon className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <div className="min-w-0 flex-1">
+                <div className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
                   <p className={SETTINGS_ROW_TITLE_CLASS}>Light mode</p>
                   <p className={SETTINGS_ROW_SUBTITLE_CLASS}>
                     Switch to a brighter dub hub experience.
@@ -162,7 +179,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
 
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <Volume2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <div className="min-w-0 flex-1">
+                <div className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
                   <p className={SETTINGS_ROW_TITLE_CLASS}>Start feed with sound</p>
                   <p className={SETTINGS_ROW_SUBTITLE_CLASS}>
                     Automatically unmute videos when you open dub hub.
@@ -195,7 +212,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   aria-label="Artist Questions"
                 >
                   <MessageCircleQuestion className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                  <span className="min-w-0 flex-1 text-left">
+                  <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
                     <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Artist Questions</span>
                     <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
                       Manage your public answers
@@ -220,7 +237,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 aria-label="Send feedback"
               >
                 <MessageSquare className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className="min-w-0 flex-1 text-left">
+                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
                   <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Send feedback</span>
                   <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
                     Tell us what we can improve.
@@ -231,10 +248,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
             </div>
           </section>
 
-          <section
-            aria-labelledby="settings-section-account"
-            className={SETTINGS_LOGOUT_SECTION_CLASS}
-          >
+          <section aria-labelledby="settings-section-account">
             <h2 id="settings-section-account" className={SETTINGS_SECTION_LABEL_CLASS}>
               Account
             </h2>
@@ -247,7 +261,9 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 aria-label="Change Password"
               >
                 <KeyRound className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className={`${SETTINGS_ROW_TITLE_CLASS} flex-1`}>Change Password</span>
+                <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                  Change Password
+                </span>
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
               </button>
 
@@ -259,7 +275,9 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 aria-label="Log Out"
               >
                 <LogOut className="w-5 h-5 shrink-0" aria-hidden />
-                <span className="text-sm flex-1 text-left">Log Out</span>
+                <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                  Log Out
+                </span>
               </button>
             </div>
           </section>
@@ -278,7 +296,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   aria-label="Developer diagnostics"
                 >
                   <Wrench className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                  <span className="min-w-0 flex-1 text-left">
+                  <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
                     <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>
                       Developer diagnostics
                     </span>
@@ -291,6 +309,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               </div>
             </section>
           ) : null}
+          </div>
         </div>
       </div>
 

@@ -14,6 +14,15 @@ import { useToast } from "@/hooks/use-toast";
 import { validateSignupPassword } from "@/lib/password-validation";
 import { Eye, EyeOff } from "lucide-react";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
+import { cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_FIELD_CLASS,
+  APP_MATERIAL_FORM_PRIMARY_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
 
 interface ChangePasswordDialogProps {
   open: boolean;
@@ -157,9 +166,12 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         ref={dialogContentRef}
-        className={`w-[calc(100%-2rem)] max-w-sm bg-background border-border p-5 sm:max-w-md sm:p-6 rounded-lg max-h-[90vh] overflow-y-auto ${
-          keyboardAwareLayoutActive ? "!top-[max(0.75rem,env(safe-area-inset-top,0px))] !translate-y-0" : ""
-        }`}
+        className={cn(
+          APP_MATERIAL_DIALOG_CONTENT_CLASS,
+          "w-[calc(100%-2rem)] max-w-sm p-5 sm:max-w-md sm:p-6 max-h-[90vh] overflow-y-auto",
+          keyboardAwareLayoutActive ? "!top-[max(0.75rem,env(safe-area-inset-top,0px))] !translate-y-0" : "",
+        )}
+        overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
         onOpenAutoFocus={(event) => event.preventDefault()}
         style={{
           WebkitOverflowScrolling: "touch",
@@ -178,8 +190,8 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
         }}
       >
         <DialogHeader>
-          <DialogTitle>Change password</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>Change password</DialogTitle>
+          <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
             Enter your current password, then choose a new one.
           </DialogDescription>
         </DialogHeader>
@@ -193,7 +205,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 autoComplete="current-password"
-                className="bg-input border-border pr-10"
+                className={cn(APP_MATERIAL_FIELD_CLASS, "h-10 pr-10")}
               />
               <button
                 type="button"
@@ -216,7 +228,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
-                className="bg-input border-border pr-10"
+                className={cn(APP_MATERIAL_FIELD_CLASS, "h-10 pr-10")}
                 placeholder="At least 8 characters, upper, lower, number"
               />
               <button
@@ -273,7 +285,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
-                className="bg-input border-border pr-10"
+                className={cn(APP_MATERIAL_FIELD_CLASS, "h-10 pr-10")}
               />
               <button
                 type="button"
@@ -288,7 +300,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
             </div>
           </div>
           {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className={APP_MATERIAL_FORM_PRIMARY_CLASS} disabled={isLoading}>
             {isLoading ? "Updating…" : "Update password"}
           </Button>
         </form>

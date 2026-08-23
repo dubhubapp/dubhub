@@ -1,5 +1,6 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_MATERIAL_TOOL_ROW_CLASS } from "@/lib/app-material";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 
 type ReleaseToolsManagementRowProps = {
@@ -33,8 +34,7 @@ export function ReleaseToolsManagementRow({
       }}
       aria-expanded={isDisclosure ? expanded : undefined}
       className={cn(
-        "ios-press flex min-h-11 w-full items-center justify-between gap-3 border-b border-white/10 py-3 text-left last:border-b-0",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset focus-visible:ring-offset-0",
+        APP_MATERIAL_TOOL_ROW_CLASS,
         className,
       )}
       data-testid={testId}

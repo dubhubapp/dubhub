@@ -75,16 +75,16 @@ describe("submit-metadata presentation polish", () => {
     assert.match(pageSrc, /Genre \*/);
   });
 
-  it("overrides shared Button disabled opacity on Submit when custom disabled styles apply", () => {
+  it("keeps the ceramic tall Submit Track ID CTA without legacy primary/20 or rounded-xl wrapper", () => {
     assert.match(buttonSrc, /disabled:opacity-50/);
     assert.match(pageSrc, /data-testid="button-submit"/);
-    assert.match(
+    assert.match(pageSrc, /APP_MATERIAL_FORM_PRIMARY_TALL_CLASS/);
+    assert.match(pageSrc, /Submit Track ID/);
+    assert.doesNotMatch(pageSrc, /bg-primary\/20/);
+    assert.doesNotMatch(pageSrc, /text-primary-foreground\/45/);
+    assert.doesNotMatch(
       pageSrc,
-      /transition-colors duration-500 disabled:opacity-100/,
-    );
-    assert.match(
-      pageSrc,
-      /bg-primary\/20 text-primary-foreground\/45/,
+      /pt-3">\s*<div\s+className=\{cn\(\s*"relative w-full rounded-xl/,
     );
   });
 
@@ -93,6 +93,21 @@ describe("submit-metadata presentation polish", () => {
     assert.match(pageSrc, /dubhub-date-input/);
     assert.match(pageSrc, /data-testid="input-date"/);
     assert.match(pageSrc, /max=\{getTodayInputValue\(\)\}/);
+  });
+
+  it("uses approved ChevronLeft Back with unchanged handleBack and premium None select item", () => {
+    assert.match(pageSrc, /ChevronLeft/);
+    assert.doesNotMatch(pageSrc, /ArrowLeft/);
+    assert.match(pageSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
+    assert.match(pageSrc, /onClick=\{handleBack\}/);
+    assert.match(pageSrc, /aria-label="Back"/);
+    assert.match(
+      pageSrc,
+      /SelectItem value=\{SUBMIT_SUBGENRE_NONE_VALUE\} className=\{APP_MATERIAL_SELECT_ITEM_CLASS\}/,
+    );
+    assert.match(pageSrc, /bg-transparent/);
+    assert.match(pageSrc, /APP_MATERIAL_FIELD_CLASS/);
+    assert.match(pageSrc, /APP_MATERIAL_SELECT_TRIGGER_CLASS/);
   });
 
   it("groups Title/Description counters with their fields and keeps Submit CTA spacing", () => {
@@ -109,12 +124,8 @@ describe("submit-metadata presentation polish", () => {
       pageSrc,
       /data-testid="input-title"[\s\S]*?<\/div>\s*<p className="text-xs leading-none text-gray-500 text-right">/,
     );
-    // Local CTA spacer beyond field stack space-y-3 (glow stays on inner wrapper).
+    // Local CTA spacer beyond field stack space-y-3.
     assert.match(pageSrc, /pt-3[\s\S]*?data-testid="button-submit"/);
-    assert.match(
-      pageSrc,
-      /pt-3">\s*<div\s+className=\{cn\(\s*"relative w-full rounded-xl/,
-    );
   });
 });
 
@@ -153,7 +164,7 @@ describe("submit-metadata optional sub-genre", () => {
     assert.match(pageSrc, /\{showSubgenreField \? \(/);
     assert.match(
       pageSrc,
-      /subgenreOptions\.map\(\(entry\) => \(\s*<SelectItem key=\{entry\.id\} value=\{entry\.id\}>/,
+      /subgenreOptions\.map\(\(entry\) => \(\s*<SelectItem key=\{entry\.id\} value=\{entry\.id\} className=\{APP_MATERIAL_SELECT_ITEM_CLASS\}>/,
     );
     assert.match(pageSrc, /\{entry\.label\}/);
     assert.doesNotMatch(pageSrc, /id: "jump_up"/);

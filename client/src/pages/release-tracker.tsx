@@ -45,16 +45,27 @@ import {
   writeReleaseTrackerArtworkSession,
 } from "@/lib/release-tracker-artwork-session";
 import {
+  RELEASE_FEED_DIVIDE_CLASS,
   RELEASE_FEED_MONTH_HEADING_CLASS,
   RELEASE_FEED_SKELETON_VARIANT,
   RELEASE_TRACKER_ADD_HREF,
+  RELEASE_TRACKER_ADD_CTA_CLASS,
   RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS,
+  RELEASE_TRACKER_EMPTY_BODY_CLASS,
+  RELEASE_TRACKER_EMPTY_CLASS,
+  RELEASE_TRACKER_EMPTY_CTA_CLASS,
+  RELEASE_TRACKER_EMPTY_ICON_CLASS,
+  RELEASE_TRACKER_EMPTY_TITLE_CLASS,
+  RELEASE_TRACKER_FAB_FADE_CLASS,
+  RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
+  RELEASE_TRACKER_PAGE_CLASS,
   RELEASE_TRACKER_PRIMARY_ACTIVE_CLASS,
   RELEASE_TRACKER_PRIMARY_BUTTON_BASE_CLASS,
   RELEASE_TRACKER_PRIMARY_INACTIVE_CLASS,
   RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS,
   RELEASE_TRACKER_PRIMARY_LABEL_CLASS,
   RELEASE_TRACKER_PRIMARY_ROW_CLASS,
+  RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS,
   RELEASE_TRACKER_SECONDARY_ROW_CLASS,
   RELEASE_TRACKER_STICKY_CHROME_CLASS,
   RELEASE_TRACKER_STICKY_FADE_CLASS,
@@ -67,6 +78,7 @@ import {
   type ReleaseTrackerFeedScope,
   type ReleaseTrackerFeedView,
 } from "@/lib/release-tracker-presentation";
+import { useDelayedReleaseFeedSkeleton } from "@/lib/use-delayed-release-feed-skeleton";
 import { cn } from "@/lib/utils";
 
 export type ReleaseFeedItem = ReleaseFeedCardData & {
@@ -132,7 +144,7 @@ function isSavedReleaseOutTodayInList(
 function ReleaseFeedContentLoader() {
   return (
     <div
-      className="divide-y divide-white/10 py-1"
+      className={cn(RELEASE_FEED_DIVIDE_CLASS, "py-1")}
       aria-busy="true"
       aria-label="Loading releases"
       data-skeleton-variant={RELEASE_FEED_SKELETON_VARIANT}
@@ -143,7 +155,7 @@ function ReleaseFeedContentLoader() {
           className="flex gap-3.5 py-3.5"
           data-testid="release-feed-row-skeleton"
         >
-          <DubHubSkeletonBar tone="teal" className="h-24 w-24 shrink-0 rounded-lg" />
+          <DubHubSkeletonBar tone="mid" className="h-24 w-24 shrink-0 rounded-lg ring-1 ring-white/10" />
           <div className="flex-1 space-y-1.5 pt-0.5">
             <DubHubSkeletonBar tone="default" className="h-4 w-full max-w-[14rem]" />
             <DubHubSkeletonBar tone="mid" className="h-3 w-2/3 max-w-[10rem]" />
@@ -152,6 +164,25 @@ function ReleaseFeedContentLoader() {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * Delayed visual skeleton for uncached first fetches.
+ * Remount via key={scope-view} so each tab gets a fresh quiet window.
+ * aria-busy remains during the quiet interval (no repeated live announcements).
+ */
+function ReleaseFeedDelayedLoader() {
+  const showSkeleton = useDelayedReleaseFeedSkeleton(true);
+  if (showSkeleton) {
+    return <ReleaseFeedContentLoader />;
+  }
+  return (
+    <div
+      aria-busy="true"
+      aria-label="Loading releases"
+      data-testid="release-feed-loading-quiet"
+    />
   );
 }
 
@@ -449,11 +480,12 @@ export default function ReleaseTracker() {
       <div
         ref={releaseScrollRef}
         className={cn(
-          "flex-1 min-h-0 bg-background overflow-x-hidden overflow-y-auto",
+          RELEASE_TRACKER_PAGE_CLASS,
           isArtist
             ? "pb-[var(--releases-feed-bottom-pad)]"
             : "pb-[var(--releases-feed-bottom-pad-listener)]",
         )}
+        data-releases-tracker=""
       >
       <div className="px-4 max-w-md mx-auto">
         {currentUser?.id && (
@@ -508,7 +540,7 @@ export default function ReleaseTracker() {
                     className={cn(
                       "ios-press relative flex min-h-11 min-w-0 flex-1 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors",
                       feedView === v
-                        ? "font-semibold text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent"
+                        ? RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS
                         : "font-medium text-white/55 hover:text-white/80",
                     )}
                   >
@@ -566,25 +598,27 @@ export default function ReleaseTracker() {
           }
         >
         {currentUser?.id && !isFeedLoading && !isFeedError && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && effectiveLayout === "list" && (
-          <div className="relative z-10 mb-5 space-y-2 border-b border-white/10 pb-3">
+          <div className="relative z-10 mb-5 space-y-2 border-b border-white/[0.08] pb-3">
             <ReleaseDayCelebration releaseId={myReleasesDueToday[0].id} variant="heading" />
-            <div className="divide-y divide-white/10">
+            <div className={RELEASE_FEED_DIVIDE_CLASS}>
               {myReleasesDueToday.map((r) => renderReleaseCard(r, { featured: true }))}
             </div>
           </div>
         )}
 
         {!currentUser?.id ? (
-          <div className="text-center text-muted-foreground py-12">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="mb-2">Sign in to see releases from artists you’ve liked.</p>
+          <div className={RELEASE_TRACKER_EMPTY_CLASS}>
+            <Calendar className={RELEASE_TRACKER_EMPTY_ICON_CLASS} />
+            <p className={RELEASE_TRACKER_EMPTY_TITLE_CLASS}>
+              Sign in to see releases from artists you’ve liked.
+            </p>
           </div>
         ) : isFeedError ? (
-          <div className="text-center text-muted-foreground py-12" data-testid="release-feed-error">
-            <Disc3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="mb-2 text-foreground">Couldn't load releases.</p>
+          <div className={RELEASE_TRACKER_EMPTY_CLASS} data-testid="release-feed-error">
+            <Disc3 className={RELEASE_TRACKER_EMPTY_ICON_CLASS} />
+            <p className={RELEASE_TRACKER_EMPTY_TITLE_CLASS}>Couldn't load releases.</p>
             <Button
-              className="mt-4"
+              className={RELEASE_TRACKER_EMPTY_CTA_CLASS}
               onClick={() => {
                 void refetchFeed();
               }}
@@ -594,18 +628,17 @@ export default function ReleaseTracker() {
             </Button>
           </div>
         ) : isFeedLoading ? (
-          <ReleaseFeedContentLoader />
+          <ReleaseFeedDelayedLoader key={`${effectiveScope}-${effectiveView}`} />
         ) : feedItems.length === 0 ? (
-          <div className="text-center text-muted-foreground py-12">
-            <Disc3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="mb-2">
-              {emptyCopy.title}
-            </p>
-            <p className="text-sm">
-              {emptyCopy.body}
-            </p>
+          <div className={RELEASE_TRACKER_EMPTY_CLASS} data-testid="release-feed-empty">
+            <Disc3 className={RELEASE_TRACKER_EMPTY_ICON_CLASS} />
+            <p className={RELEASE_TRACKER_EMPTY_TITLE_CLASS}>{emptyCopy.title}</p>
+            <p className={RELEASE_TRACKER_EMPTY_BODY_CLASS}>{emptyCopy.body}</p>
             {isArtist && feedView === "upcoming" && effectiveScope === "my" && (
-              <Button className="mt-4" onClick={() => navigate(RELEASE_TRACKER_ADD_HREF)}>
+              <Button
+                className={RELEASE_TRACKER_EMPTY_CTA_CLASS}
+                onClick={() => navigate(RELEASE_TRACKER_ADD_HREF)}
+              >
                 Add your first release
               </Button>
             )}
@@ -648,7 +681,7 @@ export default function ReleaseTracker() {
                     variant="inline"
                   />
                 )}
-                <div className="divide-y divide-white/10">
+                <div className={RELEASE_FEED_DIVIDE_CLASS}>
                   {standardOutTodayFeed.map((r) => renderReleaseCard(r))}
                 </div>
               </section>
@@ -661,7 +694,7 @@ export default function ReleaseTracker() {
                 <h2 className={RELEASE_FEED_MONTH_HEADING_CLASS}>
                   {monthLabel}
                 </h2>
-                <div className="divide-y divide-white/10">
+                <div className={RELEASE_FEED_DIVIDE_CLASS}>
                   {items.map((r) => renderReleaseCard(r))}
                 </div>
               </section>
@@ -671,7 +704,7 @@ export default function ReleaseTracker() {
                 <h2 className={cn(RELEASE_FEED_MONTH_HEADING_CLASS, "mt-1")}>
                   Coming soon...
                 </h2>
-                <div className="divide-y divide-white/10">
+                <div className={RELEASE_FEED_DIVIDE_CLASS}>
                   {feedItems
                     .filter((r) => r.isComingSoon)
                     .map((r) => renderReleaseCard(r))}
@@ -685,15 +718,30 @@ export default function ReleaseTracker() {
 
       {isArtist && (
         <>
-          <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-nav-block)] bg-background" />
+          <div
+            className={cn(
+              "pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-nav-block)]",
+              RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
+            )}
+          />
           <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-gap-above-nav))] z-30">
-            <div className="absolute inset-x-0 bottom-0 h-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] bg-background" />
-            <div className="absolute inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] h-[var(--releases-cta-fade-block)] bg-gradient-to-t from-background via-background/90 to-transparent" />
+            <div
+              className={cn(
+                "absolute inset-x-0 bottom-0 h-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))]",
+                RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
+              )}
+            />
+            <div
+              className={cn(
+                "absolute inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] h-[var(--releases-cta-fade-block)]",
+                RELEASE_TRACKER_FAB_FADE_CLASS,
+              )}
+            />
             <div className="relative mx-auto max-w-md px-4">
               <div className="relative pt-1 pb-0.5">
                 <Button
                   onClick={() => navigate(RELEASE_TRACKER_ADD_HREF)}
-                  className="ios-press pointer-events-auto h-12 w-full rounded-xl border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]"
+                  className={RELEASE_TRACKER_ADD_CTA_CLASS}
                 >
                   <Plus className="mr-1 h-4 w-4" />
                   Add Release

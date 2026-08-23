@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { playInteractionLightThrottled } from "@/lib/haptic";
+import { APP_MATERIAL_LINK_CLASS } from "@/lib/app-material";
 import { RELEASE_TIMING_MODE_EXACT } from "@shared/release-timing";
 import type { ReleaseTimingDraft } from "@/lib/release-timing-draft";
 import { ReleaseStatusFields } from "@/components/release-status-fields";
@@ -57,7 +58,7 @@ export function ReleaseScheduleSheet({
         panel === "timezone" ? (
           <button
             type="button"
-            className="ios-press text-sm text-accent"
+            className={`ios-press text-sm ${APP_MATERIAL_LINK_CLASS}`}
             onClick={() => {
               playInteractionLightThrottled();
               setPanel("schedule");

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   SETTINGS_GROUP_CLASS,
   SETTINGS_NAV_ROW_CLASS,
+  SETTINGS_PAGE_PAD_CLASS,
   SETTINGS_ROW_DIVIDER_CLASS,
   SETTINGS_ROWS_STACK_CLASS,
   SETTINGS_SECTION_LABEL_CLASS,
@@ -43,13 +44,16 @@ describe("settings presentation contract", () => {
     assert.match(SETTINGS_GROUP_CLASS, /rounded-xl/);
     assert.match(SETTINGS_GROUP_CLASS, /border-white\/10/);
     assert.match(SETTINGS_ROWS_STACK_CLASS, /divide-y/);
-    assert.match(SETTINGS_ROWS_STACK_CLASS, /divide-white\/5/);
+    assert.match(SETTINGS_ROWS_STACK_CLASS, /dark:divide-white\/\[0\.08\]/);
+    assert.match(SETTINGS_ROWS_STACK_CLASS, /divide-border/);
     assert.doesNotMatch(SETTINGS_ROWS_STACK_CLASS, /rounded-xl|bg-black|border-white\/10/);
     assert.match(SETTINGS_ROW_DIVIDER_CLASS, /border-t/);
-    assert.match(SETTINGS_ROW_DIVIDER_CLASS, /border-white\/5/);
+    assert.match(SETTINGS_ROW_DIVIDER_CLASS, /dark:border-white\/\[0\.08\]/);
     assert.match(SETTINGS_NAV_ROW_CLASS, /min-h-11/);
     assert.match(SETTINGS_SWITCH_ROW_CLASS, /min-h-11/);
-    assert.match(SETTINGS_SECTIONS_STACK_CLASS, /space-y-7/);
+    assert.doesNotMatch(SETTINGS_NAV_ROW_CLASS, /ios-press/);
+    assert.match(SETTINGS_NAV_ROW_CLASS, /active:bg-black\/\[0\.04\]/);
+    assert.match(SETTINGS_SECTIONS_STACK_CLASS, /space-y-4/);
     assert.match(SETTINGS_VAT_INSET_CLASS, /py-3/);
     assert.doesNotMatch(SETTINGS_VAT_INSET_CLASS, /rounded-xl|bg-black|border-white|backdrop-blur|shadow/);
     assert.doesNotMatch(SETTINGS_NAV_ROW_CLASS, /bg-\[#4ae9df\]|bg-turquoise|bg-accent/);
@@ -114,7 +118,7 @@ describe("settings root IA slice 1", () => {
     assert.match(settingsSrc, /ChangePasswordDialog/);
     assert.match(settingsSrc, /data-testid="button-logout"/);
     assert.match(settingsSrc, /onSignOut/);
-    assert.match(settingsSrc, /SETTINGS_LOGOUT_SECTION_CLASS/);
+    assert.doesNotMatch(settingsSrc, /SETTINGS_LOGOUT_SECTION_CLASS/);
   });
 });
 
@@ -197,7 +201,7 @@ describe("settings corrective slice — scroll + flat containers", () => {
     assert.match(APP_PAGE_SCROLL_CLASS, /flex-1/);
     assert.match(APP_PAGE_SCROLL_CLASS, /min-h-0/);
     assert.match(APP_PAGE_SCROLL_CLASS, /overflow-y-auto/);
-    assert.match(settingsSrc, /APP_PAGE_SCROLL_CLASS/);
+    assert.match(settingsSrc, /SETTINGS_PAGE_SCROLL_CLASS/);
     assert.match(settingsSrc, /onBack=\{handleBack\}/);
     assert.doesNotMatch(settingsSrc, /className=\{`[^`]*min-h-screen/);
     assert.doesNotMatch(settingsSrc, /className="[^"]*min-h-screen/);
@@ -207,8 +211,10 @@ describe("settings corrective slice — scroll + flat containers", () => {
       settingsSrc,
       /className="[^"]*overflow-y-auto|className=\{`[^`]*overflow-y-auto/,
     );
-    assert.match(settingsSrc, /app-page-top-pad/);
-    assert.match(settingsSrc, /pb-8/);
+    assert.match(settingsSrc, /SETTINGS_PAGE_PAD_CLASS/);
+    assert.doesNotMatch(settingsSrc, /app-page-top-pad/);
+    assert.match(SETTINGS_PAGE_PAD_CLASS, /pb-8/);
+    assert.match(SETTINGS_PAGE_PAD_CLASS, /pt-1/);
   });
 
   it("removes decorative SETTINGS_GROUP_CLASS from Settings root sections", () => {
@@ -216,8 +222,7 @@ describe("settings corrective slice — scroll + flat containers", () => {
     assert.match(settingsSrc, /SETTINGS_ROWS_STACK_CLASS/);
     assert.doesNotMatch(settingsSrc, /rounded-xl border border-white\/10 bg-black\/20/);
     assert.doesNotMatch(settingsSrc, /backdrop-blur/);
-    // Nested notifications page may still use group surfaces
-    assert.match(notificationsSrc, /SETTINGS_GROUP_CLASS/);
+    assert.doesNotMatch(notificationsSrc, /SETTINGS_GROUP_CLASS/);
   });
 
   it("keeps flat VAT inset without nested glass card chrome", () => {

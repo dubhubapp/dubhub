@@ -5,10 +5,15 @@
 
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Bell } from "lucide-react";
+import { ChevronLeft, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+} from "@/lib/app-material";
+import { cn } from "@/lib/utils";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
 import {
   createDefaultPushNotificationPreferences,
@@ -24,9 +29,22 @@ import {
   unregisterPushAndDeactivate,
 } from "@/lib/push-notifications";
 import {
-  SETTINGS_GROUP_CLASS,
-  SETTINGS_ROW_DIVIDER_CLASS,
+  SETTINGS_BACK_BUTTON_CLASS,
+  SETTINGS_BACK_ICON_CLASS,
+  SETTINGS_HEADER_TO_SECTIONS_CLASS,
+  SETTINGS_NOTIFICATIONS_INTRO_COPY,
+  SETTINGS_NOTIFICATIONS_PUSH_HELPER_COPY,
+  SETTINGS_OS_WARNING_CLASS,
+  SETTINGS_PAGE_PAD_CLASS,
+  SETTINGS_PAGE_SCROLL_CLASS,
+  SETTINGS_SECTION_HELPER_CLASS,
+  SETTINGS_SUBTITLE_CLASS,
+  SETTINGS_TITLE_AFTER_BACK_CLASS,
+  SETTINGS_ROW_SUBTITLE_CLASS,
+  SETTINGS_ROW_TITLE_CLASS,
+  SETTINGS_ROWS_STACK_CLASS,
   SETTINGS_SECTION_LABEL_CLASS,
+  SETTINGS_SECTIONS_STACK_CLASS,
   SETTINGS_SWITCH_ROW_CLASS,
 } from "@/lib/settings-presentation";
 import { useUser } from "@/lib/user-context";
@@ -60,8 +78,8 @@ function PushPrefSwitchRow({
       aria-disabled={inactive || undefined}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+        <p className={SETTINGS_ROW_TITLE_CLASS}>{label}</p>
+        {description ? <p className={SETTINGS_ROW_SUBTITLE_CLASS}>{description}</p> : null}
       </div>
       <Switch
         checked={checked}
@@ -235,45 +253,42 @@ export default function SettingsNotificationsPage() {
   };
 
   return (
-    <SwipeBackPage onBack={handleBack} className="flex-1 min-h-0 bg-background overflow-y-auto">
-      <div className="app-page-top-pad px-6 pb-8">
-        <div className="max-w-md mx-auto space-y-6">
-          <div className="flex items-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 mr-2"
+    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+      <div className={SETTINGS_PAGE_PAD_CLASS}>
+        <div className="max-w-md mx-auto">
+          <div>
+            <button
+              type="button"
               onClick={handleBack}
+              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              aria-label="Back"
               data-testid="button-settings-notifications-back"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Bell className="w-5 h-5 text-gray-300" aria-hidden />
+              <ChevronLeft
+                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                strokeWidth={2}
+                aria-hidden
+              />
+            </button>
+            <div className={SETTINGS_TITLE_AFTER_BACK_CLASS}>
+              <Bell className="w-5 h-5 text-muted-foreground" aria-hidden />
               <h1 className="text-xl font-bold">Notifications</h1>
             </div>
-            <p className="text-sm text-gray-400">
-              Choose what appears in dub hub and what can be sent to your device.
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              In-app notifications control what appears in your notifications tab. Push alerts control
-              alerts sent to your device.
+            <p className={SETTINGS_SUBTITLE_CLASS}>
+              {SETTINGS_NOTIFICATIONS_INTRO_COPY}
             </p>
           </div>
 
+          <div className={`${SETTINGS_HEADER_TO_SECTIONS_CLASS} ${SETTINGS_SECTIONS_STACK_CLASS}`}>
           <section aria-labelledby="settings-notifications-in-app">
             <h2 id="settings-notifications-in-app" className={SETTINGS_SECTION_LABEL_CLASS}>
               In-app
             </h2>
-            <div className={SETTINGS_GROUP_CLASS}>
+            <div className={SETTINGS_ROWS_STACK_CLASS}>
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">Like notifications</p>
-                  <p className="text-xs text-muted-foreground">When someone likes your post.</p>
+                  <p className={SETTINGS_ROW_TITLE_CLASS}>Like notifications</p>
+                  <p className={SETTINGS_ROW_SUBTITLE_CLASS}>When someone likes your post.</p>
                 </div>
                 <Switch
                   checked={notificationPrefs.likeNotifications}
@@ -282,11 +297,10 @@ export default function SettingsNotificationsPage() {
                   data-testid="switch-notifications-like"
                 />
               </div>
-              <div className={SETTINGS_ROW_DIVIDER_CLASS} />
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">Comment notifications</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className={SETTINGS_ROW_TITLE_CLASS}>Comment notifications</p>
+                  <p className={SETTINGS_ROW_SUBTITLE_CLASS}>
                     Comments, replies, and tags on your posts.
                   </p>
                 </div>
@@ -297,11 +311,10 @@ export default function SettingsNotificationsPage() {
                   data-testid="switch-notifications-comment"
                 />
               </div>
-              <div className={SETTINGS_ROW_DIVIDER_CLASS} />
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">Release notifications</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className={SETTINGS_ROW_TITLE_CLASS}>Release notifications</p>
+                  <p className={SETTINGS_ROW_SUBTITLE_CLASS}>
                     Announcements and updates for your releases.
                   </p>
                 </div>
@@ -315,44 +328,38 @@ export default function SettingsNotificationsPage() {
             </div>
           </section>
 
-          <section aria-labelledby="settings-notifications-push" className="space-y-2">
+          <section aria-labelledby="settings-notifications-push">
             <h2 id="settings-notifications-push" className={SETTINGS_SECTION_LABEL_CLASS}>
               Push
             </h2>
-            <p className="px-1 text-xs text-muted-foreground">
-              Choose which alerts can be sent to your device.
+            <p className={SETTINGS_SECTION_HELPER_CLASS}>
+              {SETTINGS_NOTIFICATIONS_PUSH_HELPER_COPY}
             </p>
             {isModerator ? (
-              <p className="px-1 text-xs text-muted-foreground">
+              <p className="mb-2 text-xs text-muted-foreground">
                 Moderator queue alerts stay enabled while device push is on.
               </p>
             ) : null}
             {pushPrefsLoadError ? (
-              <p className="px-1 text-xs text-amber-200/90" data-testid="push-prefs-load-error">
+              <p className="mb-2 text-xs text-amber-200/90" data-testid="push-prefs-load-error">
                 {pushPrefsLoadError}
               </p>
             ) : null}
             {pushPrefsSaveError ? (
-              <p className="px-1 text-xs text-red-300" data-testid="push-prefs-save-error">
+              <p className="mb-2 text-xs text-red-300" data-testid="push-prefs-save-error">
                 {pushPrefsSaveError}
               </p>
             ) : null}
 
             {showPushPrefsLoading ? (
-              <div className={SETTINGS_GROUP_CLASS} data-testid="push-prefs-loading">
-                <p className="px-4 pt-3 text-xs text-muted-foreground">Loading push preferences…</p>
+              <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="push-prefs-loading">
+                <p className="py-3 text-xs text-muted-foreground">Loading push preferences…</p>
                 <PushPrefSkeletonRow />
-                {showArtistTagsPush ? (
-                  <>
-                    <div className={SETTINGS_ROW_DIVIDER_CLASS} />
-                    <PushPrefSkeletonRow />
-                  </>
-                ) : null}
-                <div className={SETTINGS_ROW_DIVIDER_CLASS} />
+                {showArtistTagsPush ? <PushPrefSkeletonRow /> : null}
                 <PushPrefSkeletonRow />
               </div>
             ) : pushPrefs ? (
-              <div className={SETTINGS_GROUP_CLASS}>
+              <div className={SETTINGS_ROWS_STACK_CLASS}>
                 <PushPrefSwitchRow
                   label="Comments & replies"
                   description="Push when someone comments on your post or replies."
@@ -364,21 +371,17 @@ export default function SettingsNotificationsPage() {
                   ariaLabel="Push alerts for comments and replies"
                 />
                 {showArtistTagsPush ? (
-                  <>
-                    <div className={SETTINGS_ROW_DIVIDER_CLASS} />
-                    <PushPrefSwitchRow
-                      label="Artist tags"
-                      description="Push when you are tagged as the artist in a comment."
-                      checked={pushPrefs.artistTagsPush}
-                      onCheckedChange={(v) => handlePushCategoryToggle({ artistTagsPush: v })}
-                      disabled={savingPushPrefKey === "artistTagsPush"}
-                      inactive={pushCategoriesInactive}
-                      testId="switch-push-artist-tags"
-                      ariaLabel="Push alerts for artist tags"
-                    />
-                  </>
+                  <PushPrefSwitchRow
+                    label="Artist tags"
+                    description="Push when you are tagged as the artist in a comment."
+                    checked={pushPrefs.artistTagsPush}
+                    onCheckedChange={(v) => handlePushCategoryToggle({ artistTagsPush: v })}
+                    disabled={savingPushPrefKey === "artistTagsPush"}
+                    inactive={pushCategoriesInactive}
+                    testId="switch-push-artist-tags"
+                    ariaLabel="Push alerts for artist tags"
+                  />
                 ) : null}
-                <div className={SETTINGS_ROW_DIVIDER_CLASS} />
                 <PushPrefSwitchRow
                   label="Release updates"
                   description="Push for release added and release day alerts."
@@ -393,18 +396,18 @@ export default function SettingsNotificationsPage() {
             ) : null}
           </section>
 
-          <section aria-labelledby="settings-notifications-master" className="space-y-2">
+          <section aria-labelledby="settings-notifications-master">
             <h2 id="settings-notifications-master" className={SETTINGS_SECTION_LABEL_CLASS}>
               All push notifications
             </h2>
             {showPushPrefsLoading || !pushPrefs ? (
               devicePushPermissionLoading || showPushPrefsLoading ? (
-                <div className={SETTINGS_GROUP_CLASS}>
+                <div className={SETTINGS_ROWS_STACK_CLASS}>
                   <PushPrefSkeletonRow />
                 </div>
               ) : null
             ) : (
-              <div className={SETTINGS_GROUP_CLASS}>
+              <div className={SETTINGS_ROWS_STACK_CLASS}>
                 {devicePushPermissionLoading ? (
                   <PushPrefSkeletonRow />
                 ) : (
@@ -424,7 +427,7 @@ export default function SettingsNotificationsPage() {
             )}
 
             {pushOsPermissionDenied ? (
-              <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 space-y-2">
+              <div className={`mt-2 ${SETTINGS_OS_WARNING_CLASS}`}>
                 <p className="text-xs leading-relaxed text-amber-100/90">
                   Notifications are turned off for dub hub in iOS Settings. Open Settings → Notifications →
                   dub hub to allow alerts, then return here.
@@ -442,6 +445,7 @@ export default function SettingsNotificationsPage() {
               </div>
             ) : null}
           </section>
+          </div>
         </div>
       </div>
     </SwipeBackPage>

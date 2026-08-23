@@ -35,6 +35,7 @@ import {
   RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS,
   RELEASE_TRACKER_PRIMARY_LABEL_CLASS,
   RELEASE_TRACKER_PRIMARY_ROW_CLASS,
+  RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS,
   RELEASE_TRACKER_SECONDARY_ROW_CLASS,
   buildReleaseTrackerSearch,
   coerceReleaseTrackerView,
@@ -146,7 +147,7 @@ describe("ReleaseTracker primary collection switch", () => {
     assert.doesNotMatch(RELEASE_TRACKER_PRIMARY_INACTIVE_CLASS, /border-white\/10|bg-black\/25/);
     assert.match(RELEASE_TRACKER_PRIMARY_LABEL_CLASS, /inline-block/);
     assert.match(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /after:h-\[3px\]/);
-    assert.match(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /after:bg-accent/);
+    assert.match(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /after:bg-\[#0a83ff\]/);
     assert.match(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /after:rounded-full/);
     assert.doesNotMatch(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /inset-x-2|w-full|gradient|glow/);
   });
@@ -155,7 +156,7 @@ describe("ReleaseTracker primary collection switch", () => {
     assert.match(trackerSrc, /aria-label="Release list"/);
     assert.match(trackerSrc, /role="tablist"/);
     assert.match(trackerSrc, /text-\[13px\]/);
-    assert.match(trackerSrc, /after:inset-x-2 after:bottom-0 after:h-0\.5 after:rounded-full after:bg-accent/);
+    assert.match(trackerSrc, /RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS/);
     assert.deepEqual(getReleaseTrackerSecondaryViews("my"), [
       "upcoming",
       "collaborations",
@@ -170,8 +171,8 @@ describe("ReleaseTracker primary collection switch", () => {
     assert.match(RELEASE_TRACKER_SECONDARY_ROW_CLASS, /min-h-11/);
     assert.doesNotMatch(RELEASE_TRACKER_SECONDARY_ROW_CLASS, /border-b/);
     assert.match(
-      trackerSrc,
-      /after:inset-x-2 after:bottom-0 after:h-0\.5 after:rounded-full after:bg-accent/,
+      RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS,
+      /after:inset-x-2 after:bottom-0 after:h-0\.5 after:rounded-full after:bg-\[#0a83ff\]/,
     );
   });
 
@@ -399,7 +400,7 @@ describe("ReleaseTracker month headings / loading / empty / Add Release", () => 
     assert.match(RELEASE_FEED_MONTH_HEADING_CLASS, /text-sm/);
     assert.match(RELEASE_FEED_MONTH_HEADING_CLASS, /font-semibold/);
     assert.match(RELEASE_FEED_MONTH_HEADING_CLASS, /text-white/);
-    assert.doesNotMatch(RELEASE_FEED_MONTH_HEADING_CLASS, /uppercase|tracking-wide|text-white\/55/);
+    assert.doesNotMatch(RELEASE_FEED_MONTH_HEADING_CLASS, /uppercase|text-white\/55/);
   });
 
   it("loader uses flat-row presentation", () => {

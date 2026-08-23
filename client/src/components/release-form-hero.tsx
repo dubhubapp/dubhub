@@ -1,5 +1,9 @@
 import { Pencil, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_ARTWORK_PICKER_CLASS,
+  APP_MATERIAL_FOCUS_RING_CLASS,
+} from "@/lib/app-material";
 import type { ReleaseFormHeroSchedule } from "@/lib/release-form-hero-schedule";
 
 export type ReleaseFormHeroProps = {
@@ -36,9 +40,9 @@ export function ReleaseFormHero({
         onClick={onArtworkPress}
         disabled={uploading}
         className={cn(
-          "ios-press relative aspect-square w-[min(72vw,17.5rem)] max-w-full overflow-hidden rounded-2xl",
-          "border border-white/10 bg-black/40 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.9)]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "ios-press relative aspect-square w-[min(72vw,17.5rem)] max-w-full overflow-hidden rounded-[18px]",
+          APP_MATERIAL_ARTWORK_PICKER_CLASS,
+          APP_MATERIAL_FOCUS_RING_CLASS,
           uploading && "opacity-70",
         )}
         aria-label={artworkUrl ? "Change artwork" : "Add artwork"}
@@ -60,7 +64,7 @@ export function ReleaseFormHero({
           </>
         ) : (
           <span className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-white/25 bg-white/5">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-white/30 bg-white/[0.07] text-white/80">
               <Plus className="h-5 w-5" />
             </span>
             <span className="text-sm font-medium text-white/80">
@@ -75,8 +79,8 @@ export function ReleaseFormHero({
           type="button"
           onClick={onTitlePress}
           className={cn(
-            "ios-press max-w-full px-2",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md",
+            "ios-press max-w-full px-2 rounded-md",
+            APP_MATERIAL_FOCUS_RING_CLASS,
           )}
           aria-label={hasTitle ? "Edit release title" : "Add release title"}
           data-testid="release-form-hero-title"
@@ -112,7 +116,7 @@ export function ReleaseFormHero({
           onClick={onSchedulePress}
           className={cn(
             "ios-press space-y-1 rounded-md px-2",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            APP_MATERIAL_FOCUS_RING_CLASS,
           )}
           aria-label="Edit release schedule"
           data-testid="release-form-hero-schedule"

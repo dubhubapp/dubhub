@@ -1,10 +1,23 @@
 import { useLocation } from "wouter";
-import { ArrowLeft, MessageCircleQuestion } from "lucide-react";
+import { ChevronLeft, MessageCircleQuestion } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
-import { Button } from "@/components/ui/button";
 import { ArtistProfileQuestionsManage } from "@/components/artist-profile-questions-manage";
 import { useUser } from "@/lib/user-context";
 import { useEffect } from "react";
+import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+} from "@/lib/app-material";
+import { cn } from "@/lib/utils";
+import {
+  SETTINGS_BACK_BUTTON_CLASS,
+  SETTINGS_BACK_ICON_CLASS,
+  SETTINGS_HEADER_TO_SECTIONS_CLASS,
+  SETTINGS_PAGE_PAD_CLASS,
+  SETTINGS_PAGE_SCROLL_CLASS,
+  SETTINGS_SUBTITLE_CLASS,
+  SETTINGS_TITLE_AFTER_BACK_CLASS,
+} from "@/lib/settings-presentation";
 
 export default function ArtistQuestionsManagePage() {
   const [, navigate] = useLocation();
@@ -29,33 +42,35 @@ export default function ArtistQuestionsManagePage() {
   }
 
   return (
-    <SwipeBackPage onBack={handleBack} className="flex-1 min-h-0 bg-background overflow-y-auto">
-      <div className="app-page-top-pad px-6 pb-8">
+    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+      <div className={SETTINGS_PAGE_PAD_CLASS}>
         <div className="max-w-md mx-auto">
-          <div className="flex items-center mb-6">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 mr-2"
+          <div>
+            <button
+              type="button"
               onClick={handleBack}
+              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              aria-label="Back"
               data-testid="button-artist-questions-back"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-2">
-              <MessageCircleQuestion className="w-5 h-5 text-gray-300" />
+              <ChevronLeft
+                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                strokeWidth={2}
+                aria-hidden
+              />
+            </button>
+            <div className={SETTINGS_TITLE_AFTER_BACK_CLASS}>
+              <MessageCircleQuestion className="w-5 h-5 text-muted-foreground" />
               <h1 className="text-xl font-bold">Manage Artist Answers</h1>
             </div>
-            <p className="text-sm text-gray-400">
+            <p className={SETTINGS_SUBTITLE_CLASS}>
               Edit answers that appear on your public artist profile.
             </p>
           </div>
 
-          <ArtistProfileQuestionsManage />
+          <div className={SETTINGS_HEADER_TO_SECTIONS_CLASS}>
+            <ArtistProfileQuestionsManage />
+          </div>
         </div>
       </div>
     </SwipeBackPage>

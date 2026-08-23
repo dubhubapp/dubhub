@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_FIELD_CLASS,
+  APP_MATERIAL_FIELD_TRIGGER_CLASS,
+  APP_MATERIAL_SEGMENT_ACTIVE_CLASS,
+  APP_MATERIAL_SEGMENT_BASE_CLASS,
+  APP_MATERIAL_SEGMENT_INACTIVE_CLASS,
+  APP_MATERIAL_SEGMENT_ROW_CLASS,
+} from "@/lib/app-material";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 import {
   RELEASE_TIMING_MODE_EXACT,
@@ -34,16 +42,10 @@ export type ReleaseStatusFieldsProps = {
   onRequestTimezonePicker?: () => void;
 };
 
-/** Independent option tiles — no shared outer shell. */
-const optionRowClass =
-  "grid w-full min-w-0 max-w-full grid-cols-[repeat(2,minmax(0,1fr))] gap-2";
-const optionButtonBaseClass =
-  "ios-press box-border min-h-10 min-w-0 w-full max-w-full rounded-lg border px-2 py-2.5 text-sm font-medium leading-snug transition-colors break-words text-center";
-/** Border-only selected chrome — outer glow was clipped by sheet overflow and looked past the inset. */
-const activeOptionClass =
-  "text-accent-foreground font-semibold border-accent bg-accent";
-const inactiveOptionClass =
-  "border-white/10 bg-black/25 text-white/70 hover:text-white hover:bg-black/35";
+const optionRowClass = APP_MATERIAL_SEGMENT_ROW_CLASS;
+const optionButtonBaseClass = APP_MATERIAL_SEGMENT_BASE_CLASS;
+const activeOptionClass = APP_MATERIAL_SEGMENT_ACTIVE_CLASS;
+const inactiveOptionClass = APP_MATERIAL_SEGMENT_INACTIVE_CLASS;
 
 export function ReleaseStatusFields({
   comingSoon,
@@ -140,6 +142,7 @@ export function ReleaseStatusFields({
                 disabled={dateFieldDisabled}
                 required
                 className={cn(
+                  APP_MATERIAL_FIELD_CLASS,
                   "dubhub-date-input h-10 min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-start px-3 py-0 pr-12 text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
                   "focus-visible:ring-offset-0",
                   dateFieldDisabled && "cursor-not-allowed opacity-50",
@@ -227,6 +230,7 @@ export function ReleaseStatusFields({
                     disabled={dateFieldDisabled}
                     required={exact}
                     className={cn(
+                      APP_MATERIAL_FIELD_CLASS,
                       "dubhub-time-input h-10 min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-center px-3 py-0 text-center transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
                       "focus-visible:ring-offset-0",
                       dateFieldDisabled && "cursor-not-allowed opacity-50",
@@ -256,7 +260,7 @@ export function ReleaseStatusFields({
                     }
                   }}
                   className={cn(
-                    "ios-press flex h-10 w-full min-w-0 max-w-full items-center justify-between rounded-md border border-white/10 bg-black/35 px-3 text-left text-sm",
+                    APP_MATERIAL_FIELD_TRIGGER_CLASS,
                     dateFieldDisabled && "cursor-not-allowed opacity-50",
                   )}
                 >

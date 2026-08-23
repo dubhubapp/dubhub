@@ -22,9 +22,6 @@ export const VERIFICATION_RESEND_INTRO_KNOWN =
 export const VERIFICATION_RESEND_INTRO_UNKNOWN =
   "Enter your email address and we'll send you a new verification email if your account still needs verification.";
 
-export const EMAIL_NOT_CONFIRMED_MESSAGE =
-  "Please check your email and confirm your account. If it doesn't arrive within a couple of minutes, check your spam or junk folder.";
-
 export function getPendingVerificationEmail(): string {
   try {
     return localStorage.getItem(PENDING_VERIFICATION_EMAIL_KEY)?.trim() ?? "";

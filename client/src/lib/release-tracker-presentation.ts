@@ -4,6 +4,14 @@
  */
 
 import {
+  APP_MATERIAL_CERAMIC_BUTTON_CLASS,
+  APP_MATERIAL_RELEASES_ADD_CTA_CLASS,
+  APP_MATERIAL_RELEASES_CANVAS_CLASS,
+  APP_MATERIAL_RELEASES_FAB_UNDERLAY_CLASS,
+  APP_MATERIAL_RELEASES_STICKY_CLASS,
+  APP_MATERIAL_RELEASES_STICKY_FADE_CLASS,
+} from "@/lib/app-material";
+import {
   STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS,
   STICKY_TAB_CHROME_CLASS,
   STICKY_TAB_CONTENT_TOP_GAP_CLASS,
@@ -16,12 +24,20 @@ export type ReleaseTrackerFeedScope = "my" | "saved";
 export const RELEASE_TRACKER_ADD_HREF = "/releases/new" as const;
 export const RELEASE_FEED_SKELETON_VARIANT = "flat-row" as const;
 
+/** Route-scoped page shell — atmosphere only on Releases (not Home). */
+export const RELEASE_TRACKER_PAGE_CLASS =
+  `${APP_MATERIAL_RELEASES_CANVAS_CLASS} flex-1 min-h-0 overflow-x-hidden overflow-y-auto` as const;
+
 /** Flat media row — no per-item glass card shell. Top-align artwork with metadata. */
 export const RELEASE_FEED_ROW_BASE_CLASS =
   "ios-press relative flex items-start w-full min-w-0 gap-3.5 overflow-hidden py-3.5 text-left transition-colors" as const;
 
-/** Artwork size token — 96px (R1.5). Bottom edge does not dictate status placement. */
-export const RELEASE_FEED_ARTWORK_SIZE_CLASS = "h-24 w-24 shrink-0 rounded-lg" as const;
+/** Restrained list separators (not card chrome). */
+export const RELEASE_FEED_DIVIDE_CLASS = "divide-y divide-white/[0.08]" as const;
+
+/** Artwork size token — 96px (R1.5). Subtle edge only; size/layout frozen. */
+export const RELEASE_FEED_ARTWORK_SIZE_CLASS =
+  "h-24 w-24 shrink-0 rounded-lg ring-1 ring-white/10 shadow-[0_2px_8px_rgba(0,0,0,0.22)]" as const;
 export const RELEASE_FEED_ARTWORK_PX = 96 as const;
 export const RELEASE_FEED_ARTWORK_FALLBACK_ICON_CLASS = "h-11 w-11" as const;
 
@@ -47,7 +63,7 @@ export const RELEASE_PREVIEW_DATE_STATUS_ROW_CLASS =
 
 /** Month / section headings — title case, near-white (not muted uppercase). */
 export const RELEASE_FEED_MONTH_HEADING_CLASS =
-  "mb-1 text-sm font-semibold text-white" as const;
+  "mb-1.5 text-sm font-semibold tracking-tight text-white/95" as const;
 
 /**
  * Overview link row — in-flow at column bottom (mt-auto).
@@ -94,10 +110,13 @@ export const RELEASE_DETAIL_LINK_SHOW_EXTERNAL_ICON = false as const;
 /**
  * Primary My/Saved: text-led two-column collection switch.
  * No boxes, trays, fills, or segmented capsule. Hit area stays >=44pt.
+ * Geometry from shared sticky chrome; material via Releases sticky modifier.
  */
-export const RELEASE_TRACKER_STICKY_CHROME_CLASS = STICKY_TAB_CHROME_CLASS;
-/** Same dissolve treatment as Leaderboard sticky (parity when switching bottom tabs). */
-export const RELEASE_TRACKER_STICKY_FADE_CLASS = STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS;
+export const RELEASE_TRACKER_STICKY_CHROME_CLASS =
+  `${STICKY_TAB_CHROME_CLASS} ${APP_MATERIAL_RELEASES_STICKY_CLASS}` as const;
+/** Same dissolve geometry as Leaderboard; Releases wash via sticky-fade modifier. */
+export const RELEASE_TRACKER_STICKY_FADE_CLASS =
+  `${STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS} ${APP_MATERIAL_RELEASES_STICKY_FADE_CLASS}` as const;
 export const RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS = STICKY_TAB_CONTENT_TOP_GAP_CLASS;
 export const RELEASE_TRACKER_PRIMARY_ROW_CLASS = STICKY_TAB_PRIMARY_ROW_CLASS;
 /** Secondary Upcoming/Collaborations/Past + layout toggle. No full-width baseline rule. */
@@ -111,9 +130,29 @@ export const RELEASE_TRACKER_PRIMARY_INACTIVE_CLASS =
 /** Label-width indicator host — underline sits under the words, not the half-column. */
 export const RELEASE_TRACKER_PRIMARY_LABEL_CLASS =
   "relative inline-block whitespace-nowrap px-0.5 pb-[5px]" as const;
-/** Stronger than secondary `after:h-0.5` + `inset-x-2`; still not a half-width bar. */
+/** Generic selection underline — dub hub blue (not semantic teal). */
 export const RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS =
-  "after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:rounded-full after:bg-accent" as const;
+  "after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:rounded-full after:bg-[#0a83ff]" as const;
+
+/** Secondary tab selected underline — same blue family. */
+export const RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS =
+  "font-semibold text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[#0a83ff]" as const;
+
+export const RELEASE_TRACKER_EMPTY_CLASS =
+  "mx-auto max-w-sm px-2 py-14 text-center" as const;
+export const RELEASE_TRACKER_EMPTY_ICON_CLASS =
+  "mx-auto mb-4 h-12 w-12 text-white/40" as const;
+export const RELEASE_TRACKER_EMPTY_TITLE_CLASS =
+  "mb-2 text-base font-semibold text-foreground" as const;
+export const RELEASE_TRACKER_EMPTY_BODY_CLASS =
+  "text-sm leading-relaxed text-muted-foreground" as const;
+export const RELEASE_TRACKER_EMPTY_CTA_CLASS =
+  `mt-5 ${APP_MATERIAL_CERAMIC_BUTTON_CLASS}` as const;
+
+export const RELEASE_TRACKER_FAB_UNDERLAY_CLASS = APP_MATERIAL_RELEASES_FAB_UNDERLAY_CLASS;
+export const RELEASE_TRACKER_FAB_FADE_CLASS = "dubhub-app-releases-fab-fade";
+/** Add Release CTA — ceramic; C2 softens radius only (~18px). */
+export const RELEASE_TRACKER_ADD_CTA_CLASS = APP_MATERIAL_RELEASES_ADD_CTA_CLASS;
 
 export function getScopeFromSearch(search: string, isArtist: boolean): ReleaseTrackerFeedScope {
   if (!isArtist) return "saved";

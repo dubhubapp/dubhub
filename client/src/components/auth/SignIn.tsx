@@ -6,14 +6,34 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Logo } from '@/components/brand/Logo';
 import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Mail } from "lucide-react";
 import {
   clearPendingVerificationEmail,
-  EMAIL_NOT_CONFIRMED_MESSAGE,
   VERIFICATION_RESEND_COOLDOWN_MESSAGE,
   VERIFICATION_RESEND_SUCCESS_MESSAGE,
   useResendVerificationEmail,
 } from '@/lib/auth-resend';
+import {
+  ARTIST_DM_CTA_LABEL,
+  ARTIST_VERIFICATION_PENDING_ALREADY_MESSAGED,
+  ARTIST_VERIFICATION_PENDING_HEADING,
+  ARTIST_VERIFICATION_PENDING_INSTRUCTION,
+  openDubhubInstagram,
+} from '@/lib/artist-verification-ux';
+import {
+  EMAIL_NOT_CONFIRMED_BODY,
+  EMAIL_NOT_CONFIRMED_HEADING,
+  EMAIL_NOT_CONFIRMED_SPAM_HINT,
+  resolveSignInFeedbackKind,
+} from '@/lib/signin-feedback';
+import { formatUsernameDisplay } from '@/lib/utils';
+import {
+  PRELOGIN_FIELD_CLASS,
+  PRELOGIN_INFO_ICON_CLASS,
+  PRELOGIN_INFO_PANEL_CLASS,
+  PRELOGIN_LINK_CLASS,
+  PRELOGIN_PRIMARY_CTA_CLASS,
+} from '@/lib/prelogin-material';
 
 const RECOVERY_INTENT_KEY = "dubhub:auth-recovery-intent";
 
@@ -24,13 +44,12 @@ interface SignInProps {
 
 export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
   const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password';
-  const UNVERIFIED_ARTIST_MESSAGE =
-    "Your artist account is awaiting verification. If you haven’t already, DM us at @dubhub.uk from your artist Instagram account so we can verify you.";
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [pendingArtistUsername, setPendingArtistUsername] = useState<string | null>(null);
   const [emailNotConfirmed, setEmailNotConfirmed] = useState(false);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const {
@@ -43,17 +62,31 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
     reset: resetResendState,
   } = useResendVerificationEmail(email);
 
+  const feedbackKind = resolveSignInFeedbackKind({
+    emailNotConfirmed,
+    pendingArtistUsername,
+    errorMessage,
+  });
+  const showArtistVerificationPending = feedbackKind === 'artist_pending';
+  const showEmailVerificationPending = feedbackKind === 'email_pending';
+  const showAuthError = feedbackKind === 'auth_error';
+
   useEffect(() => {
     setEmailNotConfirmed(false);
     resetResendState();
   }, [email, resetResendState]);
 
+  const clearFeedback = () => {
+    setErrorMessage('');
+    setPendingArtistUsername(null);
+    setEmailNotConfirmed(false);
+    resetResendState();
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setErrorMessage('');
-    setEmailNotConfirmed(false);
-    resetResendState();
+    clearFeedback();
     try {
       sessionStorage.removeItem(RECOVERY_INTENT_KEY);
     } catch {
@@ -77,8 +110,8 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
         if (error.message.includes('Invalid login credentials')) {
           setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
         } else if (error.message.includes('Email not confirmed')) {
+          // Expected pending state — informational panel only (do not set errorMessage).
           setEmailNotConfirmed(true);
-          setErrorMessage(EMAIL_NOT_CONFIRMED_MESSAGE);
         } else if (error.message.includes('Too many requests')) {
           setErrorMessage('Too many sign in attempts. Please try again later');
         } else if (error.message.includes('User not found')) {
@@ -119,11 +152,13 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
           return;
         }
 
-        // Block unverified artists from logging in
+        // Gate unchanged: unverified artists cannot enter the app.
+        // Presentation only: informational pending panel (not destructive error chrome).
         if (profileData.account_type === 'artist' && !profileData.verified_artist) {
           console.warn('[SignIn] Unverified artist blocked from login');
+          const handle = formatUsernameDisplay(profileData.username);
           await supabase.auth.signOut();
-          setErrorMessage(UNVERIFIED_ARTIST_MESSAGE);
+          setPendingArtistUsername(handle || '');
           return;
         }
 
@@ -158,7 +193,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSignIn} className="space-y-4">
+        <form onSubmit={handleSignIn} className="space-y-3.5">
           <div className="space-y-2">
             <Label htmlFor="email" className="text-foreground">Email</Label>
             <Input
@@ -167,7 +202,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email"
-              className="bg-input border-border text-foreground placeholder-muted-foreground"
+              className={PRELOGIN_FIELD_CLASS}
               required
             />
           </div>
@@ -178,7 +213,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
               <button
                 type="button"
                 onClick={() => setForgotPasswordOpen(true)}
-                className="text-xs text-accent hover:underline"
+                className={`text-xs ${PRELOGIN_LINK_CLASS}`}
                 data-testid="link-forgot-password"
               >
                 Forgot password?
@@ -191,7 +226,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="bg-input border-border text-foreground placeholder-muted-foreground pr-10"
+                className={`${PRELOGIN_FIELD_CLASS} pr-10`}
                 required
               />
               <button
@@ -209,52 +244,115 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
           
           <Button 
             type="submit" 
-            className="w-full font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
+            className={PRELOGIN_PRIMARY_CTA_CLASS}
             disabled={isLoading}
           >
             {isLoading ? "Signing In..." : "Sign In"}
           </Button>
 
-          {errorMessage && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-red-600 text-sm font-medium">{errorMessage}</p>
+          {showAuthError && (
+            <div
+              className="mt-4 rounded-[15px] border border-red-500/40 bg-red-500/10 p-3"
+              data-testid="signin-error-panel"
+              role="alert"
+            >
+              <p className="text-sm font-medium text-red-300">{errorMessage}</p>
             </div>
           )}
 
-          {emailNotConfirmed && resendSuccess && (
-            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
-              <p className="text-green-800 text-sm font-medium" data-testid="text-resend-verification-success">
-                {VERIFICATION_RESEND_SUCCESS_MESSAGE}
+          {showEmailVerificationPending && (
+            <div
+              className={PRELOGIN_INFO_PANEL_CLASS}
+              data-testid="signin-email-verification-pending"
+              role="status"
+            >
+              <div className="flex justify-center">
+                <Mail className={PRELOGIN_INFO_ICON_CLASS} aria-hidden />
+              </div>
+              <p className="text-sm font-semibold text-foreground text-center">
+                {EMAIL_NOT_CONFIRMED_HEADING}
               </p>
+              <p className="text-sm text-muted-foreground text-center">
+                {EMAIL_NOT_CONFIRMED_BODY}
+              </p>
+              <p className="text-sm text-muted-foreground text-center">
+                {EMAIL_NOT_CONFIRMED_SPAM_HINT}
+              </p>
+
+              {resendSuccess ? (
+                <div className="rounded-[15px] border border-emerald-500/40 bg-emerald-500/10 p-3">
+                  <p
+                    className="text-sm font-medium text-emerald-100/95"
+                    data-testid="text-resend-verification-success"
+                  >
+                    {VERIFICATION_RESEND_SUCCESS_MESSAGE}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-[15px]"
+                    onClick={() => void sendVerificationEmail()}
+                    disabled={isResendLoading || isResendOnCooldown || !email.trim()}
+                    data-testid="button-resend-verification-sign-in"
+                  >
+                    {isResendLoading
+                      ? "Sending…"
+                      : isResendOnCooldown
+                        ? `Please wait (${resendCooldownRemaining}s)`
+                        : "Send new verification email"}
+                  </Button>
+                  {resendErrorMessage && (
+                    <p
+                      className="text-sm text-red-300"
+                      data-testid="text-resend-verification-error-sign-in"
+                    >
+                      {resendErrorMessage}
+                    </p>
+                  )}
+                  {isResendOnCooldown && !resendErrorMessage && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      {VERIFICATION_RESEND_COOLDOWN_MESSAGE}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {emailNotConfirmed && !resendSuccess && (
-            <div className="mt-3 space-y-2">
+          {showArtistVerificationPending && (
+            <div
+              className={PRELOGIN_INFO_PANEL_CLASS}
+              data-testid="signin-artist-verification-pending"
+              role="status"
+            >
+              <p className="text-sm font-semibold text-foreground">
+                {ARTIST_VERIFICATION_PENDING_HEADING}
+              </p>
+              <p className="text-sm text-muted-foreground" data-testid="text-artist-pending-instruction">
+                {ARTIST_VERIFICATION_PENDING_INSTRUCTION}
+              </p>
+              {pendingArtistUsername ? (
+                <p
+                  className="text-sm font-semibold text-foreground"
+                  data-testid="text-artist-pending-username"
+                >
+                  {pendingArtistUsername}
+                </p>
+              ) : null}
+              <p className="text-sm text-muted-foreground" data-testid="text-artist-pending-already-messaged">
+                {ARTIST_VERIFICATION_PENDING_ALREADY_MESSAGED}
+              </p>
               <Button
                 type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => void sendVerificationEmail()}
-                disabled={isResendLoading || isResendOnCooldown || !email.trim()}
-                data-testid="button-resend-verification-sign-in"
+                className={PRELOGIN_PRIMARY_CTA_CLASS}
+                onClick={() => openDubhubInstagram()}
+                data-testid="button-signin-artist-dm-instagram"
               >
-                {isResendLoading
-                  ? "Sending…"
-                  : isResendOnCooldown
-                    ? `Please wait (${resendCooldownRemaining}s)`
-                    : "Send new verification email"}
+                {ARTIST_DM_CTA_LABEL}
               </Button>
-              {resendErrorMessage && (
-                <p className="text-sm text-red-600" data-testid="text-resend-verification-error-sign-in">
-                  {resendErrorMessage}
-                </p>
-              )}
-              {isResendOnCooldown && !resendErrorMessage && (
-                <p className="text-xs text-muted-foreground text-center">
-                  {VERIFICATION_RESEND_COOLDOWN_MESSAGE}
-                </p>
-              )}
             </div>
           )}
         </form>
@@ -264,7 +362,7 @@ export function SignIn({ onToggleMode, onAuthSuccess }: SignInProps) {
             New to dub hub?{' '}
             <button
               onClick={onToggleMode}
-              className="text-accent font-semibold hover:underline"
+              className={PRELOGIN_LINK_CLASS}
             >
               Create account
             </button>

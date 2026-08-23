@@ -130,16 +130,17 @@ export async function checkUsernameAvailability(
     // Continue check - database will enforce uniqueness
   }
 
-  // Check artist-reserved names (only if account_type = 'user')
-  if (accountType === 'user') {
-    try {
-      const { data: isReserved, error: reservedError } = await supabaseClient
-        .rpc('is_artist_username_reserved', { p_username: normalized });
+  // Artist-reserved names: Community blocked; Artist allowed with informational reason.
+  // Evaluated after hard/deceased/taken so those failures always win.
+  try {
+    const { data: isReserved, error: reservedError } = await supabaseClient
+      .rpc('is_artist_username_reserved', { p_username: normalized });
 
-      if (reservedError) {
-        console.error('[checkUsernameAvailability] Error checking reserved username RPC:', reservedError);
-        // Continue check - database will enforce
-      } else if (isReserved === true) {
+    if (reservedError) {
+      console.error('[checkUsernameAvailability] Error checking reserved username RPC:', reservedError);
+      // Continue — database / submit path still enforce Community blocks
+    } else if (isReserved === true) {
+      if (accountType === 'user') {
         console.warn('[checkUsernameAvailability] Artist-reserved username blocked for user:', {
           username: trimmed,
           normalized,
@@ -152,10 +153,15 @@ export async function checkUsernameAvailability(
           reason: 'artist_reserved',
         };
       }
-    } catch (err) {
-      console.error('[checkUsernameAvailability] Unexpected RPC failure checking reserved username:', err);
-      // Continue check - database will enforce
+      // Artist: still available; reason is informational acknowledgement only
+      return {
+        available: true,
+        reason: 'artist_reserved',
+      };
     }
+  } catch (err) {
+    console.error('[checkUsernameAvailability] Unexpected RPC failure checking reserved username:', err);
+    // Continue check - database will enforce
   }
 
   return { available: true };

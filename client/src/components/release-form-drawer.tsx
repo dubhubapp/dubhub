@@ -8,6 +8,11 @@ import {
 } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_FORM_PRIMARY_CLASS,
+  APP_MATERIAL_SHEET_BACKDROP_CLASS,
+  APP_MATERIAL_SHEET_SURFACE_CLASS,
+} from "@/lib/app-material";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
 
@@ -80,10 +85,10 @@ export function ReleaseFormDrawer({
       ? footer
       : showDone
         ? (
-          <div className="shrink-0 border-t border-white/10 px-4 py-3">
+          <div className="shrink-0 border-t border-white/[0.06] px-4 py-3">
             <Button
               type="button"
-              className="w-full"
+              className={APP_MATERIAL_FORM_PRIMARY_CLASS}
               onClick={() => {
                 playInteractionLightThrottled();
                 onOpenChange(false);
@@ -103,10 +108,13 @@ export function ReleaseFormDrawer({
       shouldScaleBackground={false}
     >
       <DrawerPortal>
-        <DrawerOverlay className="z-[70] bg-black/80" />
+        <DrawerOverlay
+          className={cn("z-[70]", APP_MATERIAL_SHEET_BACKDROP_CLASS)}
+        />
         <DrawerPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-[70] flex w-full max-w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-zinc-950 outline-none",
+            APP_MATERIAL_SHEET_SURFACE_CLASS,
+            "fixed inset-x-0 bottom-0 z-[70] flex w-full max-w-full min-w-0 flex-col overflow-hidden border outline-none",
             !stableHeight && "mt-24 max-h-[96vh]",
             !stableHeight && minHeightClass,
             className,
@@ -126,9 +134,9 @@ export function ReleaseFormDrawer({
           {/* FIXED HEADER — never inside the scrollport */}
           <div className="shrink-0" data-testid="release-form-drawer-header">
             <div className="flex justify-center pt-2.5 pb-1" aria-hidden>
-              <div className="h-1 w-10 rounded-full bg-white/20" />
+              <div className="h-1 w-10 rounded-full bg-white/25" />
             </div>
-            <div className="border-b border-white/10 px-4 pb-2 pt-1 text-left">
+            <div className="border-b border-white/[0.06] px-4 pb-2 pt-1 text-left">
               <div className="flex items-center gap-2">
                 {headerStart}
                 <DrawerTitle className="text-base font-semibold text-foreground">

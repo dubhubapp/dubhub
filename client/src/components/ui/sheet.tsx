@@ -54,14 +54,16 @@ interface SheetContentProps
     VariantProps<typeof sheetVariants> {
   /** When false, omits the corner X (e.g. action sheets dismissed by overlay tap). */
   showClose?: boolean
+  /** Opt-in overlay material (e.g. APP_MATERIAL_OVERLAY_BACKDROP_CLASS). Defaults unchanged. */
+  overlayClassName?: string
 }
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, showClose = true, ...props }, ref) => (
+>(({ side = "right", className, children, showClose = true, overlayClassName, ...props }, ref) => (
   <SheetPortal>
-    <SheetOverlay />
+    <SheetOverlay className={overlayClassName} />
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), className)}

@@ -13,6 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { APP_MATERIAL_AUTH_CANVAS_CLASS } from "@/lib/app-material";
 import { Capacitor } from "@capacitor/core";
 import { playInteractionLight } from "@/lib/haptic";
 import {
@@ -43,8 +44,10 @@ import {
   LEADERBOARD_STICKY_FADE_CLASS,
   LEADERBOARD_TIME_FILTERS,
   LEADERBOARD_TOP_LIMIT,
+  LEADERBOARD_YOU_PILL_CLASS,
   leaderboardArtistsMyRankQueryKey,
   leaderboardArtistsQueryKey,
+  leaderboardIdsUnitLabel,
   leaderboardRepProgressAriaValueText,
   leaderboardUsersMyRankQueryKey,
   leaderboardUsersQueryKey,
@@ -355,7 +358,7 @@ export default function Leaderboard() {
               />
             </button>
             {highlightAsCurrent && (
-              <span className="inline-flex shrink-0 items-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">
+              <span className={LEADERBOARD_YOU_PILL_CLASS}>
                 You
               </span>
             )}
@@ -394,9 +397,9 @@ export default function Leaderboard() {
           >
             {entry.correct_ids}
           </div>
-          {/* No CSS uppercase — preserves acronym casing "IDs" (not "IDS"). */}
+          {/* No CSS uppercase — preserves acronym casing "ID" / "IDs". */}
           <div className="mt-1 text-[10px] tracking-wide text-muted-foreground">
-            IDs
+            {leaderboardIdsUnitLabel(entry.correct_ids)}
           </div>
         </div>
       </div>
@@ -540,7 +543,7 @@ export default function Leaderboard() {
   return (
     <div
       ref={pageScrollRef}
-      className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
+      className={`${APP_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
     >
       <div className="mx-auto max-w-4xl px-4 pb-6">
         <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange}>
