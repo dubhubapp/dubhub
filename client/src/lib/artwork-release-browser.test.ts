@@ -12,8 +12,12 @@ import {
   ARTWORK_EMBLA_DURATION,
   ARTWORK_SCALE_MIN,
   ARTWORK_SCALE_SELECTED,
-  ARTWORK_SECTION_TOP_PAD_CLASS,
+  ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS,
+  ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS,
+  ARTWORK_VIEW_WELL_CLASS,
   ARTWORK_SETTLE_ALIGN_THRESHOLD_PX,
+  resolveArtworkViewColumnMinHClass,
+  resolveArtworkViewPageBottomPadClass,
   ARTWORK_SETTLE_IDLE_FALLBACK_MS,
   artworkOpacityFromCentreDistance,
   artworkRenderedReleaseIds,
@@ -57,6 +61,10 @@ const detailButtonSrc = readFileSync(
 );
 const listCardSrc = readFileSync(
   join(here, "../components/release-feed-card.tsx"),
+  "utf8",
+);
+const trackerSrc = readFileSync(
+  join(here, "../pages/release-tracker.tsx"),
   "utf8",
 );
 
@@ -755,10 +763,85 @@ describe("Artwork C.3 geometric crossing + attraction + thumb pad", () => {
     assert.equal(shouldEnableArtworkLoop(3), true);
   });
 
-  it("Artwork vertical-spacing token is a responsive clamp, not a width hack", () => {
-    assert.match(ARTWORK_SECTION_TOP_PAD_CLASS, /pt-\[clamp\(/);
-    assert.match(ARTWORK_SECTION_TOP_PAD_CLASS, /10vh/);
-    assert.doesNotMatch(ARTWORK_SECTION_TOP_PAD_CLASS, /1\.25rem/);
+  it("Artwork vertical placement is an available-height well, not 10vh pad", () => {
+    assert.doesNotMatch(artworkBrowserSrc, /10vh/);
+    assert.doesNotMatch(artworkBrowserSrc, /pt-\[clamp\(2\.5rem/);
+    assert.doesNotMatch(artworkBrowserSrc, /ARTWORK_SECTION_TOP_PAD_CLASS/);
+    assert.match(ARTWORK_VIEW_WELL_CLASS, /flex-grow|flex-1/);
+    assert.match(ARTWORK_VIEW_WELL_CLASS, /justify-center/);
+    assert.match(ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS, /100dvh/);
+    assert.match(
+      ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS,
+      /--releases-cta-anchor/,
+    );
+    assert.match(
+      ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS,
+      /--releases-cta-button-block/,
+    );
+    assert.doesNotMatch(ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS, /10vh|50vh|50%/);
+    assert.match(
+      ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS,
+      /--releases-feed-bottom-pad-listener/,
+    );
+    assert.doesNotMatch(
+      ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS,
+      /--releases-cta-anchor/,
+    );
+    assert.equal(
+      resolveArtworkViewColumnMinHClass(true),
+      ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS,
+    );
+    assert.equal(
+      resolveArtworkViewColumnMinHClass(false),
+      ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS,
+    );
+    assert.match(trackerSrc, /ARTWORK_VIEW_WELL_CLASS/);
+    assert.match(trackerSrc, /artwork-view-well/);
+    assert.match(trackerSrc, /resolveArtworkViewPageBottomPadClass/);
+    assert.match(
+      resolveArtworkViewPageBottomPadClass({
+        artworkWell: false,
+        isArtist: true,
+      }),
+      /--releases-feed-bottom-pad/,
+    );
+    assert.match(
+      resolveArtworkViewPageBottomPadClass({
+        artworkWell: true,
+        isArtist: true,
+      }),
+      /--releases-cta-anchor/,
+    );
+    assert.equal(
+      resolveArtworkViewPageBottomPadClass({
+        artworkWell: true,
+        isArtist: false,
+      }),
+      resolveArtworkViewPageBottomPadClass({
+        artworkWell: false,
+        isArtist: false,
+      }),
+    );
+  });
+
+  it("carousel geometry, arrows, and session settle stay independent of the well", () => {
+    assert.match(artworkBrowserSrc, /w-\[75%\]/);
+    assert.match(artworkBrowserSrc, /flex-\[0_0_75%\]/);
+    assert.match(artworkBrowserSrc, /artwork-release-prev/);
+    assert.match(artworkBrowserSrc, /artwork-release-next/);
+    assert.match(artworkBrowserSrc, /onSettledReleaseChange/);
+    assert.match(artworkBrowserSrc, /onIntendedReleaseChange/);
+    assert.match(artworkBrowserSrc, /emblaApi\.on\("select", onSelect\)/);
+    assert.doesNotMatch(artworkBrowserSrc, /ArtworkAmbienceBackground/);
+    assert.doesNotMatch(artworkBrowserSrc, /artwork-ambience-background/);
+    assert.doesNotMatch(artworkBrowserSrc, /--release-atmosphere-rgb/);
+    assert.doesNotMatch(trackerSrc, /translateY\(/);
+    assert.doesNotMatch(trackerSrc, /50vh|top-1\/2 translate-y-\[/);
+    assert.match(trackerSrc, /RELEASE_TRACKER_ADD_CTA_CLASS/);
+    assert.match(
+      trackerSrc,
+      /bottom-\[calc\(var\(--releases-cta-anchor\)\+var\(--releases-cta-gap-above-nav\)\)\]/,
+    );
   });
 
   it("List View and Collaborations contracts unchanged", () => {

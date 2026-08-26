@@ -32,6 +32,7 @@ import {
 } from "@/lib/app-material";
 import { useUser } from "@/lib/user-context";
 import { cn } from "@/lib/utils";
+import { APP_SCROLL_WITH_CLAMP_END_PAD_CLASS } from "@/lib/app-shell-layout";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -809,7 +810,10 @@ export default function ReleaseEdit() {
     <SwipeBackPage
       enabled={false}
       onBack={handleBack}
-      className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none pb-[clamp(0.75rem,2.5vw,1rem)] dubhub-app-form-canvas"
+      className={cn(
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none dubhub-app-form-canvas",
+        APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
+      )}
     >
       <div
         ref={scrollContainerRef}

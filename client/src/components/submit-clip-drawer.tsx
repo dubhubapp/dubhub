@@ -43,7 +43,13 @@ function normalizePickedFile(file: File): Omit<NormalizedPickedAsset, "videoUrl"
 export function SubmitClipDrawer() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const { isSubmitClipOpen, closeSubmitClip, fileInputRemountKey, clearNativePostArtifact } = useSubmitClip();
+  const {
+    isSubmitClipOpen,
+    closeSubmitClip,
+    completeSubmitClipClose,
+    fileInputRemountKey,
+    clearNativePostArtifact,
+  } = useSubmitClip();
   const pickInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
 
@@ -249,12 +255,15 @@ export function SubmitClipDrawer() {
         onOpenChange={(open) => {
           if (!open) closeSubmitClip();
         }}
+        onAnimationEnd={(open) => {
+          if (!open) completeSubmitClipClose();
+        }}
         shouldScaleBackground={false}
       >
         <DrawerContent
           overlayClassName="z-40 bg-transparent pointer-events-auto"
           className="z-40 mx-auto mt-0 max-h-[min(420px,85dvh)] w-full max-w-xl gap-0 rounded-t-3xl border border-gray-800 bg-surface/98 p-0 shadow-2xl backdrop-blur-md outline-none"
-          style={{ bottom: "var(--app-bottom-nav-block)" }}
+          style={{ bottom: "var(--app-sheet-screen-bottom, var(--app-bottom-control-inset))" }}
         >
           <DrawerTitle className="sr-only">Add your clip</DrawerTitle>
           <DrawerDescription className="sr-only">

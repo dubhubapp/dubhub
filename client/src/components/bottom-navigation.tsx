@@ -30,8 +30,11 @@ import {
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
 } from "@/lib/app-material";
-
-const VIDEO_FEED_SCRUB_BOTTOM_VAR = "--video-feed-scrub-bottom";
+import { NATIVE_NAV_DOCUMENT_ATTR } from "@/lib/native-nav-presentation";
+import {
+  VIDEO_FEED_SCRUB_BOTTOM_VAR,
+  clearInlineScrubBottomForNativeNav,
+} from "@/lib/native-nav-layout";
 
 export function BottomNavigation() {
   const [location, navigate] = useLocation();
@@ -175,6 +178,12 @@ export function BottomNavigation() {
 
     const apply = () => {
       if (!el.isConnected) return;
+      if (document.documentElement.getAttribute(NATIVE_NAV_DOCUMENT_ATTR) === "on") {
+        // Native CSS owns this var. A leftover React-nav inline value (e.g. 88px)
+        // outranks the stylesheet calc and pins the Home scrub too low.
+        clearInlineScrubBottomForNativeNav();
+        return;
+      }
       const h = el.getBoundingClientRect().height;
       if (h > 0) {
         document.documentElement.style.setProperty(VIDEO_FEED_SCRUB_BOTTOM_VAR, `${h}px`);
@@ -184,6 +193,11 @@ export function BottomNavigation() {
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
+    const attrObserver = new MutationObserver(apply);
+    attrObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [NATIVE_NAV_DOCUMENT_ATTR],
+    });
     window.addEventListener("resize", apply);
     const vv = window.visualViewport;
     if (vv) {
@@ -193,6 +207,7 @@ export function BottomNavigation() {
 
     return () => {
       ro.disconnect();
+      attrObserver.disconnect();
       window.removeEventListener("resize", apply);
       if (vv) {
         vv.removeEventListener("resize", apply);

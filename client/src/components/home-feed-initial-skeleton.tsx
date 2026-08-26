@@ -46,7 +46,7 @@ export function HomeFeedInitialSkeleton() {
         <div className={feedStageWashClass} aria-hidden />
 
         <div
-          className="absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4"
+          className="absolute bottom-[calc(var(--video-card-overlay-bottom,0px)+clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem))] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4"
           aria-hidden
         >
           {(["like", "comment", "share", "mute"] as const).map((slot) => (
@@ -60,15 +60,25 @@ export function HomeFeedInitialSkeleton() {
         {/*
           Bottom metadata — padding/structure aligned with Home `VideoCard` overlay
           (`py-5 pt-12 sm:py-6 sm:pt-14`, flex-col gap-2, pills row).
+          LG-NAV-5C: sibling continues the solid from-background band to the
+          screen bottom so cold load matches the loaded card's lower fade.
         */}
         <div
+          aria-hidden
+          data-home-feed-skeleton-fade-extend
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[var(--video-card-overlay-bottom,0px)] bg-background"
+        />
+        <div
           className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 z-20",
+            "pointer-events-none absolute inset-x-0 bottom-[var(--video-card-overlay-bottom,0px)] z-20",
             "bg-gradient-to-t from-background from-30% via-background/65 to-transparent",
             "py-5 pt-12 pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:py-6 sm:pt-14 sm:pl-4",
           )}
         >
-          <div className="flex flex-col gap-2 overflow-visible">
+          <div
+            data-home-feed-skeleton-content
+            className="flex translate-y-[var(--video-card-metadata-shift,0px)] flex-col gap-2 overflow-visible"
+          >
             <div className="overflow-x-visible py-0.5 pl-0.5 pr-1">
               <div className="flex min-w-0 items-center gap-3">
                 <DubHubSkeletonBar tone="faint" className="h-10 w-10 shrink-0 rounded-full" />

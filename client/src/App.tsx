@@ -24,23 +24,24 @@ import Home from "@/pages/home";
 import Submit from "@/pages/submit";
 import TrimVideo from "@/pages/trim-video";
 import SubmitMetadata from "@/pages/submit-metadata";
-import ReleaseTracker from "@/pages/release-tracker";
+import ReleaseTrackerPage from "@/pages/release-tracker";
 import ReleaseDetail from "@/pages/release-detail";
 import ReleaseCreate from "@/pages/release-create";
 import ReleaseEdit from "@/pages/release-edit";
-import UserProfile from "@/pages/user-profile";
+import UserProfilePage from "@/pages/user-profile";
 import PublicProfile from "@/pages/public-profile";
 import NotFound from "@/pages/not-found";
 import { UnauthenticatedEntry } from "@/components/pre-login-onboarding";
 import ResetPasswordPage from "@/pages/reset-password";
 import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
-import Leaderboard from "@/pages/leaderboard";
+import LeaderboardPage from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
 import SettingsNotificationsPage from "@/pages/settings-notifications";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
+import { lgNav5aMark, lgNav5aProfiledPage } from "@/lib/lg-nav-5a-timing";
 import { SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_SHELL_ATMOSPHERE_CLASS,
@@ -85,6 +86,10 @@ import {
 import { quarantineRevenueCatIdentity } from "@/lib/revenuecat-identity";
 import { clearHomeWidgetOnLogout } from "@/lib/home-widget-session";
 
+const Leaderboard = lgNav5aProfiledPage("leaderboard", LeaderboardPage);
+const ReleaseTracker = lgNav5aProfiledPage("releases", ReleaseTrackerPage);
+const UserProfile = lgNav5aProfiledPage("profile", UserProfilePage);
+
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const prevLocationRef = useRef<string | null>(null);
@@ -117,6 +122,7 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
       });
       clearDubhubTrimSession();
     }
+    lgNav5aMark("wouter-location", { location });
   }, [location]);
 
   const isProfileShellRoute =
@@ -809,7 +815,7 @@ function App() {
             <LifetimeGiftAnnouncementHost />
             <HomeWidgetRefreshHost />
             <HomeWidgetSetupGuideHost />
-            <ConditionalBottomNavigation />
+            <ConditionalBottomNavigation onboardingOpen={firstLoginOnboarding.open} />
             <InAppNotificationBannerHost
               suppressOnboardingModal={firstLoginOnboarding.open}
               suppressPushPrompt={postOnboardingPushPrompt.open}

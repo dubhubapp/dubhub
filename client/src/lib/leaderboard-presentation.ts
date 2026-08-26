@@ -3,6 +3,7 @@
  * Scope/timeframe query behaviour stays in the page — this file is display/state-shape only.
  */
 
+import { useLayoutEffect, useState, type RefObject } from "react";
 import type { TrustLevelInfo } from "@shared/trust-level";
 import {
   APP_MATERIAL_AUTH_STICKY_CLASS,
@@ -19,6 +20,75 @@ export type LeaderboardScope = "users" | "artists";
 export type LeaderboardTimeFilter = "month" | "year" | "all";
 
 export const LEADERBOARD_TOP_LIMIT = 100 as const;
+
+/**
+ * First-route-paint row cap (LG-NAV-5A4).
+ * Rows are ~64px (py-3 + 40px avatar). After sticky chrome + prize, a tall phone
+ * shows ~8–10 rows. 16 rows fills the first screen with room below the fold so
+ * expansion cannot pop into the current viewport.
+ */
+export const LEADERBOARD_INITIAL_PAINT_ROWS = 16 as const;
+
+/** How many real rows to commit before the first-paint release. */
+export function leaderboardFirstPaintRowCount(
+  totalRows: number,
+  firstPaintReleased: boolean,
+): number {
+  if (firstPaintReleased || totalRows <= LEADERBOARD_INITIAL_PAINT_ROWS) {
+    return totalRows;
+  }
+  return LEADERBOARD_INITIAL_PAINT_ROWS;
+}
+
+export function leaderboardShouldPaintOutsideTop(
+  totalRows: number,
+  firstPaintReleased: boolean,
+): boolean {
+  return firstPaintReleased || totalRows <= LEADERBOARD_INITIAL_PAINT_ROWS;
+}
+
+export function leaderboardFirstPaintSlice<T>(
+  rows: readonly T[],
+  firstPaintReleased: boolean,
+): T[] {
+  return rows.slice(0, leaderboardFirstPaintRowCount(rows.length, firstPaintReleased));
+}
+
+/**
+ * After the first real-row commit, wait two animation frames (and any early
+ * scroll) before allowing the full list. Not a timeout; not gated on network.
+ */
+export function useLeaderboardFirstPaintRelease(
+  hasLoadedRows: boolean,
+  scrollRootRef?: RefObject<HTMLElement | null> | RefObject<HTMLDivElement | null>,
+): boolean {
+  const [released, setReleased] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!hasLoadedRows || released) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setReleased(true);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [hasLoadedRows, released]);
+
+  useLayoutEffect(() => {
+    if (!hasLoadedRows || released) return;
+    const root = scrollRootRef?.current;
+    if (!root) return;
+    const onScroll = () => setReleased(true);
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => root.removeEventListener("scroll", onScroll);
+  }, [hasLoadedRows, released, scrollRootRef]);
+
+  return released;
+}
 
 export const LEADERBOARD_TIME_FILTERS: readonly {
   value: LeaderboardTimeFilter;
@@ -83,6 +153,19 @@ export const LEADERBOARD_ROW_BASE_CLASS =
  */
 export const LEADERBOARD_ROW_CURRENT_CLASS = "" as const;
 export const LEADERBOARD_LIST_CLASS = "divide-y divide-white/[0.08]" as const;
+/**
+ * Prize + list body enter classes.
+ * Empty on purpose (LG-NAV-5A2a): a remount-keyed `fade-in-0 duration-200` wrapper
+ * started every `/leaderboard` route paint — and every Community/Artists / timeframe
+ * remount — at opacity 0 for ~200ms. First route paint must be full opacity;
+ * skipping the in-page fade is simpler than first-paint bookkeeping for a minor animation.
+ */
+export const LEADERBOARD_BODY_ENTER_CLASS = "" as const;
+
+/** Viewport-filling skeleton rows — enough contrast on the dark canvas (not 100-row list). */
+export const LEADERBOARD_SKELETON_ROW_COUNT = 8 as const;
+/** Loading bones — `white/5` is invisible on the navy canvas; /15 reads as structure. */
+export const LEADERBOARD_SKELETON_BONE_CLASS = "animate-pulse rounded bg-white/15" as const;
 /** Current-user "You" chip — restrained interactive blue. */
 export const LEADERBOARD_YOU_PILL_CLASS =
   "inline-flex shrink-0 items-center rounded-full bg-[#0a83ff] px-1.5 py-0.5 text-[10px] font-medium leading-none text-white" as const;

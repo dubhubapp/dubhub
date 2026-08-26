@@ -31,6 +31,7 @@ import {
   APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
   APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS,
 } from "@/lib/app-material";
+import { APP_SCROLL_WITH_CLAMP_END_PAD_CLASS } from "@/lib/app-shell-layout";
 import {
   bootstrapReleaseAtmosphere,
   releaseAtmosphereCssVarValue,
@@ -451,7 +452,8 @@ export default function ReleaseDetail() {
       enabled={!galleryInitialPostId && !artworkLightboxOpen}
       onBack={handleBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto pb-[clamp(0.75rem,2.5vw,1rem)]",
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto",
+        APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
         APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
       )}
       style={

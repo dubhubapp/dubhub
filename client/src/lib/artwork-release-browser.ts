@@ -24,11 +24,54 @@ export const ARTWORK_SETTLE_ALIGN_THRESHOLD_PX = 10 as const;
 export const ARTWORK_ATTRACT_MAX_MOVE_PX = 3.25 as const;
 
 /**
- * Thumb-zone top padding. C.2 used clamp(1.25rem, 5.5vh, 2.75rem) (~20–44px)
- * which kept the square too high. +~32–64px on typical iPhone heights via vh.
+ * Artwork View remaining-height column (sticky chrome + well).
+ * Artist bottom bound = Add Release button top (anchor + gap + button block).
+ * Listener bottom bound = listener feed pad (no CTA).
+ * Uses 100dvh to match the app shell; not a viewport `vh` pad on the browser.
  */
-export const ARTWORK_SECTION_TOP_PAD_CLASS =
-  "pt-[clamp(2.5rem,10vh,5.5rem)]" as const;
+export const ARTWORK_VIEW_COLUMN_CLASS = "flex flex-col" as const;
+
+export const ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS =
+  "min-h-[calc(100dvh-var(--releases-cta-anchor)-var(--releases-cta-gap-above-nav)-var(--releases-cta-button-block))]" as const;
+
+export const ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS =
+  "min-h-[calc(100dvh-var(--releases-feed-bottom-pad-listener))]" as const;
+
+/** Flex-centres carousel+metadata when space exists; grows with content (no clip). */
+export const ARTWORK_VIEW_WELL_CLASS =
+  "flex flex-grow flex-col justify-center" as const;
+
+export const ARTWORK_VIEW_PAGE_PAD_ARTIST_CLASS =
+  "pb-[calc(var(--releases-cta-anchor)+var(--releases-cta-gap-above-nav)+var(--releases-cta-button-block))]" as const;
+
+export const ARTWORK_VIEW_PAGE_PAD_LISTENER_CLASS =
+  "pb-[var(--releases-feed-bottom-pad-listener)]" as const;
+
+export const RELEASES_LIST_PAGE_PAD_ARTIST_CLASS =
+  "pb-[var(--releases-feed-bottom-pad)]" as const;
+
+export const RELEASES_LIST_PAGE_PAD_LISTENER_CLASS =
+  "pb-[var(--releases-feed-bottom-pad-listener)]" as const;
+
+export function resolveArtworkViewColumnMinHClass(isArtist: boolean): string {
+  return isArtist
+    ? ARTWORK_VIEW_COLUMN_ARTIST_MIN_H_CLASS
+    : ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS;
+}
+
+export function resolveArtworkViewPageBottomPadClass(args: {
+  artworkWell: boolean;
+  isArtist: boolean;
+}): string {
+  if (args.artworkWell) {
+    return args.isArtist
+      ? ARTWORK_VIEW_PAGE_PAD_ARTIST_CLASS
+      : ARTWORK_VIEW_PAGE_PAD_LISTENER_CLASS;
+  }
+  return args.isArtist
+    ? RELEASES_LIST_PAGE_PAD_ARTIST_CLASS
+    : RELEASES_LIST_PAGE_PAD_LISTENER_CLASS;
+}
 
 /**
  * Embla 8.6 `duration` (not ms). Applies to API scrollTo / arrow / attraction

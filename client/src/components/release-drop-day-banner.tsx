@@ -439,7 +439,7 @@ export function ReleaseDropDayBanner() {
       className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center px-4"
       style={{
         paddingTop: "max(16px, env(safe-area-inset-top, 0px))",
-        paddingBottom: "max(calc(var(--app-bottom-nav-block) + 16px), env(safe-area-inset-bottom, 0px))",
+        paddingBottom: "max(calc(var(--app-bottom-control-inset) + 16px), env(safe-area-inset-bottom, 0px))",
       }}
       role="dialog"
       aria-label="Release day"

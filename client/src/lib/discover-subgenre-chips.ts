@@ -28,7 +28,7 @@ export const DISCOVER_PAGE_EDGE_INSET_CLASS = "px-9";
 /** Shared left/right inset for Feed, Status, Genres, and subgenre content. */
 export const DISCOVER_MENU_CONTENT_INSET_CLASS = DISCOVER_PAGE_EDGE_INSET_CLASS;
 export const DISCOVER_MENU_HEADING_TEXT_CLASS =
-  "justify-self-start text-sm font-semibold text-white";
+  "justify-self-start text-xs font-medium text-white/90";
 /** Parent grid is 8 chips / 3 rows of min-h-9 + gap-1.5. */
 export const DISCOVER_GENRE_PAGE_GRID_MIN_HEIGHT_CLASS = "min-h-[7.5rem]";
 /** Heading min-h-9 + mb-2 + 3-row grid. */

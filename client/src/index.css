@@ -13,6 +13,14 @@
   --app-bottom-nav-block: calc(
     var(--app-nav-pad-y) + var(--app-nav-row-min-h) + var(--app-nav-pad-y) + var(--app-safe-bottom)
   );
+  /* Interactive controls sit above this inset. React mode == opaque reservation. */
+  --app-bottom-control-inset: var(--app-bottom-nav-block);
+  /* Extra list padding in native mode only (0 in React mode; shell already clears the web nav). */
+  --app-scroll-nav-clearance: 0px;
+  --app-scroll-end-pad: 0px;
+  --app-native-nav-exclusion: 0px;
+  /* Full-width sheets: React-nav stops above the web nav; native mode uses 0 so the sheet covers the bar. */
+  --app-sheet-screen-bottom: var(--app-bottom-control-inset);
   --app-above-bottom-nav: calc(var(--app-bottom-nav-block) + 0.375rem);
   /**
    * Releases page — fixed “Add Release” stack (release-tracker.tsx).
@@ -24,6 +32,15 @@
   --releases-cta-button-block: 3.5rem;
   --releases-cta-fade-block: 3.75rem;
   --releases-cta-scroll-extra: 0.625rem;
+  /**
+   * CTA stack `bottom` (release-tracker.tsx). React: opaque web-nav block.
+   * Native overrides to physical UITabBar height — not Home's 117px exclusion.
+   */
+  --releases-cta-anchor: var(--app-bottom-control-inset);
+  /** Inner underlay + fade offset inside the CTA wrapper. React includes the nav block. */
+  --releases-cta-underlay-block: calc(
+    var(--app-bottom-control-inset) + var(--releases-cta-stack-bleed)
+  );
   /**
    * Scroll padding for the list only — shell `pb-[var(--app-bottom-nav-block)]` already clears the tab bar.
    * This matches the fixed CTA stack (gap + fade + button + buffer) so the last row clears the occluder.
@@ -40,7 +57,12 @@
    * Home scrub `bottom` inset: overridden at runtime from measured `[data-app-bottom-nav]` height.
    * Fallback ≈ tab bar (1px border + block) before JS runs.
    */
-  --video-feed-scrub-bottom: calc(1px + var(--app-bottom-nav-block));
+  --video-feed-scrub-bottom: calc(1px + var(--app-bottom-control-inset));
+  /* Native-nav-only visual offset below frozen exclusion. 0 in React-nav mode. */
+  --video-feed-scrub-offset: 0px;
+  /* Home VideoCard metadata/action cluster; 0 in React-nav mode (card already sits above the web nav). */
+  --video-card-overlay-bottom: 0px;
+  --video-card-metadata-shift: 0px;
 
   --background: hsl(227, 96%, 54%);
   --foreground: hsl(0, 0%, 100%);
@@ -109,6 +131,122 @@ html.theme-transitioning .bg-surface {
     background-color 180ms ease,
     color 180ms ease,
     border-color 180ms ease;
+}
+
+/*
+ * LG-NAV-4: native mode drops the opaque web-nav reservation so content can bleed
+ * under the floating system tab bar. Interactive chrome uses --app-bottom-control-inset.
+ */
+html[data-dubhub-native-nav="on"] {
+  --app-bottom-nav-block: 0px;
+  /* Fallback until native geometry arrives: compact bar + lift + home indicator. */
+  --app-native-nav-exclusion: calc(49px + 8px + env(safe-area-inset-bottom, 0px));
+  --app-bottom-control-inset: var(--app-native-nav-exclusion);
+  --app-scroll-nav-clearance: var(--app-bottom-control-inset);
+  --app-sheet-screen-bottom: 0px;
+  /* LG-NAV-5C8: scrub sits below logical exclusion (117 − 11 = 106 on current geometry). */
+  --video-feed-scrub-offset: 11px;
+  --video-feed-scrub-bottom: calc(var(--app-bottom-control-inset) - var(--video-feed-scrub-offset));
+  --video-card-overlay-bottom: var(--app-bottom-control-inset);
+  /* LG-NAV-5C1: metadata content only. Fade + overlay box + rail stay on exclusion. */
+  --video-card-metadata-shift: 11px;
+  /**
+   * RELEASES-BOTTOM-2 — physical UITabBar frame, not Home exclusion.
+   * sizeThatFits on home-indicator phones is 83 = 49+34, so exclusion (117)
+   * already contains safe-area. Subtracting `--app-safe-bottom` yields visible
+   * bar height (~83). Do not change `--app-bottom-control-inset` (Home depends on it).
+   */
+  --releases-visual-nav-clearance: max(
+    0px,
+    calc(var(--app-bottom-control-inset) - var(--app-safe-bottom))
+  );
+  /* 8px + CTA `pb-0.5` (2px) ≈ 10px button-to-bar gap on the 956pt reference. */
+  --releases-cta-gap-above-nav: 0.5rem;
+  --releases-cta-anchor: var(--releases-visual-nav-clearance);
+  --releases-cta-underlay-block: var(--releases-cta-stack-bleed);
+  --releases-feed-bottom-pad: calc(
+    var(--releases-visual-nav-clearance) + var(--releases-cta-gap-above-nav) +
+      var(--releases-cta-stack-bleed) + var(--releases-cta-fade-block) +
+      var(--releases-cta-scroll-extra)
+  );
+  --releases-feed-bottom-pad-listener: calc(
+    var(--releases-visual-nav-clearance) + var(--releases-cta-scroll-extra)
+  );
+}
+
+html[data-dubhub-native-nav="on"][data-dubhub-native-nav-visible="off"] {
+  --app-bottom-control-inset: 0px;
+  --app-scroll-nav-clearance: 0px;
+  --video-feed-scrub-offset: 0px;
+  --video-card-overlay-bottom: 0px;
+  --video-card-metadata-shift: 0px;
+}
+
+/*
+ * Collapse the hidden React nav so it cannot paint or reserve the old opaque band.
+ * Keep it mounted for fallback/state; it must not occupy the bottom of the screen.
+ */
+html[data-dubhub-native-nav="on"] [data-app-bottom-nav] {
+  visibility: hidden;
+  pointer-events: none;
+  height: 0 !important;
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 !important;
+  border-width: 0 !important;
+}
+
+/*
+ * RELEASES-BOTTOM-2: native UITabBar is a floating overlay. Collapse the React-era
+ * full-width opaque shelf so list content can show through the glass.
+ */
+html[data-dubhub-native-nav="on"] [data-releases-nav-shelf] {
+  height: 0 !important;
+  visibility: hidden;
+  background: none;
+}
+
+/*
+ * RELEASES-BOTTOM-3: Add Release must float. Kill the full-width 20px #0f1324
+ * bleed behind the pill. Keep --releases-cta-underlay-block so fade `bottom`
+ * (and 181px pad) stay put.
+ */
+html[data-dubhub-native-nav="on"] [data-releases-cta-slab] {
+  height: 0 !important;
+  visibility: hidden;
+  background: none;
+}
+
+/*
+ * Fade still 60px and still starts at the same Y. Native lower stop is transparent
+ * so it does not join a solid CTA slab. No backdrop-filter.
+ */
+html[data-dubhub-native-nav="on"] .dubhub-app-releases-fab-fade {
+  background-image: linear-gradient(
+    to top,
+    transparent 0%,
+    rgba(15, 19, 36, 0.65) 45%,
+    transparent 100%
+  );
+}
+
+html[data-dubhub-native-nav="on"]:not(.dark) .dubhub-app-releases-fab-fade,
+html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
+  background-image: linear-gradient(
+    to top,
+    transparent 0%,
+    hsl(var(--background) / 0.55) 45%,
+    transparent 100%
+  );
+}
+
+html[data-dubhub-native-nav="on"] .dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-fab-fade {
+  background-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.42) 0%,
+    rgba(0, 0, 0, 0.18) 45%,
+    transparent 100%
+  );
 }
 
 /* Taller viewports: slightly tighter bottom nav chrome (more video area). SE / short phones keep :root defaults. */
@@ -723,6 +861,7 @@ html.theme-transitioning .bg-surface {
 
 .dark .dubhub-app-releases-sticky {
   background-color: rgba(15, 22, 48, 0.72);
+  transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -1px 0 rgba(255, 255, 255, 0.04);
@@ -730,6 +869,7 @@ html.theme-transitioning .bg-surface {
 
 .dark .dubhub-app-releases-sticky-fade {
   background-color: rgba(15, 22, 48, 0.32);
+  transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark .dubhub-app-releases-fab-underlay {
@@ -757,6 +897,115 @@ html.theme-transitioning .bg-surface {
     to top,
     hsl(var(--background)) 0%,
     hsl(var(--background) / 0.9) 45%,
+    transparent 100%
+  );
+}
+
+.releases-artwork-atmosphere-host {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.releases-artwork-atmosphere-buffer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.releases-artwork-atmosphere-backdrop {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  width: 150%;
+  height: 150%;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  filter: blur(64px) saturate(1.18);
+  opacity: 0.48;
+}
+
+.releases-artwork-atmosphere-wash {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background-color: color-mix(
+    in srgb,
+    rgb(var(--release-atmosphere-rgb)) 54%,
+    #0f1324 46%
+  );
+  background-image:
+    radial-gradient(
+      ellipse 90% 48% at 50% 34%,
+      rgba(var(--release-atmosphere-rgb), 0.42) 0%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(var(--release-atmosphere-rgb), 0.78) 0%,
+      rgba(var(--release-atmosphere-rgb), 0.64) 32%,
+      rgba(var(--release-atmosphere-rgb), 0.5) 58%,
+      color-mix(in srgb, rgb(var(--release-atmosphere-rgb)) 58%, #0f1324 42%) 100%
+    );
+}
+
+.releases-artwork-atmosphere-readability {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    180deg,
+    rgba(15, 19, 36, 0.12) 0%,
+    rgba(15, 19, 36, 0.22) 42%,
+    rgba(15, 19, 36, 0.36) 100%
+  );
+  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.releases-view-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.releases-view-layer {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .releases-artwork-atmosphere-buffer,
+  .releases-artwork-atmosphere-readability,
+  .releases-view-layer {
+    transition: none;
+  }
+
+  .dark .dubhub-app-releases-sticky,
+  .dark .dubhub-app-releases-sticky-fade {
+    transition: none;
+  }
+}
+
+.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-sticky {
+  background-color: rgba(15, 19, 36, 0.28);
+  transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-sticky-fade,
+.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .leaderboard-sticky-blur-dissolve {
+  background-color: rgba(15, 19, 36, 0.12);
+  transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-fab-fade {
+  background-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.42) 0%,
+    rgba(0, 0, 0, 0.18) 45%,
     transparent 100%
   );
 }

@@ -253,20 +253,29 @@ describe("discover paging chrome", () => {
     assert.match(genreFilterSrc, /getDiscoverAdjacentGenreFilterPages/);
   });
 
-  it("Done content padding prevents overlap and vertical scrolling stays available", () => {
-    assert.match(collapsedSrc, /data-discover-done-clearance/);
-    assert.match(collapsedSrc, /discoverDoneClearanceClass/);
-    assert.match(genreFilterSrc, /const discoverDoneClearanceClass = "pb-14"/);
+  it("Done stays pinned outside the scroll body so vertical scrolling stays available", () => {
+    assert.doesNotMatch(collapsedSrc, /data-discover-done-clearance/);
+    assert.doesNotMatch(genreFilterSrc, /pb-14/);
+    assert.doesNotMatch(collapsedSrc, /sticky bottom-0/);
+    assert.match(collapsedSrc, /data-discover-scroll-body/);
+    assert.match(collapsedSrc, /min-h-0 overflow-y-auto/);
     assert.match(
       collapsedSrc,
-      /sticky bottom-0 border-t border-white\/20 bg-white\/10 px-3 py-2\.5 backdrop-blur-xl/,
+      /data-discover-footer[\s\S]*border-t border-white\/10 bg-white\/10 px-3 py-1\.5/,
     );
+    const footerBlock = collapsedSrc.slice(
+      collapsedSrc.indexOf("data-discover-footer"),
+      collapsedSrc.indexOf("data-discover-footer") + 420,
+    );
+    assert.doesNotMatch(footerBlock, /backdrop-blur-xl/);
+    assert.match(collapsedSrc, /data-discover-panel/);
     assert.match(
       collapsedSrc,
-      /className="overflow-y-auto rounded-xl border border-white\/20 bg-white\/10 shadow-2xl backdrop-blur-xl"/,
+      /flex flex-col overflow-hidden rounded-2xl border border-white\/20 bg-white\/10 backdrop-blur-xl/,
     );
+    assert.match(collapsedSrc, /DISCOVER_OPEN_MENU_GLASS_SHADOW/);
+    assert.doesNotMatch(collapsedSrc, /shadow-2xl/);
     assert.doesNotMatch(collapsedSrc, /overflow-y-hidden/);
-    assert.doesNotMatch(collapsedSrc, /overflow-hidden rounded-xl/);
   });
 
   it("child chips have aria-pressed and refinement groups are labelled", () => {
@@ -456,10 +465,10 @@ describe("discover pager alignment", () => {
     const pagerBlock = collapsedSrc.slice(pagerStart, pagerStart + 280);
     assert.match(pagerBlock, /overflow-x-hidden/);
     assert.doesNotMatch(pagerBlock, /DISCOVER_PAGE_EDGE_INSET_CLASS/);
-    assert.match(
-      collapsedSrc,
-      /className="overflow-y-auto rounded-xl border border-white\/20 bg-white\/10 shadow-2xl backdrop-blur-xl"/,
-    );
+    assert.match(collapsedSrc, /data-discover-scroll-body/);
+    assert.match(collapsedSrc, /min-h-0 overflow-y-auto/);
+    assert.match(collapsedSrc, /DISCOVER_OPEN_MENU_GLASS_SHADOW/);
+    assert.doesNotMatch(collapsedSrc, /shadow-2xl/);
     assert.doesNotMatch(collapsedSrc, /overflow-y-hidden/);
   });
 
@@ -522,8 +531,8 @@ describe("discover pager frame consistency", () => {
       childHeadingStart,
       collapsedSrc.indexOf('data-discover-genre-grid="child"'),
     );
-    assert.match(genresHeading, /DISCOVER_MENU_HEADING_TEXT_CLASS/);
-    assert.match(childHeading, /DISCOVER_MENU_HEADING_TEXT_CLASS/);
+    assert.match(genresHeading, /discoverMenuPagerHeadingTextClass/);
+    assert.match(childHeading, /discoverMenuPagerHeadingTextClass/);
     assert.doesNotMatch(childHeading, /justify-self-center/);
     assert.doesNotMatch(childHeading, /text-center text-sm/);
     assert.doesNotMatch(childHeading, /mb-2 text-center text-sm/);
@@ -592,12 +601,24 @@ describe("discover final alignment", () => {
   it("Feed, Status, and Genres headings use the same left content edge", () => {
     assert.equal(DISCOVER_MENU_CONTENT_INSET_CLASS, "px-9");
     assert.match(DISCOVER_MENU_HEADING_TEXT_CLASS, /justify-self-start/);
+    assert.match(DISCOVER_MENU_HEADING_TEXT_CLASS, /text-xs font-medium text-white\/90/);
+    assert.doesNotMatch(DISCOVER_MENU_HEADING_TEXT_CLASS, /text-sm font-semibold/);
+    assert.doesNotMatch(DISCOVER_MENU_HEADING_TEXT_CLASS, /uppercase/);
+    assert.doesNotMatch(DISCOVER_MENU_HEADING_TEXT_CLASS, /tracking-wide/);
     assert.match(collapsedSrc, /data-discover-shared-content="feed"/);
     assert.match(collapsedSrc, /data-discover-shared-content="status"/);
     assert.match(collapsedSrc, /data-discover-shared-content="genres"/);
     assert.equal(
-      (collapsedSrc.match(/DISCOVER_MENU_HEADING_TEXT_CLASS/g) ?? []).length >= 4,
+      (collapsedSrc.match(/DISCOVER_MENU_HEADING_TEXT_CLASS/g) ?? []).length >= 2,
       true,
+    );
+    assert.equal(
+      (collapsedSrc.match(/discoverMenuPagerHeadingTextClass/g) ?? []).length >= 2,
+      true,
+    );
+    assert.match(
+      genreFilterSrc,
+      /discoverMenuPagerHeadingTextClass = `\$\{DISCOVER_MENU_HEADING_TEXT_CLASS\} self-end`/,
     );
   });
 
@@ -606,7 +627,7 @@ describe("discover final alignment", () => {
       collapsedSrc.indexOf("data-discover-genre-heading={group.parentId}"),
       collapsedSrc.indexOf('data-discover-genre-grid="child"'),
     );
-    assert.match(childHeading, /DISCOVER_MENU_HEADING_TEXT_CLASS/);
+    assert.match(childHeading, /discoverMenuPagerHeadingTextClass/);
     assert.doesNotMatch(childHeading, /justify-self-center/);
     assert.doesNotMatch(childHeading, /text-center/);
   });

@@ -1111,11 +1111,27 @@ final class DubHubVideoEditor {
 
 @objc(DubHubBridgeViewController)
 class DubHubBridgeViewController: CAPBridgeViewController {
+    private var didInstallNativeTabBarOverlay = false
+
     override open func capacitorDidLoad() {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(DubHubVideoEditorPlugin())
         bridge?.registerPluginInstance(HomeWidgetBridgePlugin())
+        bridge?.registerPluginInstance(DubHubNativeNavigationPlugin())
         NSLog("[DubHub][NativeVideoEditor] plugin registered in DubHubBridgeViewController")
         NSLog("[DubHub][HomeWidgetBridge] plugin registered in DubHubBridgeViewController")
+        NSLog("[DubHub][NativeNavigation] plugin registered in DubHubBridgeViewController")
+    }
+
+    override open func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        didInstallNativeTabBarOverlay = true
+        // LG-NAV-3: sibling UITabBar overlay. Hidden until React sets visibility. Taps emit tab IDs only.
+        DubHubNativeTabBarOverlay.installOverlayIfNeeded(on: self)
+    }
+
+    override open func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        DubHubNativeTabBarOverlay.layoutIfNeeded(on: self)
     }
 }

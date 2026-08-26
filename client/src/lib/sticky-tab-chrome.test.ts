@@ -22,7 +22,7 @@ import {
   RELEASE_TRACKER_STICKY_CHROME_CLASS,
   RELEASE_TRACKER_STICKY_FADE_CLASS,
 } from "@/lib/release-tracker-presentation";
-import { ARTWORK_SECTION_TOP_PAD_CLASS } from "@/lib/artwork-release-browser";
+import { ARTWORK_VIEW_WELL_CLASS } from "@/lib/artwork-release-browser";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const leaderboardSrc = readFileSync(join(here, "../pages/leaderboard.tsx"), "utf8");
@@ -140,12 +140,13 @@ describe("Releases sticky polish parity", () => {
     assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /dubhub-app-releases-sticky-fade/);
   });
 
-  it("ArtworkReleaseBrowser keeps local top pad and Embla ownership", () => {
+  it("ArtworkReleaseBrowser keeps Embla ownership; tracker owns available-height well", () => {
     assert.match(artworkSrc, /useEmblaCarousel/);
     assert.match(artworkSrc, /embla-carousel-react/);
-    assert.match(artworkSrc, /ARTWORK_SECTION_TOP_PAD_CLASS/);
-    assert.match(ARTWORK_SECTION_TOP_PAD_CLASS, /pt-\[clamp\(/);
-    assert.match(ARTWORK_SECTION_TOP_PAD_CLASS, /10vh/);
-    assert.match(artworkLibSrc, /ARTWORK_SECTION_TOP_PAD_CLASS/);
+    assert.doesNotMatch(artworkSrc, /ARTWORK_SECTION_TOP_PAD_CLASS/);
+    assert.doesNotMatch(artworkSrc, /10vh/);
+    assert.match(artworkLibSrc, /ARTWORK_VIEW_WELL_CLASS/);
+    assert.match(ARTWORK_VIEW_WELL_CLASS, /justify-center/);
+    assert.match(releasesSrc, /ARTWORK_VIEW_WELL_CLASS/);
   });
 });

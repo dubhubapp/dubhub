@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { GENRE_ENTRIES, getGenreChipStyle } from "@/lib/genre-styles";
 import {
+  LEADERBOARD_BODY_ENTER_CLASS,
+  LEADERBOARD_INITIAL_PAINT_ROWS,
   LEADERBOARD_LIST_CLASS,
   LEADERBOARD_PRIMARY_INDICATOR_CLASS,
   LEADERBOARD_PRIMARY_ROW_CLASS,
@@ -17,13 +19,18 @@ import {
   LEADERBOARD_ROW_BASE_CLASS,
   LEADERBOARD_ROW_CURRENT_CLASS,
   LEADERBOARD_SCORE_COLUMN_CLASS,
+  LEADERBOARD_SKELETON_BONE_CLASS,
+  LEADERBOARD_SKELETON_ROW_COUNT,
   LEADERBOARD_SECONDARY_ROW_CLASS,
   LEADERBOARD_STICKY_CHROME_CLASS,
   LEADERBOARD_TIME_FILTERS,
   LEADERBOARD_TOP_LIMIT,
   leaderboardArtistsMyRankQueryKey,
   leaderboardArtistsQueryKey,
+  leaderboardFirstPaintRowCount,
+  leaderboardFirstPaintSlice,
   leaderboardRepProgressAriaValueText,
+  leaderboardShouldPaintOutsideTop,
   leaderboardUsersMyRankQueryKey,
   leaderboardUsersQueryKey,
   leaderboardVisibleProgressPct,
@@ -163,6 +170,55 @@ describe("Leaderboard query keys + domain freeze", () => {
       "month",
     ]);
     assert.equal(LEADERBOARD_TOP_LIMIT, 100);
+  });
+
+  it("gates list/rank queries to the visible Community or Artists scope", () => {
+    assert.match(leaderboardSrc, /enabled: activeTab === "users"/);
+    assert.match(leaderboardSrc, /enabled: activeTab === "artists"/);
+    assert.match(leaderboardSrc, /enabled: !!currentUserId && activeTab === "users"/);
+    assert.match(leaderboardSrc, /enabled: !!currentUserId && activeTab === "artists"/);
+  });
+
+  it("stages large lists on first paint, then expands after the paint release", () => {
+    const ids = Array.from({ length: 72 }, (_, i) => `u${i + 1}`);
+    assert.equal(LEADERBOARD_INITIAL_PAINT_ROWS, 16);
+    assert.equal(leaderboardFirstPaintRowCount(5, false), 5);
+    assert.equal(leaderboardFirstPaintRowCount(16, false), 16);
+    assert.equal(leaderboardFirstPaintRowCount(72, false), 16);
+    assert.equal(leaderboardFirstPaintRowCount(72, true), 72);
+    assert.deepEqual(
+      leaderboardFirstPaintSlice(ids, false),
+      ids.slice(0, LEADERBOARD_INITIAL_PAINT_ROWS),
+    );
+    assert.deepEqual(leaderboardFirstPaintSlice(ids, true), ids);
+    assert.equal(leaderboardShouldPaintOutsideTop(72, false), false);
+    assert.equal(leaderboardShouldPaintOutsideTop(72, true), true);
+    assert.equal(leaderboardShouldPaintOutsideTop(8, false), true);
+    assert.match(leaderboardSrc, /useLeaderboardFirstPaintRelease/);
+    assert.match(leaderboardSrc, /leaderboardFirstPaintSlice/);
+    assert.doesNotMatch(leaderboardSrc, /setTimeout\(/);
+    assert.doesNotMatch(leaderboardSrc, /react-window|react-virtual|IntersectionObserver/);
+  });
+
+  it("does not fade prize/list on first /leaderboard paint or in-page remounts", () => {
+    assert.equal(LEADERBOARD_BODY_ENTER_CLASS, "");
+    assert.doesNotMatch(LEADERBOARD_BODY_ENTER_CLASS, /fade-in-0|animate-in|duration-200/);
+    assert.match(leaderboardSrc, /LEADERBOARD_BODY_ENTER_CLASS/);
+    assert.doesNotMatch(leaderboardSrc, /fade-in-0/);
+    assert.doesNotMatch(leaderboardSrc, /motion-safe:animate-in/);
+    assert.doesNotMatch(leaderboardSrc, /key=\{\`\$\{activeTab\}-\$\{timeFilter\}\`\}/);
+    assert.match(leaderboardSrc, /data-lg-nav-5a-fade="leaderboard"/);
+    assert.match(leaderboardSrc, /handleLeaderboardTabChange|setLeaderboardScope/);
+    assert.match(leaderboardSrc, /onClick=\{\(\) => setTimeFilter\(filter\.value\)\}/);
+  });
+
+  it("uses a perceptible loading skeleton instead of near-invisible bones", () => {
+    assert.equal(LEADERBOARD_SKELETON_ROW_COUNT, 8);
+    assert.match(LEADERBOARD_SKELETON_BONE_CLASS, /bg-white\/15/);
+    assert.doesNotMatch(leaderboardSrc, /bg-white\/5"/);
+    assert.match(leaderboardSrc, /leaderboard-loading-skeleton/);
+    assert.match(leaderboardSrc, /LEADERBOARD_SKELETON_BONE_CLASS/);
+    assert.match(leaderboardSrc, /RewardsBanner/);
   });
 
   it("does not touch ranking SQL / karma / swipe / releases", () => {

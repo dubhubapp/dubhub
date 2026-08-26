@@ -78,4 +78,9 @@ describe("user-profile primary nav wiring", () => {
     assert.match(userProfileSrc, /data-testid="artist-profile-actions"/);
     assert.match(userProfileSrc, /shareLabel="Share Profile"/);
   });
+
+  it("uses shared page-scroll clearance so Settings can sit above native nav", () => {
+    assert.match(userProfileSrc, /APP_PAGE_SCROLL_CLASS/);
+    assert.match(userProfileSrc, /data-testid="button-settings"/);
+  });
 });

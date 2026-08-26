@@ -29,6 +29,7 @@ import {
   resolveViewerReleaseAlertDeliveryEnabled,
 } from "@/lib/release-alert-enabled-artist-copy";
 import { useUser } from "@/lib/user-context";
+import { useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
@@ -63,6 +64,7 @@ import {
   profilePageCanvasClass,
 } from "@/lib/profile-banner-presentation";
 import { cn, formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
+import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import { APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_NAV_ROW_CLASS,
@@ -605,6 +607,7 @@ function dedupeBurstNotificationsKeepNewestFirst(
 }
 
 export default function UserProfile() {
+  useLgNav5aDestinationProbe("profile");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage, bannerUrl, username, updateProfileImage, updateProfileBanner, currentUser, verifiedArtist, isModerator, userType } = useUser();
@@ -2246,6 +2249,15 @@ export default function UserProfile() {
     };
   }, [pendingBannerSrc]);
 
+  useLgNav5aRenderCycle("profile", {
+    tab: activeTab,
+    statsLoading,
+    postsLoading,
+    likedLoading,
+    posts: Array.isArray(userPosts) ? userPosts.length : 0,
+    liked: Array.isArray(likedPosts) ? likedPosts.length : 0,
+  });
+
   if (!currentUser) {
     const handleRecoverAuth = async () => {
       await hardResetLocalAuthState({ clearSessionStorage: false });
@@ -2424,7 +2436,14 @@ export default function UserProfile() {
   const hasReadyUploadedBanner = showUploadedBannerImage && bannerImageReady;
 
   return (
-    <div className={`min-h-0 min-w-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain ${profilePageCanvasClass(hasReadyUploadedBanner)}`}>
+    <div
+      data-lg-nav-5a-dest="profile"
+      className={cn(
+        APP_PAGE_SCROLL_CLASS,
+        "overflow-x-hidden",
+        profilePageCanvasClass(hasReadyUploadedBanner),
+      )}
+    >
       <div className="px-6 pb-8">
         <div className="max-w-md mx-auto">
           {/* Profile banner — uploaded image dominant; contained fade into navy (C5C) */}

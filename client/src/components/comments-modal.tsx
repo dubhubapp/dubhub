@@ -79,6 +79,8 @@ interface CommentsModalProps {
   post: PostWithUser;
   isOpen: boolean;
   onClose: () => void;
+  /** After Vaul close animation finishes. Unmount the host here, not in onClose. */
+  onClosed?: () => void;
   /** Local feed count offset (e.g. Random mode post not in query cache). */
   onCommentCountDelta?: (delta: number) => void;
   /** Raise drawer above fullscreen clip overlays (z-[100]). */
@@ -216,7 +218,7 @@ function computeCommentsSheetMaxPxWithoutVisualViewport(): number {
   return Math.min(preferredCap, visibleBudget);
 }
 
-export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elevatedStack = false }: CommentsModalProps) {
+export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountDelta, elevatedStack = false }: CommentsModalProps) {
   const drawerStackZ = elevatedStack ? "z-[110]" : "z-[60]";
   const reportDialogStackZ = elevatedStack ? "z-[120]" : "z-[70]";
   const alertDialogStackZ = elevatedStack ? "z-[120]" : "z-[80]";
@@ -313,12 +315,12 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
-      setOpenCommentsPostId(post.id);
-      return () => setOpenCommentsPostId(null);
-    }
-    setOpenCommentsPostId(null);
+    if (isOpen) setOpenCommentsPostId(post.id);
   }, [isOpen, post.id]);
+
+  useEffect(() => {
+    return () => setOpenCommentsPostId(null);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1454,6 +1456,11 @@ export function CommentsModal({ post, isOpen, onClose, onCommentCountDelta, elev
         open={isOpen}
         onOpenChange={(open) => {
           if (!open) handleClose();
+        }}
+        onAnimationEnd={(open) => {
+          if (open) return;
+          setOpenCommentsPostId(null);
+          onClosed?.();
         }}
         shouldScaleBackground={false}
         repositionInputs={false}

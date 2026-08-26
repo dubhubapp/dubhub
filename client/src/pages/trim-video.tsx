@@ -1974,7 +1974,7 @@ export default function TrimVideo() {
         </div>
 
         {/* Shorter fade (less pt) + softer mid-stop so gradient does not veil the lower half of letterboxed landscape video. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/45 to-transparent pb-[calc(0.5rem+var(--app-bottom-nav-block))] pt-10">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/45 to-transparent pb-[calc(0.5rem+var(--app-bottom-control-inset))] pt-10">
           <div className="pointer-events-none space-y-2 px-4 pb-0">
             <p className="trim-editor-no-select pointer-events-none text-center text-[12px] text-white/55">
               Drag handles or range to trim · {MIN_CLIP_DURATION_SECONDS}–{MAX_CLIP_DURATION_SECONDS}{" "}

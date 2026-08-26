@@ -10,11 +10,14 @@ import { dubhubVideoDebugLog } from "@/lib/video-debug";
 
 type SubmitClipContextValue = {
   isSubmitClipOpen: boolean;
+  /** True from open until Vaul close animation ends. Native nav cover uses this, not isSubmitClipOpen. */
+  isSubmitClipCovering: boolean;
   /** Bump this when opening the sheet so hidden file inputs remount (same file re-pick works on iOS). */
   fileInputRemountKey: number;
   nativePostArtifact: NativePostArtifact | null;
   openSubmitClip: () => void;
   closeSubmitClip: () => void;
+  completeSubmitClipClose: () => void;
   setNativePostArtifact: (artifact: NativePostArtifact) => void;
   clearNativePostArtifact: () => void;
 };
@@ -37,17 +40,23 @@ const SubmitClipContext = createContext<SubmitClipContextValue | null>(null);
 
 export function SubmitClipProvider({ children }: { children: ReactNode }) {
   const [isSubmitClipOpen, setSubmitClipOpen] = useState(false);
+  const [isSubmitClipCovering, setSubmitClipCovering] = useState(false);
   const [fileInputRemountKey, setFileInputRemountKey] = useState(0);
   const [nativePostArtifact, setNativePostArtifactState] = useState<NativePostArtifact | null>(null);
 
   const openSubmitClip = useCallback(() => {
     dubhubVideoDebugLog("[DubHub][PostFlow][state]", "entering submit drawer");
     setFileInputRemountKey((k) => k + 1);
+    setSubmitClipCovering(true);
     setSubmitClipOpen(true);
   }, []);
   const closeSubmitClip = useCallback(() => {
     dubhubVideoDebugLog("[DubHub][PostFlow][state]", "closing submit drawer");
     setSubmitClipOpen(false);
+  }, []);
+  const completeSubmitClipClose = useCallback(() => {
+    setSubmitClipOpen(false);
+    setSubmitClipCovering(false);
   }, []);
   const setNativePostArtifact = useCallback((artifact: NativePostArtifact) => {
     setNativePostArtifactState(artifact);
@@ -67,19 +76,23 @@ export function SubmitClipProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       isSubmitClipOpen,
+      isSubmitClipCovering,
       fileInputRemountKey,
       nativePostArtifact,
       openSubmitClip,
       closeSubmitClip,
+      completeSubmitClipClose,
       setNativePostArtifact,
       clearNativePostArtifact,
     }),
     [
       isSubmitClipOpen,
+      isSubmitClipCovering,
       fileInputRemountKey,
       nativePostArtifact,
       openSubmitClip,
       closeSubmitClip,
+      completeSubmitClipClose,
       setNativePostArtifact,
       clearNativePostArtifact,
     ],

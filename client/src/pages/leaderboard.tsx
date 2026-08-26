@@ -21,7 +21,9 @@ import {
   useLeaderboardScopeSwipe,
 } from "@/lib/leaderboard-scope-swipe";
 import {
+  LEADERBOARD_BODY_ENTER_CLASS,
   LEADERBOARD_CONTENT_TOP_GAP_CLASS,
+  LEADERBOARD_INITIAL_PAINT_ROWS,
   LEADERBOARD_LIST_CLASS,
   LEADERBOARD_PRIMARY_ACTIVE_CLASS,
   LEADERBOARD_PRIMARY_INACTIVE_CLASS,
@@ -36,6 +38,8 @@ import {
   LEADERBOARD_ROW_BASE_CLASS,
   LEADERBOARD_ROW_CURRENT_CLASS,
   LEADERBOARD_SCORE_COLUMN_CLASS,
+  LEADERBOARD_SKELETON_BONE_CLASS,
+  LEADERBOARD_SKELETON_ROW_COUNT,
   LEADERBOARD_SECONDARY_ACTIVE_CLASS,
   LEADERBOARD_SECONDARY_BUTTON_BASE_CLASS,
   LEADERBOARD_SECONDARY_INACTIVE_CLASS,
@@ -47,11 +51,14 @@ import {
   LEADERBOARD_YOU_PILL_CLASS,
   leaderboardArtistsMyRankQueryKey,
   leaderboardArtistsQueryKey,
+  leaderboardFirstPaintSlice,
   leaderboardIdsUnitLabel,
   leaderboardRepProgressAriaValueText,
+  leaderboardShouldPaintOutsideTop,
   leaderboardUsersMyRankQueryKey,
   leaderboardUsersQueryKey,
   leaderboardVisibleProgressPct,
+  useLeaderboardFirstPaintRelease,
   type LeaderboardScope,
   type LeaderboardTimeFilter,
 } from "@/lib/leaderboard-presentation";
@@ -60,6 +67,7 @@ import {
   repProgressPremiumGradientFromGenreBg,
   whiteRepProgressGradient,
 } from "@/lib/profile-rep-styles";
+import { lgNav5aMark, useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -127,6 +135,7 @@ function formatRank(rank: number) {
 }
 
 export default function Leaderboard() {
+  useLgNav5aDestinationProbe("leaderboard");
   const { currentUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
   const [activeTab, setActiveTab] = useState<LeaderboardScope>("users");
@@ -160,8 +169,16 @@ export default function Leaderboard() {
   });
 
   // Fetch user leaderboard
-  const { data: userLeaderboard = [], isLoading: isLoadingUsers } = useQuery<LeaderboardEntry[]>({
+  const {
+    data: userLeaderboard = [],
+    isLoading: isLoadingUsers,
+    isFetching: isFetchingUsers,
+    status: usersQueryStatus,
+    fetchStatus: usersFetchStatus,
+    dataUpdatedAt: usersDataUpdatedAt,
+  } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardUsersQueryKey(timeFilter),
+    enabled: activeTab === "users",
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
       const res = await apiRequest("GET", `/api/leaderboard/users?${params.toString()}`);
@@ -170,8 +187,15 @@ export default function Leaderboard() {
   });
 
   // Fetch artist leaderboard
-  const { data: artistLeaderboard = [], isLoading: isLoadingArtists } = useQuery<LeaderboardEntry[]>({
+  const {
+    data: artistLeaderboard = [],
+    isLoading: isLoadingArtists,
+    isFetching: isFetchingArtists,
+    status: artistsQueryStatus,
+    fetchStatus: artistsFetchStatus,
+  } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardArtistsQueryKey(timeFilter),
+    enabled: activeTab === "artists",
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
       const res = await apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`);
@@ -179,9 +203,9 @@ export default function Leaderboard() {
     },
   });
 
-  const { data: userMyRank } = useQuery<LeaderboardRankResponse>({
+  const { data: userMyRank, status: userRankQueryStatus } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
-    enabled: !!currentUserId,
+    enabled: !!currentUserId && activeTab === "users",
     queryFn: async () => {
       const params = new URLSearchParams({
         userId: currentUserId!,
@@ -197,9 +221,9 @@ export default function Leaderboard() {
     retry: false,
   });
 
-  const { data: artistMyRank } = useQuery<LeaderboardRankResponse>({
+  const { data: artistMyRank, status: artistRankQueryStatus } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
-    enabled: !!currentUserId,
+    enabled: !!currentUserId && activeTab === "artists",
     queryFn: async () => {
       const params = new URLSearchParams({
         userId: currentUserId!,
@@ -214,6 +238,12 @@ export default function Leaderboard() {
     },
     retry: false,
   });
+  useEffect(() => {
+    if (!isLoadingUsers) {
+      lgNav5aMark("destination-data", { name: "leaderboard", list: "users", rows: userLeaderboard.length });
+    }
+  }, [isLoadingUsers, userLeaderboard.length]);
+
   const userTopEntries = useMemo(
     () => userLeaderboard.slice(0, LEADERBOARD_TOP_LIMIT),
     [userLeaderboard],
@@ -240,6 +270,49 @@ export default function Leaderboard() {
     if ((artistMyRank.rank ?? 0) <= LEADERBOARD_TOP_LIMIT) return null;
     return artistMyRank;
   }, [currentUserId, artistHasCurrentUserInTop, artistMyRank]);
+
+  const activeEntries = activeTab === "users" ? userTopEntries : artistTopEntries;
+  const activeLoading = activeTab === "users" ? isLoadingUsers : isLoadingArtists;
+  const firstPaintReleased = useLeaderboardFirstPaintRelease(
+    !activeLoading && activeEntries.length > 0,
+    pageScrollRef,
+  );
+  const paintedEntries = useMemo(
+    () => leaderboardFirstPaintSlice(activeEntries, firstPaintReleased),
+    [activeEntries, firstPaintReleased],
+  );
+  const paintOutsideTop = leaderboardShouldPaintOutsideTop(
+    activeEntries.length,
+    firstPaintReleased,
+  );
+
+  useLgNav5aRenderCycle("leaderboard", {
+    tab: activeTab,
+    timeFilter,
+    users: {
+      status: usersQueryStatus,
+      fetchStatus: usersFetchStatus,
+      isLoading: isLoadingUsers,
+      isFetching: isFetchingUsers,
+      rows: userLeaderboard.length,
+      paintedRows: activeTab === "users" ? paintedEntries.length : 0,
+      firstPaintReleased,
+      initialPaintRows: LEADERBOARD_INITIAL_PAINT_ROWS,
+      dataUpdatedAt: usersDataUpdatedAt,
+    },
+    artists: {
+      status: artistsQueryStatus,
+      fetchStatus: artistsFetchStatus,
+      isLoading: isLoadingArtists,
+      isFetching: isFetchingArtists,
+      rows: artistLeaderboard.length,
+      enabled: activeTab === "artists",
+    },
+    rank: {
+      users: userRankQueryStatus,
+      artists: artistRankQueryStatus,
+    },
+  });
 
   /** iOS status-bar tap → scroll leaderboard to top (page-scoped; no refresh). */
   useEffect(() => {
@@ -489,16 +562,21 @@ export default function Leaderboard() {
   }) => {
     if (isLoading) {
       return (
-        <div className={LEADERBOARD_LIST_CLASS} aria-busy="true" aria-label="Loading leaderboard">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex items-center gap-3 px-1 py-3">
-              <div className="h-6 w-10 shrink-0 animate-pulse rounded bg-white/5" />
-              <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-white/5" />
+        <div
+          className={LEADERBOARD_LIST_CLASS}
+          aria-busy="true"
+          aria-label="Loading leaderboard"
+          data-testid="leaderboard-loading-skeleton"
+        >
+          {Array.from({ length: LEADERBOARD_SKELETON_ROW_COUNT }, (_, i) => (
+            <div key={i} className={LEADERBOARD_ROW_BASE_CLASS}>
+              <div className={`h-6 w-10 shrink-0 ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+              <div className={`h-10 w-10 shrink-0 rounded-full ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
               <div className="min-w-0 flex-1 space-y-2">
-                <div className="h-4 w-2/3 max-w-[10rem] animate-pulse rounded bg-white/5" />
-                <div className="h-2 w-full animate-pulse rounded-full bg-white/5" />
+                <div className={`h-4 w-2/3 max-w-[10rem] ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+                <div className={`h-2 w-full rounded-full ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
               </div>
-              <div className="h-8 w-[68px] shrink-0 animate-pulse rounded bg-white/5" />
+              <div className={`h-8 w-[68px] shrink-0 ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
             </div>
           ))}
         </div>
@@ -543,6 +621,7 @@ export default function Leaderboard() {
   return (
     <div
       ref={pageScrollRef}
+      data-lg-nav-5a-dest="leaderboard"
       className={`${APP_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
     >
       <div className="mx-auto max-w-4xl px-4 pb-6">
@@ -631,27 +710,27 @@ export default function Leaderboard() {
             data-testid="leaderboard-swipe-region"
           >
             <div
-              key={`${activeTab}-${timeFilter}`}
-              className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
+              data-lg-nav-5a-fade="leaderboard"
+              className={LEADERBOARD_BODY_ENTER_CLASS || undefined}
             >
               {activeTab === "users" ? (
                 <>
                   <RewardsBanner tab="users" />
                   <LeaderboardList
-                    entries={userTopEntries}
+                    entries={paintedEntries}
                     emptyLabel="No community members found for this period"
                     isLoading={isLoadingUsers}
-                    outsideTop={userOutsideTop}
+                    outsideTop={paintOutsideTop ? userOutsideTop : null}
                   />
                 </>
               ) : (
                 <>
                   <RewardsBanner tab="artists" />
                   <LeaderboardList
-                    entries={artistTopEntries}
+                    entries={paintedEntries}
                     emptyLabel="No artists found for this period"
                     isLoading={isLoadingArtists}
-                    outsideTop={artistOutsideTop}
+                    outsideTop={paintOutsideTop ? artistOutsideTop : null}
                   />
                 </>
               )}

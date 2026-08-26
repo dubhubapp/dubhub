@@ -1,8 +1,20 @@
 import { useLocation } from "wouter";
 import { BottomNavigation } from "@/components/bottom-navigation";
+import { NativeNavBridgeHost } from "@/components/native-nav-bridge-host";
 
-export function ConditionalBottomNavigation() {
+type ConditionalBottomNavigationProps = {
+  onboardingOpen?: boolean;
+};
+
+export function ConditionalBottomNavigation({
+  onboardingOpen = false,
+}: ConditionalBottomNavigationProps) {
   const [location] = useLocation();
-  if (location === "/reset-password") return null;
-  return <BottomNavigation />;
+  const hideWebNav = location === "/reset-password";
+  return (
+    <>
+      <NativeNavBridgeHost onboardingOpen={onboardingOpen} />
+      {hideWebNav ? null : <BottomNavigation />}
+    </>
+  );
 }

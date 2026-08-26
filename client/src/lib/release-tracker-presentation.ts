@@ -151,6 +151,10 @@ export const RELEASE_TRACKER_EMPTY_CTA_CLASS =
 
 export const RELEASE_TRACKER_FAB_UNDERLAY_CLASS = APP_MATERIAL_RELEASES_FAB_UNDERLAY_CLASS;
 export const RELEASE_TRACKER_FAB_FADE_CLASS = "dubhub-app-releases-fab-fade";
+/** React-nav opaque band over the web tab bar. Collapsed when native nav is on. */
+export const RELEASE_TRACKER_NAV_SHELF_ATTR = "data-releases-nav-shelf" as const;
+/** Full-width CTA bleed behind Add Release. Collapsed when native nav is on. */
+export const RELEASE_TRACKER_CTA_SLAB_ATTR = "data-releases-cta-slab" as const;
 /** Add Release CTA — ceramic; C2 softens radius only (~18px). */
 export const RELEASE_TRACKER_ADD_CTA_CLASS = APP_MATERIAL_RELEASES_ADD_CTA_CLASS;
 

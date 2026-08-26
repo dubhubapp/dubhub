@@ -19,6 +19,7 @@ import {
   shouldOfferReleasesPushPrompt,
 } from "@/lib/push-prompt";
 import { Capacitor } from "@capacitor/core";
+import { useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
 import {
   ReleaseFeedCard,
   formatReleaseCardDate,
@@ -30,11 +31,33 @@ import { shouldShowSavedReleaseCountdownIndicator } from "@/lib/home-widget-coun
 import { isHomeReleaseWidgetSelectionEnabled } from "@/lib/home-widget-selection-flag";
 import { readHomeWidgetSelectedReleaseId } from "@/lib/home-widget-selection-store";
 import {
+  ARTWORK_VIEW_COLUMN_CLASS,
+  ARTWORK_VIEW_WELL_CLASS,
   buildArtworkReleaseSequence,
   isArtworkViewSupported,
+  resolveArtworkAmbienceUrl,
   resolveArtworkEffectiveLayout,
+  resolveArtworkRestoreIndex,
+  resolveArtworkViewColumnMinHClass,
+  resolveArtworkViewPageBottomPadClass,
   type ArtworkLayoutMode,
 } from "@/lib/artwork-release-browser";
+import { ReleasesArtworkAtmosphereWash } from "@/components/releases-artwork-atmosphere-wash";
+import {
+  bootstrapTrackerArtworkAtmosphere,
+  collectTrackerAtmosphereWarmupQueue,
+  prefetchTrackerArtworkAtmosphere,
+  RELEASE_TRACKER_ATMOSPHERE_ATTR,
+  RELEASE_TRACKER_VIEW_LAYER_CLASS,
+  RELEASE_TRACKER_VIEW_STACK_CLASS,
+  resolveTrackerArtworkAtmosphere,
+  shouldApplyTrackerAtmosphereResult,
+  startTrackerAtmosphereWarmup,
+  TRACKER_ATMOSPHERE_DURATION_MS,
+  TRACKER_ATMOSPHERE_OFF,
+  TRACKER_ATMOSPHERE_ON,
+} from "@/lib/release-tracker-atmosphere";
+import type { AtmosphereRgb } from "@/lib/release-artwork-atmosphere";
 import {
   readReleaseTrackerLayoutPreference,
   writeReleaseTrackerLayoutPreference,
@@ -57,7 +80,9 @@ import {
   RELEASE_TRACKER_EMPTY_ICON_CLASS,
   RELEASE_TRACKER_EMPTY_TITLE_CLASS,
   RELEASE_TRACKER_FAB_FADE_CLASS,
+  RELEASE_TRACKER_CTA_SLAB_ATTR,
   RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
+  RELEASE_TRACKER_NAV_SHELF_ATTR,
   RELEASE_TRACKER_PAGE_CLASS,
   RELEASE_TRACKER_PRIMARY_ACTIVE_CLASS,
   RELEASE_TRACKER_PRIMARY_BUTTON_BASE_CLASS,
@@ -192,6 +217,7 @@ function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
 }
 
 export default function ReleaseTracker() {
+  useLgNav5aDestinationProbe("releases");
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
@@ -338,6 +364,9 @@ export default function ReleaseTracker() {
     isError: isFeedError,
     refetch: refetchFeed,
     isFetching: isFeedFetching,
+    status: feedQueryStatus,
+    fetchStatus: feedFetchStatus,
+    dataUpdatedAt: feedDataUpdatedAt,
   } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
     queryFn: async () => {
@@ -364,6 +393,19 @@ export default function ReleaseTracker() {
   const feedItems = feed ?? [];
   const emptyCopy = getReleaseTrackerEmptyCopy({ view: feedView, scope: effectiveScope });
 
+  useLgNav5aRenderCycle("releases", {
+    scope: effectiveScope,
+    view: feedView,
+    feed: {
+      status: feedQueryStatus,
+      fetchStatus: feedFetchStatus,
+      isLoading: isFeedLoading,
+      isFetching: isFeedFetching,
+      rows: feedItems.length,
+      dataUpdatedAt: feedDataUpdatedAt,
+    },
+  });
+
   const openRelease = useCallback(
     (r: ReleaseFeedItem) => {
       if (effectiveLayout === "artwork") {
@@ -385,6 +427,13 @@ export default function ReleaseTracker() {
       rememberArtworkFocus,
     ],
   );
+
+  const artworkWellActive =
+    effectiveLayout === "artwork" &&
+    !!currentUser?.id &&
+    !isFeedLoading &&
+    !isFeedError &&
+    feedItems.length > 0;
 
   const myReleasesDueToday = useMemo(() => {
     if (isFeedLoading || !isArtist || effectiveScope !== "my" || !currentUser?.id) return [];
@@ -429,6 +478,111 @@ export default function ReleaseTracker() {
       comingSoonFeed,
     ],
   );
+
+  const atmosphereSettledIndex = useMemo(() => {
+    if (artworkSequence.length === 0) return 0;
+    return resolveArtworkRestoreIndex({
+      releaseIds: artworkSequence.map((item) => item.id),
+      preferredReleaseId: artworkFocusReleaseId,
+    });
+  }, [artworkFocusReleaseId, artworkSequence]);
+
+  const atmosphereRelease =
+    effectiveLayout === "artwork" ? artworkSequence[atmosphereSettledIndex] ?? null : null;
+
+  const atmosphereArtworkUrl = resolveArtworkAmbienceUrl(
+    atmosphereRelease?.artworkUrl,
+  );
+  const [trackerAtmosphereRgb, setTrackerAtmosphereRgb] =
+    useState<AtmosphereRgb | null>(null);
+  const [atmosphereChrome, setAtmosphereChrome] = useState(false);
+  const [mountedLayouts, setMountedLayouts] = useState<ArtworkLayoutMode[]>([
+    effectiveLayout,
+  ]);
+  const atmosphereRequestRef = useRef(0);
+
+  useEffect(() => {
+    if (effectiveLayout === "artwork") {
+      setAtmosphereChrome(true);
+    } else {
+      const timer = window.setTimeout(
+        () => setAtmosphereChrome(false),
+        TRACKER_ATMOSPHERE_DURATION_MS,
+      );
+      return () => window.clearTimeout(timer);
+    }
+  }, [effectiveLayout]);
+
+  useLayoutEffect(() => {
+    setMountedLayouts((prev) =>
+      prev.includes(effectiveLayout) ? prev : [...prev, effectiveLayout],
+    );
+  }, [effectiveLayout]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setMountedLayouts([effectiveLayout]);
+    }, TRACKER_ATMOSPHERE_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [effectiveLayout]);
+
+  useEffect(() => {
+    const requestId = ++atmosphereRequestRef.current;
+    if (effectiveLayout !== "artwork") {
+      setTrackerAtmosphereRgb(null);
+      return;
+    }
+    if (!atmosphereArtworkUrl) {
+      setTrackerAtmosphereRgb(null);
+      return;
+    }
+    const boot = bootstrapTrackerArtworkAtmosphere(atmosphereArtworkUrl);
+    if (boot.rgb) {
+      setTrackerAtmosphereRgb(boot.rgb);
+    } else if (boot.ready) {
+      setTrackerAtmosphereRgb(null);
+    }
+    if (boot.ready) return;
+    const requestUrl = atmosphereArtworkUrl;
+    void resolveTrackerArtworkAtmosphere(requestUrl).then((result) => {
+      if (
+        shouldApplyTrackerAtmosphereResult({
+          requestId,
+          currentRequestId: atmosphereRequestRef.current,
+          layoutIsArtwork: true,
+          requestUrl,
+          settledUrl: requestUrl,
+          resultMode: result.mode,
+        })
+      ) {
+        setTrackerAtmosphereRgb(result.rgb);
+        return;
+      }
+      if (requestId === atmosphereRequestRef.current && result.mode !== "artwork") {
+        setTrackerAtmosphereRgb(null);
+      }
+    });
+  }, [atmosphereArtworkUrl, effectiveLayout]);
+
+  useEffect(() => {
+    if (artworkSequence.length === 0) return;
+    const cancelled = { current: false };
+    const urls = collectTrackerAtmosphereWarmupQueue({
+      artworkUrls: artworkSequence.map((item) => item.artworkUrl),
+      settledIndex: atmosphereSettledIndex,
+      intendedUrl: atmosphereArtworkUrl,
+    });
+    const stop = startTrackerAtmosphereWarmup(urls, { cancelled });
+    return () => {
+      cancelled.current = true;
+      stop();
+    };
+  }, [artworkSequence, atmosphereArtworkUrl, atmosphereSettledIndex]);
+
+  const prewarmIntendedArtwork = useCallback((releaseId: string) => {
+    const release = artworkSequence.find((item) => item.id === releaseId);
+    prefetchTrackerArtworkAtmosphere(release?.artworkUrl);
+  }, [artworkSequence]);
 
   const countdownFlagEnabled =
     isHomeReleaseWidgetSelectionEnabled() && effectiveScope === "saved";
@@ -479,15 +633,39 @@ export default function ReleaseTracker() {
       />
       <div
         ref={releaseScrollRef}
+        data-lg-nav-5a-dest="releases"
         className={cn(
           RELEASE_TRACKER_PAGE_CLASS,
-          isArtist
-            ? "pb-[var(--releases-feed-bottom-pad)]"
-            : "pb-[var(--releases-feed-bottom-pad-listener)]",
+          "relative",
+          resolveArtworkViewPageBottomPadClass({
+            artworkWell: artworkWellActive,
+            isArtist,
+          }),
         )}
+        {...{
+          [RELEASE_TRACKER_ATMOSPHERE_ATTR]: atmosphereChrome
+            ? TRACKER_ATMOSPHERE_ON
+            : TRACKER_ATMOSPHERE_OFF,
+        }}
+        data-testid="releases-tracker-atmosphere"
         data-releases-tracker=""
       >
-      <div className="px-4 max-w-md mx-auto">
+      <ReleasesArtworkAtmosphereWash
+        rgb={effectiveLayout === "artwork" ? trackerAtmosphereRgb : null}
+        artworkUrl={
+          effectiveLayout === "artwork"
+            ? resolveArtworkAmbienceUrl(atmosphereRelease?.artworkUrl)
+            : null
+        }
+        active={effectiveLayout === "artwork" && trackerAtmosphereRgb !== null}
+      />
+      <div
+        className={cn(
+          "relative z-[1] mx-auto max-w-md px-4",
+          artworkWellActive && ARTWORK_VIEW_COLUMN_CLASS,
+          artworkWellActive && resolveArtworkViewColumnMinHClass(isArtist),
+        )}
+      >
         {currentUser?.id && (
           <div
             className={RELEASE_TRACKER_STICKY_CHROME_CLASS}
@@ -594,8 +772,13 @@ export default function ReleaseTracker() {
 
         <div
           className={
-            currentUser?.id ? RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS : "app-page-top-pad"
+            artworkWellActive
+              ? ARTWORK_VIEW_WELL_CLASS
+              : currentUser?.id
+                ? RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS
+                : "app-page-top-pad"
           }
+          data-testid={artworkWellActive ? "artwork-view-well" : undefined}
         >
         {currentUser?.id && !isFeedLoading && !isFeedError && isArtist && effectiveScope === "my" && myReleasesDueToday.length > 0 && effectiveLayout === "list" && (
           <div className="relative z-10 mb-5 space-y-2 border-b border-white/[0.08] pb-3">
@@ -643,73 +826,104 @@ export default function ReleaseTracker() {
               </Button>
             )}
           </div>
-        ) : effectiveLayout === "artwork" ? (
-          <ArtworkReleaseBrowser
-            releases={artworkSequence}
-            onOpen={(r) => openRelease(r)}
-            showBylineFor={(r) =>
-              shouldShowReleaseFeedByline({
-                scope: effectiveScope,
-                view: effectiveView,
-                currentUserId: currentUser?.id,
-                artistId: r.artistId,
-                collaborators: r.collaborators,
-              })
-            }
-            countdownFlagEnabled={countdownFlagEnabled}
-            selectedCountdownReleaseId={selectedCountdownReleaseId}
-            initialReleaseId={artworkFocusReleaseId}
-            onSettledReleaseChange={rememberArtworkFocus}
-          />
         ) : (
-          <div className="space-y-7">
-            {standardOutTodayFeed.length > 0 && (
-              <section className="space-y-2">
-                <h2 className={RELEASE_FEED_MONTH_HEADING_CLASS}>
-                  Released today
-                </h2>
-                {standardOutTodayFeed[0].artistId === currentUser?.id ? (
-                  <ReleaseDayCelebration
-                    releaseId={standardOutTodayFeed[0].id}
-                    title={standardOutTodayFeed[0].title}
-                    variant="inline"
-                  />
-                ) : (
-                  <SavedReleaseDayCelebration
-                    releaseId={standardOutTodayFeed[0].id}
-                    title={standardOutTodayFeed[0].title}
-                    variant="inline"
-                  />
+          <div
+            className={RELEASE_TRACKER_VIEW_STACK_CLASS}
+            data-testid="releases-view-stack"
+          >
+            {mountedLayouts.includes("artwork") && (
+              <div
+                className={cn(
+                  RELEASE_TRACKER_VIEW_LAYER_CLASS,
+                  effectiveLayout === "artwork"
+                    ? "opacity-100"
+                    : "pointer-events-none opacity-0",
                 )}
-                <div className={RELEASE_FEED_DIVIDE_CLASS}>
-                  {standardOutTodayFeed.map((r) => renderReleaseCard(r))}
-                </div>
-              </section>
+                aria-hidden={effectiveLayout !== "artwork"}
+                data-testid="releases-view-layer-artwork"
+              >
+                <ArtworkReleaseBrowser
+                  releases={artworkSequence}
+                  onOpen={(r) => openRelease(r)}
+                  showBylineFor={(r) =>
+                    shouldShowReleaseFeedByline({
+                      scope: effectiveScope,
+                      view: effectiveView,
+                      currentUserId: currentUser?.id,
+                      artistId: r.artistId,
+                      collaborators: r.collaborators,
+                    })
+                  }
+                  countdownFlagEnabled={countdownFlagEnabled}
+                  selectedCountdownReleaseId={selectedCountdownReleaseId}
+                  initialReleaseId={artworkFocusReleaseId}
+                  onSettledReleaseChange={rememberArtworkFocus}
+                  onIntendedReleaseChange={prewarmIntendedArtwork}
+                />
+              </div>
             )}
-            {groupReleasesByMonth(
-              standardNonOutTodayFeed,
-              effectiveView === "upcoming" || effectiveView === "collaborations"
-            ).map(({ key: monthKey, label: monthLabel, items }) => (
-              <section key={monthKey}>
-                <h2 className={RELEASE_FEED_MONTH_HEADING_CLASS}>
-                  {monthLabel}
-                </h2>
-                <div className={RELEASE_FEED_DIVIDE_CLASS}>
-                  {items.map((r) => renderReleaseCard(r))}
+            {mountedLayouts.includes("list") && (
+              <div
+                className={cn(
+                  RELEASE_TRACKER_VIEW_LAYER_CLASS,
+                  effectiveLayout === "list"
+                    ? "opacity-100"
+                    : "pointer-events-none opacity-0",
+                )}
+                aria-hidden={effectiveLayout !== "list"}
+                data-testid="releases-view-layer-list"
+              >
+                <div className="space-y-7">
+                  {standardOutTodayFeed.length > 0 && (
+                    <section className="space-y-2">
+                      <h2 className={RELEASE_FEED_MONTH_HEADING_CLASS}>
+                        Released today
+                      </h2>
+                      {standardOutTodayFeed[0].artistId === currentUser?.id ? (
+                        <ReleaseDayCelebration
+                          releaseId={standardOutTodayFeed[0].id}
+                          title={standardOutTodayFeed[0].title}
+                          variant="inline"
+                        />
+                      ) : (
+                        <SavedReleaseDayCelebration
+                          releaseId={standardOutTodayFeed[0].id}
+                          title={standardOutTodayFeed[0].title}
+                          variant="inline"
+                        />
+                      )}
+                      <div className={RELEASE_FEED_DIVIDE_CLASS}>
+                        {standardOutTodayFeed.map((r) => renderReleaseCard(r))}
+                      </div>
+                    </section>
+                  )}
+                  {groupReleasesByMonth(
+                    standardNonOutTodayFeed,
+                    effectiveView === "upcoming" || effectiveView === "collaborations"
+                  ).map(({ key: monthKey, label: monthLabel, items }) => (
+                    <section key={monthKey}>
+                      <h2 className={RELEASE_FEED_MONTH_HEADING_CLASS}>
+                        {monthLabel}
+                      </h2>
+                      <div className={RELEASE_FEED_DIVIDE_CLASS}>
+                        {items.map((r) => renderReleaseCard(r))}
+                      </div>
+                    </section>
+                  ))}
+                  {feedItems.some((r) => r.isComingSoon) && (
+                    <section>
+                      <h2 className={cn(RELEASE_FEED_MONTH_HEADING_CLASS, "mt-1")}>
+                        Coming soon...
+                      </h2>
+                      <div className={RELEASE_FEED_DIVIDE_CLASS}>
+                        {feedItems
+                          .filter((r) => r.isComingSoon)
+                          .map((r) => renderReleaseCard(r))}
+                      </div>
+                    </section>
+                  )}
                 </div>
-              </section>
-            ))}
-            {feedItems.some((r) => r.isComingSoon) && (
-              <section>
-                <h2 className={cn(RELEASE_FEED_MONTH_HEADING_CLASS, "mt-1")}>
-                  Coming soon...
-                </h2>
-                <div className={RELEASE_FEED_DIVIDE_CLASS}>
-                  {feedItems
-                    .filter((r) => r.isComingSoon)
-                    .map((r) => renderReleaseCard(r))}
-                </div>
-              </section>
+              </div>
             )}
           </div>
         )}
@@ -719,21 +933,23 @@ export default function ReleaseTracker() {
       {isArtist && (
         <>
           <div
+            {...{ [RELEASE_TRACKER_NAV_SHELF_ATTR]: "" }}
             className={cn(
-              "pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-nav-block)]",
+              "pointer-events-none fixed inset-x-0 bottom-0 z-[29] h-[var(--app-bottom-control-inset)]",
               RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
             )}
           />
-          <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-gap-above-nav))] z-30">
+          <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--releases-cta-anchor)+var(--releases-cta-gap-above-nav))] z-30 bg-transparent">
             <div
+              {...{ [RELEASE_TRACKER_CTA_SLAB_ATTR]: "" }}
               className={cn(
-                "absolute inset-x-0 bottom-0 h-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))]",
+                "absolute inset-x-0 bottom-0 h-[var(--releases-cta-underlay-block)]",
                 RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
               )}
             />
             <div
               className={cn(
-                "absolute inset-x-0 bottom-[calc(var(--app-bottom-nav-block)+var(--releases-cta-stack-bleed))] h-[var(--releases-cta-fade-block)]",
+                "absolute inset-x-0 bottom-[var(--releases-cta-underlay-block)] h-[var(--releases-cta-fade-block)]",
                 RELEASE_TRACKER_FAB_FADE_CLASS,
               )}
             />

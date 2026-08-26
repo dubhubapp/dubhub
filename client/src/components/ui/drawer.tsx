@@ -5,6 +5,7 @@ import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
 
+/** Vaul `onAnimationEnd(open)` is forwarded via Root props. Close completion is `open === false`. */
 const Drawer = ({
   shouldScaleBackground = true,
   ...props

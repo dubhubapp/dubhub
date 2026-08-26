@@ -56,10 +56,47 @@ const FEED_MODE_LABELS: Record<FeedSortMode, string> = {
   random: "Random",
 };
 
-/** Shared compact section chrome for the collapsed Discover menu. */
-const discoverMenuSectionClass = "px-3 py-2.5";
-/** Keeps the last Genres/Status controls scrollable above sticky Done. */
-const discoverDoneClearanceClass = "pb-14";
+/** Shared horizontal inset for Status and Genres. Vertical gaps are owned by the scroll-body gap. */
+const discoverMenuSectionClass = "px-3";
+/**
+ * Pull the whole Genres block up 20px so a bottom-aligned pager h3 still reads 20px
+ * after Status. Paired with `gap-5`: 20 − 20 = 0px structural overlap with Status pills.
+ */
+const discoverMenuGenresSectionOffsetClass = "-mt-5";
+/** Feed only: 12px top inset. No bottom pad — inter-section gap is owned by `gap-5`. */
+const discoverMenuFeedSectionClass = "px-3 pt-3";
+/**
+ * Pager page titles only (parent Genres + subgenre). `self-end` in the frozen min-h-9
+ * row so heading→grid is 8px (`mb-2`) without moving Clear or arrow Y.
+ */
+const discoverMenuPagerHeadingTextClass = `${DISCOVER_MENU_HEADING_TEXT_CLASS} self-end`;
+/**
+ * Clear keeps a 36px hit box (`min-h-9`) but `items-end` so the label sits on the
+ * same baseline as the pager `h3` (`self-end` in the frozen heading row).
+ */
+const discoverMenuClearButtonClass =
+  "ios-press inline-flex min-h-9 shrink-0 items-end px-2.5 text-xs font-medium leading-4 text-white/55 transition-colors hover:text-white/80";
+/** Optical nudge only — does not change the 36px Clear hit box. */
+const discoverMenuClearLabelClass = "translate-y-[2px]";
+/**
+ * Feed/Status heading → controls. `mb-2` (8px) matches Genres `DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS`.
+ * Do not add min-h-9 here — that is pager/Clear geometry only.
+ */
+const discoverMenuCompactHeadingRowClass =
+  "mb-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center";
+/** Quiet inactive Status / genre / subgenre chips. Feed tiles stay dark glass. */
+const discoverMenuInactiveChipClass =
+  "border border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]";
+/** Collapsed trigger glass: keep fill/blur; inset highlight + quiet depth only. */
+const DISCOVER_COLLAPSED_TRIGGER_GLASS_SHADOW =
+  "shadow-[inset_0_1px_0_rgba(255,255,255,0.40),0_2px_6px_rgba(0,0,0,0.25)]";
+/** Open menu glass: trigger inset highlight + restrained drop (not shadow-2xl). */
+const DISCOVER_OPEN_MENU_GLASS_SHADOW =
+  "shadow-[inset_0_1px_0_rgba(255,255,255,0.40),0_8px_24px_rgba(0,0,0,0.32)]";
+/** Last genre row → footer. Single owner; replaces stacked section `pb` + reserve. */
+const discoverScrollBodyBottomClass = "pb-3";
+/** Inter-section spacing (Feed→Status, Status→Genres). Single owner. */
+const discoverScrollBodySectionGapClass = "flex flex-col gap-5";
 const discoverGenrePillClass =
   "ios-press inline-flex min-h-9 min-w-0 w-full items-center justify-center gap-1 whitespace-normal rounded-full px-2 py-1.5 text-center text-xs leading-tight transition-colors";
 const DISCOVER_PAGE_SNAP_MS = 180;
@@ -92,7 +129,7 @@ function DiscoverPageArrow({
 const feedModeCellBase =
   "ios-press flex min-h-[3.5rem] w-full flex-col items-center justify-center gap-0.5 rounded-lg border py-1.5 px-1 text-center transition-all touch-manipulation [-webkit-tap-highlight-color:transparent] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/45 focus-visible:ring-offset-0";
 const feedModeActiveClass =
-  "text-accent-foreground border-accent/70 bg-accent font-semibold shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]";
+  "border-[#0a83ff]/55 bg-[#0a83ff]/40 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]";
 const feedModeInactiveClass =
   "border-white/10 bg-black/20 text-white/70 hover:bg-black/30 hover:text-white";
 
@@ -163,7 +200,7 @@ function FeedModeMenuButton({
       >
         {children}
       </span>
-      <span className={cn("text-xs font-medium leading-none", active ? "text-accent-foreground" : "text-white/85")}>
+      <span className={cn("text-xs font-medium leading-none", active ? "text-white" : "text-white/85")}>
         {label}
       </span>
     </button>
@@ -232,7 +269,7 @@ function FeedModeRandomCell({
       >
         <DiceDiscoverIcon className="h-[22px] w-[22px]" />
       </span>
-      <span className={cn("text-xs font-medium leading-none", active ? "text-accent-foreground" : "text-white/85")}>
+      <span className={cn("text-xs font-medium leading-none", active ? "text-white" : "text-white/85")}>
         Random
       </span>
     </button>
@@ -372,10 +409,10 @@ export function GenreFilter({
 
   const collapsedTriggerStatusClass =
     identificationFilter === "identified"
-      ? "border-green-400/80 ring-2 ring-green-400/45 shadow-[0_0_8px_2px_rgba(34,197,94,0.55),0_0_28px_4px_rgba(34,197,94,0.35),0_0_48px_2px_rgba(34,197,94,0.2)]"
+      ? "border-green-400/80 ring-2 ring-green-400/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.40),0_0_8px_2px_rgba(34,197,94,0.55),0_0_28px_4px_rgba(34,197,94,0.35),0_0_48px_2px_rgba(34,197,94,0.2)]"
       : identificationFilter === "unidentified"
-        ? "border-red-400/80 ring-2 ring-red-400/45 shadow-[0_0_8px_2px_rgba(239,68,68,0.55),0_0_28px_4px_rgba(239,68,68,0.32),0_0_48px_2px_rgba(239,68,68,0.18)]"
-        : "border-white/20 shadow-none ring-0";
+        ? "border-red-400/80 ring-2 ring-red-400/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.40),0_0_8px_2px_rgba(239,68,68,0.55),0_0_28px_4px_rgba(239,68,68,0.32),0_0_48px_2px_rgba(239,68,68,0.18)]"
+        : `border-white/20 ring-0 ${DISCOVER_COLLAPSED_TRIGGER_GLASS_SHADOW}`;
 
   const toggleGenre = (genreId: string) => {
     const isSelected = selectedGenres.includes(genreId);
@@ -601,14 +638,21 @@ export function GenreFilter({
   if (isCollapsed) {
     const menuContent = (
       <>
-        <div className={discoverDoneClearanceClass} data-discover-done-clearance>
+        <div
+          data-discover-scroll-body
+          className={cn(
+            "min-h-0 overflow-y-auto",
+            discoverScrollBodySectionGapClass,
+            discoverScrollBodyBottomClass,
+          )}
+        >
         {sortMode != null && onSortChange ? (
-          <div className={discoverMenuSectionClass}>
+          <div className={discoverMenuFeedSectionClass}>
             <div
               className={DISCOVER_MENU_CONTENT_INSET_CLASS}
               data-discover-shared-content="feed"
             >
-            <div className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}>
+            <div className={discoverMenuCompactHeadingRowClass}>
               <h3 id="discover-feed-mode-heading" className={DISCOVER_MENU_HEADING_TEXT_CLASS}>
                 Feed
               </h3>
@@ -666,7 +710,7 @@ export function GenreFilter({
             className={DISCOVER_MENU_CONTENT_INSET_CLASS}
             data-discover-shared-content="status"
           >
-          <div className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}>
+          <div className={discoverMenuCompactHeadingRowClass}>
             <h3 className={DISCOVER_MENU_HEADING_TEXT_CLASS}>Status</h3>
             <span aria-hidden="true" />
             <span aria-hidden="true" />
@@ -680,8 +724,8 @@ export function GenreFilter({
               }}
               className={`ios-press min-h-9 flex-1 rounded-full px-3 py-1.5 text-xs transition-colors ${
                 identificationFilter === "identified"
-                  ? "bg-green-500 text-white"
-                  : "bg-white/20 text-white hover:bg-white/30"
+                  ? "bg-green-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]"
+                  : discoverMenuInactiveChipClass
               }`}
             >
               Identified
@@ -694,8 +738,8 @@ export function GenreFilter({
               }}
               className={`ios-press min-h-9 flex-1 rounded-full px-3 py-1.5 text-xs transition-colors ${
                 identificationFilter === "unidentified"
-                  ? "bg-red-500 text-white"
-                  : "bg-white/20 text-white hover:bg-white/30"
+                  ? "bg-red-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]"
+                  : discoverMenuInactiveChipClass
               }`}
             >
               Unidentified
@@ -704,7 +748,10 @@ export function GenreFilter({
           </div>
         </div>
 
-        <div className={`${discoverMenuSectionClass} touch-pan-y`} data-discover-genre-page={resolvedGenreFilterPage}>
+        <div
+          className={cn(discoverMenuSectionClass, discoverMenuGenresSectionOffsetClass, "touch-pan-y")}
+          data-discover-genre-page={resolvedGenreFilterPage}
+        >
           {(() => {
             const renderGenrePage = (pageId: DiscoverGenreFilterPage, isCurrent: boolean) => {
               if (pageId === DISCOVER_GENRES_PAGE) {
@@ -714,7 +761,7 @@ export function GenreFilter({
                       className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}
                       data-discover-genre-heading="genres"
                     >
-                      <h3 className={DISCOVER_MENU_HEADING_TEXT_CLASS}>Genres</h3>
+                      <h3 className={discoverMenuPagerHeadingTextClass}>Genres</h3>
                       <span aria-hidden="true" />
                       <div className="justify-self-end">
                         {!isAllSelected ? (
@@ -726,9 +773,9 @@ export function GenreFilter({
                               resetGenrePageDrag();
                               onGenresChange([]);
                             }}
-                            className="ios-press shrink-0 min-h-9 px-2.5 text-xs font-medium text-white/55 transition-colors hover:text-white/80"
+                            className={discoverMenuClearButtonClass}
                           >
-                            Clear
+                            <span className={discoverMenuClearLabelClass}>Clear</span>
                           </button>
                         ) : null}
                       </div>
@@ -749,7 +796,7 @@ export function GenreFilter({
                               discoverGenrePillClass,
                               isSelected
                                 ? `${genre.color || "text-white"}`
-                                : "bg-white/20 text-white hover:bg-white/30",
+                                : discoverMenuInactiveChipClass,
                             )}
                             style={isSelected && genre.bgColor ? { backgroundColor: genre.bgColor } : {}}
                           >
@@ -777,7 +824,7 @@ export function GenreFilter({
                     className={DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS}
                     data-discover-genre-heading={group.parentId}
                   >
-                    <h3 id={headingId} className={DISCOVER_MENU_HEADING_TEXT_CLASS}>
+                    <h3 id={headingId} className={discoverMenuPagerHeadingTextClass}>
                       {group.label}
                     </h3>
                     <span aria-hidden="true" />
@@ -814,7 +861,7 @@ export function GenreFilter({
                           }}
                           className={cn(
                             discoverGenrePillClass,
-                            childSelected ? group.textClass : "bg-white/20 text-white hover:bg-white/30",
+                            childSelected ? group.textClass : discoverMenuInactiveChipClass,
                           )}
                           style={
                             childSelected && group.bgColor
@@ -917,14 +964,17 @@ export function GenreFilter({
         </div>
         </div>
 
-        <div className="sticky bottom-0 border-t border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-xl">
+        <div
+          data-discover-footer
+          className="shrink-0 border-t border-white/10 bg-white/10 px-3 py-1.5"
+        >
           <button
             type="button"
             onClick={() => {
               playInteractionMedium();
               setIsOpen(false);
             }}
-            className="ios-press min-h-9 w-full rounded-full bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+            className="ios-press min-h-9 w-full rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-colors hover:bg-white/[0.1]"
           >
             Done
           </button>
@@ -943,7 +993,9 @@ export function GenreFilter({
           aria-label={triggerAriaLabel}
           className={cn(
             "ios-press flex max-w-full min-h-9 min-w-0 items-center gap-1 rounded-full border bg-white/10 px-2.5 py-1.5 text-left text-white backdrop-blur-lg transition-[colors,box-shadow,border-color] hover:bg-white/20 sm:gap-1.5 sm:px-3 sm:py-2",
-            omitIdentificationRing ? "border-white/20 shadow-none ring-0" : collapsedTriggerStatusClass
+            omitIdentificationRing
+              ? `border-white/20 ring-0 ${DISCOVER_COLLAPSED_TRIGGER_GLASS_SHADOW}`
+              : collapsedTriggerStatusClass
           )}
         >
           {showFeedModeGlyph && sortMode ? (
@@ -977,6 +1029,7 @@ export function GenreFilter({
               <div
                 role="dialog"
                 aria-label="Discover feed filters"
+                data-discover-panel
                 style={{
                   position: "fixed",
                   top: menuPos.top,
@@ -985,7 +1038,10 @@ export function GenreFilter({
                   maxHeight: menuPos.maxHeight,
                   zIndex: 60,
                 }}
-                className="overflow-y-auto rounded-xl border border-white/20 bg-white/10 shadow-2xl backdrop-blur-xl"
+                className={cn(
+                  "flex flex-col overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl",
+                  DISCOVER_OPEN_MENU_GLASS_SHADOW,
+                )}
               >
                 {menuContent}
               </div>

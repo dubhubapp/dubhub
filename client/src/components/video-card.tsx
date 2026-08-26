@@ -2752,7 +2752,7 @@ function VideoCardInner({
             <div
               data-video-action-rail
               className={cn(
-                "absolute bottom-[clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
+                "absolute bottom-[calc(var(--video-card-overlay-bottom,0px)+clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem))] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
                 "transition-opacity duration-300 ease-out motion-reduce:transition-none",
                 isScrubbingUi ? "opacity-[0.2]" : "opacity-100",
               )}
@@ -2941,10 +2941,24 @@ function VideoCardInner({
           </>
         );
       })()}
-      {/* Bottom content — padding-right reserves rail (scrollport already clears shell nav). */}
+      {/* LG-NAV-5C: native-mode overlay-bottom is the bar-top exclusion, so the
+          metadata gradient would stop there. This sibling continues from-black/80
+          to the screen bottom without moving metadata. Height is 0 in React-nav
+          mode (`--video-card-overlay-bottom: 0px`). Do not add backdrop-filter. */}
       <div
+        aria-hidden
+        data-video-card-overlay-fade-extend
         className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:pl-4",
+          "pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[var(--video-card-overlay-bottom,0px)] bg-black/80",
+          "transition-opacity duration-300 ease-in-out motion-reduce:transition-none",
+          isScrubbingUi ? "opacity-[0.18]" : "opacity-100",
+        )}
+      />
+      {/* Bottom content — padding-right reserves rail (scrollport already clears shell nav). Native-nav mode lifts via --video-card-overlay-bottom so the cluster clears the floating bar without restoring the opaque strip. */}
+      <div
+        data-video-card-overlay
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-[var(--video-card-overlay-bottom,0px)] z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:pl-4",
           "transition-[opacity,padding-top,padding-bottom] duration-300 ease-in-out motion-reduce:transition-none",
           isScrubbingUi ? "opacity-[0.18]" : "opacity-100",
           overlayCollapsed
@@ -2954,8 +2968,12 @@ function VideoCardInner({
           moderatorPreview && "pb-[calc(env(safe-area-inset-bottom,0px)+5.25rem)]",
         )}
       >
-        {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets */}
-        <div className="pointer-events-none flex flex-col gap-2 overflow-visible">
+        {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets.
+            LG-NAV-5C1: native-only translate shifts this content toward the scrub; overlay box / fade / rail stay put. */}
+        <div
+          data-video-card-overlay-content
+          className="pointer-events-none flex translate-y-[var(--video-card-metadata-shift,0px)] flex-col gap-2 overflow-visible"
+        >
           <div className="overflow-x-visible py-0.5 pl-0.5 pr-1">
             <div className="flex min-w-0 items-center gap-3">
               <button
@@ -3132,32 +3150,33 @@ function VideoCardInner({
                 </div>
               </div>
 
-              <div
-                className={cn(
-                  "grid",
-                  overlayCollapseGridTransition,
-                  overlayCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
-                )}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <div
-                    className={cn(
-                      "pointer-events-none overflow-visible will-change-[opacity]",
-                      overlayCollapseFade,
-                      overlayCollapsed ? "opacity-0" : "opacity-100",
-                    )}
-                    aria-hidden={overlayCollapsed}
-                  >
-                    {releasePreview ? (
+              {releasePreview ? (
+                <div
+                  data-video-card-release-slot
+                  className={cn(
+                    "grid",
+                    overlayCollapseGridTransition,
+                    overlayCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+                  )}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div
+                      className={cn(
+                        "pointer-events-none overflow-visible pb-3 will-change-[opacity]",
+                        overlayCollapseFade,
+                        overlayCollapsed ? "opacity-0" : "opacity-100",
+                      )}
+                      aria-hidden={overlayCollapsed}
+                    >
                       <ReleasePreviewCard
                         releasePreview={releasePreview}
                         isReleaseOwner={isReleaseOwner}
                         onNavigate={navigateToReleasePreview}
                       />
-                    ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
             </>
           ) : (
             <>
@@ -3200,13 +3219,15 @@ function VideoCardInner({
                 </div>
               </div>
 
-              {releasePreview && (
-                <ReleasePreviewCard
-                  releasePreview={releasePreview}
-                  isReleaseOwner={isReleaseOwner}
-                  onNavigate={navigateToReleasePreview}
-                />
-              )}
+              {releasePreview ? (
+                <div data-video-card-release-slot className="pb-3">
+                  <ReleasePreviewCard
+                    releasePreview={releasePreview}
+                    isReleaseOwner={isReleaseOwner}
+                    onNavigate={navigateToReleasePreview}
+                  />
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -3215,6 +3236,7 @@ function VideoCardInner({
       {isActive && scrubBarReady && shouldLoadVideo && videoSrc ? (() => {
         const scrubTree = (
           <div
+            {...(!embeddedFeed ? { "data-video-feed-scrub": "" } : {})}
             className={cn(
               "pointer-events-none z-[40] flex w-full justify-center px-0",
               /* Profile snap viewers: tie to card/scrollport. Home: `fixed` + `--video-feed-scrub-bottom` (portal avoids WebKit double-offset). */
@@ -3387,6 +3409,8 @@ function VideoCardInner({
               console.log("[CommentsOpen] close", { modalPostId: commentsPost.id });
             }
             setShowComments(false);
+          }}
+          onClosed={() => {
             setCommentsPost(null);
             onCommentsClosed?.();
           }}
