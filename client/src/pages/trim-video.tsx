@@ -45,10 +45,18 @@ import {
   isNativeIosVideoEditorPath,
   materializeSourceUriForNativeEditor,
   nativeGenerateThumbnail,
+  nativeGetVideoInfo,
   nativePreviewUri,
   nativeTrimVideo,
   withTimeout,
 } from "@/lib/native-video-editor";
+import {
+  CAMERA_PLAYED_DATE_SOURCE,
+  originMetadataFromNativeInfo,
+  persistSuggestedPlayedDate,
+  readSuggestedPlayedDate,
+  suggestedPlayedDateFromCameraOrigin,
+} from "@/lib/submit-camera-played-date";
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { Capacitor } from "@capacitor/core";
 import {
@@ -71,6 +79,8 @@ interface TrimVideoState {
   videoUrl: string;
   extension?: string;
   sourceNativeUri?: string;
+  suggestedPlayedDate?: string | null;
+  playedDateSource?: "camera_metadata" | null;
 }
 
 function validateTrimEntryState(value: unknown): value is TrimVideoState {
@@ -1441,6 +1451,19 @@ export default function TrimVideo() {
           startMs: Math.round(startTime * 1000),
           endMs: Math.round(endTime * 1000),
         });
+        try {
+          const info = await nativeGetVideoInfo({ sourceUri });
+          const suggestedPlayedDate = suggestedPlayedDateFromCameraOrigin(
+            originMetadataFromNativeInfo(info),
+          );
+          persistSuggestedPlayedDate(suggestedPlayedDate);
+          upsertTrimState({
+            suggestedPlayedDate,
+            playedDateSource: suggestedPlayedDate ? CAMERA_PLAYED_DATE_SOURCE : null,
+          });
+        } catch {
+          persistSuggestedPlayedDate(null);
+        }
         /** Native trim + H.264 pass can take minutes on large sources; cap wait so UI can recover. */
         const trimTimeoutMs = 10 * 60 * 1000;
         const trimResult = await withTimeout(
@@ -1599,6 +1622,7 @@ export default function TrimVideo() {
             fileType: trimResult.mimeType || "video/mp4",
               fileSize: finalOutputSize,
             durationSec: trimResult.durationMs / 1000,
+            suggestedPlayedDate: readSuggestedPlayedDate(),
           }),
         );
         localStorage.setItem(
@@ -1671,6 +1695,7 @@ export default function TrimVideo() {
             fileType: "video/mp4",
             fileSize: blob.size,
             durationSec: clipLen,
+            suggestedPlayedDate: readSuggestedPlayedDate(),
           }),
         );
       }

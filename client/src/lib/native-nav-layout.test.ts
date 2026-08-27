@@ -36,6 +36,7 @@ const bottomNavSrc = readFileSync(
   "utf8",
 );
 const layoutSrc = readFileSync(join(here, "./native-nav-layout.ts"), "utf8");
+const feedScrubSrc = readFileSync(join(here, "./video-feed-scrub.ts"), "utf8");
 
 describe("LG-NAV-4 native layout contract", () => {
   it("uses measured exclusion only while the native bar is visible", () => {
@@ -125,7 +126,10 @@ describe("LG-NAV-4 native layout contract", () => {
       /bottom-\[calc\(var\(--video-card-overlay-bottom,0px\)\+clamp\(calc\(4\.5rem\+env\(safe-area-inset-bottom,0px\)\),14lvh,7rem\)\)\]/,
     );
     assert.match(videoCardSrc, /bottom-\[var\(--video-feed-scrub-bottom\)\]/);
-    assert.match(videoCardSrc, /bottom-\[calc\(var\(--video-feed-scrub-bottom\)\+1\.25rem\)\]/);
+    assert.match(
+      feedScrubSrc,
+      /bottom-\[calc\(var\(--video-feed-scrub-bottom\)\+1\.25rem\)\]/,
+    );
   });
 
   it("keeps React-mode shell reservation and does not resize WKWebView from CSS", () => {

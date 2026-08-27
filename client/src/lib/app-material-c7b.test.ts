@@ -45,16 +45,14 @@ describe("C7B.1 SubmitClipDrawer restored pre-C7B presentation", () => {
     assert.equal(APP_MATERIAL_SHEET_SURFACE_CLASS, "dubhub-app-sheet-surface");
   });
 
-  it("keeps native picker timing and file-selection mechanics", () => {
-    assert.match(
-      drawerSrc,
-      /const NATIVE_PICKER_OPEN_DELAY_MS = Capacitor\.isNativePlatform\(\) \? 280 : 0;/,
-    );
+  it("keeps native picker file-selection mechanics with 280ms handoff", () => {
     assert.match(drawerSrc, /const handleFileSelect = useCallback/);
     assert.match(drawerSrc, /input\?\.click\(\)/);
     assert.match(drawerSrc, /accept="video\/\*"/);
     assert.match(drawerSrc, /capture="environment"/);
-    assert.match(drawerSrc, /window\.setTimeout\(\(\) => openNativePicker/);
+    assert.match(drawerSrc, /finalizeSubmitClipClose/);
+    assert.match(drawerSrc, /pendingPickerSourceRef/);
+    assert.match(drawerSrc, /NATIVE_PICKER_OPEN_DELAY_MS/);
     assert.match(drawerSrc, /setLocation\("\/trim-video"\)/);
   });
 });

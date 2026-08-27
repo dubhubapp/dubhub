@@ -318,8 +318,16 @@ final class DubHubVideoEditor {
                 }
                 let asset = AVURLAsset(url: url)
                 NSLog("[DubHub][NativeTrim] getVideoInfo assetCreated durationMs=%d", Int((CMTimeGetSeconds(asset.duration) * 1000.0).rounded()))
-                let payload = try self.buildInfoPayload(asset: asset, sourceUrl: url)
-                completion(.success(payload))
+                var payload = try self.buildInfoPayload(asset: asset, sourceUrl: url)
+                self.collectOriginMetadata(asset: asset, sourceUrl: url) { origin in
+                    payload["creationDateISO"] = origin.creationDateISO ?? NSNull()
+                    payload["make"] = origin.make ?? NSNull()
+                    payload["model"] = origin.model ?? NSNull()
+                    payload["software"] = origin.software ?? NSNull()
+                    payload["cameraLensModel"] = origin.cameraLensModel ?? NSNull()
+                    payload["containerExtension"] = origin.containerExtension ?? NSNull()
+                    completion(.success(payload))
+                }
             } catch {
                 completion(.failure(error))
             }
@@ -1077,6 +1085,148 @@ final class DubHubVideoEditor {
     private func makeTempURL(ext: String, prefix: String) -> URL {
         let name = "\(prefix)\(UUID().uuidString).\(ext)"
         return FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    }
+
+    private func stringifyMetadataKey(_ key: (NSCopying & NSObjectProtocol)?) -> String {
+        if let s = key as? String { return s }
+        if let n = key as? NSNumber { return n.stringValue }
+        if let k = key { return String(describing: k) }
+        return ""
+    }
+
+    private func isLocationMetadata(identifier: String, key: String, commonKey: String, stringValue: String?) -> Bool {
+        let blob = "\(identifier) \(key) \(commonKey)".lowercased()
+        if blob.contains("location") || blob.contains("iso6709") || blob.contains("iso_6709") || blob.contains("gps") {
+            return true
+        }
+        if let s = stringValue,
+           s.range(of: #"^[+\-]\d+(\.\d+)?[+\-]\d+"#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
+    }
+
+    private struct OriginMetadataFields {
+        var creationDateISO: String?
+        var make: String?
+        var model: String?
+        var software: String?
+        var cameraLensModel: String?
+        var containerExtension: String?
+    }
+
+    private func nonemptyString(_ value: String?) -> String? {
+        guard let s = value?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+        return s
+    }
+
+    private func iso8601String(from date: Date) -> String {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime]
+        return fmt.string(from: date)
+    }
+
+    private func applyOriginItem(_ item: AVMetadataItem, to fields: inout OriginMetadataFields) {
+        let identifier = item.identifier?.rawValue ?? ""
+        let key = stringifyMetadataKey(item.key)
+        let common = item.commonKey?.rawValue ?? ""
+        let blob = "\(identifier) \(key) \(common)".lowercased()
+        if isLocationMetadata(
+            identifier: identifier,
+            key: key,
+            commonKey: common,
+            stringValue: item.stringValue
+        ) {
+            return
+        }
+        if blob.contains("lens_model") || blob.contains("camera.lens") {
+            if let s = nonemptyString(item.stringValue) { fields.cameraLensModel = s }
+            return
+        }
+        if blob.contains("creationdate") || blob.contains("creation-date") || blob.contains("creation_date") {
+            if let s = nonemptyString(item.stringValue),
+               s.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) != nil {
+                fields.creationDateISO = s
+            } else if fields.creationDateISO == nil, let date = item.dateValue {
+                fields.creationDateISO = iso8601String(from: date)
+            }
+            return
+        }
+        if blob.contains("software") {
+            if let s = nonemptyString(item.stringValue) { fields.software = s }
+            return
+        }
+        if blob.contains(".make") || blob.hasSuffix("/make") || blob.hasSuffix("make") {
+            if let s = nonemptyString(item.stringValue) { fields.make = s }
+            return
+        }
+        if (blob.contains(".model") || blob.hasSuffix("/model") || blob.hasSuffix("model")) && !blob.contains("lens") {
+            if let s = nonemptyString(item.stringValue) { fields.model = s }
+        }
+    }
+
+    /// Production-safe origin fields from ORIGINAL source. No GPS, no item dump, no camera identifier.
+    private func collectOriginMetadata(
+        asset: AVURLAsset,
+        sourceUrl: URL,
+        completion: @escaping (OriginMetadataFields) -> Void
+    ) {
+        let work = DispatchQueue.global(qos: .userInitiated)
+        asset.loadValuesAsynchronously(forKeys: [
+            "duration",
+            "tracks",
+            "commonMetadata",
+            "availableMetadataFormats",
+            "creationDate",
+        ]) {
+            work.async {
+                let trackGroup = DispatchGroup()
+                for track in asset.tracks {
+                    trackGroup.enter()
+                    track.loadValuesAsynchronously(forKeys: [
+                        "commonMetadata",
+                        "availableMetadataFormats",
+                        "mediaType",
+                    ]) {
+                        trackGroup.leave()
+                    }
+                }
+                trackGroup.notify(queue: work) {
+                    var items: [AVMetadataItem] = []
+                    items.append(contentsOf: asset.commonMetadata)
+                    if let creation = asset.creationDate {
+                        items.append(creation)
+                    }
+                    for format in asset.availableMetadataFormats {
+                        items.append(contentsOf: asset.metadata(forFormat: format))
+                    }
+                    for track in asset.tracks {
+                        items.append(contentsOf: track.commonMetadata)
+                        for format in track.availableMetadataFormats {
+                            items.append(contentsOf: track.metadata(forFormat: format))
+                        }
+                    }
+                    let itemGroup = DispatchGroup()
+                    for item in items {
+                        itemGroup.enter()
+                        item.loadValuesAsynchronously(forKeys: ["value"]) {
+                            itemGroup.leave()
+                        }
+                    }
+                    itemGroup.notify(queue: work) {
+                        var fields = OriginMetadataFields()
+                        fields.containerExtension = sourceUrl.pathExtension.lowercased()
+                        for item in items {
+                            self.applyOriginItem(item, to: &fields)
+                        }
+                        if fields.creationDateISO == nil, let date = asset.creationDate?.dateValue {
+                            fields.creationDateISO = self.iso8601String(from: date)
+                        }
+                        completion(fields)
+                    }
+                }
+            }
+        }
     }
 
     private func buildInfoPayload(asset: AVURLAsset, sourceUrl: URL) throws -> [String: Any] {

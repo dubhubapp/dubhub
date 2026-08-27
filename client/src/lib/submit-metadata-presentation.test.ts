@@ -127,7 +127,61 @@ describe("submit-metadata presentation polish", () => {
     // Local CTA spacer beyond field stack space-y-3.
     assert.match(pageSrc, /pt-3[\s\S]*?data-testid="button-submit"/);
   });
+
+  it("blocks implicit Enter submit from inputs via capture-phase guard", () => {
+    assert.match(
+      pageSrc,
+      /import \{ preventImplicitFormSubmitOnEnter \} from "@\/lib\/form-search-input"/,
+    );
+    assert.match(pageSrc, /onKeyDownCapture=\{preventImplicitFormSubmitOnEnter\}/);
+    assert.match(pageSrc, /data-testid="input-title"/);
+    assert.match(pageSrc, /data-testid="input-location"/);
+    assert.match(pageSrc, /data-testid="input-dj"/);
+    assert.match(pageSrc, /onSubmit=\{form\.handleSubmit\(onSubmit\)\}/);
+    assert.doesNotMatch(pageSrc, /onClick=\{form\.handleSubmit/);
+    assert.doesNotMatch(pageSrc, /enterKeyHint/);
+
+    const submitButton = pageSrc.match(
+      /<Button\s+type="submit"[\s\S]*?data-testid="button-submit"[\s\S]*?>/,
+    )?.[0] ?? "";
+    assert.ok(submitButton.length > 0, "submit Button block found");
+    assert.doesNotMatch(submitButton, /onClick/);
+  });
+
+  it("normalises Description newlines on change and submit without changing max length", () => {
+    assert.match(
+      pageSrc,
+      /import \{ normalizeDescriptionNewlines \} from "@\/lib\/submit-description-text"/,
+    );
+    assert.match(
+      pageSrc,
+      /const next = normalizeDescriptionNewlines\(e\.target\.value\);/,
+    );
+    assert.match(
+      pageSrc,
+      /description: normalizeDescriptionNewlines\(data\.formData\.description \?\? ""\)\.trim\(\) \|\| null/,
+    );
+    assert.match(pageSrc, /maxLength=\{INPUT_LIMITS\.postDescription\}/);
+    assert.match(pageSrc, /data-testid="textarea-description"/);
+    assert.match(pageSrc, /rows=\{3\}/);
+    assert.match(pageSrc, /min-h-\[72px\]/);
+  });
+
+  it("keeps Title/Genre required rules, date prefill, and a single onSubmit path", () => {
+    assert.match(
+      pageSrc,
+      /title: z[\s\S]*?\.min\(1, "Title is required"\)/,
+    );
+    assert.match(pageSrc, /genre: z\.string\(\)\.min\(1, "Genre is required"\)/);
+    assert.match(pageSrc, /didPrefillPlayedDateRef/);
+    assert.match(pageSrc, /readSuggestedPlayedDate\(\)/);
+    assert.match(pageSrc, /const onSubmit = async \(data: SubmitFormData\) => \{/);
+    assert.equal(pageSrc.split("const onSubmit = async").length - 1, 1);
+    assert.equal(pageSrc.split("form.handleSubmit(onSubmit)").length - 1, 1);
+    assert.match(pageSrc, /data-testid="textarea-description"/);
+  });
 });
+
 
 describe("submit-metadata optional sub-genre", () => {
   it("positions Sub-genre after Genre and before Description", () => {

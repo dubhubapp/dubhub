@@ -12,6 +12,13 @@ import {
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
+import {
+  NATIVE_PICKER_OPEN_DELAY_MS,
+  SUBMIT_PICKER_CLOSE_FALLBACK_MS,
+  inputForPendingPickerSource,
+  takePendingPickerSource,
+  type SubmitPendingPickerSource,
+} from "@/lib/submit-picker-handoff";
 
 type NormalizedPickedAsset = {
   fileName: string;
@@ -52,9 +59,52 @@ export function SubmitClipDrawer() {
   } = useSubmitClip();
   const pickInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
+  const pendingPickerSourceRef = useRef<SubmitPendingPickerSource | null>(null);
+  const pickerLaunchStartedRef = useRef(false);
+  const closeFinalizedRef = useRef(false);
+  const pickerHandoffTimerRef = useRef<number | null>(null);
+  const pickerCloseFallbackTimerRef = useRef<number | null>(null);
 
-  /** Let the drawer finish closing before presenting the system picker (reduces iOS WKWebView race conditions). */
-  const NATIVE_PICKER_OPEN_DELAY_MS = Capacitor.isNativePlatform() ? 280 : 0;
+  const NATIVE_PICKER_OPEN_DELAY_MS_RUNTIME = Capacitor.isNativePlatform()
+    ? NATIVE_PICKER_OPEN_DELAY_MS
+    : 0;
+
+  const clearPickerCloseFallback = useCallback(() => {
+    if (pickerCloseFallbackTimerRef.current != null) {
+      window.clearTimeout(pickerCloseFallbackTimerRef.current);
+      pickerCloseFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const clearPickerHandoffTimer = useCallback(() => {
+    if (pickerHandoffTimerRef.current != null) {
+      window.clearTimeout(pickerHandoffTimerRef.current);
+      pickerHandoffTimerRef.current = null;
+    }
+  }, []);
+
+  const finalizeSubmitClipClose = useCallback(() => {
+    clearPickerCloseFallback();
+    if (closeFinalizedRef.current) return;
+    closeFinalizedRef.current = true;
+    completeSubmitClipClose();
+  }, [clearPickerCloseFallback, completeSubmitClipClose]);
+
+  useEffect(() => {
+    return () => {
+      clearPickerCloseFallback();
+      clearPickerHandoffTimer();
+    };
+  }, [clearPickerCloseFallback, clearPickerHandoffTimer]);
+
+  useEffect(() => {
+    if (!isSubmitClipOpen) return;
+    pendingPickerSourceRef.current = null;
+    pickerLaunchStartedRef.current = false;
+    closeFinalizedRef.current = false;
+    clearPickerHandoffTimer();
+    clearPickerCloseFallback();
+  }, [isSubmitClipOpen, clearPickerCloseFallback, clearPickerHandoffTimer]);
 
   useEffect(() => {
     const captureEl = captureInputRef.current;
@@ -192,40 +242,65 @@ export function SubmitClipDrawer() {
     void handleFileSelect(file);
   };
 
-  const openNativePicker = (input: HTMLInputElement | null) => {
-    const run = () => {
-      try {
-        input?.click();
-      } catch (err) {
-        console.error("openNativePicker:", err);
-        toast({
-          title: "Could not open picker",
-          description: "Something blocked the file or camera chooser. Try again.",
-          variant: "destructive",
-        });
-      }
-    };
+  const openNativePicker = (source: SubmitPendingPickerSource) => {
+    if (pickerLaunchStartedRef.current) return;
+    pickerLaunchStartedRef.current = true;
     requestAnimationFrame(() => {
-      requestAnimationFrame(run);
+      requestAnimationFrame(() => {
+        const consumed = takePendingPickerSource(pendingPickerSourceRef);
+        if (!consumed) return;
+        const input = inputForPendingPickerSource(consumed, {
+          gallery: pickInputRef.current,
+          camera: captureInputRef.current,
+        });
+        try {
+          input?.click();
+        } catch (err) {
+          console.error("openNativePicker:", err);
+          toast({
+            title: "Could not open picker",
+            description: "Something blocked the file or camera chooser. Try again.",
+            variant: "destructive",
+          });
+        }
+      });
     });
   };
 
-  const triggerPickGallery = () => {
+  const handoffPendingPicker = () => {
+    pickerHandoffTimerRef.current = null;
+    finalizeSubmitClipClose();
+    const source = pendingPickerSourceRef.current;
+    if (!source) return;
+    openNativePicker(source);
+  };
+
+  const requestPickerAfterClose = (source: SubmitPendingPickerSource) => {
+    if (pendingPickerSourceRef.current) return;
+    pickerLaunchStartedRef.current = false;
+    closeFinalizedRef.current = false;
+    pendingPickerSourceRef.current = source;
     closeSubmitClip();
-    if (NATIVE_PICKER_OPEN_DELAY_MS > 0) {
-      window.setTimeout(() => openNativePicker(pickInputRef.current), NATIVE_PICKER_OPEN_DELAY_MS);
-      return;
+    clearPickerHandoffTimer();
+    clearPickerCloseFallback();
+    pickerCloseFallbackTimerRef.current = window.setTimeout(() => {
+      pickerCloseFallbackTimerRef.current = null;
+      finalizeSubmitClipClose();
+    }, SUBMIT_PICKER_CLOSE_FALLBACK_MS);
+    const runHandoff = () => handoffPendingPicker();
+    if (NATIVE_PICKER_OPEN_DELAY_MS_RUNTIME > 0) {
+      pickerHandoffTimerRef.current = window.setTimeout(runHandoff, NATIVE_PICKER_OPEN_DELAY_MS_RUNTIME);
+    } else {
+      runHandoff();
     }
-    openNativePicker(pickInputRef.current);
+  };
+
+  const triggerPickGallery = () => {
+    requestPickerAfterClose("gallery");
   };
 
   const triggerPickCamera = () => {
-    closeSubmitClip();
-    if (NATIVE_PICKER_OPEN_DELAY_MS > 0) {
-      window.setTimeout(() => openNativePicker(captureInputRef.current), NATIVE_PICKER_OPEN_DELAY_MS);
-      return;
-    }
-    openNativePicker(captureInputRef.current);
+    requestPickerAfterClose("camera");
   };
 
   return (
@@ -256,7 +331,7 @@ export function SubmitClipDrawer() {
           if (!open) closeSubmitClip();
         }}
         onAnimationEnd={(open) => {
-          if (!open) completeSubmitClipClose();
+          if (!open) finalizeSubmitClipClose();
         }}
         shouldScaleBackground={false}
       >

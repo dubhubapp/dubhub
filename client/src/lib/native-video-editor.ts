@@ -8,6 +8,12 @@ export type NativeVideoInfo = {
   height: number;
   fileSize: number | null;
   mimeType: string | null;
+  creationDateISO?: string | null;
+  make?: string | null;
+  model?: string | null;
+  software?: string | null;
+  cameraLensModel?: string | null;
+  containerExtension?: string | null;
 };
 
 export type NativeTrimResult = NativeVideoInfo & {
@@ -275,7 +281,9 @@ export async function nativeGenerateThumbnail(options: {
   return out;
 }
 
-export async function nativeGetVideoInfo(options: { sourceUri: string }): Promise<NativeVideoInfo> {
+export async function nativeGetVideoInfo(options: {
+  sourceUri: string;
+}): Promise<NativeVideoInfo> {
   dubhubVideoDebugLog("[DubHub][NativeTrim]", "getVideoInfo start", {
     sourceUriPreview: preview(options.sourceUri, 120),
   });

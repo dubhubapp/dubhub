@@ -35,29 +35,11 @@ import {
   ARTWORK_VIEW_WELL_CLASS,
   buildArtworkReleaseSequence,
   isArtworkViewSupported,
-  resolveArtworkAmbienceUrl,
   resolveArtworkEffectiveLayout,
-  resolveArtworkRestoreIndex,
   resolveArtworkViewColumnMinHClass,
   resolveArtworkViewPageBottomPadClass,
   type ArtworkLayoutMode,
 } from "@/lib/artwork-release-browser";
-import { ReleasesArtworkAtmosphereWash } from "@/components/releases-artwork-atmosphere-wash";
-import {
-  bootstrapTrackerArtworkAtmosphere,
-  collectTrackerAtmosphereWarmupQueue,
-  prefetchTrackerArtworkAtmosphere,
-  RELEASE_TRACKER_ATMOSPHERE_ATTR,
-  RELEASE_TRACKER_VIEW_LAYER_CLASS,
-  RELEASE_TRACKER_VIEW_STACK_CLASS,
-  resolveTrackerArtworkAtmosphere,
-  shouldApplyTrackerAtmosphereResult,
-  startTrackerAtmosphereWarmup,
-  TRACKER_ATMOSPHERE_DURATION_MS,
-  TRACKER_ATMOSPHERE_OFF,
-  TRACKER_ATMOSPHERE_ON,
-} from "@/lib/release-tracker-atmosphere";
-import type { AtmosphereRgb } from "@/lib/release-artwork-atmosphere";
 import {
   readReleaseTrackerLayoutPreference,
   writeReleaseTrackerLayoutPreference,
@@ -479,111 +461,6 @@ export default function ReleaseTracker() {
     ],
   );
 
-  const atmosphereSettledIndex = useMemo(() => {
-    if (artworkSequence.length === 0) return 0;
-    return resolveArtworkRestoreIndex({
-      releaseIds: artworkSequence.map((item) => item.id),
-      preferredReleaseId: artworkFocusReleaseId,
-    });
-  }, [artworkFocusReleaseId, artworkSequence]);
-
-  const atmosphereRelease =
-    effectiveLayout === "artwork" ? artworkSequence[atmosphereSettledIndex] ?? null : null;
-
-  const atmosphereArtworkUrl = resolveArtworkAmbienceUrl(
-    atmosphereRelease?.artworkUrl,
-  );
-  const [trackerAtmosphereRgb, setTrackerAtmosphereRgb] =
-    useState<AtmosphereRgb | null>(null);
-  const [atmosphereChrome, setAtmosphereChrome] = useState(false);
-  const [mountedLayouts, setMountedLayouts] = useState<ArtworkLayoutMode[]>([
-    effectiveLayout,
-  ]);
-  const atmosphereRequestRef = useRef(0);
-
-  useEffect(() => {
-    if (effectiveLayout === "artwork") {
-      setAtmosphereChrome(true);
-    } else {
-      const timer = window.setTimeout(
-        () => setAtmosphereChrome(false),
-        TRACKER_ATMOSPHERE_DURATION_MS,
-      );
-      return () => window.clearTimeout(timer);
-    }
-  }, [effectiveLayout]);
-
-  useLayoutEffect(() => {
-    setMountedLayouts((prev) =>
-      prev.includes(effectiveLayout) ? prev : [...prev, effectiveLayout],
-    );
-  }, [effectiveLayout]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setMountedLayouts([effectiveLayout]);
-    }, TRACKER_ATMOSPHERE_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [effectiveLayout]);
-
-  useEffect(() => {
-    const requestId = ++atmosphereRequestRef.current;
-    if (effectiveLayout !== "artwork") {
-      setTrackerAtmosphereRgb(null);
-      return;
-    }
-    if (!atmosphereArtworkUrl) {
-      setTrackerAtmosphereRgb(null);
-      return;
-    }
-    const boot = bootstrapTrackerArtworkAtmosphere(atmosphereArtworkUrl);
-    if (boot.rgb) {
-      setTrackerAtmosphereRgb(boot.rgb);
-    } else if (boot.ready) {
-      setTrackerAtmosphereRgb(null);
-    }
-    if (boot.ready) return;
-    const requestUrl = atmosphereArtworkUrl;
-    void resolveTrackerArtworkAtmosphere(requestUrl).then((result) => {
-      if (
-        shouldApplyTrackerAtmosphereResult({
-          requestId,
-          currentRequestId: atmosphereRequestRef.current,
-          layoutIsArtwork: true,
-          requestUrl,
-          settledUrl: requestUrl,
-          resultMode: result.mode,
-        })
-      ) {
-        setTrackerAtmosphereRgb(result.rgb);
-        return;
-      }
-      if (requestId === atmosphereRequestRef.current && result.mode !== "artwork") {
-        setTrackerAtmosphereRgb(null);
-      }
-    });
-  }, [atmosphereArtworkUrl, effectiveLayout]);
-
-  useEffect(() => {
-    if (artworkSequence.length === 0) return;
-    const cancelled = { current: false };
-    const urls = collectTrackerAtmosphereWarmupQueue({
-      artworkUrls: artworkSequence.map((item) => item.artworkUrl),
-      settledIndex: atmosphereSettledIndex,
-      intendedUrl: atmosphereArtworkUrl,
-    });
-    const stop = startTrackerAtmosphereWarmup(urls, { cancelled });
-    return () => {
-      cancelled.current = true;
-      stop();
-    };
-  }, [artworkSequence, atmosphereArtworkUrl, atmosphereSettledIndex]);
-
-  const prewarmIntendedArtwork = useCallback((releaseId: string) => {
-    const release = artworkSequence.find((item) => item.id === releaseId);
-    prefetchTrackerArtworkAtmosphere(release?.artworkUrl);
-  }, [artworkSequence]);
-
   const countdownFlagEnabled =
     isHomeReleaseWidgetSelectionEnabled() && effectiveScope === "saved";
   const selectedCountdownReleaseId = useMemo(() => {
@@ -636,32 +513,16 @@ export default function ReleaseTracker() {
         data-lg-nav-5a-dest="releases"
         className={cn(
           RELEASE_TRACKER_PAGE_CLASS,
-          "relative",
           resolveArtworkViewPageBottomPadClass({
             artworkWell: artworkWellActive,
             isArtist,
           }),
         )}
-        {...{
-          [RELEASE_TRACKER_ATMOSPHERE_ATTR]: atmosphereChrome
-            ? TRACKER_ATMOSPHERE_ON
-            : TRACKER_ATMOSPHERE_OFF,
-        }}
-        data-testid="releases-tracker-atmosphere"
         data-releases-tracker=""
       >
-      <ReleasesArtworkAtmosphereWash
-        rgb={effectiveLayout === "artwork" ? trackerAtmosphereRgb : null}
-        artworkUrl={
-          effectiveLayout === "artwork"
-            ? resolveArtworkAmbienceUrl(atmosphereRelease?.artworkUrl)
-            : null
-        }
-        active={effectiveLayout === "artwork" && trackerAtmosphereRgb !== null}
-      />
       <div
         className={cn(
-          "relative z-[1] mx-auto max-w-md px-4",
+          "mx-auto max-w-md px-4",
           artworkWellActive && ARTWORK_VIEW_COLUMN_CLASS,
           artworkWellActive && resolveArtworkViewColumnMinHClass(isArtist),
         )}
@@ -826,22 +687,7 @@ export default function ReleaseTracker() {
               </Button>
             )}
           </div>
-        ) : (
-          <div
-            className={RELEASE_TRACKER_VIEW_STACK_CLASS}
-            data-testid="releases-view-stack"
-          >
-            {mountedLayouts.includes("artwork") && (
-              <div
-                className={cn(
-                  RELEASE_TRACKER_VIEW_LAYER_CLASS,
-                  effectiveLayout === "artwork"
-                    ? "opacity-100"
-                    : "pointer-events-none opacity-0",
-                )}
-                aria-hidden={effectiveLayout !== "artwork"}
-                data-testid="releases-view-layer-artwork"
-              >
+        ) : effectiveLayout === "artwork" ? (
                 <ArtworkReleaseBrowser
                   releases={artworkSequence}
                   onOpen={(r) => openRelease(r)}
@@ -858,21 +704,8 @@ export default function ReleaseTracker() {
                   selectedCountdownReleaseId={selectedCountdownReleaseId}
                   initialReleaseId={artworkFocusReleaseId}
                   onSettledReleaseChange={rememberArtworkFocus}
-                  onIntendedReleaseChange={prewarmIntendedArtwork}
                 />
-              </div>
-            )}
-            {mountedLayouts.includes("list") && (
-              <div
-                className={cn(
-                  RELEASE_TRACKER_VIEW_LAYER_CLASS,
-                  effectiveLayout === "list"
-                    ? "opacity-100"
-                    : "pointer-events-none opacity-0",
-                )}
-                aria-hidden={effectiveLayout !== "list"}
-                data-testid="releases-view-layer-list"
-              >
+        ) : (
                 <div className="space-y-7">
                   {standardOutTodayFeed.length > 0 && (
                     <section className="space-y-2">
@@ -923,9 +756,6 @@ export default function ReleaseTracker() {
                     </section>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
         )}
         </div>
       </div>

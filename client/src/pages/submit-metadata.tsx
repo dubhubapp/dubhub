@@ -36,6 +36,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { playSuccessNotification } from "@/lib/haptic";
 import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
+import { preventImplicitFormSubmitOnEnter } from "@/lib/form-search-input";
+import { normalizeDescriptionNewlines } from "@/lib/submit-description-text";
+import { readSuggestedPlayedDate } from "@/lib/submit-camera-played-date";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import {
   isWideLandscapePresentation,
@@ -900,6 +903,21 @@ export default function SubmitMetadata() {
     },
   });
 
+  const didPrefillPlayedDateRef = useRef(false);
+  useEffect(() => {
+    if (didPrefillPlayedDateRef.current) return;
+    if (!trimState) return;
+    const current = form.getValues("playedDate")?.trim() ?? "";
+    if (current) {
+      didPrefillPlayedDateRef.current = true;
+      return;
+    }
+    const suggested = readSuggestedPlayedDate();
+    didPrefillPlayedDateRef.current = true;
+    if (!suggested) return;
+    form.setValue("playedDate", suggested, { shouldDirty: false, shouldValidate: true });
+  }, [form, trimState]);
+
   const [fieldFocused, setFieldFocused] = useState<
     Partial<Record<TrackFieldKey, boolean>>
   >({});
@@ -1171,7 +1189,7 @@ export default function SubmitMetadata() {
         video_url: data.videoUrl,
         genre: data.formData.genre.trim(),
         subgenre: serializeSubmitSubgenre(data.formData.subgenre),
-        description: data.formData.description?.trim() || null,
+        description: normalizeDescriptionNewlines(data.formData.description ?? "").trim() || null,
         location: data.formData.location?.trim() || null,
         dj_name: data.formData.djName?.trim() || null,
         played_date: data.formData.playedDate || null,
@@ -1750,6 +1768,7 @@ export default function SubmitMetadata() {
             <form
               onSubmit={form.handleSubmit(onSubmit)}
               className="min-w-0 space-y-3"
+              onKeyDownCapture={preventImplicitFormSubmitOnEnter}
               onFocusCapture={(e) => {
                 if (!isSubmitMetadataKbdMetricsDebugEnabled()) return;
                 const t = e.target;
@@ -2007,8 +2026,9 @@ export default function SubmitMetadata() {
                                 }));
                               }}
                               onChange={(e) => {
-                                field.onChange(e);
-                                if (!isDescriptionComplete(e.target.value)) {
+                                const next = normalizeDescriptionNewlines(e.target.value);
+                                field.onChange(next);
+                                if (!isDescriptionComplete(next)) {
                                   setFieldConfirmed((c) => ({ ...c, description: false }));
                                 }
                               }}

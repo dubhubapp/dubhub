@@ -830,10 +830,9 @@ describe("Artwork C.3 geometric crossing + attraction + thumb pad", () => {
     assert.match(artworkBrowserSrc, /artwork-release-prev/);
     assert.match(artworkBrowserSrc, /artwork-release-next/);
     assert.match(artworkBrowserSrc, /onSettledReleaseChange/);
-    assert.match(artworkBrowserSrc, /onIntendedReleaseChange/);
-    assert.match(artworkBrowserSrc, /emblaApi\.on\("select", onSelect\)/);
-    assert.doesNotMatch(artworkBrowserSrc, /ArtworkAmbienceBackground/);
-    assert.doesNotMatch(artworkBrowserSrc, /artwork-ambience-background/);
+    assert.match(artworkBrowserSrc, /ArtworkAmbienceBackground/);
+    assert.match(artworkBrowserSrc, /artwork-ambience-background/);
+    assert.doesNotMatch(artworkBrowserSrc, /onIntendedReleaseChange/);
     assert.doesNotMatch(artworkBrowserSrc, /--release-atmosphere-rgb/);
     assert.doesNotMatch(trackerSrc, /translateY\(/);
     assert.doesNotMatch(trackerSrc, /50vh|top-1\/2 translate-y-\[/);

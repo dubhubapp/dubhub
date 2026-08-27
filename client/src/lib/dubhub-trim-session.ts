@@ -47,6 +47,11 @@ export function clearDubhubTrimSession(options?: { revokeAfterMs?: number }): vo
   } catch {
     /* ignore */
   }
+  try {
+    localStorage.removeItem("dubhub-suggested-played-date");
+  } catch {
+    /* ignore */
+  }
 
   const revoke = () => {
     for (const u of urls) {

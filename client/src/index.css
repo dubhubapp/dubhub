@@ -106,6 +106,16 @@ html {
   color-scheme: light;
 }
 
+/*
+ * HOME-SCRUB-5: the Home scrub is portaled to document.body, so it is not a
+ * descendant of `[data-home-video-feed]`. iOS WKWebView can still pan that
+ * scroller under the same finger. Freeze overflow only while the lock attr is set.
+ */
+[data-home-video-feed][data-home-feed-scrub-lock="on"] {
+  overflow-y: hidden !important;
+  touch-action: none !important;
+}
+
 html.dark {
   color-scheme: dark;
 }
@@ -236,15 +246,6 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
     to top,
     transparent 0%,
     hsl(var(--background) / 0.55) 45%,
-    transparent 100%
-  );
-}
-
-html[data-dubhub-native-nav="on"] .dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-fab-fade {
-  background-image: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.42) 0%,
-    rgba(0, 0, 0, 0.18) 45%,
     transparent 100%
   );
 }
@@ -897,115 +898,6 @@ html[data-dubhub-native-nav="on"] .dark .dubhub-app-releases-canvas[data-release
     to top,
     hsl(var(--background)) 0%,
     hsl(var(--background) / 0.9) 45%,
-    transparent 100%
-  );
-}
-
-.releases-artwork-atmosphere-host {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  z-index: 0;
-}
-
-.releases-artwork-atmosphere-buffer {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.releases-artwork-atmosphere-backdrop {
-  position: absolute;
-  left: 50%;
-  top: 38%;
-  width: 150%;
-  height: 150%;
-  transform: translate(-50%, -50%);
-  object-fit: cover;
-  filter: blur(64px) saturate(1.18);
-  opacity: 0.48;
-}
-
-.releases-artwork-atmosphere-wash {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  background-color: color-mix(
-    in srgb,
-    rgb(var(--release-atmosphere-rgb)) 54%,
-    #0f1324 46%
-  );
-  background-image:
-    radial-gradient(
-      ellipse 90% 48% at 50% 34%,
-      rgba(var(--release-atmosphere-rgb), 0.42) 0%,
-      transparent 70%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(var(--release-atmosphere-rgb), 0.78) 0%,
-      rgba(var(--release-atmosphere-rgb), 0.64) 32%,
-      rgba(var(--release-atmosphere-rgb), 0.5) 58%,
-      color-mix(in srgb, rgb(var(--release-atmosphere-rgb)) 58%, #0f1324 42%) 100%
-    );
-}
-
-.releases-artwork-atmosphere-readability {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  background-image: linear-gradient(
-    180deg,
-    rgba(15, 19, 36, 0.12) 0%,
-    rgba(15, 19, 36, 0.22) 42%,
-    rgba(15, 19, 36, 0.36) 100%
-  );
-  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.releases-view-stack {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.releases-view-layer {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .releases-artwork-atmosphere-buffer,
-  .releases-artwork-atmosphere-readability,
-  .releases-view-layer {
-    transition: none;
-  }
-
-  .dark .dubhub-app-releases-sticky,
-  .dark .dubhub-app-releases-sticky-fade {
-    transition: none;
-  }
-}
-
-.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-sticky {
-  background-color: rgba(15, 19, 36, 0.28);
-  transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-sticky-fade,
-.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .leaderboard-sticky-blur-dissolve {
-  background-color: rgba(15, 19, 36, 0.12);
-  transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.dark .dubhub-app-releases-canvas[data-releases-atmosphere="artwork"] .dubhub-app-releases-fab-fade {
-  background-image: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.42) 0%,
-    rgba(0, 0, 0, 0.18) 45%,
     transparent 100%
   );
 }

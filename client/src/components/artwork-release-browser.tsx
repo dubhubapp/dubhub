@@ -74,7 +74,6 @@ type ArtworkReleaseBrowserProps = {
   selectedCountdownReleaseId?: string | null;
   initialReleaseId?: string | null;
   onSettledReleaseChange?: (releaseId: string) => void;
-  onIntendedReleaseChange?: (releaseId: string) => void;
   className?: string;
 };
 
@@ -151,6 +150,62 @@ function paintArtworkFrame(args: {
   });
 }
 
+function ArtworkAmbienceBackground({
+  url,
+  reducedMotion,
+}: {
+  url: string | null;
+  reducedMotion: boolean;
+}) {
+  const [current, setCurrent] = useState<string | null>(url);
+  const [outgoing, setOutgoing] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (url === current) return;
+    if (reducedMotion || !current || !url) {
+      setOutgoing(null);
+      setCurrent(url);
+      return;
+    }
+    setOutgoing(current);
+    setCurrent(url);
+  }, [url, current, reducedMotion]);
+
+  if (!current && !outgoing) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+      aria-hidden
+      data-testid="artwork-ambience-background"
+    >
+      {outgoing ? (
+        <img
+          src={outgoing}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 h-full w-full scale-125 object-cover opacity-0 blur-2xl motion-safe:transition-opacity motion-safe:duration-300"
+        />
+      ) : null}
+      {current ? (
+        <img
+          key={current}
+          src={current}
+          alt=""
+          draggable={false}
+          className={cn(
+            "absolute inset-0 h-full w-full scale-125 object-cover blur-2xl",
+            reducedMotion
+              ? "opacity-40"
+              : "opacity-40 motion-safe:transition-opacity motion-safe:duration-300",
+          )}
+        />
+      ) : null}
+      <div className="absolute inset-0 bg-background/78" />
+    </div>
+  );
+}
+
 export function ArtworkReleaseBrowser({
   releases,
   onOpen,
@@ -159,7 +214,6 @@ export function ArtworkReleaseBrowser({
   selectedCountdownReleaseId = null,
   initialReleaseId = null,
   onSettledReleaseChange,
-  onIntendedReleaseChange,
   className,
 }: ArtworkReleaseBrowserProps) {
   const bootstrapIdRef = useRef<string | null | undefined>(undefined);
@@ -211,7 +265,7 @@ export function ArtworkReleaseBrowser({
 
   const [settledReal, setSettledReal] = useState(initialReal);
   const [committedReal, setCommittedReal] = useState(initialReal);
-  const [, setAmbienceUrl] = useState<string | null>(() =>
+  const [ambienceUrl, setAmbienceUrl] = useState<string | null>(() =>
     resolveArtworkAmbienceUrl(releases[initialReal]?.artworkUrl),
   );
 
@@ -427,13 +481,6 @@ export function ArtworkReleaseBrowser({
       emblaApi.scrollTo(nextReal, prefersReducedMotion());
     };
 
-    const onSelect = () => {
-      const snap = emblaApi.selectedScrollSnap();
-      const nextReal = mapEmblaSnapIndexToRealIndex(snap, realCount);
-      const nextId = releases[nextReal]?.id;
-      if (nextId) onIntendedReleaseChange?.(nextId);
-    };
-
     const onSettle = () => {
       if (bootstrapPhaseRef.current === "pending") return;
       attractingRef.current = false;
@@ -478,7 +525,6 @@ export function ArtworkReleaseBrowser({
       artworkDevLog({ event: "pointerUp" });
     };
 
-    emblaApi.on("select", onSelect);
     emblaApi.on("settle", onSettle);
     emblaApi.on("scroll", onScroll);
     emblaApi.on("pointerDown", onPointerDown);
@@ -516,7 +562,6 @@ export function ArtworkReleaseBrowser({
     paintTransforms();
 
     return () => {
-      emblaApi.off("select", onSelect);
       emblaApi.off("settle", onSettle);
       emblaApi.off("scroll", onScroll);
       emblaApi.off("pointerDown", onPointerDown);
@@ -531,7 +576,6 @@ export function ArtworkReleaseBrowser({
     commitSettledSnap,
     emblaApi,
     markUserInteraction,
-    onIntendedReleaseChange,
     paintTransforms,
     realCount,
     releaseIds,
@@ -656,6 +700,10 @@ export function ArtworkReleaseBrowser({
       className={cn("relative flex w-full min-w-0 flex-col gap-3", className)}
       data-testid="artwork-release-browser"
     >
+      <ArtworkAmbienceBackground
+        url={ambienceUrl}
+        reducedMotion={reducedMotion}
+      />
       <div className="relative">
         <div
           ref={emblaRef}

@@ -60,6 +60,19 @@ import {
   invalidateQueriesAfterPostDeletion,
 } from "@/lib/post-delete-cache-updates";
 import { isWideLandscapePresentation } from "@/lib/wide-landscape-presentation";
+import {
+  HOME_SCRUB_FILL_CLASS,
+  HOME_SCRUB_INACTIVE_CLASS,
+  HOME_SCRUB_READOUT_CLASS,
+  HOME_SCRUB_SOUND_BUTTON_CLASS,
+  HOME_SCRUB_SOUND_SHELL_CLASS,
+  HOME_SCRUB_TRACK_CLASS,
+  HOME_SCRUB_VISUAL_INSET_CLASS,
+  forceUnlockHomeFeedScrollForScrub,
+  lockHomeFeedScrollForScrub,
+  scrubRatioFromClientX,
+  unlockHomeFeedScrollForScrub,
+} from "@/lib/video-feed-scrub";
 // Removed placeholder video import - now using real uploaded videos
 
 /**
@@ -2352,11 +2365,12 @@ function VideoCardInner({
     : overlayDensityControl && feedOverlayCollapsed;
 
   const scrubHitRef = useRef<HTMLDivElement>(null);
+  const scrubTrackRef = useRef<HTMLDivElement>(null);
   const applyScrubFromClientX = useCallback((clientX: number, video: HTMLVideoElement) => {
-    const hit = scrubHitRef.current;
-    if (!hit || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    const rect = hit.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const track = scrubTrackRef.current;
+    if (!track || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const rect = track.getBoundingClientRect();
+    const ratio = scrubRatioFromClientX(clientX, rect.left, rect.width);
     const fill = scrubFillRef.current;
     const thumb = scrubThumbRef.current;
     if (fill) fill.style.transform = `scaleX(${ratio})`;
@@ -2379,6 +2393,7 @@ function VideoCardInner({
     setIsScrubbingUi(false);
     setShowScrubThumb(false);
     setScrubReadout(null);
+    if (!embeddedFeed) unlockHomeFeedScrollForScrub();
     if (opts) {
       try {
         opts.releaseTarget.releasePointerCapture(opts.pointerId);
@@ -2395,7 +2410,29 @@ function VideoCardInner({
         /* ignore */
       });
     }
-  }, []);
+  }, [embeddedFeed]);
+
+  useEffect(() => {
+    return () => {
+      if (!embeddedFeed) forceUnlockHomeFeedScrollForScrub();
+    };
+  }, [embeddedFeed]);
+
+  useEffect(() => {
+    if (embeddedFeed) return;
+    const hit = scrubHitRef.current;
+    if (!hit) return;
+    const blockNativePan = (event: TouchEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    hit.addEventListener("touchstart", blockNativePan, { passive: false });
+    hit.addEventListener("touchmove", blockNativePan, { passive: false });
+    return () => {
+      hit.removeEventListener("touchstart", blockNativePan);
+      hit.removeEventListener("touchmove", blockNativePan);
+    };
+  }, [embeddedFeed, isActive, scrubBarReady, shouldLoadVideo, videoSrc]);
 
   const genrePillVisualClass =
     "rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
@@ -3249,14 +3286,15 @@ function VideoCardInner({
           >
             <div
               ref={scrubHitRef}
+              data-video-feed-scrub-hit=""
               role="slider"
               aria-label="Seek video"
               aria-valuemin={0}
               aria-valuemax={100}
               className={cn(
-              "pointer-events-auto relative flex w-full max-w-none min-h-0 touch-none select-none flex-col justify-end pt-1.5 [-webkit-tap-highlight-color:transparent]",
+              "pointer-events-auto relative flex w-full max-w-none min-h-0 touch-none select-none flex-col justify-end [-webkit-tap-highlight-color:transparent]",
               /* `pb-1` lifts the track off the anchor; omit for viewport-fixed scrub so the bar sits flush on the nav top. */
-              embeddedFeed ? "pb-1" : "pb-0",
+              embeddedFeed ? "pt-1.5 pb-1" : "min-h-[10px] pt-2 pb-0",
             )}
               onPointerDown={(e) => {
                 if (e.button !== 0) return;
@@ -3268,6 +3306,7 @@ function VideoCardInner({
                 scrubbingRef.current = true;
                 setIsScrubbingUi(true);
                 setShowScrubThumb(true);
+                if (!embeddedFeed) lockHomeFeedScrollForScrub();
                 wasPlayingBeforeScrubRef.current = !video.paused;
                 if (wasPlayingBeforeScrubRef.current) video.pause();
                 try {
@@ -3280,6 +3319,7 @@ function VideoCardInner({
               onPointerMove={(e) => {
                 if (!scrubbingRef.current) return;
                 e.preventDefault();
+                e.stopPropagation();
                 const video = videoRef.current;
                 if (!video) return;
                 applyScrubFromClientX(e.clientX, video);
@@ -3297,22 +3337,44 @@ function VideoCardInner({
                 endScrubGesture();
               }}
             >
-              <div className="relative w-full">
+              <div className={cn("relative w-full", !embeddedFeed && HOME_SCRUB_VISUAL_INSET_CLASS)}>
                 {isScrubbingUi && scrubReadout ? (
                   <div
-                    className="pointer-events-none absolute bottom-[calc(100%+8px)] left-0 right-0 z-[2] text-center text-[11px] font-medium tabular-nums tracking-tight text-white/90 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
+                    data-video-feed-scrub-readout=""
+                    className={HOME_SCRUB_READOUT_CLASS}
                     aria-live="polite"
                   >
                     {scrubReadout.current} / {scrubReadout.total}
                   </div>
                 ) : null}
-                <div className="relative h-1 w-full overflow-visible">
-                  <div className="absolute inset-0 rounded-full bg-white/15" aria-hidden />
+                <div className="relative w-full">
                   <div
-                    ref={scrubFillRef}
-                    className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white/55 will-change-transform motion-reduce:transition-none"
-                    style={{ transform: "scaleX(0)" }}
-                  />
+                    ref={scrubTrackRef}
+                    data-video-feed-scrub-track=""
+                    className={
+                      embeddedFeed
+                        ? "pointer-events-none relative h-1 w-full overflow-visible"
+                        : HOME_SCRUB_TRACK_CLASS
+                    }
+                  >
+                    <div
+                      className={
+                        embeddedFeed
+                          ? "absolute inset-0 rounded-full bg-white/15"
+                          : HOME_SCRUB_INACTIVE_CLASS
+                      }
+                      aria-hidden
+                    />
+                    <div
+                      ref={scrubFillRef}
+                      className={
+                        embeddedFeed
+                          ? "absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white/55 will-change-transform motion-reduce:transition-none"
+                          : HOME_SCRUB_FILL_CLASS
+                      }
+                      style={{ transform: "scaleX(0)" }}
+                    />
+                  </div>
                   <div
                     ref={scrubThumbRef}
                     className={cn(
@@ -3338,31 +3400,30 @@ function VideoCardInner({
       !embeddedFeed &&
       typeof document !== "undefined"
         ? createPortal(
-            <button
-              type="button"
-              className={cn(
-                /* z below scrub (z-40) so corner seeks aren’t blocked if edges align */
-                "pointer-events-auto fixed z-[38] flex h-11 w-11 items-center justify-center rounded-full outline-none ring-offset-2 ring-offset-transparent [-webkit-tap-highlight-color:transparent] transition-opacity duration-300 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95",
-                /* Scrub strip ≈ pt-1.5 + h-1 (~10px) above `--video-feed-scrub-bottom`; +1.25rem clears it with a thin gap */
-                "bottom-[calc(var(--video-feed-scrub-bottom)+1.25rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))]",
-                isScrubbingUi ? "opacity-[0.22]" : "opacity-100",
-              )}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleMute();
-              }}
-              aria-label={isMuted ? "Unmute video" : "Mute video"}
-              data-testid="button-toggle-mute"
-            >
-              <span className="flex h-11 w-11 items-center justify-center [&_svg]:drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
-                {isMuted ? (
-                  <VolumeX className="h-5 w-5 shrink-0 text-white/95" aria-hidden />
-                ) : (
-                  <Volume2 className="h-5 w-5 shrink-0 text-white" aria-hidden />
+            <div data-video-feed-home-sound="" className={HOME_SCRUB_SOUND_SHELL_CLASS}>
+              <button
+                type="button"
+                className={cn(
+                  HOME_SCRUB_SOUND_BUTTON_CLASS,
+                  isScrubbingUi ? "opacity-[0.22]" : "opacity-100",
                 )}
-              </span>
-            </button>,
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleMute();
+                }}
+                aria-label={isMuted ? "Unmute video" : "Mute video"}
+                data-testid="button-toggle-mute"
+              >
+                <span className="flex h-11 w-11 items-center justify-center [&_svg]:drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
+                  {isMuted ? (
+                    <VolumeX className="h-5 w-5 shrink-0 text-white/95" aria-hidden />
+                  ) : (
+                    <Volume2 className="h-5 w-5 shrink-0 text-white" aria-hidden />
+                  )}
+                </span>
+              </button>
+            </div>,
             document.body,
           )
         : null}
