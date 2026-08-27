@@ -32,6 +32,7 @@ import {
   DELETED_COMMENT_BODY,
   DELETED_COMMENT_DISPLAY,
   isDeletedCommentBody,
+  shouldHideDeletedCommentLeaf,
 } from "@shared/deleted-comment";
 import { ApiRequestError } from "@/lib/apiDiagnostics";
 import { apiRequest } from "@/lib/queryClient";
@@ -59,9 +60,17 @@ import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
 import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG, STATUS_GLOW_PILL_CLASS } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { useDelayedReleaseFeedSkeleton } from "@/lib/use-delayed-release-feed-skeleton";
-import { isDefaultAvatarUrl } from "@/lib/default-avatar";
+import { getDefaultAvatarPublicUrl, isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { formatUsernameDisplay, cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
 import { findCommentInTree } from "@/lib/comment-selection";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
@@ -87,30 +96,54 @@ interface CommentsModalProps {
   elevatedStack?: boolean;
 }
 
+function applyPostPatch(old: unknown, postId: string, patch: (p: PostWithUser) => PostWithUser): unknown {
+  if (!old) return old;
+  if (Array.isArray(old)) {
+    return (old as PostWithUser[]).map((p) => (p?.id === postId ? patch(p) : p));
+  }
+  if (typeof old === "object" && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+    const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+    return {
+      ...paged,
+      pages: paged.pages.map((page) => ({
+        ...page,
+        items: Array.isArray(page.items)
+          ? page.items.map((p) => (p?.id === postId ? patch(p) : p))
+          : page.items,
+      })),
+    };
+  }
+  if (
+    typeof old === "object" &&
+    typeof (old as PostWithUser).id === "string" &&
+    (old as PostWithUser).id === postId
+  ) {
+    return patch(old as PostWithUser);
+  }
+  return old;
+}
+
 function patchPostInFeedCaches(
   queryClient: QueryClient,
   postId: string,
   patch: (p: PostWithUser) => PostWithUser,
 ): void {
-  queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old: unknown) => {
-    if (!old) return old;
-    if (Array.isArray(old)) {
-      return (old as PostWithUser[]).map((p) => (p.id === postId ? patch(p) : p));
-    }
-    if (typeof old === "object" && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
-      const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
-      return {
-        ...paged,
-        pages: paged.pages.map((page) => ({
-          ...page,
-          items: Array.isArray(page.items)
-            ? page.items.map((p) => (p.id === postId ? patch(p) : p))
-            : page.items,
-        })),
-      };
-    }
-    return old;
-  });
+  queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old: unknown) =>
+    applyPostPatch(old, postId, patch),
+  );
+  queryClient.setQueriesData(
+    {
+      predicate: (query) => {
+        const key = query.queryKey;
+        return (
+          Array.isArray(key) &&
+          key[0] === "/api/user" &&
+          (key[2] === "posts" || key[2] === "liked-posts")
+        );
+      },
+    },
+    (old: unknown) => applyPostPatch(old, postId, patch),
+  );
 }
 
 function bumpPostCommentCount(p: PostWithUser, delta: number): PostWithUser {
@@ -159,11 +192,11 @@ const COMMENTS_THREAD_LINK_CLASS =
 const COMMENTS_TAGGED_ROW_CLASS =
   "rounded-lg border border-amber-400/25 bg-amber-500/[0.05] p-2";
 
-const COMMENTS_NORMAL_ROW_CLASS =
-  "border-b border-black/[0.05] pb-2 dark:border-white/[0.06]";
+/** Top-level comments: no hairline; list `space-y-2` is the only separator. */
+const COMMENTS_NORMAL_ROW_CLASS = "";
 
 const COMMENTS_PIN_ICON_CLASS =
-  "pointer-events-none absolute right-0 top-0.5 h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-white/55";
+  "pointer-events-none h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-white/55";
 
 function getAppViewportHostEl(): HTMLElement | null {
   if (typeof document === "undefined") return null;
@@ -1290,10 +1323,15 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
 
   const deleteCommentMutation = useMutation({
     mutationFn: async (commentId: string) => {
-      await apiRequest("DELETE", `/api/comments/${commentId}`);
+      const res = await apiRequest("DELETE", `/api/comments/${commentId}`);
+      const payload = (await res.json()) as { alreadyDeleted?: boolean; id?: string };
+      return payload;
     },
-    onSuccess: (_data, commentId) => {
+    onSuccess: (data, commentId) => {
       updateCommentBodyInTree(commentId, DELETED_COMMENT_BODY);
+      if (data?.alreadyDeleted === true) return;
+      patchPostInFeedCaches(queryClient, post.id, (p) => bumpPostCommentCount(p, -1));
+      onCommentCountDelta?.(-1);
     },
     onError: (error: unknown) => {
       let description = "Failed to delete comment";
@@ -1371,6 +1409,17 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
     });
   };
 
+  const visibleRepliesForComment = (comment: CommentWithUser) =>
+    sortedRepliesChronological(comment.replies).filter(
+      (reply) => !isDeletedCommentBody(reply.body),
+    );
+
+  const isVisibleInCommentsThread = (comment: CommentWithUser) =>
+    !shouldHideDeletedCommentLeaf({
+      body: comment.body,
+      replies: (comment.replies ?? []).filter((reply) => !isDeletedCommentBody(reply.body)),
+    });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = newComment.trim();
@@ -1422,15 +1471,27 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
           if (!open) setDeleteConfirmCommentId(null);
         }}
       >
-        <AlertDialogContent className={cn(alertDialogStackZ, "w-[calc(100vw-2rem)] max-w-sm")}>
+        <AlertDialogContent
+          className={cn(alertDialogStackZ, APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS)}
+          overlayClassName={cn(alertDialogStackZ, APP_MATERIAL_OVERLAY_BACKDROP_CLASS)}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete comment?</AlertDialogTitle>
-            <AlertDialogDescription>Any replies will stay visible.</AlertDialogDescription>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Delete comment?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+              Any replies will stay visible.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="delete-comment-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogCancel
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              data-testid="delete-comment-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
               disabled={deleteCommentMutation.isPending}
               data-testid="delete-comment-confirm"
               onClick={confirmDeleteComment}
@@ -1541,14 +1602,15 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
         </div>
 
         {/* Comments List */}
+        <div className="relative min-h-0 flex-1">
         <div
           ref={commentsListRef}
-          className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5 sm:px-4 sm:pb-3"
+          className="h-full overflow-y-auto px-3.5 pb-6 sm:px-4"
         >
           {/*
             Ordinary inset inside the scroll content (not on the overflow
-            viewport): 16px matches row pb-2 + space-y-2 so the first Identified
-            glow is fully visible below the header divider.
+            viewport): 16px keeps the first Identified glow fully visible below
+            the header divider.
           */}
           <div className="space-y-2 pt-4">
           {(() => {
@@ -1630,7 +1692,9 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
               );
             }
 
-            if (filteredComments.length === 0 && !verifiedReplyPin) {
+            const hasVisibleThreadComments = filteredComments.some(isVisibleInCommentsThread);
+
+            if (!hasVisibleThreadComments && !verifiedReplyPin) {
               return (
                 <div className="flex h-full min-h-[9rem] items-center justify-center px-4 text-center">
                   <div className="flex max-w-[18rem] flex-col items-center gap-2 text-gray-500/85 dark:text-white/55">
@@ -1649,8 +1713,12 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
             const isIdentificationPinnedComment = (c: (typeof filteredComments)[number]) =>
               (!!artistConfirmationCommentId && c.id === artistConfirmationCommentId) ||
               post.verifiedCommentId === c.id;
-            const identificationClusterComments = filteredComments.filter(isIdentificationPinnedComment);
-            const remainingComments = filteredComments.filter((c) => !isIdentificationPinnedComment(c));
+            const identificationClusterComments = filteredComments
+              .filter(isIdentificationPinnedComment)
+              .filter(isVisibleInCommentsThread);
+            const remainingComments = filteredComments
+              .filter((c) => !isIdentificationPinnedComment(c))
+              .filter(isVisibleInCommentsThread);
 
             let renderTopLevelComment: (comment: (typeof filteredComments)[number]) => ReactNode =
               () => null;
@@ -1691,8 +1759,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                       />
                     </button>
                     <div className="relative min-w-0 flex-1">
-                      <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pr-5">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <div className="flex items-center space-x-1">
                           <span
                             className={`cursor-pointer text-xs font-medium hover:underline sm:text-[13px] ${
@@ -1761,6 +1828,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                         <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/40">
                           {formatTimeAgo(pinnedVerifiedReply.createdAt)}
                         </span>
+                        <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
                       </div>
                       <p
                         className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white/85"
@@ -1773,7 +1841,11 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                 )}
                 {(() => {
             renderTopLevelComment = (comment: (typeof filteredComments)[number]) => {
+              const visibleReplies = visibleRepliesForComment(comment);
               const commentIsDeleted = isDeletedCommentBody(comment.body);
+              if (commentIsDeleted && visibleReplies.length === 0) {
+                return null;
+              }
               const isOwnComment = !!contextUser?.id && comment.userId === contextUser.id;
               const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment
               const isArtistConfirmationComment = !!artistConfirmationCommentId && comment.id === artistConfirmationCommentId; // system/artist confirmation comment
@@ -1795,11 +1867,17 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                 <div
                   key={comment.id}
                   data-comment-id={comment.id}
-                  className={cn(
-                    "flex items-start space-x-2",
-                    highlightClass || "border-b border-black/[0.05] pb-2 dark:border-white/[0.06]",
-                  )}
+                  className={cn("flex items-start space-x-2", highlightClass)}
                 >
+                  {commentIsDeleted ? (
+                    <div className="relative flex-shrink-0 p-0" aria-hidden>
+                      <img
+                        src={getDefaultAvatarPublicUrl("user")}
+                        alt=""
+                        className="avatar-media avatar-default-media h-6 w-6 rounded-full border-2 border-transparent sm:h-7 sm:w-7"
+                      />
+                    </div>
+                  ) : (
                   <button
                     type="button"
                     className="relative flex-shrink-0 p-0"
@@ -1827,11 +1905,18 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                       }`}
                     />
                   </button>
+                  )}
                   <div className="relative min-w-0 flex-1">
-                {isPinnedIdentificationComment ? (
-                  <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
-                ) : null}
-                <div className={cn("flex flex-wrap items-center gap-x-1.5 gap-y-0.5", isPinnedIdentificationComment && "pr-5")}>
+                <div className="flex items-start gap-1">
+                  <div className="min-w-0 flex-1">
+                <div className="relative">
+                {commentIsDeleted ? (
+                  <p className="text-[13px] italic leading-snug text-gray-400 sm:text-sm dark:text-white/45">
+                    {DELETED_COMMENT_DISPLAY}
+                  </p>
+                ) : (
+                <>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <div className="flex items-center space-x-1">
                     <span 
                       className={`text-xs font-medium cursor-pointer hover:underline sm:text-[13px] ${
@@ -1922,38 +2007,22 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                   <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/40">
                     {formatTimeAgo(comment.createdAt)}
                   </span>
+                  {isPinnedIdentificationComment ? (
+                    <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
+                  ) : null}
                 </div>
-                {commentIsDeleted ? (
-                  <p className="mt-0.5 text-[13px] italic leading-snug text-gray-400 sm:text-sm dark:text-white/45">
-                    {DELETED_COMMENT_DISPLAY}
-                  </p>
-                ) : (
                   <p
                     className="mt-0.5 text-[13px] leading-snug text-gray-700 sm:text-sm dark:text-white/85"
                     onPointerDown={handleCommentBodyPointerDown}
                   >
                     {highlightArtistMentions(comment.body, comment.tagStatus)}
                   </p>
+                </>
                 )}
+                </div>
                 <div className="mt-0.5 flex items-center gap-2">
                   {!commentIsDeleted ? (
                     <>
-                      {/* Comment likes (separate from post likes) */}
-                      <button
-                        className={`flex items-center space-x-1 hover:bg-gray-100 rounded-full px-2 py-0.5 text-[11px] sm:text-xs dark:hover:bg-muted ${
-                          comment.userVote === "upvote"
-                            ? "text-pink-600 bg-pink-50 dark:bg-pink-950/50 dark:text-pink-400"
-                            : "text-gray-500 dark:text-white/40"
-                        }`}
-                        onClick={() => handleToggleCommentLike(comment.id)}
-                        data-testid={`button-like-${comment.id}`}
-                      >
-                        <Heart
-                          className="w-3 h-3"
-                          fill={comment.userVote === "upvote" ? "currentColor" : "none"}
-                        />
-                        <span>{comment.voteScore ?? 0}</span>
-                      </button>
                       <button
                         className="text-[11px] text-gray-500 hover:text-gray-700 sm:text-xs dark:text-white/40 dark:hover:text-white/70"
                         onPointerDown={(e) => {
@@ -1968,7 +2037,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                           <DropdownMenuTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)] sm:h-8 sm:w-8"
+                              className="-my-1.5 inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)] sm:h-8 sm:w-8"
                               aria-label="Comment actions"
                               data-testid={`comment-actions-trigger-${comment.id}`}
                             >
@@ -2009,8 +2078,8 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                     </>
                   ) : null}
                   {/* Toggle replies button */}
-                  {comment.replies && comment.replies.length > 0 && (() => {
-                    const totalReplies = comment.replies.length;
+                  {visibleReplies.length > 0 && (() => {
+                    const totalReplies = visibleReplies.length;
                     const visibleCount = visibleReplyCountByParent[comment.id] ?? 0;
 
                     if (visibleCount === 0) {
@@ -2046,13 +2115,42 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                     );
                   })()}
                 </div>
+                  </div>
+                  {!commentIsDeleted ? (
+                    <div className="mt-0.5 flex w-8 shrink-0 flex-col items-center">
+                      <button
+                        type="button"
+                        className={`flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-muted ${
+                          comment.userVote === "upvote"
+                            ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
+                            : "text-gray-500 dark:text-white/40"
+                        }`}
+                        onClick={() => handleToggleCommentLike(comment.id)}
+                        data-testid={`button-like-${comment.id}`}
+                      >
+                        <Heart
+                          className="h-3 w-3"
+                          fill={comment.userVote === "upvote" ? "currentColor" : "none"}
+                        />
+                      </button>
+                      <span
+                        className={`text-[11px] leading-none sm:text-xs ${
+                          comment.userVote === "upvote"
+                            ? "text-pink-600 dark:text-pink-400"
+                            : "text-gray-500 dark:text-white/40"
+                        }`}
+                      >
+                        {comment.voteScore ?? 0}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
                 
                 {/* Show replies progressively */}
-                {comment.replies &&
-                  comment.replies.length > 0 &&
+                {visibleReplies.length > 0 &&
                   (visibleReplyCountByParent[comment.id] ?? 0) > 0 && (
                   <div className="ml-7 mt-2 space-y-2.5 border-l-2 border-gray-100 pl-2.5 dark:border-border">
-                    {sortedRepliesChronological(comment.replies)
+                    {visibleReplies
                       .slice(0, visibleReplyCountByParent[comment.id] ?? 0)
                       .map((reply) => {
                         const replyIsDeleted = isDeletedCommentBody(reply.body);
@@ -2094,10 +2192,10 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                             />
                           </button>
                           <div className="relative min-w-0 flex-1">
-                            {isVerifiedReply || isArtistConfirmationReply ? (
-                              <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
-                            ) : null}
-                          <div className={cn("flex items-center space-x-1.5", (isVerifiedReply || isArtistConfirmationReply) && "pr-5")}>
+                            <div className="flex items-start gap-1">
+                              <div className="min-w-0 flex-1">
+                            <div className="relative">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                             <div className="flex items-center space-x-1">
                               <span 
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
@@ -2174,9 +2272,12 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                                 <span className="text-xs font-medium text-red-600 dark:text-red-400">Denied</span>
                               </div>
                             )}
-                            <span className="text-xs text-gray-500 dark:text-white/40">
+                            <span className="whitespace-nowrap text-xs text-gray-500 dark:text-white/40">
                               {formatTimeAgo(reply.createdAt)}
                             </span>
+                            {isVerifiedReply || isArtistConfirmationReply ? (
+                              <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
+                            ) : null}
                           </div>
                           {replyIsDeleted ? (
                             <p className="mt-0.5 text-xs italic text-gray-400 dark:text-white/45">
@@ -2190,24 +2291,10 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                               {highlightArtistMentions(reply.body, reply.tagStatus)}
                             </p>
                           )}
-                          <div className="mt-1 flex items-center space-x-2.5">
+                            </div>
+                          <div className="mt-0.5 flex items-center gap-2">
                             {!replyIsDeleted ? (
                               <>
-                                <button
-                                  className={`flex items-center space-x-1 rounded-full px-2 py-0.5 text-xs hover:bg-gray-100 dark:hover:bg-muted ${
-                                    reply.userVote === "upvote"
-                                      ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
-                                      : "text-gray-500 dark:text-white/40"
-                                  }`}
-                                  onClick={() => handleToggleCommentLike(reply.id)}
-                                  data-testid={`button-like-${reply.id}`}
-                                >
-                                  <Heart
-                                    className="w-3 h-3"
-                                    fill={reply.userVote === "upvote" ? "currentColor" : "none"}
-                                  />
-                                  <span>{reply.voteScore ?? 0}</span>
-                                </button>
                                 {!commentIsDeleted ? (
                                   <button
                                     className="text-xs text-gray-500 hover:text-gray-700 dark:text-white/40 dark:hover:text-white/70"
@@ -2224,7 +2311,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                                   <DropdownMenuTrigger asChild>
                                     <button
                                       type="button"
-                                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+                                      className="-my-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
                                       aria-label="Reply actions"
                                       data-testid={`comment-actions-trigger-${reply.id}`}
                                     >
@@ -2265,12 +2352,42 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                               </>
                             ) : null}
                           </div>
+                              </div>
+                              {!replyIsDeleted ? (
+                                <div className="mt-0.5 flex w-8 shrink-0 flex-col items-center">
+                                  <button
+                                    type="button"
+                                    className={`flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-muted ${
+                                      reply.userVote === "upvote"
+                                        ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
+                                        : "text-gray-500 dark:text-white/40"
+                                    }`}
+                                    onClick={() => handleToggleCommentLike(reply.id)}
+                                    data-testid={`button-like-${reply.id}`}
+                                  >
+                                    <Heart
+                                      className="h-3 w-3"
+                                      fill={reply.userVote === "upvote" ? "currentColor" : "none"}
+                                    />
+                                  </button>
+                                  <span
+                                    className={`text-xs leading-none ${
+                                      reply.userVote === "upvote"
+                                        ? "text-pink-600 dark:text-pink-400"
+                                        : "text-gray-500 dark:text-white/40"
+                                    }`}
+                                  >
+                                    {reply.voteScore ?? 0}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
                         </div>
                       </div>
                         );
                       })}
                     {(visibleReplyCountByParent[comment.id] ?? 0) <
-                      comment.replies.length && (
+                      visibleReplies.length && (
                       <button
                         type="button"
                         className={COMMENTS_THREAD_LINK_CLASS}
@@ -2278,7 +2395,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                           setVisibleReplyCountByParent((prev) => ({
                             ...prev,
                             [comment.id]: Math.min(
-                              comment.replies!.length,
+                              visibleReplies.length,
                               (prev[comment.id] ?? 0) + REPLY_BATCH_SIZE,
                             ),
                           }))
@@ -2307,9 +2424,14 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
           })()}
           </div>
         </div>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-white to-transparent dark:from-[#141a2e]"
+        />
+        </div>
 
         {/* Comment Input */}
-        <div className="relative z-20 border-t border-black/5 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 dark:border-white/[0.08] sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
+        <div className="relative z-20 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
           {/* Reply indicator */}
           {replyingTo && (
             <div className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] p-2.5 dark:border-white/10 dark:bg-white/[0.05]">

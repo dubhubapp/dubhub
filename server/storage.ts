@@ -8,6 +8,7 @@ import {
   userPushTokens,
   userNotificationPreferences,
 } from "@shared/schema";
+import { DELETED_COMMENT_BODY } from "@shared/deleted-comment";
 import { db, pool } from "./db";
 import { eq, desc, asc, and, or, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -679,6 +680,7 @@ export class DatabaseStorage implements IStorage {
           SELECT COUNT(*)::int AS comments_count
           FROM comments c
           WHERE c.post_id = p.id
+            AND c.body <> ${DELETED_COMMENT_BODY}
         ) c_counts ON TRUE
         WHERE COALESCE(p.verification_status, 'unverified') != 'under_review'
           AND ${genreWhere}
@@ -926,6 +928,7 @@ export class DatabaseStorage implements IStorage {
           SELECT COUNT(*)::int AS comments_count
           FROM comments c
           WHERE c.post_id = p.id
+            AND c.body <> ${DELETED_COMMENT_BODY}
         ) c_counts ON TRUE
         WHERE p.id = ${id}
         LIMIT 1
@@ -1164,6 +1167,7 @@ export class DatabaseStorage implements IStorage {
           SELECT COUNT(*)::int AS comments_count
           FROM comments c
           WHERE c.post_id = p.id
+            AND c.body <> ${DELETED_COMMENT_BODY}
         ) c_counts ON TRUE
         WHERE pl.user_id = ${userId}
         ORDER BY pl.created_at DESC
@@ -1535,7 +1539,7 @@ export class DatabaseStorage implements IStorage {
           pr.username   AS profile_username,
           pr.avatar_url AS profile_avatar_url,
           (SELECT COUNT(*)::int FROM post_likes pl WHERE pl.post_id = p.id) AS likes_count,
-          (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id) AS comments_count,
+          (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id AND c.body <> ${DELETED_COMMENT_BODY}) AS comments_count,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
@@ -1664,7 +1668,7 @@ export class DatabaseStorage implements IStorage {
           pr.verified_artist AS profile_verified_artist,
           pr.moderator AS profile_moderator,
           (SELECT COUNT(*)::int FROM post_likes pl WHERE pl.post_id = p.id) AS likes_count,
-          (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id) AS comments_count,
+          (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id AND c.body <> ${DELETED_COMMENT_BODY}) AS comments_count,
           ${
             currentUserId
               ? sql`EXISTS (

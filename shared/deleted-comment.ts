@@ -19,6 +19,19 @@ export function isDeletedCommentBody(body: unknown): body is typeof DELETED_COMM
   return body === DELETED_COMMENT_BODY;
 }
 
+/** Visible post comment count: every live top-level comment and reply. Tombstones are 0. */
+export function countVisibleComments(bodies: readonly unknown[]): number {
+  return bodies.reduce((n, body) => n + (isDeletedCommentBody(body) ? 0 : 1), 0);
+}
+
+/** Hide a soft-deleted comment when it has no remaining replies to anchor. */
+export function shouldHideDeletedCommentLeaf(comment: {
+  body: unknown;
+  replies?: readonly unknown[] | null;
+}): boolean {
+  return isDeletedCommentBody(comment.body) && (comment.replies?.length ?? 0) === 0;
+}
+
 /** True when this comment is pinned as the post's verified ID and must not be soft-deleted. */
 export function isCommentDeletionBlockedByVerification(params: {
   commentId: string;
