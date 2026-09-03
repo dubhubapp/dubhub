@@ -1,7 +1,14 @@
+/**
+ * ARTIST-SUB-DISCOVERY-1 — paid-tool gate is for outbound delivery, not audience count.
+ */
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
-  RELEASE_ALERTS_AUDIENCE_LOCKED_COPY,
+  RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY,
   resolvePaidToolGateMode,
   type PaidToolGateMode,
 } from "./paid-tool-gate";
@@ -13,6 +20,13 @@ import type {
   SubscriptionEnvironmentStatusView,
   UserSubscriptionStatusResponse,
 } from "./subscription-status";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const gateRowSrc = readFileSync(
+  join(here, "../components/release-alerts-audience-gate.tsx"),
+  "utf8",
+);
+const routesSrc = readFileSync(join(here, "../../../server/routes.ts"), "utf8");
 
 function envView(
   overrides: Partial<SubscriptionEnvironmentStatusView> = {},
@@ -76,12 +90,13 @@ const FREE_ARTIST_IDENTITY_SURFACES = [
   "listener_release_alerts_toggle",
   "artist_impact_confirmed_count",
   "community_activity",
+  "release_alerts_audience_count",
 ] as const;
 
-const GATED_SURFACE = "release_alerts_audience_count" as const;
+const PAID_DELIVERY_SURFACE = "outbound_release_alert_delivery" as const;
 
-describe("resolvePaidToolGateMode — Release Alerts audience", () => {
-  it("active paid access → available (tool visible)", () => {
+describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
+  it("active paid access → available (delivery capability)", () => {
     const mode = modeFor(
       statusResponse({
         sandbox: {
@@ -110,7 +125,7 @@ describe("resolvePaidToolGateMode — Release Alerts audience", () => {
     assert.equal(mode, "locked");
   });
 
-  it("never_subscribed → locked", () => {
+  it("never_subscribed → locked (delivery only; audience count is free)", () => {
     const mode = modeFor(
       statusResponse({
         sandbox: { state: "never_subscribed", hasPaidToolAccess: false },
@@ -211,14 +226,6 @@ describe("resolvePaidToolGateMode — Release Alerts audience", () => {
       "production",
     );
     assert.equal(mode, "available");
-    const selection = selectAuthoritativeSubscriptionEnvironment(
-      statusResponse({
-        production: { hasPaidToolAccess: true, state: "active", freshness: "fresh" },
-        sandbox: { hasPaidToolAccess: false },
-      }),
-      "production",
-    );
-    assert.equal(selection.selectedEnvironment, "production");
   });
 
   it("local ignores production-only paid access", () => {
@@ -239,19 +246,11 @@ describe("resolvePaidToolGateMode — Release Alerts audience", () => {
     assert.equal(mode, "locked");
   });
 
-  it("locked copy keeps Upgrade CTA and does not sell credibility", () => {
-    assert.equal(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.title, "Release Alerts Audience");
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/i);
-    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /credibility|verified badge for sale/i);
-    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Listeners can still/i);
-    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /credibility/i);
-  });
-
-  it("unrelated artist identity tools remain ungated by this surface", () => {
-    assert.ok(!FREE_ARTIST_IDENTITY_SURFACES.includes(GATED_SURFACE as never));
-    assert.equal(GATED_SURFACE, "release_alerts_audience_count");
+  it("audience count is free; outbound delivery remains the paid surface", () => {
+    assert.ok(FREE_ARTIST_IDENTITY_SURFACES.includes("release_alerts_audience_count"));
+    assert.equal(PAID_DELIVERY_SURFACE, "outbound_release_alert_delivery");
     for (const surface of FREE_ARTIST_IDENTITY_SURFACES) {
-      assert.notEqual(surface, GATED_SURFACE);
+      assert.notEqual(surface, PAID_DELIVERY_SURFACE);
     }
   });
 
@@ -276,5 +275,45 @@ describe("resolvePaidToolGateMode — Release Alerts audience", () => {
       }),
       "locked",
     );
+  });
+
+  it("unavailable copy does not sell audience count as paid insight", () => {
+    assert.match(RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY, /temporarily unavailable/i);
+    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY, /insight|Verified Artist Tools/i);
+  });
+});
+
+describe("ARTIST-SUB-DISCOVERY-1 audience count ungated", () => {
+  it("owner row shows count without paid lock / subscription gate", () => {
+    assert.match(gateRowSrc, /data-testid="artist-release-alerts-audience"/);
+    assert.match(gateRowSrc, /Visible to all verified artists/);
+    assert.doesNotMatch(gateRowSrc, /RELEASE_ALERTS_AUDIENCE_LOCKED_COPY/);
+    assert.doesNotMatch(gateRowSrc, /artist-release-alerts-audience-locked/);
+    assert.doesNotMatch(gateRowSrc, /resolvePaidToolGateMode/);
+    assert.doesNotMatch(gateRowSrc, /requestVerifiedArtistToolsUpgrade/);
+    assert.doesNotMatch(gateRowSrc, /useAuthoritativeSubscriptionStatus/);
+    assert.doesNotMatch(gateRowSrc, /insight is part of Verified Artist Tools/i);
+    assert.match(gateRowSrc, /enabled=\{verifiedArtist\}|enabled,/);
+    assert.match(gateRowSrc, /queryFn:/);
+  });
+
+  it("profile only mounts audience row when verifiedArtist", () => {
+    const profileSrc = readFileSync(join(here, "../pages/user-profile.tsx"), "utf8");
+    assert.match(
+      profileSrc,
+      /ReleaseAlertsAudienceGateRow[\s\S]*?enabled=\{verifiedArtist\}/,
+    );
+  });
+
+  it("server audience endpoint requires verified artist only — not paid tools", () => {
+    const routeBlock = routesSrc.match(
+      /app\.get\("\/api\/artists\/me\/release-alerts-audience"[\s\S]*?^\s*\}\);/m,
+    );
+    assert.ok(routeBlock, "audience route present");
+    const body = routeBlock[0];
+    assert.match(body, /Verified artist access only/);
+    assert.doesNotMatch(body, /canArtistUsePaidTools/);
+    assert.doesNotMatch(body, /PAID_ARTIST_TOOL_REQUIRED/);
+    assert.match(body, /countArtistReleaseAlertsForArtist/);
   });
 });

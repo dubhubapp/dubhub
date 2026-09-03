@@ -238,7 +238,7 @@ export const PAYWALL_SUCCESS_CONFIRMATION_LINES = [
   "Unlimited releases and active future releases",
   "Unlimited links and attachments",
   "Pre-save, Pre-add and Pre-order links",
-  "Release Alerts for waiting listeners",
+  "Send Release Alerts to listeners already waiting",
 ] as const;
 
 /**

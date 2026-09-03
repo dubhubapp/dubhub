@@ -26,7 +26,8 @@ export {
 };
 
 /**
- * Pure policy: paid tool access + fresh snapshot (matches audience paid-tool gate).
+ * Pure policy: paid tool access + fresh snapshot (outbound delivery only).
+ * Audience count visibility is free for verified artists and is not gated here.
  * Includes cancelled-but-active, grace, lifetime, and active overrides via getEffectivePaidAccess.
  */
 export function isReleaseAlertDeliveryEnabledForSnapshot(

@@ -21,7 +21,7 @@ import type {
   SubscriptionEnvironmentStatusView,
   UserSubscriptionStatusResponse,
 } from "./subscription-status";
-import { RELEASE_ALERTS_AUDIENCE_LOCKED_COPY } from "./paid-tool-gate";
+import { PAYWALL_SUCCESS_CONFIRMATION_LINES } from "./verified-artist-tools-paywall-lifecycle";
 
 describe("verified-artist-tools-paywall-flag", () => {
   it("requires exact true", () => {
@@ -66,7 +66,10 @@ describe("verified-artist-tools-paywall-copy", () => {
     assert.equal(joined.includes("follower"), false);
     assert.equal(joined.toLowerCase().includes("boost"), false);
     assert.equal(joined.toLowerCase().includes("credibility"), false);
-    assert.match(joined, /waiting listeners/i);
+    assert.equal(joined.toLowerCase().includes("insight"), false);
+    assert.equal(joined.toLowerCase().includes("unlock release alerts"), false);
+    assert.match(joined, /Send Release Alerts to listeners already waiting/);
+    assert.doesNotMatch(joined, /Release Alerts for waiting listeners/);
   });
 
   it("capitalises Tools in product naming surfaces", () => {
@@ -74,8 +77,10 @@ describe("verified-artist-tools-paywall-copy", () => {
       resolveVerifiedArtistToolsPaywallCopy("settings").title,
       /Verified Artist Tools/,
     );
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Verified Artist Tools/);
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/);
+    assert.match(
+      PAYWALL_SUCCESS_CONFIRMATION_LINES.join(" "),
+      /Send Release Alerts to listeners already waiting/,
+    );
   });
 
   it("release_alerts paywall keeps listener-interest semantics", () => {
@@ -85,8 +90,13 @@ describe("verified-artist-tools-paywall-copy", () => {
     assert.match(copy.body, /interest stays saved/i);
     assert.match(copy.body, /Verified Artist Tools/i);
     assert.match(copy.body, /notify everyone waiting/i);
+    assert.equal(
+      copy.emphasizeBenefit,
+      "Send Release Alerts to listeners already waiting",
+    );
     assert.doesNotMatch(copy.body, /listeners need to pay|pay to opt in/i);
     assert.doesNotMatch(copy.body, /verification.*(requires|needs) payment/i);
+    assert.doesNotMatch(copy.body, /audience (count|insight)|see how many/i);
   });
 });
 

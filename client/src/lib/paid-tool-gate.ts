@@ -1,5 +1,7 @@
 /**
- * Fail-closed access mode for paid artist tooling surfaces.
+ * Fail-closed access mode for paid artist tooling surfaces
+ * (e.g. outbound Release Alert delivery capability).
+ * Audience count visibility is free for verified artists — do not use this for that surface.
  * Uses the authoritative subscription-environment selection only.
  */
 
@@ -33,20 +35,10 @@ export function resolvePaidToolGateMode(args: {
   }
 
   if (selection.hasPaidToolAccess !== true) return "locked";
-  // Private insights also fail closed on stale/unknown freshness.
+  // Paid tooling fails closed on stale/unknown freshness.
   if (selection.freshness !== "fresh") return "locked";
   return "available";
 }
-
-/** Copy for the first gated surface: private release-alert audience count. */
-export const RELEASE_ALERTS_AUDIENCE_LOCKED_COPY = {
-  title: "Release Alerts Audience",
-  /** Short insight context; listener-interest detail lives on the release_alerts paywall. */
-  body:
-    "See how many listeners are waiting for your next release. This insight is part of Verified Artist Tools.",
-  ctaLabel: "Unlock with Verified Artist Tools",
-  ctaHint: "Purchase options coming soon",
-} as const;
 
 export const RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY =
   "Release Alerts audience is temporarily unavailable. Artist verification remains free." as const;

@@ -27,7 +27,7 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS = [
   "Unlimited releases and active future releases",
   "Unlimited attached posts and release links",
   "Pre-save, Pre-add and Pre-order links",
-  "Release Alerts for waiting listeners",
+  "Send Release Alerts to listeners already waiting",
 ] as const;
 
 export const VERIFIED_ARTIST_TOOLS_BENEFITS_FOOTER =
@@ -38,7 +38,7 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT = [
   "Unlimited releases and future releases",
   "Unlimited attachments and links",
   "Pre-save, Pre-add and Pre-order links",
-  "Release Alerts for waiting listeners",
+  "Send Release Alerts to listeners already waiting",
 ] as const;
 
 const CONTEXT_COPY: Record<
@@ -74,7 +74,7 @@ const CONTEXT_COPY: Record<
     title: "Turn on Release Alerts",
     body:
       "Listeners can turn on Release Alerts for your profile at any time. Their interest stays saved, and with Verified Artist Tools you can notify everyone waiting when you share a new release.",
-    emphasizeBenefit: "Release Alerts for waiting listeners",
+    emphasizeBenefit: "Send Release Alerts to listeners already waiting",
   },
   settings: {
     title: "Verified Artist Tools",

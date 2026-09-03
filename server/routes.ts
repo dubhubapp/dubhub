@@ -58,7 +58,6 @@ import { registerSubscriptionStatusRoutes } from "./subscription-status-routes";
 import { registerHomeWidgetRoutes } from "./home-widget-routes";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { canArtistDeliverReleaseAlerts } from "./artist-release-alert-delivery";
-import { canArtistUsePaidTools } from "./artist-paid-tool-access";
 import { handlePostArtistReleaseAlert } from "./post-artist-release-alert";
 import { isFreeReleaseLimitReachedError } from "./release-creation-limit";
 import {
@@ -2895,17 +2894,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/artists/me/release-alerts-audience", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      // Audience count is free for verified artists. Outbound delivery stays paid-gated.
       if (req.dbUser.account_type !== "artist" || !req.dbUser.verified_artist) {
         return res.status(403).json({ message: "Verified artist access only" });
-      }
-      const paid = await canArtistUsePaidTools(req.dbUser.id, {
-        getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
-      });
-      if (!paid) {
-        return res.status(403).json({
-          code: "PAID_ARTIST_TOOL_REQUIRED",
-          message: "Verified Artist Tools required",
-        });
       }
       const count = await storage.countArtistReleaseAlertsForArtist(req.dbUser.id);
       res.json({ count });
