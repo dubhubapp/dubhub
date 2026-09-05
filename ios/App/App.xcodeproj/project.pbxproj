@@ -13,33 +13,23 @@
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
-		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
-		7A8E9F141FED79650016852C /* DubHubLaunchLogo.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */; };
-		7A8E9F151FED79650016852C /* DubHubLaunchLogo@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */; };
-		7A8E9F161FED79650016852C /* DubHubLaunchLogo@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */; };
-		7A8E9F1A1FED79650016852C /* DubHubLaunchGradient.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */; };
-		7A8E9F1B1FED79650016852C /* DubHubLaunchGradient@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */; };
-		7A8E9F1C1FED79650016852C /* DubHubLaunchGradient@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */; };
+		A1B2C3D4E5F60718293A4B5C /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */; };
 		D0B8B1301FED79650016852C /* DubHubPremiumLaunchBackground.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */; };
 		D0B8B1311FED79650016852C /* DubHubPremiumLaunchBackground@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */; };
 		D0B8B1321FED79650016852C /* DubHubPremiumLaunchBackground@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */; };
-		D0B8B1401FED79650016852C /* DubHubPremiumLaunchMark.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */; };
-		D0B8B1411FED79650016852C /* DubHubPremiumLaunchMark@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */; };
-		D0B8B1421FED79650016852C /* DubHubPremiumLaunchMark@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */; };
+		D0B8B1431FED79650016852C /* DubHubPremiumLaunchMarkBaseline.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1231FED79650016852C /* DubHubPremiumLaunchMarkBaseline.png */; };
+		D0B8B1441FED79650016852C /* DubHubPremiumLaunchMarkBaseline@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1241FED79650016852C /* DubHubPremiumLaunchMarkBaseline@2x.png */; };
+		D0B8B1451FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1251FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png */; };
 		D0B8B1521FED79650016851F /* PremiumLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1501FED79650016851F /* PremiumLaunchScreen.storyboard */; };
-		A1B2C3D4E5F60718293A4B5C /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */; };
-
-		DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR01 /* HomeWidgetBridgePlugin.swift */; };
 		DHLG1BF01 /* DubHubNativeTabBarOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR01 /* DubHubNativeTabBarOverlay.swift */; };
+		DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR01 /* HomeWidgetBridgePlugin.swift */; };
 		DHRCWBF02 /* HomeWidgetAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR02 /* HomeWidgetAppGroup.swift */; };
 		DHRCWBF03 /* HomeWidgetPayloadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR03 /* HomeWidgetPayloadModels.swift */; };
 		DHRCWBF04 /* HomeWidgetUtcCountdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR04 /* HomeWidgetUtcCountdown.swift */; };
-		DHRCWBF12 /* HomeWidgetArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR10 /* HomeWidgetArtworkCache.swift */; };
 		DHRCWBF05 /* HomeWidgetAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR02 /* HomeWidgetAppGroup.swift */; };
 		DHRCWBF06 /* HomeWidgetPayloadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR03 /* HomeWidgetPayloadModels.swift */; };
 		DHRCWBF07 /* HomeWidgetUtcCountdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR04 /* HomeWidgetUtcCountdown.swift */; };
-		DHRCWBF13 /* HomeWidgetArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR10 /* HomeWidgetArtworkCache.swift */; };
 		DHRCWBF08 /* ReleaseCountdownWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR05 /* ReleaseCountdownWidgetBundle.swift */; };
 		DHRCWBF09 /* ReleaseCountdownWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR06 /* ReleaseCountdownWidget.swift */; };
 		DHRCWBF0A /* ReleaseCountdownEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR07 /* ReleaseCountdownEntry.swift */; };
@@ -48,12 +38,12 @@
 		DHRCWBF0D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DHRCWFR0A /* Assets.xcassets */; };
 		DHRCWBF0E /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR0B /* WidgetKit.framework */; };
 		DHRCWBF0F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR0C /* SwiftUI.framework */; };
-		DHRCWBF14 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR11 /* AppIntents.framework */; };
-		DHRCWBF15 /* ReleaseCountdownPagingIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */; };
 		DHRCWBF10 /* ReleaseCountdownWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DHRCWFR0D /* ReleaseCountdownWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DHRCWBF11 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR0B /* WidgetKit.framework */; };
+		DHRCWBF12 /* HomeWidgetArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR10 /* HomeWidgetArtworkCache.swift */; };
+		DHRCWBF14 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DHRCWFR11 /* AppIntents.framework */; };
+		DHRCWBF15 /* ReleaseCountdownPagingIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */; };
 /* End PBXBuildFile section */
-
 
 /* Begin PBXContainerItemProxy section */
 		DHRCWIP01 /* PBXContainerItemProxy */ = {
@@ -64,6 +54,20 @@
 			remoteInfo = ReleaseCountdownWidget;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		DHRCWCP01 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				DHRCWBF10 /* ReleaseCountdownWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -81,23 +85,23 @@
 		7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubLaunchGradient.png; sourceTree = "<group>"; };
 		7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchGradient@2x.png"; sourceTree = "<group>"; };
 		7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubLaunchGradient@3x.png"; sourceTree = "<group>"; };
+		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubPremiumLaunchBackground.png; sourceTree = "<group>"; };
 		D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchBackground@2x.png"; sourceTree = "<group>"; };
 		D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchBackground@3x.png"; sourceTree = "<group>"; };
 		D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubPremiumLaunchMark.png; sourceTree = "<group>"; };
 		D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMark@2x.png"; sourceTree = "<group>"; };
 		D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMark@3x.png"; sourceTree = "<group>"; };
+		D0B8B1231FED79650016852C /* DubHubPremiumLaunchMarkBaseline.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DubHubPremiumLaunchMarkBaseline.png; sourceTree = "<group>"; };
+		D0B8B1241FED79650016852C /* DubHubPremiumLaunchMarkBaseline@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMarkBaseline@2x.png"; sourceTree = "<group>"; };
+		D0B8B1251FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMarkBaseline@3x.png"; sourceTree = "<group>"; };
 		D0B8B1511FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/PremiumLaunchScreen.storyboard; sourceTree = "<group>"; };
-		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
-		B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
-		F5B88A062FAA70BF005C500C /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
-
-		DHRCWFR01 /* HomeWidgetBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetBridgePlugin.swift; sourceTree = "<group>"; };
 		DHLG1FR01 /* DubHubNativeTabBarOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarOverlay.swift; sourceTree = "<group>"; };
+		DHRCWFR01 /* HomeWidgetBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetBridgePlugin.swift; sourceTree = "<group>"; };
 		DHRCWFR02 /* HomeWidgetAppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetAppGroup.swift; sourceTree = "<group>"; };
 		DHRCWFR03 /* HomeWidgetPayloadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetPayloadModels.swift; sourceTree = "<group>"; };
 		DHRCWFR04 /* HomeWidgetUtcCountdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetUtcCountdown.swift; sourceTree = "<group>"; };
-		DHRCWFR10 /* HomeWidgetArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetArtworkCache.swift; sourceTree = "<group>"; };
 		DHRCWFR05 /* ReleaseCountdownWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCountdownWidgetBundle.swift; sourceTree = "<group>"; };
 		DHRCWFR06 /* ReleaseCountdownWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCountdownWidget.swift; sourceTree = "<group>"; };
 		DHRCWFR07 /* ReleaseCountdownEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCountdownEntry.swift; sourceTree = "<group>"; };
@@ -106,27 +110,15 @@
 		DHRCWFR0A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DHRCWFR0B /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		DHRCWFR0C /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		DHRCWFR11 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
-		DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCountdownPagingIntents.swift; sourceTree = "<group>"; };
 		DHRCWFR0D /* ReleaseCountdownWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ReleaseCountdownWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		DHRCWFR0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		DHRCWFR0F /* ReleaseCountdownWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ReleaseCountdownWidget.entitlements; sourceTree = "<group>"; };
+		DHRCWFR10 /* HomeWidgetArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetArtworkCache.swift; sourceTree = "<group>"; };
+		DHRCWFR11 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
+		DHRCWFR12 /* ReleaseCountdownPagingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCountdownPagingIntents.swift; sourceTree = "<group>"; };
+		F5B88A062FAA70BF005C500C /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		F5FA19E1304B0A3200F4A4C6 /* File.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = File.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-
-/* Begin PBXCopyFilesBuildPhase section */
-		DHRCWCP01 /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				DHRCWBF10 /* ReleaseCountdownWidget.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		504EC3011FED79650016851F /* Frameworks */ = {
@@ -154,11 +146,13 @@
 		504EC2FB1FED79650016851F = {
 			isa = PBXGroup;
 			children = (
+				F5FA19E1304B0A3200F4A4C6 /* File.txt */,
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				DHRCWGR01 /* Shared */,
 				DHRCWGR02 /* ReleaseCountdownWidget */,
 				504EC3051FED79650016851F /* Products */,
+				F5FA19E0304AB0B800F4A4C6 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -192,6 +186,28 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		7A8E9F131FED79650016852C /* LaunchLogo */ = {
+			isa = PBXGroup;
+			children = (
+				7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */,
+				7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */,
+				7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */,
+				7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */,
+				7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */,
+				7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */,
+				D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */,
+				D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */,
+				D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */,
+				D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */,
+				D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */,
+				D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */,
+				D0B8B1231FED79650016852C /* DubHubPremiumLaunchMarkBaseline.png */,
+				D0B8B1241FED79650016852C /* DubHubPremiumLaunchMarkBaseline@2x.png */,
+				D0B8B1251FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png */,
+			);
+			path = LaunchLogo;
+			sourceTree = "<group>";
+		};
 		DHRCWGR01 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -219,33 +235,14 @@
 			path = ReleaseCountdownWidget;
 			sourceTree = "<group>";
 		};
-		DHRCWGR03 /* Frameworks */ = {
+		F5FA19E0304AB0B800F4A4C6 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
 				DHRCWFR0B /* WidgetKit.framework */,
 				DHRCWFR0C /* SwiftUI.framework */,
 				DHRCWFR11 /* AppIntents.framework */,
 			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		7A8E9F131FED79650016852C /* LaunchLogo */ = {
-			isa = PBXGroup;
-			children = (
-				7A8E9F171FED79650016852C /* DubHubLaunchGradient.png */,
-				7A8E9F181FED79650016852C /* DubHubLaunchGradient@2x.png */,
-				7A8E9F191FED79650016852C /* DubHubLaunchGradient@3x.png */,
-				7A8E9F101FED79650016852C /* DubHubLaunchLogo.png */,
-				7A8E9F111FED79650016852C /* DubHubLaunchLogo@2x.png */,
-				7A8E9F121FED79650016852C /* DubHubLaunchLogo@3x.png */,
-				D0B8B1101FED79650016852C /* DubHubPremiumLaunchBackground.png */,
-				D0B8B1111FED79650016852C /* DubHubPremiumLaunchBackground@2x.png */,
-				D0B8B1121FED79650016852C /* DubHubPremiumLaunchBackground@3x.png */,
-				D0B8B1201FED79650016852C /* DubHubPremiumLaunchMark.png */,
-				D0B8B1211FED79650016852C /* DubHubPremiumLaunchMark@2x.png */,
-				D0B8B1221FED79650016852C /* DubHubPremiumLaunchMark@3x.png */,
-			);
-			path = LaunchLogo;
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -341,9 +338,9 @@
 				D0B8B1301FED79650016852C /* DubHubPremiumLaunchBackground.png in Resources */,
 				D0B8B1311FED79650016852C /* DubHubPremiumLaunchBackground@2x.png in Resources */,
 				D0B8B1321FED79650016852C /* DubHubPremiumLaunchBackground@3x.png in Resources */,
-				D0B8B1401FED79650016852C /* DubHubPremiumLaunchMark.png in Resources */,
-				D0B8B1411FED79650016852C /* DubHubPremiumLaunchMark@2x.png in Resources */,
-				D0B8B1421FED79650016852C /* DubHubPremiumLaunchMark@3x.png in Resources */,
+				D0B8B1431FED79650016852C /* DubHubPremiumLaunchMarkBaseline.png in Resources */,
+				D0B8B1441FED79650016852C /* DubHubPremiumLaunchMarkBaseline@2x.png in Resources */,
+				D0B8B1451FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
@@ -361,7 +358,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
 
 /* Begin PBXSourcesBuildPhase section */
 		504EC3001FED79650016851F /* Sources */ = {
@@ -406,7 +402,6 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
-
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -551,7 +546,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -576,7 +571,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -598,7 +593,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReleaseCountdownWidget/ReleaseCountdownWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReleaseCountdownWidget/Info.plist;
@@ -623,7 +618,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReleaseCountdownWidget/ReleaseCountdownWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReleaseCountdownWidget/Info.plist;
@@ -644,7 +639,6 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
-
 
 /* Begin XCConfigurationList section */
 		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
@@ -675,7 +669,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 
 /* Begin XCLocalSwiftPackageReference section */
 		D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */ = {

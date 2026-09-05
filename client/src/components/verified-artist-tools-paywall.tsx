@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
 import { Purchases } from "@revenuecat/purchases-capacitor";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,10 +26,13 @@ import {
 } from "@/lib/legal-urls";
 import { cn } from "@/lib/utils";
 import {
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_SHEET_BACKDROP_CLASS,
+} from "@/lib/app-material";
+import {
   PAYWALL_UI_COPY,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
   VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT,
-  VERIFIED_ARTIST_TOOLS_BENEFITS_FOOTER,
   resolveVerifiedArtistToolsPaywallCopy,
   type VerifiedArtistToolsPaywallSource,
 } from "@/lib/verified-artist-tools-paywall-copy";
@@ -44,6 +47,8 @@ import { getAppBuildChannelFromEnv } from "@/lib/subscription-environment";
 import { getAuthoritativeSubscriptionStatus } from "@/lib/subscription-status";
 import {
   PAYWALL_FOOTER_GEOMETRY,
+  PAYWALL_PACKAGE_IDLE_CLASS,
+  PAYWALL_PACKAGE_SELECTED_CLASS,
   PAYWALL_SHELL_CLASS,
   PAYWALL_SUCCESS_CONFIRMATION_LINES,
   isPaywallCompactShellPhase,
@@ -64,6 +69,13 @@ import {
   triggerCommercePhaseHapticOnce,
   triggerSelectionHaptic,
 } from "@/lib/verified-artist-tools-haptics";
+import {
+  nativeNavSheetPhaseOnAnimationEnd,
+  nativeNavSheetPhaseOnOpenChange,
+  nativeNavSheetCoversBar,
+  type NativeNavSheetPhase,
+} from "@/lib/native-nav-sheet-cover";
+import { setVerifiedArtistToolsPaywallCoveringNativeNav } from "@/lib/verified-artist-tools-paywall-native-cover";
 
 export type VerifiedArtistToolsPaywallProps = {
   open: boolean;
@@ -105,6 +117,7 @@ export function VerifiedArtistToolsPaywall({
   );
   const [liveMessage, setLiveMessage] = useState(PAYWALL_UI_COPY.loadingAnnouncement);
   const [retryingVerification, setRetryingVerification] = useState(false);
+  const [sheetPhase, setSheetPhase] = useState<NativeNavSheetPhase>("closed");
 
   const busyRef = useRef(false);
   /** True once purchase/restore is started in this open session — blocks `active` flash. */
@@ -255,8 +268,20 @@ export function VerifiedArtistToolsPaywall({
     ) {
       return;
     }
+    setSheetPhase(nativeNavSheetPhaseOnOpenChange(next));
     onOpenChange(next);
   };
+
+  useEffect(() => {
+    if (open) setSheetPhase("open");
+  }, [open]);
+
+  useEffect(() => {
+    setVerifiedArtistToolsPaywallCoveringNativeNav(
+      nativeNavSheetCoversBar(sheetPhase),
+    );
+    return () => setVerifiedArtistToolsPaywallCoveringNativeNav(false);
+  }, [sheetPhase]);
 
   const beginCommerceSession = (options?: { keepHapticMemory?: boolean }) => {
     commerceSessionActiveRef.current = true;
@@ -479,15 +504,25 @@ export function VerifiedArtistToolsPaywall({
             : contextCopy.body;
 
   return (
-    <Drawer open={open} onOpenChange={handleOpenChange} shouldScaleBackground={false}>
+    <Drawer
+      open={open}
+      onOpenChange={handleOpenChange}
+      shouldScaleBackground={false}
+      onAnimationEnd={(animationOpen) => {
+        setSheetPhase(nativeNavSheetPhaseOnAnimationEnd(animationOpen));
+      }}
+    >
       <DrawerContent
+        overlayClassName={cn("z-[70]", APP_MATERIAL_SHEET_BACKDROP_CLASS)}
         className={cn(
-          "mx-auto flex w-full max-w-lg flex-col gap-0 p-0",
+          "mx-auto flex w-full max-w-lg flex-col gap-0 border-0 bg-transparent p-0",
+          // Override Drawer default mt-24: taller premium presence (~8–22dvh top gap).
+          "mt-[max(0.75rem,min(22dvh,10rem))]",
           PAYWALL_SHELL_CLASS,
-          "pb-[max(0.75rem,var(--app-safe-bottom))]",
-          compactShell
-            ? "h-auto max-h-[90dvh]"
-            : "max-h-[90dvh]",
+          "pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
+          // Content-sized height; max-h caps tall content. No min-h — that forced a
+          // flex dead zone between packages and footer (flex-1 body + mt-auto footer).
+          "h-auto max-h-[92dvh]",
         )}
         data-testid="verified-artist-tools-paywall"
         data-paywall-phase={phase}
@@ -504,7 +539,7 @@ export function VerifiedArtistToolsPaywall({
           {liveMessage}
         </div>
 
-        <DrawerHeader className="relative shrink-0 space-y-1.5 border-b border-white/10 px-5 pb-3 pt-2 pr-14 text-left">
+        <DrawerHeader className="relative shrink-0 space-y-1.5 border-b border-white/10 px-5 pb-3 pt-2 text-left">
           <div className="min-w-0 space-y-1">
             <DrawerTitle
               id={titleId}
@@ -521,16 +556,14 @@ export function VerifiedArtistToolsPaywall({
             </DrawerDescription>
           </div>
           <DrawerClose asChild>
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-3 top-1 h-11 w-11 text-muted-foreground"
+              className="sr-only"
               aria-label="Close"
               data-testid="paywall-close"
             >
-              <X className="h-4 w-4" aria-hidden />
-            </Button>
+              Close
+            </button>
           </DrawerClose>
         </DrawerHeader>
 
@@ -539,7 +572,9 @@ export function VerifiedArtistToolsPaywall({
             "overscroll-contain px-5 py-4",
             compactShell
               ? "shrink-0 overflow-y-auto"
-              : "min-h-0 flex-1 overflow-y-auto",
+              : // Grow only when sheet hits max-h so overflow scrolls; no flex spacer
+                // when height is content-sized (min-h removed).
+                "min-h-0 flex-1 overflow-y-auto",
           )}
         >
           {phase === "offerings_loading" ? (
@@ -687,7 +722,11 @@ export function VerifiedArtistToolsPaywall({
                           line === "Unlimited releases and future releases") ||
                         (compactBenefits &&
                           emphasize === "Unlimited attached posts and release links" &&
-                          line === "Unlimited attachments and links"));
+                          line === "Unlimited attachments and links") ||
+                        (compactBenefits &&
+                          emphasize ===
+                            "See your Release Alerts audience and send alerts to listeners waiting" &&
+                          line === "See Release Alerts audience and send alerts"));
                     return (
                       <li
                         key={line}
@@ -705,9 +744,6 @@ export function VerifiedArtistToolsPaywall({
                     );
                   })}
                 </ul>
-                <p className="mt-2 text-[11px] text-muted-foreground/80">
-                  {VERIFIED_ARTIST_TOOLS_BENEFITS_FOOTER}
-                </p>
               </div>
 
               <div
@@ -737,8 +773,8 @@ export function VerifiedArtistToolsPaywall({
                       className={cn(
                         "flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors",
                         selectedRow
-                          ? "border-white/40 bg-black/40 ring-2 ring-white/30"
-                          : "border-white/10 bg-black/20",
+                          ? PAYWALL_PACKAGE_SELECTED_CLASS
+                          : PAYWALL_PACKAGE_IDLE_CLASS,
                       )}
                       data-testid={`paywall-package-${pkg.kind}`}
                     >
@@ -769,8 +805,9 @@ export function VerifiedArtistToolsPaywall({
 
         <DrawerFooter
           className={cn(
-            "shrink-0 gap-2 border-t border-white/10 px-5 pb-3 pt-3",
-            compactShell && "mt-0",
+            // Override DrawerFooter default mt-auto so footer follows packages.
+            "mt-0 shrink-0 gap-2 border-t border-white/10 px-5 pb-3",
+            compactShell ? "pt-3" : "pt-8",
           )}
           data-testid="paywall-footer"
         >
@@ -784,7 +821,11 @@ export function VerifiedArtistToolsPaywall({
             {showPrimaryPurchase ? (
               <Button
                 type="button"
-                className={cn("w-full", PAYWALL_FOOTER_GEOMETRY.primaryButtonMinHeightClass)}
+                className={cn(
+                  "w-full",
+                  PAYWALL_FOOTER_GEOMETRY.primaryButtonMinHeightClass,
+                  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+                )}
                 disabled={purchaseDisabled}
                 onClick={() => void onPurchase()}
                 data-testid="paywall-purchase"
@@ -799,7 +840,11 @@ export function VerifiedArtistToolsPaywall({
               <DrawerClose asChild>
                 <Button
                   type="button"
-                  className={cn("w-full", PAYWALL_FOOTER_GEOMETRY.primaryButtonMinHeightClass)}
+                  className={cn(
+                    "w-full",
+                    PAYWALL_FOOTER_GEOMETRY.primaryButtonMinHeightClass,
+                    APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+                  )}
                   data-testid="paywall-done"
                 >
                   {PAYWALL_UI_COPY.done}

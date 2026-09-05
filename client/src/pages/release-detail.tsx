@@ -452,7 +452,7 @@ export default function ReleaseDetail() {
       enabled={!galleryInitialPostId && !artworkLightboxOpen}
       onBack={handleBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto",
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
         APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
       )}

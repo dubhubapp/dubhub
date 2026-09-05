@@ -1259,9 +1259,24 @@ final class DubHubVideoEditor {
     }
 }
 
+/// Canonical app-shell colour `#0f1324` (sRGB 15, 19, 36). Do not use the system canvas colour.
+enum DubHubAppShellBackground {
+    static let color = UIColor(
+        red: 15.0 / 255.0,
+        green: 19.0 / 255.0,
+        blue: 36.0 / 255.0,
+        alpha: 1
+    )
+}
+
 @objc(DubHubBridgeViewController)
 class DubHubBridgeViewController: CAPBridgeViewController {
     private var didInstallNativeTabBarOverlay = false
+
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = DubHubAppShellBackground.color
+    }
 
     override open func capacitorDidLoad() {
         super.capacitorDidLoad()
@@ -1275,6 +1290,7 @@ class DubHubBridgeViewController: CAPBridgeViewController {
 
     override open func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        view.window?.backgroundColor = DubHubAppShellBackground.color
         didInstallNativeTabBarOverlay = true
         // LG-NAV-3: sibling UITabBar overlay. Hidden until React sets visibility. Taps emit tab IDs only.
         DubHubNativeTabBarOverlay.installOverlayIfNeeded(on: self)

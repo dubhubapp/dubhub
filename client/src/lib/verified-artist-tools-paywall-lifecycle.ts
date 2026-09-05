@@ -3,6 +3,8 @@
  * No React / RevenueCat SDK imports.
  */
 
+import { APP_MATERIAL_SHEET_SURFACE_CLASS } from "./app-material";
+
 export type PaywallUiPhase =
   | "idle"
   | "offerings_loading"
@@ -236,23 +238,36 @@ export function shouldShowPaywallRestoreButton(phase: PaywallUiPhase): boolean {
 
 export const PAYWALL_SUCCESS_CONFIRMATION_LINES = [
   "Unlimited releases and active future releases",
-  "Unlimited links and attachments",
+  "Unlimited attached posts and release links",
   "Pre-save, Pre-add and Pre-order links",
-  "Send Release Alerts to listeners already waiting",
+  "See your Release Alerts audience and send alerts to listeners waiting",
 ] as const;
 
 /**
- * Restrained dark glass shell for the paywall drawer.
- * Easily reversible: drop this class group to fall back to opaque navy.
- * Matches Dub Hub capacity-card / banner tokens (not bright frosted glass).
+ * Paywall sheet chrome — shared sheet surface + paywall-local radius / stacking.
+ * Backdrop is applied separately via APP_MATERIAL_SHEET_BACKDROP_CLASS.
  */
 export const PAYWALL_SHELL_CLASS = [
-  "overflow-hidden rounded-t-[28px]",
-  "border border-white/10",
-  "bg-[#0f1324]/92 supports-[backdrop-filter]:bg-[#0f1324]/85",
-  "backdrop-blur-xl",
-  "shadow-[0_-12px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]",
+  APP_MATERIAL_SHEET_SURFACE_CLASS,
+  // Do not add relative/absolute/sticky — DrawerContent supplies `fixed`;
+  // twMerge would drop fixed if a later position utility is present.
+  "z-[70] overflow-hidden rounded-t-[28px] outline-none",
+  // Static premium metallic top hairline (no animation).
+  "before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:z-10 before:h-px",
+  "before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent",
+  // Static metallic grabber (Vaul default first child).
+  "[&>div:first-child]:h-1.5 [&>div:first-child]:w-12 [&>div:first-child]:rounded-full",
+  "[&>div:first-child]:bg-gradient-to-r [&>div:first-child]:from-white/35",
+  "[&>div:first-child]:via-[#9eb0cc]/55 [&>div:first-child]:to-white/35",
+  "[&>div:first-child]:opacity-90",
 ].join(" ");
+
+/** Selected package row — thin luminous hairline, no heavy double ring. */
+export const PAYWALL_PACKAGE_SELECTED_CLASS =
+  "border-[#0a83ff]/35 bg-white/[0.07]" as const;
+
+export const PAYWALL_PACKAGE_IDLE_CLASS =
+  "border-white/10 bg-black/20" as const;
 
 /** Shared footer geometry tokens (tailwind-friendly rem). */
 export const PAYWALL_FOOTER_GEOMETRY = {

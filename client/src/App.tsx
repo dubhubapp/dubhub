@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useSyncExternalStore } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { App as CapacitorApp } from "@capacitor/app";
 import { resolveUniversalLinkDubhubRootRoute } from "@/lib/universal-app-url";
@@ -48,11 +48,22 @@ import {
   isSettingsUtilityRoute,
 } from "@/lib/settings-presentation";
 import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
-import { AppLaunchSplash } from "@/components/brand/app-launch-splash";
+import {
+  AppLaunchSplash,
+  hideNativeLaunchSplash,
+} from "@/components/brand/app-launch-splash";
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/export-trimmed-video";
 import { FirstLoginOnboardingModal } from "@/components/first-login-onboarding-modal";
+import { ArtistSubscriptionIntroModal } from "@/components/artist-subscription-intro-modal";
+import { ArtistSubscriptionIntroGate } from "@/components/artist-subscription-intro-gate";
+import { ArtistSubscriptionIntroProfileTrigger } from "@/components/artist-subscription-intro-profile-trigger";
+import {
+  hasArtistSubscriptionIntroSurfaceBlocker,
+  markArtistSubscriptionIntroSeen,
+  subscribeArtistSubscriptionIntroSurfaceBlockers,
+} from "@/lib/artist-subscription-intro";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import {
   markPostOnboardingPushPromptHandled,
@@ -61,12 +72,14 @@ import {
 import {
   clearPendingOnboardingForEmail,
   HOME_FEED_READY_EVENT,
+  HOME_FEED_SKELETON_READY_EVENT,
   ONBOARDING_ACTIVE_SESSION_KEY,
-  getOnboardingSeenKey,
-  hasPendingOnboardingForEmail,
   persistOnboardingDismissed,
+  resolveFirstLoginOnboardingQueue,
   WELCOME_BACK_FLAG_KEY,
 } from "@/lib/onboarding";
+import { useToast } from "@/hooks/use-toast";
+import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
 import {
   deactivateCurrentPushToken,
   registerPushListeners,
@@ -182,10 +195,41 @@ function App() {
     email: null,
   });
   const [isHomeFeedReady, setIsHomeFeedReady] = useState(false);
+  /**
+   * STARTUP-CONTINUITY: startup overlay visible state.
+   *
+   * true  = overlay shown (pre-auth or Home waiting for skeleton).
+   * false = overlay opacity 0 (fading out); unmounted after transition.
+   * null  = overlay removed from DOM.
+   *
+   * Lifecycle:
+   *   - starts true (always show on load)
+   *   - after auth resolves + not Home route: set false immediately
+   *   - after auth resolves + Home route: wait for HOME_FEED_SKELETON_READY_EVENT
+   *   - on skeleton-ready (or cached Home skip): set false
+   *   - after transition: set null (remove from DOM)
+   */
+  const [startupOverlayVisible, setStartupOverlayVisible] = useState<boolean | null>(true);
+  /**
+   * Whether startup overlay was already dismissed for this session.
+   * Prevents re-showing if auth state flickers.
+   */
+  const startupOverlayDismissedRef = useRef(false);
   const [postOnboardingPushPrompt, setPostOnboardingPushPrompt] = useState<{
     open: boolean;
     userId: string | null;
   }>({ open: false, userId: null });
+  const [artistToolsIntro, setArtistToolsIntro] = useState<{
+    pending: boolean;
+    open: boolean;
+    userId: string | null;
+  }>({ pending: false, open: false, userId: null });
+  const introSurfaceBlocked = useSyncExternalStore(
+    subscribeArtistSubscriptionIntroSurfaceBlockers,
+    hasArtistSubscriptionIntroSurfaceBlocker,
+    () => false,
+  );
+  const { toast } = useToast();
   const [enforcementState, setEnforcementState] = useState<{ banned: boolean; suspendedUntil: string | null }>({
     banned: false,
     suspendedUntil: null,
@@ -322,20 +366,25 @@ function App() {
       verifiedArtist: boolean | null | undefined;
       emailConfirmed: boolean;
     }) => {
-      const seenKey = getOnboardingSeenKey(userId);
-      if (localStorage.getItem(seenKey) === "1") {
-        clearPendingOnboardingForEmail(email);
+      const decision = resolveFirstLoginOnboardingQueue({
+        userId,
+        email,
+        accountType,
+        verifiedArtist,
+        emailConfirmed,
+      });
+      if (!decision.queue) {
+        if (decision.reason === "already_seen") {
+          clearPendingOnboardingForEmail(email);
+        }
         return;
       }
-      if (!emailConfirmed) return;
-      if (accountType === "artist" && !verifiedArtist) return;
-      if (!hasPendingOnboardingForEmail(email)) return;
 
       // Prioritize first-login onboarding over returning-user welcome toast.
       sessionStorage.removeItem(WELCOME_BACK_FLAG_KEY);
       setFirstLoginOnboarding({
         open: isHomeFeedReady,
-        audience: accountType === "artist" ? "artist" : "user",
+        audience: decision.audience,
         userId,
         email: email ?? null,
       });
@@ -603,6 +652,29 @@ function App() {
     return () => window.removeEventListener(HOME_FEED_READY_EVENT, onHomeFeedReady);
   }, []);
 
+  /**
+   * STARTUP-CONTINUITY / SPLASH-HANDOFF-2:
+   * App-ready authority for both native SplashScreen.hide and React overlay fade.
+   * Order: wait for React launch artwork (already under native) → hide native
+   * instantly → fade React overlay to Home / auth shell.
+   * Home fires via HOME_FEED_SKELETON_READY_EVENT; non-Home/logged-out via auth effect.
+   */
+  const dismissStartupOverlay = useCallback(() => {
+    if (startupOverlayDismissedRef.current) return;
+    startupOverlayDismissedRef.current = true;
+    void (async () => {
+      await hideNativeLaunchSplash({ waitForArtwork: true });
+      setStartupOverlayVisible(false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    // Home skeleton / cached-Home visual readiness → dismiss (native hide + React fade).
+    const onSkeletonReady = () => dismissStartupOverlay();
+    window.addEventListener(HOME_FEED_SKELETON_READY_EVENT, onSkeletonReady);
+    return () => window.removeEventListener(HOME_FEED_SKELETON_READY_EVENT, onSkeletonReady);
+  }, [dismissStartupOverlay]);
+
   useEffect(() => {
     if (!isHomeFeedReady) return;
     setFirstLoginOnboarding((prev) => {
@@ -612,12 +684,12 @@ function App() {
   }, [isHomeFeedReady]);
 
   useEffect(() => {
-    if (firstLoginOnboarding.open) {
+    if (firstLoginOnboarding.open || artistToolsIntro.open || artistToolsIntro.pending) {
       sessionStorage.setItem(ONBOARDING_ACTIVE_SESSION_KEY, "1");
       return;
     }
     sessionStorage.removeItem(ONBOARDING_ACTIVE_SESSION_KEY);
-  }, [firstLoginOnboarding.open]);
+  }, [firstLoginOnboarding.open, artistToolsIntro.open, artistToolsIntro.pending]);
 
   useLayoutEffect(() => {
     document.documentElement.removeAttribute("data-dubhub-launch-bg");
@@ -667,8 +739,25 @@ function App() {
     setProfileGateBanner(null);
     setIsAuthenticated(false);
     setUserRole('user');
-    setFirstLoginOnboarding({ open: false, audience: "user", userId: null, email: null });
+    setFirstLoginOnboarding({
+      open: false,
+      audience: "user",
+      userId: null,
+      email: null,
+    });
+    setArtistToolsIntro({ pending: false, open: false, userId: null });
+    setPostOnboardingPushPrompt({ open: false, userId: null });
   };
+
+  const maybeOfferPostOnboardingPush = useCallback(
+    async (userId: string | null) => {
+      if (!userId) return;
+      if (await shouldOfferPostOnboardingPushPrompt(userId)) {
+        setPostOnboardingPushPrompt({ open: true, userId });
+      }
+    },
+    [],
+  );
 
   const handleDismissFirstLoginOnboarding = () => {
     void (async () => {
@@ -683,149 +772,237 @@ function App() {
       }
       persistOnboardingDismissed({ userId, emails });
       setFirstLoginOnboarding((prev) => ({ ...prev, open: false }));
-      if (userId && (await shouldOfferPostOnboardingPushPrompt(userId))) {
-        setPostOnboardingPushPrompt({ open: true, userId });
-      }
+      // ARTIST-SUB-INTRO-2: intro no longer follows onboarding — push then Home for all audiences.
+      await maybeOfferPostOnboardingPush(userId);
     })();
   };
 
-  if (isLoading) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <AppLaunchSplash />
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    );
-  }
+  const handleArtistToolsIntroMaybeLater = () => {
+    const { userId } = artistToolsIntro;
+    markArtistSubscriptionIntroSeen(userId);
+    setArtistToolsIntro({ pending: false, open: false, userId: null });
+  };
 
-  if (!isAuthenticated) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Switch>
-              <Route path="/auth-callback" component={AuthCallbackPage} />
-              <Route path="/reset-password" component={ResetPasswordPage} />
-              <Route>
-                <UnauthenticatedEntry
-                  onAuthSuccess={handleAuthSuccess}
-                  authBanner={profileGateBanner}
-                />
-              </Route>
-            </Switch>
-            <Toaster />
-          </div>
-        </TooltipProvider>
-      </QueryClientProvider>
-    );
-  }
+  const handleArtistToolsIntroView = () => {
+    const { userId } = artistToolsIntro;
+    markArtistSubscriptionIntroSeen(userId);
+    setArtistToolsIntro({ pending: false, open: false, userId: null });
+    requestVerifiedArtistToolsUpgrade(toast, {
+      source: "onboarding_intro",
+    });
+  };
 
-  if (enforcementState.banned || enforcementState.suspendedUntil) {
-    const suspendedText = enforcementState.suspendedUntil
-      ? new Date(enforcementState.suspendedUntil).toLocaleString()
-      : null;
-    return (
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-background px-6 py-8">
-            <div className="max-w-md w-full rounded-xl border border-red-500/40 bg-red-500/10 p-6 text-center">
-              <h1 className="text-2xl font-bold text-red-300 mb-2">
-                {enforcementState.banned ? "Account permanently banned" : "Account temporarily suspended"}
-              </h1>
-              <p className="text-sm text-red-100/90 mb-4">
-                {enforcementState.banned
-                  ? "Your account has been permanently banned due to repeated violations of community guidelines."
-                  : `Your account is suspended until ${suspendedText}.`}
-              </p>
-              <button
-                className="inline-flex items-center justify-center rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-500/90"
-                onClick={handleSignOut}
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-          <Toaster />
-          </div>
-        </TooltipProvider>
-      </QueryClientProvider>
-    );
-  }
+  /**
+   * STARTUP-CONTINUITY: dismiss overlay for non-Home routes or unauthenticated
+   * as soon as auth is resolved. Home route waits for HOME_FEED_SKELETON_READY_EVENT.
+   */
+  useEffect(() => {
+    if (isLoading) return; // still resolving — keep overlay
+    const isHomeRoute = location === "/" || location.split("?")[0] === "/";
+    if (!isAuthenticated || !isHomeRoute) {
+      // Logged-out, deep link, or enforcement — dismiss immediately.
+      dismissStartupOverlay();
+    }
+    // Home + authenticated: wait for skeleton-ready event (or cached-Home signal from Home).
+  }, [isLoading, isAuthenticated, location, dismissStartupOverlay]);
+
+  /**
+   * SPLASH-HANDOFF-2: single stable splash host — last child of TooltipProvider so the
+   * same AppLaunchSplash instance survives isLoading → auth/authenticated branch switches.
+   */
+  const startupOverlayEl =
+    startupOverlayVisible !== null ? (
+      <AppLaunchSplash
+        visible={startupOverlayVisible === true}
+        onDismissed={() => setStartupOverlayVisible(null)}
+      />
+    ) : null;
+
+  // Startup overlay active = native nav must stay hidden until overlay clears.
+  const startupOverlayActive = startupOverlayVisible !== null;
 
   // Wrapper for settings actions that require app-level sign-out behavior
   const SettingsWithSignOut = () => <SettingsPage onSignOut={handleSignOut} />;
 
+  let appShell: React.ReactNode;
+  if (isLoading) {
+    appShell = <Toaster />;
+  } else if (!isAuthenticated) {
+    appShell = (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Switch>
+          <Route path="/auth-callback" component={AuthCallbackPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
+          <Route>
+            <UnauthenticatedEntry
+              onAuthSuccess={handleAuthSuccess}
+              authBanner={profileGateBanner}
+            />
+          </Route>
+        </Switch>
+        <Toaster />
+      </div>
+    );
+  } else if (enforcementState.banned || enforcementState.suspendedUntil) {
+    const suspendedText = enforcementState.suspendedUntil
+      ? new Date(enforcementState.suspendedUntil).toLocaleString()
+      : null;
+    appShell = (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-background px-6 py-8">
+          <div className="max-w-md w-full rounded-xl border border-red-500/40 bg-red-500/10 p-6 text-center">
+            <h1 className="text-2xl font-bold text-red-300 mb-2">
+              {enforcementState.banned ? "Account permanently banned" : "Account temporarily suspended"}
+            </h1>
+            <p className="text-sm text-red-100/90 mb-4">
+              {enforcementState.banned
+                ? "Your account has been permanently banned due to repeated violations of community guidelines."
+                : `Your account is suspended until ${suspendedText}.`}
+            </p>
+            <button
+              className="inline-flex items-center justify-center rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-500/90"
+              onClick={handleSignOut}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+        <Toaster />
+      </div>
+    );
+  } else {
+    appShell = (
+      <UserProvider>
+        <SubmitClipProvider>
+        <HomeFeedInteractionProvider>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <PasswordRecoveryRedirect />
+        <FirstLoginOnboardingModal
+          open={firstLoginOnboarding.open}
+          audience={firstLoginOnboarding.audience}
+          onDismiss={handleDismissFirstLoginOnboarding}
+        />
+        <ArtistSubscriptionIntroProfileTrigger
+          introAlreadyActive={artistToolsIntro.pending || artistToolsIntro.open}
+          appBlockingSurfaceActive={
+            firstLoginOnboarding.open || postOnboardingPushPrompt.open
+          }
+          onQueue={({ userId }) => {
+            setArtistToolsIntro({
+              pending: true,
+              open: false,
+              userId,
+            });
+          }}
+        />
+        <ArtistSubscriptionIntroGate
+          pending={artistToolsIntro.pending}
+          open={artistToolsIntro.open}
+          userId={artistToolsIntro.userId}
+          blockingSurfaceActive={
+            firstLoginOnboarding.open ||
+            postOnboardingPushPrompt.open ||
+            introSurfaceBlocked
+          }
+          onShow={() =>
+            setArtistToolsIntro((prev) =>
+              prev.pending ? { ...prev, open: true } : prev,
+            )
+          }
+          onSkip={() => {
+            setArtistToolsIntro({
+              pending: false,
+              open: false,
+              userId: null,
+            });
+          }}
+        />
+        <ArtistSubscriptionIntroModal
+          open={artistToolsIntro.open}
+          onViewTools={handleArtistToolsIntroView}
+          onMaybeLater={handleArtistToolsIntroMaybeLater}
+        />
+        <PushPermissionPrompt
+          open={postOnboardingPushPrompt.open}
+          variant="post_onboarding"
+          onDismiss={() => {
+            markPostOnboardingPushPromptHandled(postOnboardingPushPrompt.userId);
+            setPostOnboardingPushPrompt({ open: false, userId: null });
+          }}
+        />
+        <Toaster />
+        <div
+          data-app-root="true"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground"
+        >
+          <AuthenticatedMainShell>
+          <Switch>
+            <Route path="/auth-callback" component={AuthCallbackPage} />
+            <Route path="/reset-password" component={ResetPasswordPage} />
+            <Route path="/" component={Home} />
+            <Route path="/submit" component={Submit} />
+            <Route path="/trim-video" component={TrimVideo} />
+            <Route path="/submit-metadata" component={SubmitMetadata} />
+            <Route path="/releases/new" component={ReleaseCreate} />
+            <Route path="/releases/:id/edit" component={ReleaseEdit} />
+            <Route path="/releases/:id" component={ReleaseDetail} />
+            <Route path="/releases" component={ReleaseTracker} />
+            <Route path="/leaderboard" component={Leaderboard} />
+            <Route path="/profile/:username" component={PublicProfile} />
+            <Route path="/profile" component={UserProfile} />
+            <Route path="/settings/notifications" component={SettingsNotificationsPage} />
+            <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
+            <Route
+              path="/settings/developer-diagnostics"
+              component={SettingsDeveloperDiagnosticsPage}
+            />
+            <Route path="/settings" component={SettingsWithSignOut} />
+            <Route path="/moderator" component={ModeratorPage} />
+            <Route component={NotFound} />
+          </Switch>
+          </AuthenticatedMainShell>
+          <SubmitClipDrawer />
+          <VerifiedArtistToolsPaywallHost />
+          <LifetimeGiftAnnouncementHost />
+          <HomeWidgetRefreshHost />
+          <HomeWidgetSetupGuideHost />
+          {/*
+            STARTUP-CONTINUITY: suppress native nav while startup overlay is visible.
+            onboardingOpen also suppresses (existing behaviour).
+          */}
+          <ConditionalBottomNavigation
+            onboardingOpen={
+              firstLoginOnboarding.open ||
+              artistToolsIntro.open ||
+              artistToolsIntro.pending
+            }
+            startupOverlayActive={startupOverlayActive}
+          />
+          <InAppNotificationBannerHost
+            suppressOnboardingModal={
+              firstLoginOnboarding.open || artistToolsIntro.open
+            }
+            suppressPushPrompt={
+              postOnboardingPushPrompt.open ||
+              artistToolsIntro.open ||
+              artistToolsIntro.pending
+            }
+          />
+          <ReleaseDropDayBanner />
+        </div>
+        </div>
+        </HomeFeedInteractionProvider>
+        </SubmitClipProvider>
+      </UserProvider>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <UserProvider>
-          <SubmitClipProvider>
-          <HomeFeedInteractionProvider>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <PasswordRecoveryRedirect />
-          <FirstLoginOnboardingModal
-            open={firstLoginOnboarding.open}
-            audience={firstLoginOnboarding.audience}
-            onDismiss={handleDismissFirstLoginOnboarding}
-          />
-          <PushPermissionPrompt
-            open={postOnboardingPushPrompt.open}
-            variant="post_onboarding"
-            onDismiss={() => {
-              markPostOnboardingPushPromptHandled(postOnboardingPushPrompt.userId);
-              setPostOnboardingPushPrompt({ open: false, userId: null });
-            }}
-          />
-          <Toaster />
-          <div
-            data-app-root="true"
-            className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground"
-          >
-            <AuthenticatedMainShell>
-            <Switch>
-              <Route path="/auth-callback" component={AuthCallbackPage} />
-              <Route path="/reset-password" component={ResetPasswordPage} />
-              <Route path="/" component={Home} />
-              <Route path="/submit" component={Submit} />
-              <Route path="/trim-video" component={TrimVideo} />
-              <Route path="/submit-metadata" component={SubmitMetadata} />
-              <Route path="/releases/new" component={ReleaseCreate} />
-              <Route path="/releases/:id/edit" component={ReleaseEdit} />
-              <Route path="/releases/:id" component={ReleaseDetail} />
-              <Route path="/releases" component={ReleaseTracker} />
-              <Route path="/leaderboard" component={Leaderboard} />
-              <Route path="/profile/:username" component={PublicProfile} />
-              <Route path="/profile" component={UserProfile} />
-              <Route path="/settings/notifications" component={SettingsNotificationsPage} />
-              <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
-              <Route
-                path="/settings/developer-diagnostics"
-                component={SettingsDeveloperDiagnosticsPage}
-              />
-              <Route path="/settings" component={SettingsWithSignOut} />
-              <Route path="/moderator" component={ModeratorPage} />
-              <Route component={NotFound} />
-            </Switch>
-            </AuthenticatedMainShell>
-            <SubmitClipDrawer />
-            <VerifiedArtistToolsPaywallHost />
-            <LifetimeGiftAnnouncementHost />
-            <HomeWidgetRefreshHost />
-            <HomeWidgetSetupGuideHost />
-            <ConditionalBottomNavigation onboardingOpen={firstLoginOnboarding.open} />
-            <InAppNotificationBannerHost
-              suppressOnboardingModal={firstLoginOnboarding.open}
-              suppressPushPrompt={postOnboardingPushPrompt.open}
-            />
-            <ReleaseDropDayBanner />
-          </div>
-          </div>
-          </HomeFeedInteractionProvider>
-          </SubmitClipProvider>
-        </UserProvider>
+        {appShell}
+        {/* Fixed overlay — above all app content, pointer-events-none. Stable host. */}
+        {startupOverlayEl}
       </TooltipProvider>
     </QueryClientProvider>
   );

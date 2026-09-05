@@ -100,8 +100,15 @@ export function nativeNavIsAvailable(input: {
 export function nativeNavIsCoveredBySheet(input: {
   commentsOpen: boolean;
   submitOpen: boolean;
+  paywallOpen?: boolean;
+  postSequenceViewerOpen?: boolean;
 }): boolean {
-  return input.commentsOpen || input.submitOpen;
+  return (
+    input.commentsOpen ||
+    input.submitOpen ||
+    input.paywallOpen === true ||
+    input.postSequenceViewerOpen === true
+  );
 }
 
 export type NativeNavChromeState = {
@@ -131,12 +138,16 @@ export function nativeNavShouldBeVisible(input: {
   onboardingOpen: boolean;
   commentsOpen?: boolean;
   submitOpen?: boolean;
+  paywallOpen?: boolean;
+  postSequenceViewerOpen?: boolean;
 }): boolean {
   return nativeNavChromeState({
     available: nativeNavIsAvailable(input),
     coveredBySheet: nativeNavIsCoveredBySheet({
       commentsOpen: input.commentsOpen === true,
       submitOpen: input.submitOpen === true,
+      paywallOpen: input.paywallOpen === true,
+      postSequenceViewerOpen: input.postSequenceViewerOpen === true,
     }),
   }).visuallyShown;
 }

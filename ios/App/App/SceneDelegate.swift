@@ -6,6 +6,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Cold start: Universal Links and other launches arrive via connectionOptions before `scene(_:continue:)`.
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        window?.backgroundColor = DubHubAppShellBackground.color
         for userActivity in connectionOptions.userActivities {
             _ = ApplicationDelegateProxy.shared.application(
                 UIApplication.shared,

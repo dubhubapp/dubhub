@@ -7,12 +7,46 @@ import { supabase } from "@/lib/supabaseClient";
 import { isReleaseDayTodayFromTiming, toLocalDateKey } from "@/lib/release-status";
 import type { ReleaseFeedItem } from "@/pages/release-tracker";
 import { Button } from "@/components/ui/button";
-import { cn, formatUsernameDisplay } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { runConfetti } from "@/lib/confetti";
 import { playReleaseDayHaptic } from "@/lib/haptic";
 import { apiUrl } from "@/lib/apiBase";
 import { HOME_FEED_READY_EVENT } from "@/lib/onboarding";
 import { setReleaseDropDayBannerState } from "@/lib/in-app-notification-suppression";
+import {
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SURFACE_CLASS,
+} from "@/lib/app-material";
+import {
+  RELEASE_DROP_DAY_ARTWORK_FRAME_CLASS,
+  RELEASE_DROP_DAY_ARTWORK_MULTI_SIZE_CLASS,
+  RELEASE_DROP_DAY_ARTWORK_SIZE_CLASS,
+  RELEASE_DROP_DAY_ARTWORK_STACK_CLASS,
+  RELEASE_DROP_DAY_ARTWORK_TO_TITLE_CLASS,
+  RELEASE_DROP_DAY_BODY_SPACING_CLASS,
+  RELEASE_DROP_DAY_CARD_BG_ARTWORK_CLASS,
+  RELEASE_DROP_DAY_CARD_BG_VIGNETTE_CLASS,
+  RELEASE_DROP_DAY_CARD_BG_WASH_CLASS,
+  RELEASE_DROP_DAY_CARD_INNER_CLASS,
+  RELEASE_DROP_DAY_CARD_PLACEMENT_STYLE,
+  RELEASE_DROP_DAY_CARD_SURFACE_WITH_ARTWORK_CLASS,
+  RELEASE_DROP_DAY_CLOSE_CLASS,
+  RELEASE_DROP_DAY_CTA_CELL_CLASS,
+  RELEASE_DROP_DAY_ENTRANCE_MS,
+  getReleaseDropDayBannerCopy,
+  resolveReleaseDropDayBannerBackgroundArtworkUrl,
+  selectReleaseDropDayBannerReleases,
+  shouldFireReleaseDropDayCelebration,
+} from "@/lib/release-drop-day-banner-presentation";
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
 
 const SESSION_DISMISS_KEY = "dubhub-release-drop-day-banner-dismissed";
 const SESSION_PRESENTED_KEY = "dubhub-release-drop-day-banner-presented";
@@ -154,14 +188,10 @@ export function ReleaseDropDayBanner() {
   });
 
   const releases = useMemo(
-    () => candidates.filter((r) => isReleaseDayTodayFromTiming(r)),
-    [candidates, todayKey]
+    () => selectReleaseDropDayBannerReleases(candidates, isReleaseDayTodayFromTiming),
+    [candidates, todayKey],
   );
 
-  const ownCount = useMemo(() => releases.filter((r) => r.artistId === currentUser?.id).length, [releases, currentUser?.id]);
-  const savedOnlyCount = useMemo(() => releases.length - ownCount, [releases.length, ownCount]);
-  const hasOwnedRelease = ownCount > 0;
-  const hasConnectedNonOwnedRelease = savedOnlyCount > 0;
   const releaseSignature = useMemo(() => {
     const ids = releases.map((r) => r.id).filter(Boolean).sort();
     return ids.join(",");
@@ -176,6 +206,7 @@ export function ReleaseDropDayBanner() {
     return `${SESSION_CELEBRATION_FIRED_KEY}:${currentUser?.id ?? "anon"}:${todayKey}:${releaseSignature || "none"}`;
   }, [currentUser?.id, todayKey, releaseSignature]);
   const preview = useMemo(() => releases.slice(0, 4), [releases]);
+  const [cardEntered, setCardEntered] = useState(false);
 
   useEffect(() => {
     logPersist("eligible out-today releases computed", {
@@ -336,16 +367,20 @@ export function ReleaseDropDayBanner() {
   const celebrationFiredRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isPresented || dismissed) return;
-    if (celebrationFiredRef.current === celebrationSessionKey) return;
-
-    let alreadyFired = false;
+    const refMatched = celebrationFiredRef.current === celebrationSessionKey;
+    let storageAlreadyFired = false;
     try {
-      alreadyFired = storageRef.current.store?.getItem(celebrationSessionKey) === "1";
+      storageAlreadyFired = storageRef.current.store?.getItem(celebrationSessionKey) === "1";
     } catch {
       /* ignore storage read failures */
     }
-    if (alreadyFired) {
-      celebrationFiredRef.current = celebrationSessionKey;
+    if (
+      !shouldFireReleaseDropDayCelebration({
+        celebrationRefAlreadyMatched: refMatched,
+        storageAlreadyFired,
+      })
+    ) {
+      if (storageAlreadyFired) celebrationFiredRef.current = celebrationSessionKey;
       return;
     }
 
@@ -413,90 +448,149 @@ export function ReleaseDropDayBanner() {
     return () => setReleaseDropDayBannerState(false, []);
   }, [isPresented, dismissed, releases]);
 
+  // One-shot card settle — complements confetti; static under reduced motion.
+  useEffect(() => {
+    if (!isPresented || dismissed) {
+      setCardEntered(false);
+      return;
+    }
+    if (prefersReducedMotion()) {
+      setCardEntered(true);
+      return;
+    }
+    setCardEntered(false);
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => setCardEntered(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+    };
+  }, [isPresented, dismissed]);
+
   if (!isPresented || dismissed) return null;
 
   const ctaRoute = releases.length === 1 ? `/releases/${encodeURIComponent(releases[0].id)}` : "/releases";
-  const ctaLabel = releases.length === 1 ? "Open Release" : "Open Releases";
-
-  let message: string;
-  if (releases.length === 1) {
-    const r = releases[0];
-    if (r.artistId === currentUser?.id) {
-      message = "Your release is out today.";
-    } else {
-      message = `${r.artistUsername ? `${formatUsernameDisplay(r.artistUsername)} — ` : ""}${r.title} drops today.`;
-    }
-  } else if (ownCount > 0 && savedOnlyCount > 0) {
-    message = `${releases.length} releases you care about drop today.`;
-  } else if (ownCount === releases.length) {
-    message = `${releases.length} of your releases drop today.`;
-  } else {
-    message = `${releases.length} saved releases drop today.`;
-  }
+  const { title, body, ctaLabel } = getReleaseDropDayBannerCopy({
+    releases,
+    currentUserId: currentUser?.id,
+  });
+  const backgroundArtworkUrl = resolveReleaseDropDayBannerBackgroundArtworkUrl(releases);
+  const reducedMotion = prefersReducedMotion();
 
   return (
     <div
-      className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center px-4"
-      style={{
-        paddingTop: "max(16px, env(safe-area-inset-top, 0px))",
-        paddingBottom: "max(calc(var(--app-bottom-control-inset) + 16px), env(safe-area-inset-bottom, 0px))",
-      }}
+      className="pointer-events-none fixed inset-x-0 z-40 flex -translate-y-1/2 justify-center px-4"
+      style={RELEASE_DROP_DAY_CARD_PLACEMENT_STYLE}
       role="dialog"
       aria-label="Release day"
     >
       <div
         className={cn(
-          "pointer-events-auto w-full max-w-sm rounded-2xl border border-[#4ae9df]/35",
-          "bg-[#0f1324]/95 supports-[backdrop-filter]:bg-[#0f1324]/90 backdrop-blur-xl",
-          "shadow-[0_20px_60px_rgba(0,0,0,0.6),0_0_0_1px_rgba(74,233,223,0.12)]"
+          "pointer-events-auto w-full max-w-sm",
+          APP_MATERIAL_OVERLAY_SURFACE_CLASS,
+          backgroundArtworkUrl && RELEASE_DROP_DAY_CARD_SURFACE_WITH_ARTWORK_CLASS,
         )}
+        style={{
+          opacity: cardEntered ? 1 : 0,
+          transform: cardEntered ? "scale(1)" : "scale(0.96)",
+          transition: reducedMotion
+            ? undefined
+            : `opacity ${RELEASE_DROP_DAY_ENTRANCE_MS}ms ease-out, transform ${RELEASE_DROP_DAY_ENTRANCE_MS}ms ease-out`,
+        }}
       >
-        <div className="flex gap-3 p-5 pr-4">
-          <div className="flex -space-x-2 shrink-0">
+        {backgroundArtworkUrl ? (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+            <img
+              src={backgroundArtworkUrl}
+              alt=""
+              className={RELEASE_DROP_DAY_CARD_BG_ARTWORK_CLASS}
+              aria-hidden
+            />
+            <div className={RELEASE_DROP_DAY_CARD_BG_WASH_CLASS} />
+            <div className={RELEASE_DROP_DAY_CARD_BG_VIGNETTE_CLASS} />
+          </div>
+        ) : null}
+
+        <div className={RELEASE_DROP_DAY_CARD_INNER_CLASS}>
+          <button
+            type="button"
+            onClick={dismiss}
+            className={RELEASE_DROP_DAY_CLOSE_CLASS}
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+
+          <div
+            className={RELEASE_DROP_DAY_ARTWORK_STACK_CLASS}
+            style={{
+              opacity: cardEntered ? 1 : 0,
+              transform: cardEntered ? "scale(1)" : "scale(0.94)",
+              transition: reducedMotion
+                ? undefined
+                : `opacity ${RELEASE_DROP_DAY_ENTRANCE_MS}ms ease-out, transform ${RELEASE_DROP_DAY_ENTRANCE_MS}ms ease-out`,
+            }}
+          >
             {preview.map((r) => (
               <div
                 key={r.id}
-                className="relative h-12 w-12 rounded-lg border-2 border-[#0f1324] overflow-hidden bg-white/10 ring-1 ring-white/10"
+                className={cn(
+                  preview.length > 1
+                    ? RELEASE_DROP_DAY_ARTWORK_MULTI_SIZE_CLASS
+                    : RELEASE_DROP_DAY_ARTWORK_SIZE_CLASS,
+                  RELEASE_DROP_DAY_ARTWORK_FRAME_CLASS,
+                )}
               >
                 {r.artworkUrl ? (
                   <img src={r.artworkUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center text-white/65">
-                    <Music2 className="h-5 w-5" aria-hidden />
+                  <div className="flex h-full w-full items-center justify-center text-white/65">
+                    <Music2 className="h-8 w-8" aria-hidden />
                   </div>
                 )}
               </div>
             ))}
           </div>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <p className="text-sm font-semibold text-white leading-snug">Out today</p>
-            <p className="text-xs text-white/75 mt-0.5 line-clamp-2">{message}</p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Button
-                size="sm"
-                className="h-8 rounded-lg text-xs font-semibold bg-[#4ae9df] text-black hover:bg-[#4ae9df]/90"
-                onClick={() => {
-                  logPersist("cta click", {
-                    route: ctaRoute,
-                    releaseSignature,
-                    releasesCount: releases.length,
-                  });
-                  dismiss();
-                  navigate(ctaRoute);
-                }}
-              >
-                {ctaLabel}
-              </Button>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={dismiss}
-            className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10"
-            aria-label="Dismiss"
+
+          <p
+            className={cn(
+              "max-w-full text-center text-sm font-semibold leading-snug tracking-tight text-foreground",
+              RELEASE_DROP_DAY_ARTWORK_TO_TITLE_CLASS,
+            )}
           >
-            <X className="h-4 w-4" />
-          </button>
+            {title}
+          </p>
+          <p
+            className={cn(
+              "max-w-full line-clamp-2 text-center text-sm leading-snug text-muted-foreground",
+              RELEASE_DROP_DAY_BODY_SPACING_CLASS,
+            )}
+          >
+            {body}
+          </p>
+
+          <div className={RELEASE_DROP_DAY_CTA_CELL_CLASS}>
+            <Button
+              size="sm"
+              className={cn(
+                "h-9 rounded-[14px] px-3.5 text-xs",
+                APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+              )}
+              onClick={() => {
+                logPersist("cta click", {
+                  route: ctaRoute,
+                  releaseSignature,
+                  releasesCount: releases.length,
+                });
+                dismiss();
+                navigate(ctaRoute);
+              }}
+            >
+              {ctaLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

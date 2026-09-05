@@ -200,15 +200,6 @@ export default {
           "0%": { strokeDashoffset: "0" },
           "100%": { strokeDashoffset: "-100" },
         },
-        /** End-of-feed dice chip: restrained ring/outline breathing (no full-opacity pulse). */
-        "home-end-dice-ring-pulse": {
-          "0%, 100%": {
-            boxShadow: "0 0 0 1px rgba(74, 233, 223, 0.28), 0 0 0 0 rgba(74, 233, 223, 0)",
-          },
-          "50%": {
-            boxShadow: "0 0 0 2px rgba(74, 233, 223, 0.42), 0 0 0 5px rgba(74, 233, 223, 0.07)",
-          },
-        },
         /** Release-attached like save: music notes rise + fade (transform/opacity only). */
         "like-save-note-rise-a": {
           "0%": { opacity: "0.92", transform: "translate(0, 0) scale(0.9)" },
@@ -250,8 +241,7 @@ export default {
         "submit-edge-trace": "submit-edge-trace 18s linear infinite",
         "random-dice-rail-enter": "random-dice-rail-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both",
         "random-dice-rail-exit": "random-dice-rail-exit 0.175s cubic-bezier(0.33, 1, 0.68, 1) both",
-        "dice-rail-edge-trace": "dice-rail-edge-trace 1.65s linear infinite",
-        "home-end-dice-ring-pulse": "home-end-dice-ring-pulse 2.4s ease-in-out infinite",
+        "dice-rail-edge-trace": "dice-rail-edge-trace 3.3s linear infinite",
         "like-save-note-rise-a": "like-save-note-rise-a 0.92s cubic-bezier(0.22, 1, 0.36, 1) both",
         "like-save-note-rise-b": "like-save-note-rise-b 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both",
         "like-save-note-rise-c": "like-save-note-rise-c 0.98s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both",

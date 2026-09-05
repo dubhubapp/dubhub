@@ -15,6 +15,7 @@ import { GENRE_ENTRIES, getGenreLabel } from "@/lib/genre-styles";
 import { cn } from "@/lib/utils";
 import { DiceDiscoverIcon } from "@/components/random-dice-button";
 import { playInteractionMedium } from "@/lib/haptic";
+import { DISCOVER_FEED_MODE_ICON_COLOR_CLASS } from "@/lib/discover-feed-mode-presentation";
 import {
   DISCOVER_GENRES_PAGE,
   DISCOVER_GENRE_PAGE_FRAME_CLASS,
@@ -186,15 +187,24 @@ function FeedModeMenuButton({
           !pressPlaying &&
             active &&
             variant === "flame" &&
-            "motion-safe:animate-feed-flame-active-pulse motion-reduce:animate-none text-red-200",
+            cn(
+              "motion-safe:animate-feed-flame-active-pulse motion-reduce:animate-none",
+              DISCOVER_FEED_MODE_ICON_COLOR_CLASS.hottest,
+            ),
           !pressPlaying &&
             active &&
             variant === "clock" &&
-            "motion-safe:animate-feed-clock-active-pulse motion-reduce:animate-none text-cyan-100",
+            cn(
+              "motion-safe:animate-feed-clock-active-pulse motion-reduce:animate-none",
+              DISCOVER_FEED_MODE_ICON_COLOR_CLASS.newest,
+            ),
           !pressPlaying &&
             active &&
             variant === "trending" &&
-            "motion-safe:animate-feed-trending-active-pulse motion-reduce:animate-none text-amber-200",
+            cn(
+              "motion-safe:animate-feed-trending-active-pulse motion-reduce:animate-none",
+              DISCOVER_FEED_MODE_ICON_COLOR_CLASS.trending,
+            ),
           !pressPlaying && !active && "text-white/70",
         )}
       >
@@ -264,7 +274,7 @@ function FeedModeRandomCell({
         className={cn(
           "inline-flex size-[22px] transform-gpu items-center justify-center will-change-transform",
           diceSpinNonce > 0 ? "motion-safe:animate-dice-spin motion-reduce:animate-none" : "",
-          active ? "text-white" : "text-white/70",
+          active ? DISCOVER_FEED_MODE_ICON_COLOR_CLASS.random : "text-white/70",
         )}
       >
         <DiceDiscoverIcon className="h-[22px] w-[22px]" />
@@ -276,15 +286,8 @@ function FeedModeRandomCell({
   );
 }
 
-const FEED_MODE_TRIGGER_ICON_CLASS: Record<FeedSortMode, string> = {
-  trending: "text-amber-300",
-  newest: "text-cyan-200",
-  hottest: "text-red-200",
-  random: "text-[#8ffdf4]",
-};
-
 function FeedModeTriggerIcon({ mode }: { mode: FeedSortMode }) {
-  const iconClass = cn("h-3.5 w-3.5 shrink-0", FEED_MODE_TRIGGER_ICON_CLASS[mode]);
+  const iconClass = cn("h-3.5 w-3.5 shrink-0", DISCOVER_FEED_MODE_ICON_COLOR_CLASS[mode]);
   switch (mode) {
     case "trending":
       return <TrendingUp className={iconClass} strokeWidth={2} aria-hidden />;

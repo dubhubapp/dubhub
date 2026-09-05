@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { playInteractionMedium } from "@/lib/haptic";
+import { DISCOVER_RANDOM_ACCENT } from "@/lib/discover-feed-mode-presentation";
 import { cn } from "@/lib/utils";
 
 /** Outline-only “5” dice: transparent face + pips (matches Lucide icon language). */
@@ -8,7 +9,7 @@ export function DiceDiscoverIcon({
   railEdgeTrace = false,
 }: {
   className?: string;
-  /** Right-rail Random: turquoise segment travels along the dice outline (not a circular halo). */
+  /** Right-rail Random: red luminous segment travels along the dice outline (not a circular halo). */
   railEdgeTrace?: boolean;
 }) {
   const railTraceGlowId = `dice-rail-trace-glow-${useId().replace(/:/g, "")}`;
@@ -68,7 +69,7 @@ export function DiceDiscoverIcon({
       className={cn("block size-full shrink-0 overflow-visible", className)}
     >
       <defs>
-        {/* Wide outer bloom + tighter core; draw order below pips so glow never sits on top of spots. */}
+        {/* Soft same-hue bloom across the full dash segment (outer + inner blur). */}
         <filter id={railTraceGlowId} x="-90%" y="-90%" width="280%" height="280%" colorInterpolationFilters="sRGB">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3.6" result="glowOuter" />
           <feGaussianBlur in="SourceGraphic" stdDeviation="1.35" result="glowInner" />
@@ -80,7 +81,7 @@ export function DiceDiscoverIcon({
         </filter>
       </defs>
       {diceBorderRect}
-      {/* ~38/100 path segment; sits under pips so centre stays crisp white. */}
+      {/* One continuous red arc; glow sits under the crisp stroke via filter merge order. */}
       <rect
         x="2.6"
         y="2.6"
@@ -89,7 +90,7 @@ export function DiceDiscoverIcon({
         rx="4"
         ry="4"
         fill="none"
-        stroke="#8ffdf4"
+        stroke={DISCOVER_RANDOM_ACCENT}
         strokeWidth="2.35"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -116,6 +117,8 @@ export function RandomDiceButton({
   disabled,
   accentGlow = "default",
   railEdgeTrace = false,
+  /** Bump to replay `animate-dice-spin` without haptic or onPress (idle tease). */
+  idleSpinKey = 0,
   className,
   iconClassName,
   iconWrapClassName,
@@ -129,6 +132,7 @@ export function RandomDiceButton({
   accentGlow?: "default" | "turquoiseSubtle" | "turquoiseProminent" | "none";
   /** SVG stroke-dash trace on the dice face outline (rail Random). */
   railEdgeTrace?: boolean;
+  idleSpinKey?: number;
   className?: string;
   iconClassName?: string;
   iconWrapClassName?: string;
@@ -136,6 +140,7 @@ export function RandomDiceButton({
   const [diceSpinNonce, setDiceSpinNonce] = useState(0);
   const [pressPending, setPressPending] = useState(false);
   const pressDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastIdleSpinKeyRef = useRef(idleSpinKey);
 
   useEffect(() => {
     return () => {
@@ -145,6 +150,13 @@ export function RandomDiceButton({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (idleSpinKey === lastIdleSpinKeyRef.current) return;
+    lastIdleSpinKeyRef.current = idleSpinKey;
+    if (idleSpinKey <= 0) return;
+    setDiceSpinNonce((n) => n + 1);
+  }, [idleSpinKey]);
 
   const handleClick = () => {
     if (disabled) return;
@@ -196,7 +208,7 @@ export function RandomDiceButton({
         key={diceSpinNonce}
         className={cn(
           "inline-flex size-[22px] transform-gpu items-center justify-center will-change-transform transition-colors duration-150 sm:size-[24px]",
-          diceSpinNonce > 0 ? "animate-dice-spin" : "",
+          diceSpinNonce > 0 ? "motion-safe:animate-dice-spin motion-reduce:animate-none" : "",
           iconWrapClassName,
         )}
       >

@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { Check, Square, XCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { VideoCard } from "@/components/video-card";
-import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { Check, Square } from "lucide-react";
+import {
+  FullScreenPostSequenceViewer,
+  type FullScreenPostSequenceItem,
+} from "@/components/full-screen-post-sequence-viewer";
 import { apiRequest } from "@/lib/queryClient";
 import { normalizePostForPreview } from "@/lib/normalize-post-for-preview";
-import { resolveMediaUrl } from "@/lib/media-url";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
 import type { PostWithUser } from "@shared/schema";
 import { resolveAttachClipToggleKind } from "@/lib/release-attach-post-release";
+import { clampPostSequenceInitialIndex } from "@/lib/full-screen-post-sequence-viewer";
 
 export type ReleasePostsGallerySelection = {
   selectedPostIds: string[];
@@ -51,12 +52,8 @@ export function ReleaseAttachedPostsGallery({
   const queryClient = useQueryClient();
   const initialIndex = useMemo(() => {
     const idx = attachedPosts.findIndex((p) => p.id === initialPostId);
-    return idx >= 0 ? idx : 0;
+    return clampPostSequenceInitialIndex(idx >= 0 ? idx : 0, attachedPosts.length);
   }, [attachedPosts, initialPostId]);
-
-  const [snapIndex, setSnapIndex] = useState(initialIndex);
-  const [isMuted, setIsMuted] = useState(true);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const postQueries = useQueries({
     queries: attachedPosts.map((clip) => ({
@@ -74,19 +71,25 @@ export function ReleaseAttachedPostsGallery({
     })),
   });
 
-  const posts = useMemo(
+  const items: FullScreenPostSequenceItem[] = useMemo(
     () =>
       attachedPosts.map((clip, index) => {
         const raw = postQueries[index]?.data;
-        if (!raw) return null;
-        const normalized = normalizePostForPreview(raw);
-        return normalized ? mergeClipThumbnail(normalized, clip) : null;
+        const normalized = raw ? normalizePostForPreview(raw) : null;
+        const post = normalized ? mergeClipThumbnail(normalized, clip) : null;
+        return {
+          id: clip.id,
+          post,
+          isLoading: postQueries[index]?.isPending && !post,
+          posterUrl: clip.thumbnailUrl,
+        };
       }),
     [attachedPosts, postQueries],
   );
 
   const initialPostFailed = postQueries[initialIndex]?.isError;
-  const initialPostReady = !!posts[initialIndex]?.videoUrl && !!posts[initialIndex]?.user;
+  const initialPostReady =
+    !!items[initialIndex]?.post?.videoUrl && !!items[initialIndex]?.post?.user;
   const isInitialLoading = postQueries[initialIndex]?.isPending && !initialPostReady;
 
   useEffect(() => {
@@ -95,172 +98,35 @@ export function ReleaseAttachedPostsGallery({
     onClose();
   }, [initialPostFailed, initialPostId, onLoadFailed, onClose]);
 
-  useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, []);
-
-  useEffect(() => {
-    setSnapIndex(initialIndex);
-  }, [initialIndex]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const frame = requestAnimationFrame(() => {
-      const target = el.querySelector<HTMLElement>(`[data-gallery-index="${initialIndex}"]`);
-      target?.scrollIntoView({ block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [initialIndex]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    let raf: number | null = null;
-    const updateSnap = () => {
-      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-gallery-index]"));
-      if (nodes.length === 0) return;
-      const st = el.scrollTop;
-      const viewH = el.clientHeight || window.innerHeight;
-      let bestIdx = 0;
-      let bestDist = Number.POSITIVE_INFINITY;
-      for (const n of nodes) {
-        const raw = n.dataset.galleryIndex;
-        const idx = raw === undefined ? 0 : Number(raw);
-        const d = Math.abs(st + viewH * 0.5 - (n.offsetTop + n.offsetHeight * 0.5));
-        if (d < bestDist) {
-          bestDist = d;
-          bestIdx = Number.isFinite(idx) ? idx : 0;
-        }
-      }
-      setSnapIndex((prev) => (prev === bestIdx ? prev : bestIdx));
-    };
-
-    const schedule = () => {
-      if (raf != null) return;
-      raf = requestAnimationFrame(() => {
-        raf = null;
-        updateSnap();
-      });
-    };
-
-    el.addEventListener("scroll", schedule, { passive: true });
-    schedule();
-    return () => {
-      el.removeEventListener("scroll", schedule);
-      if (raf != null) cancelAnimationFrame(raf);
-    };
-  }, [attachedPosts.length]);
-
   const handleClose = useCallback(() => {
-    setIsMuted(true);
     onClose();
   }, [onClose]);
 
-  const total = attachedPosts.length;
-  const positionLabel = `${snapIndex + 1} of ${total}`;
-
   return (
-    <div
-      className="fixed inset-0 z-[100] h-[100dvh] w-screen bg-black"
-      data-testid={testId}
-    >
-      <div
-        ref={scrollRef}
-        className="h-[100dvh] w-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth overscroll-y-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        aria-label="Posts attached to this release"
-      >
-        {attachedPosts.map((clip, index) => {
-          const post = posts[index];
-          const dSnap = Math.abs(index - snapIndex);
-          const isActive = index === snapIndex;
-          const isLoadingPost = postQueries[index]?.isPending && !post;
-          const posterSrc = resolveMediaUrl(clip.thumbnailUrl);
-
-          return (
-            <div
-              key={clip.id}
-              data-gallery-index={index}
-              className="relative h-[100dvh] w-full shrink-0 snap-start snap-always"
-            >
-              {isLoadingPost ? (
-                <div className="relative flex h-full w-full items-center justify-center bg-black">
-                  {posterSrc ? (
-                    <img
-                      src={posterSrc}
-                      alt=""
-                      className="absolute inset-0 h-full w-full object-contain opacity-60"
-                    />
-                  ) : null}
-                  <VinylLoader label="Loading video..." />
-                </div>
-              ) : post?.videoUrl && post.user ? (
-                <>
-                  <VideoCard
-                    key={post.id}
-                    post={post}
-                    embeddedFeed
-                    moderatorPreview
-                    clipViewerOverlay
-                    galleryMetadataExpand
-                    isActive={isActive}
-                    shouldLoadVideo={isActive || dSnap <= 1}
-                    videoPreload={isActive ? "auto" : dSnap <= 1 ? "metadata" : "none"}
-                    isMuted={isMuted}
-                    onToggleMute={() => setIsMuted((prev) => !prev)}
-                  />
-                  {selection ? (
-                    <ReleaseGalleryAttachToggle
-                      postId={clip.id}
-                      isSelected={selection.selectedPostIds.includes(clip.id)}
-                      disabled={selection.isToggleDisabled?.(clip.id)}
-                      onToggle={() => selection.onTogglePost(clip.id)}
-                      testId={`${testId}-attach-toggle-${clip.id}`}
-                    />
-                  ) : null}
-                </>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-black px-6 text-center text-sm text-white/70">
-                  Video unavailable
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="pointer-events-none absolute inset-x-0 top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] z-[110] flex items-center justify-between px-3">
-        <p
-          className="rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white/80 backdrop-blur-sm"
-          aria-live="polite"
-          data-testid={`${testId}-position`}
-        >
-          {positionLabel}
-        </p>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={handleClose}
-          className="pointer-events-auto border-white/20 bg-black/60 text-white hover:bg-black/80"
-          data-testid={`${testId}-close`}
-        >
-          <XCircle className="mr-1 h-4 w-4" />
-          Close
-        </Button>
-      </div>
-
-      {isInitialLoading ? (
-        <div className="pointer-events-none absolute inset-0 z-[105] flex items-center justify-center bg-black/80">
-          <VinylLoader label="Loading video..." />
-        </div>
-      ) : null}
-    </div>
+    <FullScreenPostSequenceViewer
+      items={items}
+      initialIndex={initialIndex}
+      onClose={handleClose}
+      testId={testId}
+      ariaLabel="Posts attached to this release"
+      showPositionLabel
+      moderatorPreview
+      galleryMetadataExpand
+      initialLoadingOverlay={isInitialLoading}
+      renderSlideOverlay={
+        selection
+          ? ({ item }) => (
+              <ReleaseGalleryAttachToggle
+                postId={item.id}
+                isSelected={selection.selectedPostIds.includes(item.id)}
+                disabled={selection.isToggleDisabled?.(item.id)}
+                onToggle={() => selection.onTogglePost(item.id)}
+                testId={`${testId}-attach-toggle-${item.id}`}
+              />
+            )
+          : undefined
+      }
+    />
   );
 }
 

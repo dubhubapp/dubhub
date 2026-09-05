@@ -1,10 +1,12 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { installNativeSplashSafetyFallback } from "./components/brand/app-launch-splash";
 import "./launch-surface.css";
 import "./index.css";
 import { applyTheme, getStoredTheme } from "./lib/theme";
 
 applyTheme(getStoredTheme());
+installNativeSplashSafetyFallback();
 
 const rootEl = document.getElementById("root")!;
 createRoot(rootEl).render(

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLocation } from "wouter";
 import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { useSubmitClip } from "@/lib/submit-clip-context";
@@ -30,6 +30,14 @@ import { lgNav5aMark } from "@/lib/lg-nav-5a-timing";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
 import {
+  isVerifiedArtistToolsPaywallCoveringNativeNav,
+  subscribeVerifiedArtistToolsPaywallNativeNavCover,
+} from "@/lib/verified-artist-tools-paywall-native-cover";
+import {
+  isFullScreenPostSequenceCoveringNativeNav,
+  subscribeFullScreenPostSequenceNativeNavCover,
+} from "@/lib/full-screen-post-sequence-native-cover";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -50,14 +58,26 @@ import {
 
 type NativeNavBridgeHostProps = {
   onboardingOpen: boolean;
+  /** STARTUP-CONTINUITY: suppress native nav while startup overlay is in the DOM. */
+  startupOverlayActive?: boolean;
 };
 
-export function NativeNavBridgeHost({ onboardingOpen }: NativeNavBridgeHostProps) {
+export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = false }: NativeNavBridgeHostProps) {
   const [location, navigate] = useLocation();
   const { invokeHomeWhileOnHome } = useHomeFeedInteraction();
   const { openSubmitClip, isSubmitClipOpen, isSubmitClipCovering } = useSubmitClip();
   const { userType } = useUser();
   const { openCommentsPostId } = useInAppNotificationSuppression();
+  const paywallCovering = useSyncExternalStore(
+    subscribeVerifiedArtistToolsPaywallNativeNavCover,
+    isVerifiedArtistToolsPaywallCoveringNativeNav,
+    () => false,
+  );
+  const postSequenceViewerCovering = useSyncExternalStore(
+    subscribeFullScreenPostSequenceNativeNavCover,
+    isFullScreenPostSequenceCoveringNativeNav,
+    () => false,
+  );
   const [nativeEnabled, setNativeEnabled] = useState(false);
   const [showCancelPostDialog, setShowCancelPostDialog] = useState(false);
   const lastTabsKeyRef = useRef("");
@@ -76,13 +96,16 @@ export function NativeNavBridgeHost({ onboardingOpen }: NativeNavBridgeHostProps
   });
   const available = nativeNavIsAvailable({
     nativeNavEnabled: nativeEnabled,
-    authenticatedShellActive: true,
+    // STARTUP-CONTINUITY: treat overlay as equivalent to onboarding suppression.
+    authenticatedShellActive: !startupOverlayActive,
     resetPasswordRoute,
     onboardingOpen,
   });
   const covered = nativeNavIsCoveredBySheet({
     commentsOpen,
     submitOpen: isSubmitClipCovering,
+    paywallOpen: paywallCovering,
+    postSequenceViewerOpen: postSequenceViewerCovering,
   });
 
   useEffect(() => {

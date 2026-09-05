@@ -1,22 +1,22 @@
 import {
   BadgeCheck,
-  Bell,
   Calendar,
   Check,
   Clock,
   Film,
+  Heart,
   MessageCircle,
-  SlidersHorizontal,
-  TrendingUp,
   Trophy,
   Upload,
   Users,
+  X,
 } from "lucide-react";
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -25,6 +25,14 @@ import {
 import { GoldVerifiedTick } from "@/components/verified-artist";
 import { STATUS_GLOW_PILL_BG, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import {
+  APP_MATERIAL_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
+import { cn } from "@/lib/utils";
 
 type OnboardingAudience = "user" | "artist";
 
@@ -37,21 +45,28 @@ interface FirstLoginOnboardingModalProps {
 const statusPillBase =
   "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
 const statusIconBase = "h-3 w-3 shrink-0";
-const tipIconClass = "mt-0.5 h-4 w-4 shrink-0 text-[#4ae9df]";
+const tipIconClass = "mt-0.5 h-4 w-4 shrink-0 text-foreground";
 
-const userCommunityTips = [
-  { text: "Upload clips you want ID’d", Icon: Upload },
-  { text: "Suggest track IDs in comments", Icon: MessageCircle },
-  { text: "Filter by genre, status and order at the top", Icon: SlidersHorizontal },
-  { text: "Like posts to get notified when tracks release", Icon: Bell },
+/** Community-member core concepts — mental model, not control-level how-tos. */
+const communityTips = [
+  { text: "Upload clips you want identified", Icon: Upload },
+  { text: "Help identify tracks in the feed", Icon: MessageCircle },
+  { text: "Save tracks and follow them through to release", Icon: Heart },
+  { text: "Compete on the Leaderboard for monthly rewards", Icon: Trophy },
 ] as const;
 
-const artistMainTips = [
+/** Verified-artist opening concepts — self-tag mechanics stay contextual. */
+const artistTips = [
   { text: "Your tracks get discovered through real clips", Icon: Film },
-  { text: "Verify your own tracks to confirm IDs", Icon: BadgeCheck },
-  { text: "Set up releases to notify interested users", Icon: Calendar },
-  { text: "Track performance in your profile", Icon: TrendingUp },
+  { text: "Confirm your own tracks when you spot them", Icon: BadgeCheck },
+  {
+    text: "Set up releases so interested listeners can follow them through to release",
+    Icon: Calendar,
+  },
 ] as const;
+
+const ARTIST_COMMUNITY_LINE =
+  "Upload clips, help ID tracks and compete on the leaderboard.";
 
 function TipsList({
   tips,
@@ -59,26 +74,9 @@ function TipsList({
   tips: readonly { text: string; Icon: React.ComponentType<{ className?: string }> }[];
 }) {
   return (
-    <ul className="mt-3.5 space-y-2.5 text-sm text-white/90">
+    <ul className="mt-4 space-y-2.5 text-sm text-foreground/90">
       {tips.map(({ text, Icon }) => (
-        <li key={text} className="flex items-start gap-2">
-          <Icon className={tipIconClass} aria-hidden />
-          <span>{text}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function CompactTipsList({
-  tips,
-}: {
-  tips: readonly { text: string; Icon: React.ComponentType<{ className?: string }> }[];
-}) {
-  return (
-    <ul className="mt-2 space-y-1.5 text-xs text-white/80">
-      {tips.map(({ text, Icon }) => (
-        <li key={text} className="flex items-start gap-2">
+        <li key={text} className="flex items-start gap-2.5">
           <Icon className={tipIconClass} aria-hidden />
           <span>{text}</span>
         </li>
@@ -121,73 +119,96 @@ export function FirstLoginOnboardingModal({
   }, [open]);
 
   const isArtist = audience === "artist";
-
-  const secondaryTitle = isArtist
-    ? "You’re also part of the community"
-    : "Compete on the Leaderboard";
-  const secondaryText = "Identify tracks, climb the leaderboard, and win artist rewards like studio time, remix opportunities and production gear.";
   const ctaLabel = isArtist ? "Explore" : "Start exploring";
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onDismiss()}>
       <DialogContent
         forceMount
-        overlayClassName="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200"
-        className="w-[calc(100%-2rem)] max-w-md rounded-2xl border-[#4ae9df]/35 bg-[#0f1324]/95 p-0 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+        hideCloseButton
+        overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        className={cn(
+          APP_MATERIAL_DIALOG_CONTENT_CLASS,
+          "w-[calc(100%-2rem)] max-h-[min(90dvh,40rem)] gap-0 overflow-y-auto p-5 sm:p-6",
+        )}
+        // Prevent Radix autofocus on the close control — iOS shows :focus-visible as a blue ring.
+        onOpenAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
+        data-testid="first-login-onboarding-modal"
       >
+        <DialogClose asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-3 top-3 h-11 w-11 text-muted-foreground"
+            aria-label="Close"
+            data-testid="button-first-login-onboarding-close"
+            onClick={() => playInteractionLight()}
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </Button>
+        </DialogClose>
+
         <motion.div
           initial={{ opacity: 0, scale: 0.97, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.98, y: 6 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="p-5 sm:p-6"
         >
-          <DialogHeader className="space-y-1.5 text-left">
-            <DialogTitle className="text-xl font-semibold text-white">Welcome to dub hub</DialogTitle>
-            <DialogDescription className="text-sm text-white/70">
-              Quick tips to get the most out of your feed.
+          {/* pr-8 clears the absolute X for title only — not the full-width CTA */}
+          <DialogHeader className="space-y-1.5 pr-8 text-left">
+            <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Welcome to dub hub
+            </DialogTitle>
+            <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+              {isArtist
+                ? "Here’s how artists get the most out of dub hub."
+                : "Here’s how to get the most out of your feed."}
             </DialogDescription>
           </DialogHeader>
 
-          <TipsList tips={isArtist ? artistMainTips : userCommunityTips} />
+          <TipsList tips={isArtist ? artistTips : communityTips} />
 
-          <div className="mt-4 rounded-lg border border-white/15 bg-[#0f1324] p-3">
-            {isArtist ? (
-              <p className="text-sm font-medium text-white">{secondaryTitle}</p>
-            ) : (
-              <p className="flex items-center gap-2 text-sm font-medium text-white">
-                <Trophy className={`${tipIconClass} mt-0`} aria-hidden />
-                <span>{secondaryTitle}</span>
+          {isArtist ? (
+            <div className="mt-4 space-y-1" data-testid="first-login-artist-community">
+              <p className="text-sm font-medium text-foreground">
+                You’re also part of the community
               </p>
-            )}
-            {isArtist ? (
-              <>
-                <CompactTipsList tips={userCommunityTips} />
-                <p className="mt-2 text-xs leading-relaxed text-white/75">{secondaryText}</p>
-              </>
-            ) : (
-              <p className="mt-1 text-xs leading-relaxed text-white/75">
-                Top community members each month win tickets, unreleased dubs, merch & more.
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {ARTIST_COMMUNITY_LINE}
               </p>
-            )}
-          </div>
+            </div>
+          ) : null}
 
-          <div className="mt-4 space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-white/60">ID Status Key</p>
+          <div className="mt-5 space-y-2.5" data-testid="first-login-id-status-key">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              ID Status Key
+            </p>
             <div className="flex flex-wrap gap-2">
-              <StatusPill icon={<Clock className={statusIconBase} />} label="Unidentified" tone="unidentified" />
-              <StatusPill icon={<Users className={statusIconBase} />} label="Community Identified" />
-              <StatusPill icon={<Check className={`${statusIconBase} text-white`} />} label="Moderator Confirmed" />
+              <StatusPill
+                icon={<Clock className={statusIconBase} />}
+                label="Unidentified"
+                tone="unidentified"
+              />
+              <StatusPill
+                icon={<Users className={statusIconBase} />}
+                label="Community Identified"
+              />
+              <StatusPill
+                icon={<Check className={`${statusIconBase} text-white`} />}
+                label="Moderator Confirmed"
+              />
               <StatusPill
                 icon={<GoldVerifiedTick className={`${statusIconBase} text-[#FFD700]`} />}
                 label="Artist Identified"
               />
             </div>
-            <p className="text-[11px] leading-relaxed text-white/65">
-              IDs can be suggested by the community, confirmed by moderators, or confirmed by artists.
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              IDs can be suggested by the community, confirmed by moderators, or confirmed by
+              artists.
             </p>
           </div>
 
@@ -197,7 +218,7 @@ export function FirstLoginOnboardingModal({
               playInteractionLight();
               onDismiss();
             }}
-            className="mt-4 w-full bg-[#4ae9df] text-black hover:bg-[#4ae9df]/90"
+            className={cn("mt-5 w-full", APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS)}
             data-testid="button-first-login-onboarding-dismiss"
           >
             {ctaLabel}

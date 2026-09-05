@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Clock, ArrowLeft, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon } from "lucide-react";
+import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import {
@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type CSSProperties } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
@@ -39,20 +39,53 @@ import { ArtistProfileQuestionsPrompt } from "@/components/artist-profile-questi
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import {
-  PROFILE_POSTS_FILTER_LABEL_CLASS,
-  PROFILE_POSTS_FILTER_ROW_CLASS,
-  PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS,
-  PROFILE_POSTS_FILTER_TAB_BASE_CLASS,
-  PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS,
+  PROFILE_SECONDARY_ROW_CLASS,
+  PROFILE_SECONDARY_ROW_TOP_CLASS,
 } from "@/lib/profile-posts-filter-presentation";
+import { ProfileGridStatusPill } from "@/components/profile-grid-status-pill";
+import { ProfileStatusFilterRow } from "@/components/profile-status-filter-row";
+import {
+  countIdentifiedPosts,
+  countUnidentifiedPosts,
+  filterPostsByIdentificationStatus,
+  type ProfileIdentificationFilter,
+} from "@/lib/profile-identification-filter";
+import {
+  PROFILE_SECTION_HEADING_ICON_SLOT_CLASS,
+  PROFILE_SECTION_HEADING_ROW_CLASS,
+  PROFILE_SECTION_HEADING_TEXT_CLASS,
+} from "@/lib/profile-section-heading-presentation";
 import {
   PROFILE_PRIMARY_NAV_GROUP_CLASS,
   PROFILE_PRIMARY_NAV_ICON_CLASS,
+  PROFILE_PRIMARY_NAV_ICON_SLOT_CLASS,
+  PROFILE_PRIMARY_NAV_INDICATOR_CLASS,
+  PROFILE_PRIMARY_NAV_INDICATOR_TAP_MS,
   PROFILE_PRIMARY_NAV_LABEL_CLASS,
   PROFILE_PRIMARY_NAV_LIST_CLASS,
   PROFILE_PRIMARY_NAV_SHELL_CLASS,
   PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS,
 } from "@/lib/profile-primary-nav-presentation";
+import {
+  PROFILE_SWIPE_TAB_IDS,
+  PROFILE_TAB_PAGER_PANEL_CLASS,
+  PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
+  PROFILE_TAB_PAGER_SNAP_EASING,
+  PROFILE_TAB_PAGER_SNAP_MS,
+  PROFILE_TAB_PAGER_TRACK_CLASS,
+  PROFILE_TAB_PAGER_VIEWPORT_CLASS,
+  clampElementScrollTopIfNeeded,
+  consumeProfilePagerCardClickSuppression,
+  interpolateProfileNavIndicator,
+  prefersProfilePagerReducedMotion,
+  profileTabIndex,
+  resolveProfilePagerHostHeightPx,
+  resolveProfilePagerVertUnlockIndices,
+  useProfileTabPager,
+  type ProfileNavIndicatorMetrics,
+  type ProfilePagerProgressEvent,
+  type ProfileSwipeTabId,
+} from "@/lib/profile-tab-swipe";
 import {
   PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS,
   PROFILE_BANNER_BOTTOM_FADE_STYLE,
@@ -71,10 +104,37 @@ import {
   SETTINGS_ROW_SUBTITLE_CLASS,
   SETTINGS_ROWS_STACK_CLASS,
 } from "@/lib/settings-presentation";
+import {
+  PROFILE_NOTIFICATION_BODY_CLASS,
+  PROFILE_NOTIFICATION_GROUP_COUNT_CLASS,
+  PROFILE_NOTIFICATION_MEDIA_FALLBACK_CLASS,
+  PROFILE_NOTIFICATION_MEDIA_FALLBACK_ICON_CLASS,
+  PROFILE_NOTIFICATION_MEDIA_FRAME_CLASS,
+  PROFILE_NOTIFICATION_ROW_SURFACE_CLASS,
+  PROFILE_NOTIFICATION_SKELETON_MEDIA_CIRCLE_CLASS,
+  PROFILE_NOTIFICATION_SKELETON_MEDIA_SQUARE_CLASS,
+  PROFILE_NOTIFICATION_SKELETON_ROW_CLASS,
+  PROFILE_NOTIFICATION_UNREAD_DOT_CLASS,
+  PROFILE_NOTIFICATIONS_MASK_SHELL_CLASS,
+  PROFILE_NOTIFICATIONS_PTR_MIN_REFRESH_VISIBLE_MS,
+  PROFILE_NOTIFICATIONS_PTR_REFRESH_SPIN_CLASS,
+  PROFILE_NOTIFICATIONS_PTR_SNAP_EASING,
+  PROFILE_NOTIFICATIONS_PTR_SNAP_MS,
+  PROFILE_NOTIFICATIONS_PTR_THRESHOLD_PX,
+  PROFILE_NOTIFICATIONS_PTR_TOP_EPSILON_PX,
+  PROFILE_NOTIFICATIONS_TAB_CONTENT_CLASS,
+  PROFILE_NOTIFICATIONS_VIEWPORT_CLASS,
+  getProfileNotificationBodyClass,
+  getProfileNotificationUnreadSurfaceClass,
+  profileNotificationsPtrHoldHeightPx,
+  profileNotificationsPtrIndicatorOpacity,
+  profileNotificationsPtrPullRotateDeg,
+  profileNotificationsRubberBandPull,
+} from "@/lib/profile-notifications-presentation";
+import { playNotificationsPtrRefreshCommitHaptic } from "@/lib/profile-notifications-ptr-haptics";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
-import { VideoCard } from "@/components/video-card";
 import { goldAvatarGlowShadowClass, GoldVerifiedTick } from "@/components/verified-artist";
 import { isPostArtistVerified } from "@/lib/post-artist-verification";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
@@ -92,20 +152,42 @@ import { getReleaseEventGroupSummaryMessage } from "@/lib/release-event-group-co
 import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { FullScreenPostSequenceViewer } from "@/components/full-screen-post-sequence-viewer";
+import { clampPostSequenceInitialIndex } from "@/lib/full-screen-post-sequence-viewer";
 import {
   consumeProfileNotificationsTabIntent,
   PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT,
   setProfileNotificationsTabOpen,
 } from "@/lib/in-app-notification-suppression";
 
-/**
- * Profile Notifications only.
- * Full-width parent owns separators. This surface is inset (`mx-2`) so radii sit inside
- * the overflow viewport, with `px-2` so thumbnail/text sit inside the same rounded press fill.
- * No `-mx-2`, no ::before.
- */
-const PROFILE_NOTIFICATION_ROW_SURFACE_CLASS =
-  "mx-2 flex min-h-11 cursor-pointer items-start gap-3 rounded-lg px-2 py-3 text-left bg-transparent hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0a83ff]/45 active:bg-black/[0.04] dark:active:bg-white/[0.04] [@media(hover:hover)]:hover:bg-black/[0.03] dark:[@media(hover:hover)]:hover:bg-white/[0.03]" as const;
+/** Compact skeleton rows for Profile → Notifications initial load. */
+function ProfileNotificationsLoadingSkeleton() {
+  return (
+    <div
+      className={SETTINGS_ROWS_STACK_CLASS}
+      aria-busy="true"
+      data-testid="profile-notifications-skeleton"
+    >
+      {[0, 1, 2].map((index) => (
+        <div key={index} className={PROFILE_NOTIFICATION_SKELETON_ROW_CLASS}>
+          <div
+            className={
+              index === 0
+                ? PROFILE_NOTIFICATION_SKELETON_MEDIA_CIRCLE_CLASS
+                : PROFILE_NOTIFICATION_SKELETON_MEDIA_SQUARE_CLASS
+            }
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1 space-y-2 pt-0.5">
+            <DubHubSkeletonBar className="h-3.5 w-[88%]" />
+            <DubHubSkeletonBar className="h-3 w-[64%]" tone="mid" />
+            <DubHubSkeletonBar className="h-2.5 w-14" tone="faint" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -218,13 +300,15 @@ function getGenreChipColors(genre: string) {
 }
 
 /** Vertical rhythm between Overview sections — equal inset around `divide-y` rules.
- * Direct `section` children only (Quick One renders its own `<section>` when visible). */
+ * Direct `section` children only (Quick One renders its own `<section>` when visible).
+ * Top inset vs primary tabs: {@link PROFILE_SECONDARY_ROW_TOP_CLASS} on the panel. */
 const PROFILE_OVERVIEW_SECTIONS_CLASS =
-  "mt-5 divide-y divide-white/5 [&>section]:py-5 [&>section:first-child]:pt-0 [&>section:last-child]:pb-1";
+  "divide-y divide-white/5 [&>section]:py-5 [&>section:first-child]:pt-0 [&>section:last-child]:pb-1";
 
-/** Lightweight Impact / Community mode tabs — text + accent underline (not segmented pills). */
+/** Lightweight Impact / Community mode tabs — text + accent underline (not segmented pills).
+ * Underline is absolute on the button so labels share the secondary-row centreline with Posts/Likes. */
 const PROFILE_IMPACT_MODE_TAB_BASE =
-  "ios-press relative flex min-h-11 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "ios-press relative flex min-h-11 shrink-0 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 const PROFILE_IMPACT_MODE_TAB_ACTIVE =
   "font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:rounded-full after:bg-[#0a83ff]";
 const PROFILE_IMPACT_MODE_TAB_INACTIVE = "font-medium text-white/55 hover:text-white/80";
@@ -282,10 +366,12 @@ function ProfileCommunityActivitySection({
 }: ProfileCommunityActivitySectionProps) {
   return (
     <>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <BarChart3 className="w-4 h-4 shrink-0 text-gray-300" />
-          <h3 className="font-semibold">Your Activity</h3>
+      <div className={cn(PROFILE_SECONDARY_ROW_CLASS, "justify-between gap-2")}>
+        <div className={PROFILE_SECTION_HEADING_ROW_CLASS}>
+          <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
+            <BarChart3 className="h-4 w-4 text-gray-300" />
+          </span>
+          <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Your Activity</h3>
           <StatInfoPopover
             label="Your Activity"
             content={PROFILE_HELP.sectionOverview}
@@ -336,9 +422,11 @@ function ProfileCommunityActivitySection({
       {showActivityGenres ? (
         <div className="mt-4 space-y-4 border-t border-white/5 pt-4" data-testid="your-activity-genres">
           <div>
-            <div className="mb-3 flex items-center gap-1.5">
-              <Check className="w-4 h-4 shrink-0 text-gray-300" />
-              <h4 className="text-sm font-semibold">Top Genres ID&apos;d</h4>
+            <div className={`mb-3 ${PROFILE_SECTION_HEADING_ROW_CLASS}`}>
+              <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
+                <Check className="h-4 w-4 text-gray-300" />
+              </span>
+              <h4 className={cn("text-sm font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Top Genres ID&apos;d</h4>
               <StatInfoPopover
                 label="Top Genres ID'd"
                 content={PROFILE_HELP.tracksIdentifiedGenres}
@@ -375,9 +463,11 @@ function ProfileCommunityActivitySection({
           </div>
 
           <div>
-            <div className="mb-3 flex items-center gap-1.5">
-              <Upload className="w-4 h-4 shrink-0 text-gray-300" />
-              <h4 className="text-sm font-semibold">Top Genres Posted</h4>
+            <div className={`mb-3 ${PROFILE_SECTION_HEADING_ROW_CLASS}`}>
+              <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
+                <Upload className="h-4 w-4 text-gray-300" />
+              </span>
+              <h4 className={cn("text-sm font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Top Genres Posted</h4>
               <StatInfoPopover
                 label="Top Genres Posted"
                 content={PROFILE_HELP.topGenresPosted}
@@ -640,16 +730,16 @@ export default function UserProfile() {
     return () => setProfileNotificationsTabOpen(false);
   }, [activeTab]);
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
-  const [postFilter, setPostFilter] = useState<"all" | "identified" | "unidentified">("all");
+  const [postFilter, setPostFilter] = useState<ProfileIdentificationFilter>("all");
+  const [likesFilter, setLikesFilter] = useState<ProfileIdentificationFilter>("all");
   /** Local-only toggle for genre detail inside the Your Activity card (collapsed by default). */
   const [showActivityGenres, setShowActivityGenres] = useState(false);
   const [likesViewerStartIndex, setLikesViewerStartIndex] = useState<number | null>(null);
   const [postsViewerStartIndex, setPostsViewerStartIndex] = useState<number | null>(null);
-  /** Nearest snapped page in full-screen post viewers — drives a single active VideoCard (avoids N× `preload=auto`). */
-  const [postsViewerSnapIndex, setPostsViewerSnapIndex] = useState(0);
-  const [likesViewerSnapIndex, setLikesViewerSnapIndex] = useState(0);
-  const [profileViewerMuted, setProfileViewerMuted] = useState(true);
-  const toggleProfileViewerMute = useCallback(() => setProfileViewerMuted((m) => !m), []);
+  /** Snapshot of filtered sequence at open — filter must not re-index while viewer is open. */
+  const [postsViewerSequence, setPostsViewerSequence] = useState<PostWithUser[] | null>(null);
+  const [likesViewerSequence, setLikesViewerSequence] = useState<PostWithUser[] | null>(null);
+  const profileScrollTopBeforeViewerRef = useRef(0);
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
   const [pendingAvatarFileName, setPendingAvatarFileName] = useState<string | null>(null);
@@ -670,8 +760,6 @@ export default function UserProfile() {
   const [isBannerMenuOpen, setIsBannerMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
-  const likesViewerRef = useRef<HTMLDivElement | null>(null);
-  const postsViewerRef = useRef<HTMLDivElement | null>(null);
   const [, navigate] = useLocation();
   const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
     queryKey: ["/api/user", currentUser?.id, "stats"],
@@ -749,8 +837,19 @@ export default function UserProfile() {
   const [hasLoadedNotifications, setHasLoadedNotifications] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
+  const [refreshHoldHeightPx, setRefreshHoldHeightPx] = useState(0);
+  const [isCompletingNotificationsPull, setIsCompletingNotificationsPull] = useState(false);
+  const [notificationsPullSnapBack, setNotificationsPullSnapBack] = useState(false);
   const notificationsListRef = useRef<HTMLDivElement | null>(null);
   const pullStartYRef = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const isPullingRef = useRef(false);
+  const rafNotificationsPullFlushRef = useRef<number | null>(null);
+  const notificationsPullSnapTimeoutRef = useRef<number | null>(null);
+  const notificationsMinVisibleTimeoutRef = useRef<number | null>(null);
+  const notificationsMinVisibleResolveRef = useRef<(() => void) | null>(null);
+  const notificationsPtrSessionRef = useRef(0);
+  const notificationsPtrAliveRef = useRef(true);
   const initialNotificationsInFlightRef = useRef(false);
   const refreshNotificationsInFlightRef = useRef(false);
   const loadOlderNotificationsInFlightRef = useRef(false);
@@ -879,22 +978,20 @@ export default function UserProfile() {
   };
 
   // Filter posts based on verification status
-  const filteredPosts = useMemo(() => {
-    if (postFilter === "all") {
-      return userPosts;
-    } else if (postFilter === "identified") {
-      return userPosts.filter(post => 
-        post.verificationStatus === "identified" || 
-        post.verificationStatus === "community" ||
-        post.verificationStatus === "community_approved",
-      );
-    } else {
-      // unidentified
-      return userPosts.filter(post => 
-        post.verificationStatus === "unverified"
-      );
-    }
-  }, [userPosts, postFilter]);
+  const filteredPosts = useMemo(
+    () => filterPostsByIdentificationStatus(userPosts, postFilter),
+    [userPosts, postFilter],
+  );
+
+  const identifiedPostCount = useMemo(() => countIdentifiedPosts(userPosts), [userPosts]);
+  const unidentifiedPostCount = useMemo(() => countUnidentifiedPosts(userPosts), [userPosts]);
+
+  const filteredLikedPosts = useMemo(
+    () => filterPostsByIdentificationStatus(likedPosts, likesFilter),
+    [likedPosts, likesFilter],
+  );
+  const identifiedLikedCount = useMemo(() => countIdentifiedPosts(likedPosts), [likedPosts]);
+  const unidentifiedLikedCount = useMemo(() => countUnidentifiedPosts(likedPosts), [likedPosts]);
 
   const genreStats = useMemo(() => {
     const genreCounts = new Map<string, number>();
@@ -1417,16 +1514,6 @@ export default function UserProfile() {
 
   const isCollaboratorResponse = (n: NotificationWithUser) => isCollaboratorAcceptance(n) || isCollaboratorRejection(n);
 
-  const isReleaseNotification = (n: NotificationWithUser) => {
-    const type = getEffectiveNotificationType(notificationRowFields(n));
-    return (
-      type === "release_attached" ||
-      type === "artist_release_alert" ||
-      type === "release_day" ||
-      type === "release_announce"
-    );
-  };
-
   type GroupedNotification = {
     id: string;
     representative: NotificationWithUser;
@@ -1735,10 +1822,7 @@ export default function UserProfile() {
         setHasLoadedNotifications(true);
       } finally {
         refreshNotificationsInFlightRef.current = false;
-        setIsRefreshingNotifications(false);
-        setPullDistance(0);
-        setIsPulling(false);
-        pullStartYRef.current = null;
+        // isRefreshing cleared by pull completion so spacer does not drop a frame.
       }
       return;
     }
@@ -1765,12 +1849,131 @@ export default function UserProfile() {
       toast({ title: "Refresh failed", variant: "destructive" });
     } finally {
       refreshNotificationsInFlightRef.current = false;
-      setIsRefreshingNotifications(false);
-      setPullDistance(0);
-      setIsPulling(false);
-      pullStartYRef.current = null;
+      // isRefreshing cleared by pull completion so spacer does not drop a frame.
     }
   };
+
+  const cancelNotificationsPullRaf = useCallback(() => {
+    if (rafNotificationsPullFlushRef.current != null) {
+      cancelAnimationFrame(rafNotificationsPullFlushRef.current);
+      rafNotificationsPullFlushRef.current = null;
+    }
+  }, []);
+
+  const clearNotificationsPullSnapTimeout = useCallback(() => {
+    if (notificationsPullSnapTimeoutRef.current != null) {
+      window.clearTimeout(notificationsPullSnapTimeoutRef.current);
+      notificationsPullSnapTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearNotificationsMinVisibleTimeout = useCallback(() => {
+    if (notificationsMinVisibleTimeoutRef.current != null) {
+      window.clearTimeout(notificationsMinVisibleTimeoutRef.current);
+      notificationsMinVisibleTimeoutRef.current = null;
+    }
+    const resolvePending = notificationsMinVisibleResolveRef.current;
+    notificationsMinVisibleResolveRef.current = null;
+    // Resolve so Promise.all([fetch, minVisible]) cannot hang after abort/unmount.
+    resolvePending?.();
+  }, []);
+
+  const waitNotificationsMinVisibleRefresh = useCallback(() => {
+    clearNotificationsMinVisibleTimeout();
+    return new Promise<void>((resolve) => {
+      notificationsMinVisibleResolveRef.current = resolve;
+      notificationsMinVisibleTimeoutRef.current = window.setTimeout(() => {
+        notificationsMinVisibleTimeoutRef.current = null;
+        notificationsMinVisibleResolveRef.current = null;
+        resolve();
+      }, PROFILE_NOTIFICATIONS_PTR_MIN_REFRESH_VISIBLE_MS);
+    });
+  }, [clearNotificationsMinVisibleTimeout]);
+
+  const resetNotificationsPullVisual = useCallback(
+    (opts?: { animate?: boolean }) => {
+      cancelNotificationsPullRaf();
+      pullDistanceRef.current = 0;
+      isPullingRef.current = false;
+      pullStartYRef.current = null;
+      setIsPulling(false);
+      if (opts?.animate) {
+        clearNotificationsPullSnapTimeout();
+        setNotificationsPullSnapBack(true);
+        setPullDistance(0);
+        notificationsPullSnapTimeoutRef.current = window.setTimeout(() => {
+          setNotificationsPullSnapBack(false);
+          notificationsPullSnapTimeoutRef.current = null;
+        }, PROFILE_NOTIFICATIONS_PTR_SNAP_MS + 40);
+      } else {
+        setNotificationsPullSnapBack(false);
+        setPullDistance(0);
+      }
+    },
+    [cancelNotificationsPullRaf, clearNotificationsPullSnapTimeout],
+  );
+
+  const abortNotificationsPtrVisualSession = useCallback(() => {
+    notificationsPtrSessionRef.current += 1;
+    clearNotificationsMinVisibleTimeout();
+    clearNotificationsPullSnapTimeout();
+    cancelNotificationsPullRaf();
+    isPullingRef.current = false;
+    pullStartYRef.current = null;
+    pullDistanceRef.current = 0;
+    if (!notificationsPtrAliveRef.current) return;
+    setIsPulling(false);
+    setPullDistance(0);
+    setNotificationsPullSnapBack(false);
+    setIsRefreshingNotifications(false);
+    setIsCompletingNotificationsPull(false);
+    setRefreshHoldHeightPx(0);
+  }, [
+    cancelNotificationsPullRaf,
+    clearNotificationsMinVisibleTimeout,
+    clearNotificationsPullSnapTimeout,
+  ]);
+
+  useEffect(() => {
+    notificationsPtrAliveRef.current = true;
+    return () => {
+      notificationsPtrAliveRef.current = false;
+      abortNotificationsPtrVisualSession();
+    };
+  }, [abortNotificationsPtrVisualSession]);
+
+  useEffect(() => {
+    if (activeTab === "notifications") return;
+    abortNotificationsPtrVisualSession();
+  }, [activeTab, abortNotificationsPtrVisualSession]);
+
+  const completeNotificationsPullAfterRefresh = useCallback(async () => {
+    if (!notificationsPtrAliveRef.current) return;
+    setIsCompletingNotificationsPull(true);
+    setIsRefreshingNotifications(false);
+    setRefreshHoldHeightPx(0);
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, PROFILE_NOTIFICATIONS_PTR_SNAP_MS);
+    });
+    if (!notificationsPtrAliveRef.current) return;
+    setIsCompletingNotificationsPull(false);
+    pullDistanceRef.current = 0;
+    setPullDistance(0);
+    pullStartYRef.current = null;
+    isPullingRef.current = false;
+    setIsPulling(false);
+  }, []);
+
+  const flushNotificationsPullDistance = useCallback(() => {
+    rafNotificationsPullFlushRef.current = null;
+    if (!notificationsPtrAliveRef.current) return;
+    setPullDistance(pullDistanceRef.current);
+  }, []);
+
+  const scheduleNotificationsPullDistanceFlush = useCallback(() => {
+    if (rafNotificationsPullFlushRef.current != null) return;
+    rafNotificationsPullFlushRef.current = requestAnimationFrame(flushNotificationsPullDistance);
+  }, [flushNotificationsPullDistance]);
 
   const loadOlderNotifications = async () => {
     if (
@@ -1846,125 +2049,6 @@ export default function UserProfile() {
       document.removeEventListener("visibilitychange", refetchAudienceOnFocus);
     };
   }, [activeTab, userType, verifiedArtist, queryClient]);
-
-  // Scroll liked-post viewer to the opened index (must run unconditionally — hooks before any early return)
-  useEffect(() => {
-    if (likesViewerStartIndex === null) return;
-    const frame = requestAnimationFrame(() => {
-      const viewer = likesViewerRef.current;
-      if (!viewer) return;
-      const target = viewer.querySelector<HTMLElement>(`[data-liked-viewer-index="${likesViewerStartIndex}"]`);
-      target?.scrollIntoView({ block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [likesViewerStartIndex]);
-
-  useEffect(() => {
-    if (postsViewerStartIndex === null) return;
-    const frame = requestAnimationFrame(() => {
-      const viewer = postsViewerRef.current;
-      if (!viewer) return;
-      const target = viewer.querySelector<HTMLElement>(`[data-posts-viewer-index="${postsViewerStartIndex}"]`);
-      target?.scrollIntoView({ block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [postsViewerStartIndex]);
-
-  useEffect(() => {
-    if (postsViewerStartIndex === null) return;
-    setPostsViewerSnapIndex(postsViewerStartIndex);
-  }, [postsViewerStartIndex]);
-
-  useEffect(() => {
-    if (likesViewerStartIndex === null) return;
-    setLikesViewerSnapIndex(likesViewerStartIndex);
-  }, [likesViewerStartIndex]);
-
-  useEffect(() => {
-    const el = postsViewerRef.current;
-    if (!el || postsViewerStartIndex === null) return;
-
-    let raf: number | null = null;
-    const updateSnap = () => {
-      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-posts-viewer-index]"));
-      if (nodes.length === 0) return;
-      const st = el.scrollTop;
-      let bestIdx = 0;
-      let bestDist = Number.POSITIVE_INFINITY;
-      for (const n of nodes) {
-        const raw = n.dataset.postsViewerIndex;
-        const idx = raw === undefined ? 0 : Number(raw);
-        const d = Math.abs(st - n.offsetTop);
-        if (d < bestDist) {
-          bestDist = d;
-          bestIdx = Number.isFinite(idx) ? idx : 0;
-        }
-      }
-      setPostsViewerSnapIndex((prev) => (prev === bestIdx ? prev : bestIdx));
-    };
-
-    const schedule = () => {
-      if (raf != null) return;
-      raf = window.requestAnimationFrame(() => {
-        raf = null;
-        updateSnap();
-      });
-    };
-
-    schedule();
-    el.addEventListener("scroll", schedule, { passive: true });
-    el.addEventListener("scrollend", schedule);
-    el.addEventListener("touchend", schedule, { passive: true });
-    return () => {
-      if (raf != null) window.cancelAnimationFrame(raf);
-      el.removeEventListener("scroll", schedule);
-      el.removeEventListener("scrollend", schedule);
-      el.removeEventListener("touchend", schedule);
-    };
-  }, [postsViewerStartIndex, filteredPosts.length]);
-
-  useEffect(() => {
-    const el = likesViewerRef.current;
-    if (!el || likesViewerStartIndex === null) return;
-
-    let raf: number | null = null;
-    const updateSnap = () => {
-      const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-liked-viewer-index]"));
-      if (nodes.length === 0) return;
-      const st = el.scrollTop;
-      let bestIdx = 0;
-      let bestDist = Number.POSITIVE_INFINITY;
-      for (const n of nodes) {
-        const raw = n.dataset.likedViewerIndex;
-        const idx = raw === undefined ? 0 : Number(raw);
-        const d = Math.abs(st - n.offsetTop);
-        if (d < bestDist) {
-          bestDist = d;
-          bestIdx = Number.isFinite(idx) ? idx : 0;
-        }
-      }
-      setLikesViewerSnapIndex((prev) => (prev === bestIdx ? prev : bestIdx));
-    };
-
-    const schedule = () => {
-      if (raf != null) return;
-      raf = window.requestAnimationFrame(() => {
-        raf = null;
-        updateSnap();
-      });
-    };
-
-    schedule();
-    el.addEventListener("scroll", schedule, { passive: true });
-    el.addEventListener("scrollend", schedule);
-    el.addEventListener("touchend", schedule, { passive: true });
-    return () => {
-      if (raf != null) window.cancelAnimationFrame(raf);
-      el.removeEventListener("scroll", schedule);
-      el.removeEventListener("scrollend", schedule);
-      el.removeEventListener("touchend", schedule);
-    };
-  }, [likesViewerStartIndex, likedPosts.length]);
 
   const handleNotificationClick = async (notification: NotificationWithUser) => {
     // Mark as read if unread
@@ -2073,31 +2157,107 @@ export default function UserProfile() {
   };
 
   const handleNotificationsTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (notificationsListRef.current?.scrollTop === 0) {
-      pullStartYRef.current = e.touches[0]?.clientY ?? null;
-      setIsPulling(true);
-    } else {
-      pullStartYRef.current = null;
-      setIsPulling(false);
+    if (
+      isRefreshingNotifications ||
+      isCompletingNotificationsPull ||
+      refreshNotificationsInFlightRef.current
+    ) {
+      return;
     }
+    const el = notificationsListRef.current;
+    if (!el || el.scrollTop > PROFILE_NOTIFICATIONS_PTR_TOP_EPSILON_PX) {
+      pullStartYRef.current = null;
+      isPullingRef.current = false;
+      setIsPulling(false);
+      return;
+    }
+    pullStartYRef.current = e.touches[0]?.clientY ?? null;
+    if (pullStartYRef.current == null) return;
+    clearNotificationsPullSnapTimeout();
+    setNotificationsPullSnapBack(false);
+    isPullingRef.current = true;
+    setIsPulling(true);
   };
 
   const handleNotificationsTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!isPulling || pullStartYRef.current == null) return;
+    if (!isPullingRef.current || pullStartYRef.current == null) return;
+    const el = notificationsListRef.current;
+    if (!el || el.scrollTop > PROFILE_NOTIFICATIONS_PTR_TOP_EPSILON_PX) {
+      resetNotificationsPullVisual({ animate: false });
+      return;
+    }
     const currentY = e.touches[0]?.clientY ?? pullStartYRef.current;
-    const delta = Math.max(0, currentY - pullStartYRef.current);
-    setPullDistance(Math.min(96, delta * 0.45));
+    const fingerDelta = Math.max(0, currentY - pullStartYRef.current);
+    pullDistanceRef.current = profileNotificationsRubberBandPull(fingerDelta);
+    scheduleNotificationsPullDistanceFlush();
   };
 
   const handleNotificationsTouchEnd = () => {
-    const threshold = 52;
-    if (isPulling && pullDistance >= threshold && !refreshNotificationsInFlightRef.current) {
-      void refreshNewerNotifications();
+    cancelNotificationsPullRaf();
+    if (!isPullingRef.current || pullStartYRef.current == null) {
+      if (!isRefreshingNotifications && !isCompletingNotificationsPull) {
+        resetNotificationsPullVisual({ animate: false });
+      }
       return;
     }
-    setPullDistance(0);
+
+    const releaseVisual = pullDistanceRef.current;
+    const crossed =
+      releaseVisual >= PROFILE_NOTIFICATIONS_PTR_THRESHOLD_PX &&
+      !refreshNotificationsInFlightRef.current;
+
+    isPullingRef.current = false;
     setIsPulling(false);
     pullStartYRef.current = null;
+
+    if (!crossed) {
+      setNotificationsPullSnapBack(true);
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      clearNotificationsPullSnapTimeout();
+      notificationsPullSnapTimeoutRef.current = window.setTimeout(() => {
+        setNotificationsPullSnapBack(false);
+        notificationsPullSnapTimeoutRef.current = null;
+      }, PROFILE_NOTIFICATIONS_PTR_SNAP_MS + 40);
+      return;
+    }
+
+    const heldHeight = profileNotificationsPtrHoldHeightPx(releaseVisual);
+    setRefreshHoldHeightPx(heldHeight);
+    // Keep visual height until refreshing owns the spacer (avoid 1-frame collapse).
+    pullDistanceRef.current = heldHeight;
+    setPullDistance(heldHeight);
+    setNotificationsPullSnapBack(false);
+    // Switch to continuous refresh spin immediately on commit (fetch still starts below).
+    setIsRefreshingNotifications(true);
+    // One-shot commit haptic — release past threshold as refresh begins (not on drag cross).
+    playNotificationsPtrRefreshCommitHaptic();
+
+    const session = ++notificationsPtrSessionRef.current;
+    void (async () => {
+      try {
+        // Fetch starts immediately; min-visible timer runs in parallel (not sequenced).
+        await Promise.all([
+          refreshNewerNotifications(),
+          waitNotificationsMinVisibleRefresh(),
+        ]);
+      } finally {
+        if (
+          session !== notificationsPtrSessionRef.current ||
+          !notificationsPtrAliveRef.current
+        ) {
+          return;
+        }
+        await completeNotificationsPullAfterRefresh();
+      }
+    })();
+  };
+
+  const handleNotificationsTouchCancel = () => {
+    if (isRefreshingNotifications || isCompletingNotificationsPull || refreshNotificationsInFlightRef.current) {
+      return;
+    }
+    resetNotificationsPullVisual({ animate: true });
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2320,46 +2480,6 @@ export default function UserProfile() {
     return `${Math.floor(days / 7)}w ago`;
   };
 
-  const getPostStatusMeta = (post: PostWithUser) => {
-    const status = post.verificationStatus ?? (post as { verification_status?: string }).verification_status;
-    const isModeratorVerified =
-      post.verifiedByModerator ??
-      (post as { verified_by_moderator?: boolean }).verified_by_moderator;
-
-    // Mirror video-card.tsx tier order for Profile Posts/Likes thumbnail pills.
-    if (isPostArtistVerified(post)) {
-      return {
-        label: "Identified",
-        className: "bg-green-500/85 text-white [&_svg]:!text-[#FFD700]",
-        Icon: ({ className }: { className?: string }) => (
-          <GoldVerifiedTick
-            className={`w-3 h-3 shrink-0 text-[#FFD700] ${className ?? ""}`}
-            glow="inline"
-          />
-        ),
-      };
-    }
-    if (status === "identified" || isModeratorVerified) {
-      return {
-        label: "Identified",
-        className: "bg-green-500/85 text-white",
-        Icon: Check,
-      };
-    }
-    if (status === "community_approved" || status === "community") {
-      return {
-        label: "Identified",
-        className: "bg-green-500/85 text-white",
-        Icon: Users,
-      };
-    }
-    return {
-      label: "Unidentified",
-      className: "bg-red-500/85 text-white",
-      Icon: Clock,
-    };
-  };
-
   const getPostThumbnail = (post: PostWithUser) => {
     const maybePreview =
       (post as any).thumbnailUrl ??
@@ -2395,48 +2515,314 @@ export default function UserProfile() {
     return resolveMediaUrl(post?.videoUrl ?? post?.video_url ?? null);
   };
 
+  const profilePageScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const restoreProfileScrollAfterViewer = useCallback(() => {
+    requestAnimationFrame(() => {
+      const page = profilePageScrollRef.current;
+      if (page) page.scrollTop = profileScrollTopBeforeViewerRef.current;
+    });
+  }, []);
+
   const openLikedPostViewer = (startIndex: number) => {
-    if (!likedPosts.length) return;
-    const clamped = Math.max(0, Math.min(startIndex, likedPosts.length - 1));
+    if (!filteredLikedPosts.length) return;
+    const clamped = clampPostSequenceInitialIndex(startIndex, filteredLikedPosts.length);
+    profileScrollTopBeforeViewerRef.current = profilePageScrollRef.current?.scrollTop ?? 0;
     setPostsViewerStartIndex(null);
+    setPostsViewerSequence(null);
+    setLikesViewerSequence(filteredLikedPosts);
     setActiveTab("liked");
     setLikesViewerStartIndex(clamped);
   };
 
   const closeLikesViewer = () => {
     setLikesViewerStartIndex(null);
+    setLikesViewerSequence(null);
     setActiveTab("liked");
+    restoreProfileScrollAfterViewer();
   };
 
   const openPostsPostViewer = (startIndex: number) => {
     if (!filteredPosts.length) return;
-    const clamped = Math.max(0, Math.min(startIndex, filteredPosts.length - 1));
+    const clamped = clampPostSequenceInitialIndex(startIndex, filteredPosts.length);
+    profileScrollTopBeforeViewerRef.current = profilePageScrollRef.current?.scrollTop ?? 0;
     setLikesViewerStartIndex(null);
+    setLikesViewerSequence(null);
+    setPostsViewerSequence(filteredPosts);
     setActiveTab("posts");
     setPostsViewerStartIndex(clamped);
   };
 
   const closePostsViewer = () => {
     setPostsViewerStartIndex(null);
+    setPostsViewerSequence(null);
     setActiveTab("posts");
+    restoreProfileScrollAfterViewer();
   };
 
   const handleProfileTabChange = (value: string) => {
     if (!isProfileTabId(value)) return;
     if (value !== "liked") {
       setLikesViewerStartIndex(null);
+      setLikesViewerSequence(null);
     }
     if (value !== "posts") {
       setPostsViewerStartIndex(null);
+      setPostsViewerSequence(null);
     }
     setActiveTab(value);
   };
 
   const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
+  const profileTabPagerViewportRef = useRef<HTMLDivElement | null>(null);
+  const profileTabPagerTrackRef = useRef<HTMLDivElement | null>(null);
+  const profilePagerPanelRefs = useRef<(HTMLElement | null)[]>([null, null, null, null]);
+  const profilePagerHostHeightKeyRef = useRef("");
+  const profilePagerHeightPhaseRef = useRef<ProfilePagerProgressEvent["phase"]>("idle");
+  const [pagerVertUnlockIndices, setPagerVertUnlockIndices] = useState<number[] | null>(null);
+  const profileTabsListRef = useRef<HTMLDivElement | null>(null);
+  const profileNavIndicatorRef = useRef<HTMLSpanElement | null>(null);
+  const profileNavMetricsRef = useRef<Partial<Record<ProfileSwipeTabId, ProfileNavIndicatorMetrics>>>(
+    {},
+  );
+  const profileNavIndicatorPhaseRef = useRef<"idle" | "dragging" | "snapping">("idle");
+  const profileTabSwipeTabRef = useRef<ProfileSwipeTabId>(tabsValue);
+  profileTabSwipeTabRef.current = tabsValue;
+
+  const applyProfileNavIndicator = useCallback(
+    (
+      metrics: { left: number; width: number; bottom: number },
+      opts: { animate: boolean; durationMs: number; reducedMotion: boolean },
+    ) => {
+      const el = profileNavIndicatorRef.current;
+      if (!el) return;
+      const reduced = opts.reducedMotion || prefersProfilePagerReducedMotion();
+      if (opts.animate && !reduced) {
+        el.style.transition = `left ${opts.durationMs}ms ${PROFILE_TAB_PAGER_SNAP_EASING}, width ${opts.durationMs}ms ${PROFILE_TAB_PAGER_SNAP_EASING}, bottom ${opts.durationMs}ms ${PROFILE_TAB_PAGER_SNAP_EASING}`;
+      } else {
+        el.style.transition = "none";
+      }
+      el.style.left = `${metrics.left}px`;
+      el.style.width = `${Math.max(0, metrics.width)}px`;
+      el.style.bottom = `${metrics.bottom}px`;
+    },
+    [],
+  );
+
+  const measureProfileNavTriggers = useCallback(() => {
+    const list = profileTabsListRef.current;
+    if (!list) return;
+    const listRect = list.getBoundingClientRect();
+    const next: Partial<Record<ProfileSwipeTabId, ProfileNavIndicatorMetrics>> = {};
+    for (const id of PROFILE_SWIPE_TAB_IDS) {
+      const testId =
+        id === "profile"
+          ? "tab-profile"
+          : id === "posts"
+            ? "tab-posts"
+            : id === "liked"
+              ? "tab-liked"
+              : "tab-notifications";
+      const trigger = list.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+      const group = trigger?.querySelector<HTMLElement>("[data-profile-nav-group]");
+      if (!group) continue;
+      const rect = group.getBoundingClientRect();
+      next[id] = {
+        left: rect.left - listRect.left,
+        width: rect.width,
+        bottom: listRect.bottom - rect.bottom,
+      };
+    }
+    profileNavMetricsRef.current = next;
+  }, []);
+
+  const syncProfileNavIndicatorToTab = useCallback(
+    (tab: ProfileSwipeTabId, opts: { animate: boolean; durationMs: number }) => {
+      measureProfileNavTriggers();
+      const metrics = profileNavMetricsRef.current[tab];
+      if (!metrics) return;
+      applyProfileNavIndicator(metrics, {
+        animate: opts.animate,
+        durationMs: opts.durationMs,
+        reducedMotion: prefersProfilePagerReducedMotion(),
+      });
+    },
+    [applyProfileNavIndicator, measureProfileNavTriggers],
+  );
+
+  const measureProfilePagerPanelHeight = useCallback((index: number) => {
+    const el = profilePagerPanelRefs.current[index];
+    if (!el) return 0;
+    return Math.ceil(
+      Math.max(el.scrollHeight, el.offsetHeight, el.getBoundingClientRect().height),
+    );
+  }, []);
+
+  /** PROFILE-GRID-VIEWER-2A-FIX — unlock current+adjacent, then discrete host minHeight. */
+  const applyProfilePagerHostHeight = useCallback(
+    (event: Pick<ProfilePagerProgressEvent, "phase" | "currentIndex" | "adjacentIndex">) => {
+      const key = `${event.phase}:${event.currentIndex}:${event.adjacentIndex ?? "x"}`;
+      if (key === profilePagerHostHeightKeyRef.current && event.phase !== "idle") {
+        return;
+      }
+      profilePagerHostHeightKeyRef.current = key;
+      profilePagerHeightPhaseRef.current = event.phase;
+
+      const unlock = resolveProfilePagerVertUnlockIndices({
+        phase: event.phase,
+        currentIndex: event.currentIndex,
+        adjacentIndex: event.adjacentIndex,
+      });
+      setPagerVertUnlockIndices((prev) => {
+        if (prev == null && unlock == null) return prev;
+        if (
+          prev != null &&
+          unlock != null &&
+          prev.length === unlock.length &&
+          prev.every((v, i) => v === unlock[i])
+        ) {
+          return prev;
+        }
+        return unlock;
+      });
+
+      if (event.phase === "idle") {
+        const viewport = profileTabPagerViewportRef.current;
+        if (viewport) viewport.style.minHeight = "";
+        requestAnimationFrame(() => {
+          const page = profilePageScrollRef.current;
+          if (page) clampElementScrollTopIfNeeded(page);
+        });
+      }
+    },
+    [],
+  );
+
+  // Measure after vertical unlock classes commit to the DOM (not every pointermove).
+  useLayoutEffect(() => {
+    const viewport = profileTabPagerViewportRef.current;
+    if (!viewport) return;
+    const phase = profilePagerHeightPhaseRef.current;
+    if (phase !== "dragging" && phase !== "snapping") {
+      viewport.style.minHeight = "";
+      return;
+    }
+    const unlock = pagerVertUnlockIndices;
+    if (!unlock || unlock.length === 0) return;
+    const currentHeight = measureProfilePagerPanelHeight(unlock[0]!);
+    const adjacentHeight =
+      unlock.length > 1 ? measureProfilePagerPanelHeight(unlock[1]!) : null;
+    const hostH = resolveProfilePagerHostHeightPx({
+      phase,
+      currentHeight,
+      adjacentHeight,
+    });
+    viewport.style.minHeight = `${hostH}px`;
+  }, [pagerVertUnlockIndices, measureProfilePagerPanelHeight]);
+
+  const handleProfilePagerProgress = useCallback(
+    (event: ProfilePagerProgressEvent) => {
+      profileNavIndicatorPhaseRef.current = event.phase;
+      applyProfilePagerHostHeight(event);
+      const currentId = PROFILE_SWIPE_TAB_IDS[event.currentIndex];
+      if (!currentId) return;
+      // Cache metrics; only measure when missing (not every pointermove).
+      if (!profileNavMetricsRef.current[currentId]) {
+        measureProfileNavTriggers();
+      }
+      const metricsMap = profileNavMetricsRef.current;
+      const from = metricsMap[currentId];
+      if (!from) return;
+
+      if (event.adjacentIndex == null || event.progress <= 0) {
+        applyProfileNavIndicator(from, {
+          animate: event.animate,
+          durationMs: event.durationMs ?? PROFILE_TAB_PAGER_SNAP_MS,
+          reducedMotion: event.reducedMotion,
+        });
+        return;
+      }
+
+      const adjacentId = PROFILE_SWIPE_TAB_IDS[event.adjacentIndex];
+      if (adjacentId && !metricsMap[adjacentId]) {
+        measureProfileNavTriggers();
+      }
+      const to = adjacentId ? profileNavMetricsRef.current[adjacentId] : null;
+      if (!to) {
+        applyProfileNavIndicator(from, {
+          animate: event.animate,
+          durationMs: event.durationMs ?? PROFILE_TAB_PAGER_SNAP_MS,
+          reducedMotion: event.reducedMotion,
+        });
+        return;
+      }
+
+      const lerped = interpolateProfileNavIndicator(from, to, event.progress);
+      applyProfileNavIndicator(
+        { ...lerped, bottom: from.bottom },
+        {
+          animate: event.animate,
+          durationMs: event.durationMs ?? PROFILE_TAB_PAGER_SNAP_MS,
+          reducedMotion: event.reducedMotion,
+        },
+      );
+    },
+    [applyProfileNavIndicator, applyProfilePagerHostHeight, measureProfileNavTriggers],
+  );
+
+  useProfileTabPager({
+    enabled: postsViewerStartIndex === null && likesViewerStartIndex === null,
+    activeTab: tabsValue,
+    tabRef: profileTabSwipeTabRef,
+    viewportRef: profileTabPagerViewportRef,
+    trackRef: profileTabPagerTrackRef,
+    onCommitTab: handleProfileTabChange,
+    onPagerProgress: handleProfilePagerProgress,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const reduced = prefersProfilePagerReducedMotion();
+    const animateTap =
+      profileNavIndicatorPhaseRef.current === "idle" && !reduced;
+    syncProfileNavIndicatorToTab(tabsValue, {
+      animate: animateTap,
+      durationMs: PROFILE_PRIMARY_NAV_INDICATOR_TAP_MS,
+    });
+    profileNavIndicatorPhaseRef.current = "idle";
+    // Settle pager host to committed active panel height (tap or swipe commit).
+    profilePagerHostHeightKeyRef.current = "";
+    applyProfilePagerHostHeight({
+      phase: "idle",
+      currentIndex: profileTabIndex(tabsValue),
+      adjacentIndex: null,
+    });
+  }, [tabsValue, syncProfileNavIndicatorToTab, applyProfilePagerHostHeight]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => {
+      if (profileNavIndicatorPhaseRef.current !== "idle") return;
+      syncProfileNavIndicatorToTab(profileTabSwipeTabRef.current, {
+        animate: false,
+        durationMs: 0,
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [syncProfileNavIndicatorToTab]);
+
   const hasReadyUploadedBanner = showUploadedBannerImage && bannerImageReady;
+  const profilePagerPanelClass = (panelIndex: number, ...extra: Array<string | undefined>) =>
+    cn(
+      PROFILE_TAB_PAGER_PANEL_CLASS,
+      pagerVertUnlockIndices?.includes(panelIndex) && PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
+      ...extra,
+    );
 
   return (
     <div
+      ref={profilePageScrollRef}
       data-lg-nav-5a-dest="profile"
       className={cn(
         APP_PAGE_SCROLL_CLASS,
@@ -2676,16 +3062,25 @@ export default function UserProfile() {
           <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-5">
             <div className={PROFILE_PRIMARY_NAV_SHELL_CLASS}>
               <TabsList
+                ref={profileTabsListRef}
                 className={PROFILE_PRIMARY_NAV_LIST_CLASS}
                 data-testid="profile-tabs"
               >
+                <span
+                  ref={profileNavIndicatorRef}
+                  className={PROFILE_PRIMARY_NAV_INDICATOR_CLASS}
+                  data-testid="profile-primary-nav-indicator"
+                  aria-hidden
+                />
                 <TabsTrigger
                   value="profile"
                   data-testid="tab-profile"
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
-                    <User className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
+                    <span className={PROFILE_PRIMARY_NAV_ICON_SLOT_CLASS}>
+                      <User className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    </span>
                     <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Overview</span>
                   </span>
                 </TabsTrigger>
@@ -2694,8 +3089,10 @@ export default function UserProfile() {
                   data-testid="tab-posts"
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
-                    <Upload className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
+                    <span className={PROFILE_PRIMARY_NAV_ICON_SLOT_CLASS}>
+                      <Upload className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    </span>
                     <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Posts</span>
                   </span>
                 </TabsTrigger>
@@ -2704,8 +3101,10 @@ export default function UserProfile() {
                   data-testid="tab-liked"
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
-                    <Heart className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
+                    <span className={PROFILE_PRIMARY_NAV_ICON_SLOT_CLASS}>
+                      <Heart className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    </span>
                     <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS}>Likes</span>
                   </span>
                 </TabsTrigger>
@@ -2719,8 +3118,10 @@ export default function UserProfile() {
                   }
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
-                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS}>
-                    <Bell className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                  <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
+                    <span className={PROFILE_PRIMARY_NAV_ICON_SLOT_CLASS}>
+                      <Bell className={PROFILE_PRIMARY_NAV_ICON_CLASS} aria-hidden />
+                    </span>
                     <span className={PROFILE_PRIMARY_NAV_LABEL_CLASS} aria-hidden>
                       Notif.
                     </span>
@@ -2737,57 +3138,76 @@ export default function UserProfile() {
               </TabsList>
             </div>
 
-            <TabsContent value="profile" className={PROFILE_OVERVIEW_SECTIONS_CLASS}>
+            <div
+              ref={profileTabPagerViewportRef}
+              className={PROFILE_TAB_PAGER_VIEWPORT_CLASS}
+              data-testid="profile-tab-swipe-region"
+            >
+            <div
+              ref={profileTabPagerTrackRef}
+              className={PROFILE_TAB_PAGER_TRACK_CLASS}
+              data-testid="profile-tab-pager-track"
+            >
+            <TabsContent
+              value="profile"
+              forceMount
+              ref={(el) => {
+                profilePagerPanelRefs.current[0] = el;
+              }}
+              data-profile-pager-index={0}
+              className={profilePagerPanelClass(
+                0,
+                PROFILE_SECONDARY_ROW_TOP_CLASS,
+                PROFILE_OVERVIEW_SECTIONS_CLASS,
+              )}
+            >
               {userType === "artist" ? (
                 <section data-testid="your-activity-list">
                   <div
-                    className="mb-3 flex items-end gap-5"
+                    className={cn(PROFILE_SECONDARY_ROW_CLASS, "gap-5")}
                     role="tablist"
                     aria-label="Artist impact or community activity"
+                    data-testid="profile-overview-secondary-row"
                   >
                     <button
                       type="button"
                       role="tab"
                       aria-selected={artistStatsMode === "artist"}
                       onClick={() => setArtistStatsMode("artist")}
-                      className={PROFILE_IMPACT_MODE_TAB_BASE}
+                      className={cn(
+                        PROFILE_IMPACT_MODE_TAB_BASE,
+                        artistStatsMode === "artist"
+                          ? PROFILE_IMPACT_MODE_TAB_ACTIVE
+                          : PROFILE_IMPACT_MODE_TAB_INACTIVE,
+                      )}
                       data-testid="stats-mode-artist"
                     >
-                      <span
-                        className={`relative inline-block whitespace-nowrap px-0.5 pb-[5px] ${
-                          artistStatsMode === "artist"
-                            ? PROFILE_IMPACT_MODE_TAB_ACTIVE
-                            : PROFILE_IMPACT_MODE_TAB_INACTIVE
-                        }`}
-                      >
-                        Artist Impact
-                      </span>
+                      Artist Impact
                     </button>
                     <button
                       type="button"
                       role="tab"
                       aria-selected={artistStatsMode === "user"}
                       onClick={() => setArtistStatsMode("user")}
-                      className={PROFILE_IMPACT_MODE_TAB_BASE}
+                      className={cn(
+                        PROFILE_IMPACT_MODE_TAB_BASE,
+                        artistStatsMode === "user"
+                          ? PROFILE_IMPACT_MODE_TAB_ACTIVE
+                          : PROFILE_IMPACT_MODE_TAB_INACTIVE,
+                      )}
                       data-testid="stats-mode-user"
                     >
-                      <span
-                        className={`relative inline-block whitespace-nowrap px-0.5 pb-[5px] ${
-                          artistStatsMode === "user"
-                            ? PROFILE_IMPACT_MODE_TAB_ACTIVE
-                            : PROFILE_IMPACT_MODE_TAB_INACTIVE
-                        }`}
-                      >
-                        Community Activity
-                      </span>
+                      Community Activity
                     </button>
                   </div>
 
                   {artistStatsMode === "artist" ? (
                     <>
-                      <div className="mb-2 flex items-center gap-1.5">
-                        <BarChart3 className="w-4 h-4 shrink-0 text-gray-300" />
-                        <h3 className="font-semibold">Your Impact</h3>
+                      <div className={`mb-2 ${PROFILE_SECTION_HEADING_ROW_CLASS}`}>
+                        <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
+                          <BarChart3 className="h-4 w-4 text-gray-300" />
+                        </span>
+                        <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Your Impact</h3>
                         <StatInfoPopover
                           label="Your Impact"
                           content={PROFILE_HELP.sectionImpact}
@@ -2905,92 +3325,30 @@ export default function UserProfile() {
             </TabsContent>
 
             {/* Posts Tab */}
-            <TabsContent value="posts" className="mt-2.5" forceMount>
+            <TabsContent
+              value="posts"
+              forceMount
+              ref={(el) => {
+                profilePagerPanelRefs.current[1] = el;
+              }}
+              data-profile-pager-index={1}
+              className={profilePagerPanelClass(1, PROFILE_SECONDARY_ROW_TOP_CLASS)}
+            >
               {postsViewerStartIndex === null && (
-                <div
-                  className={PROFILE_POSTS_FILTER_ROW_CLASS}
-                  role="tablist"
-                  aria-label="Filter posts by identification status"
-                  data-testid="profile-posts-filter"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={postFilter === "all"}
-                    className={PROFILE_POSTS_FILTER_TAB_BASE_CLASS}
-                    onClick={() => {
-                      setPostFilter("all");
-                      setPostsViewerStartIndex(null);
-                    }}
-                    data-testid="filter-all-posts"
-                  >
-                    <span
-                      className={`${PROFILE_POSTS_FILTER_LABEL_CLASS} ${
-                        postFilter === "all"
-                          ? PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS
-                          : PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS
-                      }`}
-                    >
-                      All ({userPosts.length})
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={postFilter === "identified"}
-                    className={PROFILE_POSTS_FILTER_TAB_BASE_CLASS}
-                    onClick={() => {
-                      setPostFilter("identified");
-                      setPostsViewerStartIndex(null);
-                    }}
-                    data-testid="filter-identified-posts"
-                  >
-                    <span
-                      className={`${PROFILE_POSTS_FILTER_LABEL_CLASS} ${
-                        postFilter === "identified"
-                          ? PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS
-                          : PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS
-                      }`}
-                    >
-                      Identified (
-                      {
-                        userPosts.filter(
-                          (t) =>
-                            t.verificationStatus === "identified" ||
-                            t.verificationStatus === "community" ||
-                            t.verificationStatus === "community_approved",
-                        ).length
-                      }
-                      )
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={postFilter === "unidentified"}
-                    className={PROFILE_POSTS_FILTER_TAB_BASE_CLASS}
-                    onClick={() => {
-                      setPostFilter("unidentified");
-                      setPostsViewerStartIndex(null);
-                    }}
-                    data-testid="filter-unidentified-posts"
-                  >
-                    <span
-                      className={`${PROFILE_POSTS_FILTER_LABEL_CLASS} ${
-                        postFilter === "unidentified"
-                          ? PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS
-                          : PROFILE_POSTS_FILTER_TAB_INACTIVE_CLASS
-                      }`}
-                    >
-                      Unidentified (
-                      {
-                        userPosts.filter((t) => t.verificationStatus === "unverified")
-                          .length
-                      }
-                      )
-                    </span>
-                  </button>
-                </div>
+                <ProfileStatusFilterRow
+                  value={postFilter}
+                  onChange={(next) => {
+                    setPostFilter(next);
+                    setPostsViewerStartIndex(null);
+                    setPostsViewerSequence(null);
+                  }}
+                  allCount={userPosts.length}
+                  identifiedCount={identifiedPostCount}
+                  unidentifiedCount={unidentifiedPostCount}
+                  ariaLabel="Filter posts by identification status"
+                  testId="profile-posts-filter"
+                  testIdSuffix="posts"
+                />
               )}
 
               {postsLoading ? (
@@ -3012,78 +3370,34 @@ export default function UserProfile() {
                     {postFilter === "all" && "Start uploading tracks to see them here!"}
                   </p>
                 </div>
-              ) : postsViewerStartIndex !== null ? (
-                <div
-                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-var(--app-bottom-nav-block)-10rem))] min-h-[20rem]"
-                  role="region"
-                  aria-label="Your posts"
-                >
-                  <button
-                    type="button"
-                    onClick={closePostsViewer}
-                    className="absolute left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white shadow-md backdrop-blur-md transition-colors hover:bg-black/70 active:scale-95 touch-manipulation"
-                    aria-label="Back to posts grid"
-                    data-testid="close-posts-viewer"
-                  >
-                    <ArrowLeft className="h-4 w-4" aria-hidden />
-                  </button>
-                  <div
-                    ref={postsViewerRef}
-                    className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide overscroll-y-contain [overflow-anchor:auto]"
-                  >
-                    {filteredPosts.map((post, index) => {
-                      const dSnap = Math.abs(index - postsViewerSnapIndex);
-                      return (
-                        <div
-                          key={post.id}
-                          data-posts-viewer-index={index}
-                          className="snap-start h-full w-full shrink-0"
-                        >
-                          <VideoCard
-                            post={post}
-                            showStatusBadge
-                            embeddedFeed
-                            isMuted={profileViewerMuted}
-                            onToggleMute={toggleProfileViewerMute}
-                            isActive={index === postsViewerSnapIndex}
-                            shouldLoadVideo={dSnap <= 1}
-                            videoPreload={
-                              dSnap === 0 ? "auto" : dSnap <= 1 ? "metadata" : "none"
-                            }
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {filteredPosts.map((post, index) => {
-                    const statusMeta = getPostStatusMeta(post);
-                    const StatusBadgeIcon = statusMeta.Icon;
                     const thumbnailSrc = getPostThumbnail(post);
                     const videoSrc = getPostVideoPreview(post);
                     return (
                       <button
                         key={post.id}
                         type="button"
-                        onClick={() => openPostsPostViewer(index)}
+                        onClick={(event) => {
+                          if (consumeProfilePagerCardClickSuppression()) {
+                            event.preventDefault();
+                            return;
+                          }
+                          openPostsPostViewer(index);
+                        }}
                         className="ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
                         data-testid={`posts-thumbnail-${post.id}`}
+                        data-profile-pager-card="true"
                         aria-label={`Open your post: ${post.description?.slice(0, 40) || post.id}`}
                       >
                         <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />
 
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+                        <div className="absolute inset-0 z-[3] bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
 
-                        <span
-                          className={`absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium backdrop-blur-sm ${statusMeta.className}`}
-                        >
-                          <StatusBadgeIcon className="w-3 h-3" />
-                          {statusMeta.label}
-                        </span>
+                        <ProfileGridStatusPill post={post} />
 
-                        <div className="absolute bottom-2 left-2 right-2">
+                        <div className="absolute bottom-2 left-2 right-2 z-10">
                           <p className="text-xs text-white/95 font-medium truncate">
                             {formatUsernameDisplay(post.user.username)}
                           </p>
@@ -3099,91 +3413,79 @@ export default function UserProfile() {
             </TabsContent>
 
             {/* Liked Tab */}
-            <TabsContent value="liked" className="mt-6" forceMount>
+            <TabsContent
+              value="liked"
+              forceMount
+              ref={(el) => {
+                profilePagerPanelRefs.current[2] = el;
+              }}
+              data-profile-pager-index={2}
+              className={profilePagerPanelClass(2, PROFILE_SECONDARY_ROW_TOP_CLASS)}
+            >
+              {likesViewerStartIndex === null && (
+                <ProfileStatusFilterRow
+                  value={likesFilter}
+                  onChange={(next) => {
+                    setLikesFilter(next);
+                    setLikesViewerStartIndex(null);
+                    setLikesViewerSequence(null);
+                  }}
+                  allCount={likedPosts.length}
+                  identifiedCount={identifiedLikedCount}
+                  unidentifiedCount={unidentifiedLikedCount}
+                  ariaLabel="Filter liked posts by identification status"
+                  testId="profile-liked-filter"
+                  testIdSuffix="liked"
+                />
+              )}
+
               {likedLoading ? (
                 <div className="text-center py-8">
                   <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
                   <p className="text-gray-400">Loading liked videos...</p>
                 </div>
-              ) : likedPosts.length === 0 ? (
+              ) : filteredLikedPosts.length === 0 ? (
                 <div className="text-center py-12">
                   <Heart className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 text-lg mb-2">No liked videos yet</p>
-                  <p className="text-gray-500 text-sm">Start liking tracks to see them here!</p>
-                </div>
-              ) : likesViewerStartIndex !== null ? (
-                <div
-                  className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] h-[min(88dvh,calc(100dvh-var(--app-bottom-nav-block)-10rem))] min-h-[20rem]"
-                  role="region"
-                  aria-label="Liked posts"
-                >
-                  {/* Floating back: fixed to viewer viewport, not scroll content (Home-style snap lives in inner scroller). */}
-                  <button
-                    type="button"
-                    onClick={closeLikesViewer}
-                    className="absolute left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white shadow-md backdrop-blur-md transition-colors hover:bg-black/70 active:scale-95 touch-manipulation"
-                    aria-label="Back to liked grid"
-                    data-testid="close-likes-viewer"
-                  >
-                    <ArrowLeft className="h-4 w-4" aria-hidden />
-                  </button>
-                  <div
-                    ref={likesViewerRef}
-                    className="h-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth scrollbar-hide overscroll-y-contain [overflow-anchor:auto]"
-                  >
-                    {likedPosts.map((post, index) => {
-                      const dSnap = Math.abs(index - likesViewerSnapIndex);
-                      return (
-                        <div
-                          key={post.id}
-                          data-liked-viewer-index={index}
-                          className="snap-start h-full w-full shrink-0"
-                        >
-                          <VideoCard
-                            post={post}
-                            showStatusBadge
-                            embeddedFeed
-                            isMuted={profileViewerMuted}
-                            onToggleMute={toggleProfileViewerMute}
-                            isActive={index === likesViewerSnapIndex}
-                            shouldLoadVideo={dSnap <= 1}
-                            videoPreload={
-                              dSnap === 0 ? "auto" : dSnap <= 1 ? "metadata" : "none"
-                            }
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <p className="text-gray-400 text-lg mb-2">
+                    {likesFilter === "all"
+                      ? "No liked videos yet"
+                      : likesFilter === "identified"
+                        ? "No identified liked videos"
+                        : "No unidentified liked videos"}
+                  </p>
+                  <p className="text-gray-500 text-sm">
+                    {likesFilter === "all" && "Start liking tracks to see them here!"}
+                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {likedPosts.map((post, index) => {
-                    const statusMeta = getPostStatusMeta(post);
-                    const StatusBadgeIcon = statusMeta.Icon;
+                  {filteredLikedPosts.map((post, index) => {
                     const thumbnailSrc = getPostThumbnail(post);
                     const videoSrc = getPostVideoPreview(post);
                     return (
                       <button
                         key={post.id}
                         type="button"
-                        onClick={() => openLikedPostViewer(index)}
+                        onClick={(event) => {
+                          if (consumeProfilePagerCardClickSuppression()) {
+                            event.preventDefault();
+                            return;
+                          }
+                          openLikedPostViewer(index);
+                        }}
                         className="ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
                         data-testid={`liked-thumbnail-${post.id}`}
+                        data-profile-pager-card="true"
                         aria-label={`Open liked post by ${formatUsernameDisplay(post.user.username)}`}
                       >
                         <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />
 
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+                        <div className="absolute inset-0 z-[3] bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
 
-                        <span
-                          className={`absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium backdrop-blur-sm ${statusMeta.className}`}
-                        >
-                          <StatusBadgeIcon className="w-3 h-3" />
-                          {statusMeta.label}
-                        </span>
+                        <ProfileGridStatusPill post={post} />
 
-                        <div className="absolute bottom-2 left-2 right-2">
+                        <div className="absolute bottom-2 left-2 right-2 z-10">
                           <p className="text-xs text-white/95 font-medium truncate">
                             {formatUsernameDisplay(post.user.username)}
                           </p>
@@ -3199,7 +3501,15 @@ export default function UserProfile() {
             </TabsContent>
 
             {/* Notifications Tab */}
-            <TabsContent value="notifications" className="mt-6">
+            <TabsContent
+              value="notifications"
+              forceMount
+              ref={(el) => {
+                profilePagerPanelRefs.current[3] = el;
+              }}
+              data-profile-pager-index={3}
+              className={profilePagerPanelClass(3, PROFILE_NOTIFICATIONS_TAB_CONTENT_CLASS)}
+            >
               {userType !== "moderator" && unreadCount > 0 && (
                 <div className="flex justify-end mb-4">
                   <Button
@@ -3215,10 +3525,7 @@ export default function UserProfile() {
                 </div>
               )}
               {isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0 ? (
-                <div className="py-10 text-center">
-                  <InlineSpinner className="mx-auto mb-2" sizeClassName="h-6 w-6" />
-                  <p className="text-sm text-muted-foreground">Loading notifications...</p>
-                </div>
+                <ProfileNotificationsLoadingSkeleton />
               ) : hasLoadedNotifications && visibleNotifications.length === 0 ? (
                 <div className="px-1 py-12 text-center">
                   <Bell className="mx-auto mb-3 h-8 w-8 text-muted-foreground/45" aria-hidden />
@@ -3238,21 +3545,57 @@ export default function UserProfile() {
                 </div>
               ) : (
                 <div
-                  ref={notificationsListRef}
-                  className="max-h-[70dvh] overflow-y-auto pr-1"
-                  onScroll={handleNotificationsScroll}
-                  onTouchStart={handleNotificationsTouchStart}
-                  onTouchMove={handleNotificationsTouchMove}
-                  onTouchEnd={handleNotificationsTouchEnd}
+                  className={PROFILE_NOTIFICATIONS_MASK_SHELL_CLASS}
+                  data-testid="profile-notifications-mask-shell"
                 >
                   <div
-                    className="flex items-center justify-center transition-all duration-150"
-                    style={{ height: `${isRefreshingNotifications ? 44 : pullDistance}px` }}
+                    ref={notificationsListRef}
+                    className={PROFILE_NOTIFICATIONS_VIEWPORT_CLASS}
+                    data-testid="profile-notifications-viewport"
+                    onScroll={handleNotificationsScroll}
+                    onTouchStart={handleNotificationsTouchStart}
+                    onTouchMove={handleNotificationsTouchMove}
+                    onTouchEnd={handleNotificationsTouchEnd}
+                    onTouchCancel={handleNotificationsTouchCancel}
                   >
-                    {(isRefreshingNotifications || pullDistance > 8) && (
+                  <div
+                    className="flex items-center justify-center"
+                    data-testid="profile-notifications-ptr-spacer"
+                    style={{
+                      height: `${
+                        isRefreshingNotifications || isCompletingNotificationsPull
+                          ? refreshHoldHeightPx
+                          : pullDistance
+                      }px`,
+                      transition:
+                        !isPulling &&
+                        (notificationsPullSnapBack || isCompletingNotificationsPull)
+                          ? `height ${PROFILE_NOTIFICATIONS_PTR_SNAP_MS}ms ${PROFILE_NOTIFICATIONS_PTR_SNAP_EASING}`
+                          : "none",
+                    }}
+                  >
+                    {(isPulling ||
+                      isRefreshingNotifications ||
+                      isCompletingNotificationsPull ||
+                      pullDistance > 0) && (
                       <Disc3
-                        className={`${isRefreshingNotifications ? "animate-spin text-primary" : "text-muted-foreground"} w-6 h-6`}
-                        style={{ animationDuration: "1.6s", transform: isRefreshingNotifications ? undefined : `rotate(${pullDistance * 2}deg)` }}
+                        className={
+                          isRefreshingNotifications || isCompletingNotificationsPull
+                            ? `w-6 h-6 ${PROFILE_NOTIFICATIONS_PTR_REFRESH_SPIN_CLASS}`
+                            : "w-6 h-6 text-muted-foreground"
+                        }
+                        style={{
+                          opacity: profileNotificationsPtrIndicatorOpacity(
+                            isRefreshingNotifications || isCompletingNotificationsPull
+                              ? Math.max(refreshHoldHeightPx, PROFILE_NOTIFICATIONS_PTR_THRESHOLD_PX)
+                              : pullDistance,
+                            isRefreshingNotifications || isCompletingNotificationsPull,
+                          ),
+                          transform:
+                            isRefreshingNotifications || isCompletingNotificationsPull
+                              ? undefined
+                              : `rotate(${profileNotificationsPtrPullRotateDeg(pullDistance)}deg)`,
+                        }}
                       />
                     )}
                   </div>
@@ -3264,32 +3607,17 @@ export default function UserProfile() {
                     const isAcceptance = isCollaboratorAcceptance(notification);
                     const isRejection = isCollaboratorRejection(notification);
                     const isCollabResponse = isCollaboratorResponse(notification);
-                    const isRelease = isReleaseNotification(notification);
                     const isReleaseAlertEnabled =
                       getEffectiveNotificationType(notificationRowFields(notification)) ===
                       "release_alert_enabled";
                     const summaryText = getGroupedNotificationMessage(group);
-                    const toneClass = isCollabResponse
-                      ? isAcceptance
-                        ? hasUnread
-                          ? "bg-green-500/[0.1]"
-                          : "bg-green-500/[0.04]"
-                        : hasUnread
-                          ? "bg-amber-500/[0.1]"
-                          : "bg-amber-500/[0.04]"
-                      : isRelease
-                        ? hasUnread
-                          ? "bg-amber-500/[0.1]"
-                          : "bg-amber-500/[0.05]"
-                        : hasUnread
-                          ? "bg-white/[0.035]"
-                          : "";
+                    const unreadSurfaceClass = getProfileNotificationUnreadSurfaceClass(hasUnread);
                       return (
                         <div key={group.id} className="w-full">
                         <div
                           className={cn(
                             PROFILE_NOTIFICATION_ROW_SURFACE_CLASS,
-                            toneClass,
+                            unreadSurfaceClass,
                           )}
                           onClick={() => handleGroupedNotificationClick(group)}
                           data-testid={`notification-${notification.id}`}
@@ -3322,7 +3650,7 @@ export default function UserProfile() {
                             );
                           })()
                         ) : (
-                        <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-800">
+                        <div className={PROFILE_NOTIFICATION_MEDIA_FRAME_CLASS}>
                           {(() => {
                             const releaseArtworkSrc = resolveMediaUrl(notification.release?.artworkUrl ?? null);
                             const thumbnailSrc = releaseArtworkSrc ?? getNotificationThumbnail(notification);
@@ -3331,8 +3659,8 @@ export default function UserProfile() {
                               return <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />;
                             }
                             return (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <Bell className="w-6 h-6 text-gray-600" />
+                            <div className={PROFILE_NOTIFICATION_MEDIA_FALLBACK_CLASS}>
+                              <Bell className={PROFILE_NOTIFICATION_MEDIA_FALLBACK_ICON_CLASS} />
                             </div>
                             );
                           })()}
@@ -3350,8 +3678,8 @@ export default function UserProfile() {
                               return (
                                 <>
                                   <p className="text-sm font-medium text-foreground">{artistCopy.title}</p>
-                                  <p className="text-sm text-foreground mt-0.5">
-                                    <span className="font-semibold">
+                                  <p className={cn(PROFILE_NOTIFICATION_BODY_CLASS, "mt-0.5")}>
+                                    <span className="font-semibold text-foreground">
                                       {notification.triggeredByUser?.username
                                         ? formatUsernameDisplay(notification.triggeredByUser.username)
                                         : "Someone"}
@@ -3366,13 +3694,7 @@ export default function UserProfile() {
                               );
                             })()
                           ) : (
-                          <p
-                            className={`text-sm whitespace-pre-line ${
-                              isCollabResponse || isRelease || hasUnread
-                                ? "font-medium text-foreground"
-                                : "text-foreground/90"
-                            }`}
-                          >
+                          <p className={getProfileNotificationBodyClass(hasUnread)}>
                             {summaryText ? (
                               summaryText
                             ) : isTag || isCollabResponse ? (
@@ -3401,7 +3723,7 @@ export default function UserProfile() {
                         {/* Acceptance/rejection icon + unread indicator */}
                         <div className="flex items-center gap-2">
                           {group.isGrouped && (
-                            <div className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-white/80">
+                            <div className={PROFILE_NOTIFICATION_GROUP_COUNT_CLASS}>
                               {group.count}
                             </div>
                           )}
@@ -3412,7 +3734,7 @@ export default function UserProfile() {
                             <X className="w-5 h-5 flex-shrink-0 text-amber-500" aria-hidden />
                           )}
                           {group.unreadCount > 0 && (
-                            <div className={`w-2 h-2 rounded-full ${isCollabResponse ? (isAcceptance ? "bg-green-500" : "bg-amber-500") : isRelease ? "bg-amber-400" : "bg-primary"}`}></div>
+                            <div className={PROFILE_NOTIFICATION_UNREAD_DOT_CLASS} aria-hidden />
                           )}
                         </div>
                         </div>
@@ -3428,9 +3750,12 @@ export default function UserProfile() {
                   {!hasMoreOlderNotifications && visibleNotifications.length > 0 && (
                     <p className="py-4 text-center text-xs text-muted-foreground">You're all caught up</p>
                   )}
+                  </div>
                 </div>
               )}
             </TabsContent>
+            </div>
+            </div>
           </Tabs>
           
           {/* Hidden file input for profile picture upload */}
@@ -3565,6 +3890,28 @@ export default function UserProfile() {
           ) : null}
         </div>
       </div>
+
+      {postsViewerStartIndex !== null && postsViewerSequence && postsViewerSequence.length > 0 ? (
+        <FullScreenPostSequenceViewer
+          items={postsViewerSequence.map((post) => ({ id: post.id, post }))}
+          initialIndex={postsViewerStartIndex}
+          onClose={closePostsViewer}
+          testId="profile-posts-viewer"
+          ariaLabel="Your posts"
+          showStatusBadge
+        />
+      ) : null}
+
+      {likesViewerStartIndex !== null && likesViewerSequence && likesViewerSequence.length > 0 ? (
+        <FullScreenPostSequenceViewer
+          items={likesViewerSequence.map((post) => ({ id: post.id, post }))}
+          initialIndex={likesViewerStartIndex}
+          onClose={closeLikesViewer}
+          testId="profile-likes-viewer"
+          ariaLabel="Liked posts"
+          showStatusBadge
+        />
+      ) : null}
     </div>
   );
 }

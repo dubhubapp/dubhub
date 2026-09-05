@@ -74,6 +74,11 @@ import {
 import { findCommentInTree } from "@/lib/comment-selection";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import { COMMENTS_HINT_SETTLE_MS } from "@/lib/contextual-coachmark";
+import {
+  HINT_COMMENTS_COMPLETED_EVENT,
+  HINT_COMMENTS_READY_EVENT,
+} from "@/lib/onboarding";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 import { setOpenCommentsPostId } from "@/lib/in-app-notification-suppression";
@@ -1206,6 +1211,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
     },
     onSuccess: (data, variables) => {
       playSuccessNotification();
+      window.dispatchEvent(new CustomEvent(HINT_COMMENTS_COMPLETED_EVENT));
       setNewComment("");
       const newCommentWithUser: CommentWithUser = {
         id: data.id,
@@ -1460,6 +1466,35 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
   }, [newComment, isOpen, replyingTo]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      // Only skip when the keyboard is actually raised (inset > 0).
+      // Do NOT use nativeKeyboardLayoutActive — on iOS that flag means
+      // KeyboardResize.None is engaged for the sheet, not that the keyboard is visible.
+      if (nativeKeyboardInsetPx > 0) return;
+      const drawer = drawerContentRef.current;
+      if (!drawer || !drawer.isConnected) return;
+      const rect = drawer.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      window.dispatchEvent(
+        new CustomEvent(HINT_COMMENTS_READY_EVENT, {
+          detail: {
+            target: drawer,
+            positionMode: "fixed",
+            placementVariant: "comments-sheet-above",
+          },
+        }),
+      );
+    }, COMMENTS_HINT_SETTLE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, post.id, nativeKeyboardInsetPx]);
+
+  useEffect(() => {
     if (!isOpen) setDeleteConfirmCommentId(null);
   }, [isOpen]);
 
@@ -1527,8 +1562,9 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
         repositionInputs={false}
         noBodyStyles
       >
-      <DrawerContent
+        <DrawerContent
         ref={drawerContentRef}
+        data-comments-sheet
         overlayClassName={cn(drawerStackZ, "bg-transparent")}
         className={cn(COMMENTS_SHEET_SURFACE_CLASS, drawerStackZ)}
         style={
@@ -2431,7 +2467,10 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
         </div>
 
         {/* Comment Input */}
-        <div className="relative z-20 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5">
+        <div
+          data-comments-composer
+          className="relative z-20 px-3.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-4 sm:pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:pt-2.5"
+        >
           {/* Reply indicator */}
           {replyingTo && (
             <div className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] p-2.5 dark:border-white/10 dark:bg-white/[0.05]">

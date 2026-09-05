@@ -26,7 +26,7 @@ export const RELEASE_FEED_SKELETON_VARIANT = "flat-row" as const;
 
 /** Route-scoped page shell — atmosphere only on Releases (not Home). */
 export const RELEASE_TRACKER_PAGE_CLASS =
-  `${APP_MATERIAL_RELEASES_CANVAS_CLASS} flex-1 min-h-0 overflow-x-hidden overflow-y-auto` as const;
+  `${APP_MATERIAL_RELEASES_CANVAS_CLASS} flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none` as const;
 
 /** Flat media row — no per-item glass card shell. Top-align artwork with metadata. */
 export const RELEASE_FEED_ROW_BASE_CLASS =

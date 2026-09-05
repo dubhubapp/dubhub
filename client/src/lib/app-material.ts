@@ -2,7 +2,8 @@
  * Authenticated-app premium material — C1 canvas/chrome, C2 overlays, C3 forms.
  * Intentionally separate from prelogin-material.ts (auth/onboarding scoped).
  * Opt-in only — never rewrite shared ui/input, ui/select, or ui/dialog defaults.
- * Do not apply form/canvas classes to Home / video / Comments / paywall.
+ * Do not apply form/canvas classes to Home / video / Comments.
+ * Paywall uses shared sheet surface/backdrop tokens (VAT-PAYWALL-POLISH).
  */
 
 /** Same interactive blue family as approved pre-login links/focus (`#0a83ff`). */

@@ -86,6 +86,8 @@
   --radius: 0.5rem;
   --surface: hsl(227, 96%, 50%);
   --dark: #0f1324;
+  /* Document / native underlay. Not theme-shifted — `.dark` must not override this. */
+  --app-shell-background: #0f1324;
 }
 
 /*
@@ -102,7 +104,7 @@ html {
   max-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
-  background-color: var(--dark);
+  background-color: var(--app-shell-background);
   color-scheme: light;
 }
 
@@ -118,6 +120,7 @@ html {
 
 html.dark {
   color-scheme: dark;
+  background-color: var(--app-shell-background);
 }
 
 #root {
@@ -125,7 +128,7 @@ html.dark {
   max-height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--dark);
+  background-color: var(--app-shell-background);
 }
 
 /* Short, low-cost color fade for theme swaps. */
@@ -551,17 +554,30 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   }
 }
 
+/*
+ * STARTUP-CONTINUITY: matched launch gradient for cold-load Home skeleton.
+ * Uses the same native launch background PNG (1×256 vertical strip, scale-to-fill).
+ * Not theme-dependent — matches the approved native PremiumLaunchScreen.
+ * Applied to HomeFeedInitialSkeleton root so overlay lift reveals the same surface.
+ */
+.dubhub-home-skeleton-launch-bg {
+  background-color: #0f1324;
+  background-image: url(/launch/dubhub-premium-launch-background.png);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
 @layer base {
   * {
     @apply border-border;
   }
 
   body {
-    @apply font-sans antialiased bg-dark text-foreground overflow-hidden min-h-0;
+    @apply font-sans antialiased text-foreground overflow-hidden min-h-0;
     height: 100%;
     max-height: 100dvh;
     overscroll-behavior: none;
-    background-color: var(--dark);
+    background-color: var(--app-shell-background);
   }
 
   .scrollbar-hide {
@@ -649,6 +665,45 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
     );
   }
 
+  /**
+   * Profile Notifications viewport — fade CONTENT at the top edge (PROFILE-TABS-2A-FIX-3).
+   * Pixel stops keep the dissolve to ~48px regardless of 70dvh height.
+   * No background tint; Profile canvas shows through dissolving rows.
+   * WKWebView: -webkit-mask-image + mask-image.
+   */
+  .profile-notifications-top-mask {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      rgba(0, 0, 0, 0.25) 12px,
+      rgba(0, 0, 0, 0.65) 28px,
+      #000 48px,
+      #000 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      rgba(0, 0, 0, 0.25) 12px,
+      rgba(0, 0, 0, 0.65) 28px,
+      #000 48px,
+      #000 100%
+    );
+  }
+
+  /**
+   * Profile Notifications PTR — committed refresh vinyl (PROFILE-NOTIFICATIONS-PTR-4).
+   * Faster than pull-driven rotate; scoped so global `animate-spin` stays unchanged.
+   */
+  @keyframes profile-notifications-ptr-refresh-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .profile-notifications-ptr-refresh-spin {
+    animation: profile-notifications-ptr-refresh-spin 700ms linear infinite;
+  }
+
   /* Subtle iOS-style press feedback for tap targets. */
   .ios-press {
     transform: translateZ(0);
@@ -668,6 +723,16 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
 
   .ios-press-soft:active {
     transform: scale(0.9885);
+  }
+
+  /**
+   * PROFILE-TABS-GESTURE-4B — while the Profile pager claims horizontal/vertical intent,
+   * suppress press affordance on Posts/Likes grid cards only (global `.ios-press` unchanged).
+   */
+  [data-profile-pager-dragging="true"] [data-profile-pager-card="true"].ios-press:active,
+  [data-profile-pager-dragging="true"] [data-profile-pager-card="true"].ios-press-soft:active {
+    transform: none;
+    filter: none;
   }
 
   /**

@@ -27,6 +27,7 @@ import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { triggerPullRefreshCommittedHaptic } from "@/lib/pull-refresh-haptics";
 import { useToast } from "@/hooks/use-toast";
 import { RandomDiceButton } from "@/components/random-dice-button";
+import { HomeFeedEndState } from "@/components/home-feed-end-state";
 import {
   dubhubFeedSwipePrewarmEnabled,
   dubhubVideoDebugLog,
@@ -34,23 +35,55 @@ import {
 } from "@/lib/video-debug";
 import { feedPageRowItems, flattenInfiniteQueryFeedPages } from "@/lib/feed-infinite-pages";
 import { resolveMediaUrl } from "@/lib/media-url";
-import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import { playSuccessNotification } from "@/lib/haptic";
+import { shouldShowHomeFeedEndState } from "@/lib/home-feed-end-presentation";
 import { HomeFeedInitialSkeleton } from "@/components/home-feed-initial-skeleton";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { ContextualCoachmark } from "@/components/contextual-coachmark";
 import {
+  ARTIST_SELF_TAG_COACHMARK_COPY,
+  COMMENTS_COACHMARK_COPY,
+  CONTEXTUAL_HINT_MIN_VISIBLE_MS,
+  DISCOVER_COACHMARK_COPY,
+  DISCOVER_HINT_SETTLE_MS,
+  LIKE_HINT_SETTLE_MS,
+  LIKE_RELEASE_COACHMARK_COPY,
+  canShowHomeContextualCoachmark,
+} from "@/lib/contextual-coachmark";
+import {
+  beginArtistSelfTagOccurrence,
+  beginCommentsOpenOccurrence,
+  beginGenreOpenOccurrence,
+  beginLikeEventOccurrence,
+  createEmptyContextualHintSession,
+  evaluateContextualHintOpportunity,
+  noteContextualHintActivePostChange,
+  noteContextualHintDismissed,
+  noteContextualHintShown,
+  pacingKindForHintType,
+  shouldPersistOnSurfaceClose,
+  suppressHintOccurrence,
+  type ContextualHintOccurrenceKind,
+  type ContextualHintSessionState,
+} from "@/lib/contextual-hint-session";
+import {
+  HINT_ARTIST_SELF_TAG_COMPLETED_EVENT,
+  HINT_ARTIST_SELF_TAG_READY_EVENT,
   HINT_COMMENTS_CLOSED_EVENT,
+  HINT_COMMENTS_COMPLETED_EVENT,
   HINT_COMMENTS_OPENED_EVENT,
+  HINT_COMMENTS_READY_EVENT,
   HINT_GENRE_CLOSED_EVENT,
   HINT_GENRE_OPENED_EVENT,
   HINT_LIKED_POST_EVENT,
-  HINT_RANDOM_USED_EVENT,
   HOME_FEED_READY_EVENT,
+  HOME_FEED_SKELETON_READY_EVENT,
   ONBOARDING_ACTIVE_SESSION_KEY,
   WELCOME_BACK_FLAG_KEY,
+  getHintArtistSelfTagSeenKey,
   getHintCommentsSeenKey,
   getHintGenreFilterSeenKey,
   getHintLikeReleaseSeenKey,
-  getHintRandomSeenKey,
   getOnboardingSeenKey,
   getWelcomeBackSeenKey,
   markWelcomeBackSeenForUser,
@@ -862,12 +895,63 @@ export default function Home() {
 
   const { currentUser } = useUser();
   const homeReadySignalSentRef = useRef(false);
+  /**
+   * STARTUP-CONTINUITY: fire skeleton-ready for cached Home (no skeleton mounts).
+   * HomeFeedInitialSkeleton fires its own event when it mounts; this covers the
+   * case where feed data is cached and isInitialFeedLoad is already false on mount.
+   */
+  const startupCachedHomeSentRef = useRef(false);
   const [activeHint, setActiveHint] = useState<{
-    type: "genre" | "comments" | "like" | "random";
+    type: "genre" | "comments" | "like" | "artist";
     key: string;
     message: string;
     style?: CSSProperties;
+    /** Premium coachmark: live target element. */
+    targetEl?: HTMLElement | null;
+    /** Comments: portal into drawer; keep composer interactive. */
+    portalRoot?: HTMLElement | null;
+    interactionExemptEl?: HTMLElement | null;
+    positionMode?: "fixed" | "absolute" | "flow";
+    placementVariant?: "default" | "comments-sheet-above";
+    shownAt?: number;
   } | null>(null);
+  const activeHintRef = useRef(activeHint);
+  activeHintRef.current = activeHint;
+  const genreMenuOpenRef = useRef(false);
+  const commentsOpenRef = useRef(false);
+  const likeHintSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discoverHintSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const artistSelfTagSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** When false, clearing activeHint must not write localStorage (e.g. target lost / too-brief). */
+  const persistHintOnClearRef = useRef(true);
+  /** Session-only pacing/budget (resets on full reload). */
+  const contextualHintSessionRef = useRef<ContextualHintSessionState>(
+    createEmptyContextualHintSession(),
+  );
+
+  const maybePersistHintSeen = useCallback((key: string | null | undefined) => {
+    persistHintSeen(key);
+  }, []);
+
+  const markHintSessionDismissed = useCallback(() => {
+    contextualHintSessionRef.current = noteContextualHintDismissed(
+      contextualHintSessionRef.current,
+    );
+  }, []);
+
+  const suppressOccurrence = useCallback((kind: ContextualHintOccurrenceKind) => {
+    contextualHintSessionRef.current = suppressHintOccurrence(
+      contextualHintSessionRef.current,
+      kind,
+    );
+  }, []);
+
+  useEffect(() => {
+    contextualHintSessionRef.current = noteContextualHintActivePostChange(
+      contextualHintSessionRef.current,
+      activePostId,
+    );
+  }, [activePostId]);
 
   const genresKey = [...selectedGenres].sort().join(",");
   const subgenresKey = serializeSubgenreFilterQuery(selectedGenres, selectedSubgenresByGenre);
@@ -961,153 +1045,345 @@ export default function Home() {
   }, [currentUser?.id, toast]);
 
   useEffect(() => {
+    genreMenuOpenRef.current = genreMenuOpen;
+  }, [genreMenuOpen]);
+
+  useEffect(() => {
     const userId = currentUser?.id;
     if (!userId) return;
 
+    const occurrenceKindForType = (
+      type: "genre" | "comments" | "like" | "artist",
+    ): ContextualHintOccurrenceKind | undefined => {
+      if (type === "genre" || type === "comments" || type === "like" || type === "artist") {
+        return type;
+      }
+      return undefined;
+    };
+
     const tryShowHint = (payload: {
-      type: "genre" | "comments" | "like" | "random";
+      type: "genre" | "comments" | "like" | "artist";
       key: string;
       message: string;
       style?: CSSProperties;
+      targetEl?: HTMLElement | null;
+      portalRoot?: HTMLElement | null;
+      interactionExemptEl?: HTMLElement | null;
+      positionMode?: "fixed" | "absolute" | "flow";
+      placementVariant?: "default" | "comments-sheet-above";
     }) => {
-      if (activeHint) return;
-      if (localStorage.getItem(payload.key) === "1") return;
-      if (sessionStorage.getItem(ONBOARDING_ACTIVE_SESSION_KEY) === "1") return;
-      playInteractionLight();
-      setActiveHint(payload);
+      const occurrenceKind = occurrenceKindForType(payload.type);
+      const gate = evaluateContextualHintOpportunity({
+        activeHintType: activeHintRef.current?.type ?? null,
+        session: contextualHintSessionRef.current,
+        kind: pacingKindForHintType(payload.type),
+        hintKey: payload.key,
+        occurrenceKind,
+        onboardingActive: sessionStorage.getItem(ONBOARDING_ACTIVE_SESSION_KEY) === "1",
+      });
+      // Missed opportunities: return without persisting / without queueing.
+      if (!gate.ok) return;
+      if (!canShowHomeContextualCoachmark(activeHintRef.current?.type ?? null)) return;
+
+      contextualHintSessionRef.current = noteContextualHintShown(
+        contextualHintSessionRef.current,
+      );
+      setActiveHint({ ...payload, shownAt: Date.now() });
     };
 
     const onGenreOpened = () => {
-      // Let dropdown mount before positioning hint below it.
-      window.setTimeout(() => {
-        const menuEl = document.querySelector<HTMLElement>('[aria-label="Discover feed filters"]');
-        const style: CSSProperties | undefined = menuEl
-          ? {
-              position: "fixed",
-              top: Math.min(window.innerHeight - 120, menuEl.getBoundingClientRect().bottom + 8),
-              left: window.innerWidth / 2,
-              transform: "translateX(-50%)",
-            }
-          : {
-              position: "fixed",
-              top: 140,
-              left: window.innerWidth / 2,
-              transform: "translateX(-50%)",
-            };
+      contextualHintSessionRef.current = beginGenreOpenOccurrence(
+        contextualHintSessionRef.current,
+      );
+      if (discoverHintSettleTimerRef.current) {
+        clearTimeout(discoverHintSettleTimerRef.current);
+        discoverHintSettleTimerRef.current = null;
+      }
+      discoverHintSettleTimerRef.current = setTimeout(() => {
+        discoverHintSettleTimerRef.current = null;
+        if (!genreMenuOpenRef.current) return;
+        const menuEl =
+          document.querySelector<HTMLElement>("[data-discover-panel]") ??
+          document.querySelector<HTMLElement>('[aria-label="Discover feed filters"]');
+        if (!(menuEl instanceof HTMLElement) || !menuEl.isConnected) return;
+        const rect = menuEl.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
         tryShowHint({
           type: "genre",
           key: getHintGenreFilterSeenKey(userId),
-          message: "Open Discover to change feed mode, genre, or ID status.",
-          style,
+          message: DISCOVER_COACHMARK_COPY,
+          targetEl: menuEl,
         });
-      }, 120);
+      }, DISCOVER_HINT_SETTLE_MS);
     };
 
-    const dismissHintByType = (type: "genre" | "comments" | "like" | "random") => {
+    const clearSurfaceHint = (
+      type: "genre" | "comments" | "artist",
+      options: { persistIfReadable: boolean; suppressOccurrence: boolean },
+    ) => {
       setActiveHint((prev) => {
         if (prev?.type !== type) return prev;
-        persistHintSeen(prev.key);
+        const persist =
+          options.persistIfReadable &&
+          shouldPersistOnSurfaceClose({
+            shownAt: prev.shownAt,
+            minVisibleMs: CONTEXTUAL_HINT_MIN_VISIBLE_MS,
+          });
+        if (persist) maybePersistHintSeen(prev.key);
+        if (options.suppressOccurrence) {
+          suppressOccurrence(type);
+        }
+        markHintSessionDismissed();
         return null;
       });
     };
 
     const onGenreClosed = () => {
-      dismissHintByType("genre");
+      if (discoverHintSettleTimerRef.current) {
+        clearTimeout(discoverHintSettleTimerRef.current);
+        discoverHintSettleTimerRef.current = null;
+      }
+      // Closing Discover: persist only if tip was readable long enough (not accidental flash).
+      clearSurfaceHint("genre", { persistIfReadable: true, suppressOccurrence: false });
     };
 
-    const onCommentsOpened = () =>
+    const onCommentsOpened = () => {
+      commentsOpenRef.current = true;
+      contextualHintSessionRef.current = beginCommentsOpenOccurrence(
+        contextualHintSessionRef.current,
+      );
+    };
+
+    const onCommentsReady = (event: Event) => {
+      if (!commentsOpenRef.current) return;
+      const detail = (
+        event as CustomEvent<{
+          target?: HTMLElement | null;
+          portalRoot?: HTMLElement | null;
+          interactionExemptEl?: HTMLElement | null;
+          positionMode?: "fixed" | "absolute" | "flow";
+          placementVariant?: "default" | "comments-sheet-above";
+        }>
+      ).detail;
+      const target = detail?.target ?? null;
+      if (!(target instanceof HTMLElement) || !target.isConnected) return;
+      const rect = target.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      const portalRoot =
+        detail?.portalRoot instanceof HTMLElement && detail.portalRoot.isConnected
+          ? detail.portalRoot
+          : null;
+      const interactionExemptEl =
+        detail?.interactionExemptEl instanceof HTMLElement ? detail.interactionExemptEl : null;
       tryShowHint({
         type: "comments",
         key: getHintCommentsSeenKey(userId),
-        message: "Think you know the track? Drop the ID in the comments.",
-        style: {
-          position: "fixed",
-          left: "50%",
-          bottom: "max(7.5rem, calc(env(safe-area-inset-bottom,0px) + 6.5rem))",
-          transform: "translateX(-50%)",
-        },
+        message: COMMENTS_COACHMARK_COPY,
+        targetEl: target,
+        portalRoot,
+        interactionExemptEl,
+        positionMode: detail?.positionMode === "flow" ? "flow" : detail?.positionMode === "absolute" ? "absolute" : "fixed",
+        placementVariant:
+          detail?.placementVariant === "comments-sheet-above"
+            ? "comments-sheet-above"
+            : "default",
       });
-
-    const onCommentsClosed = () => {
-      dismissHintByType("comments");
     };
 
-    const onLikedPost = () =>
-      tryShowHint({
-        type: "like",
-        key: getHintLikeReleaseSeenKey(userId),
-        message:
-          "Liked posts can appear in your Releases tab once they’re identified and the artist sets up a release.",
-        style: {
-          position: "fixed",
-          right: "max(0.75rem, env(safe-area-inset-right,0px))",
-          bottom: "max(9.5rem, calc(env(safe-area-inset-bottom,0px) + 8rem))",
-        },
+    const onCommentsCompleted = () => {
+      setActiveHint((prev) => {
+        if (prev?.type !== "comments") return prev;
+        maybePersistHintSeen(prev.key);
+        suppressOccurrence("comments");
+        markHintSessionDismissed();
+        return null;
       });
+    };
 
-    const onRandomUsed = () =>
-      tryShowHint({
-        type: "random",
-        key: getHintRandomSeenKey(userId),
-        message: "Tap the dice to jump into random unidentified clips.",
-        style: {
-          position: "fixed",
-          right: "max(0.75rem, env(safe-area-inset-right,0px))",
-          bottom: "max(15rem, calc(env(safe-area-inset-bottom,0px) + 13.5rem))",
-        },
+    const onCommentsClosed = () => {
+      commentsOpenRef.current = false;
+      clearSurfaceHint("comments", { persistIfReadable: true, suppressOccurrence: false });
+    };
+
+    const onLikedPost = (event: Event) => {
+      const detail = (event as CustomEvent<{ target?: HTMLElement | null }>).detail;
+      const target = detail?.target ?? null;
+      if (!(target instanceof HTMLElement)) return;
+
+      contextualHintSessionRef.current = beginLikeEventOccurrence(
+        contextualHintSessionRef.current,
+      );
+
+      if (likeHintSettleTimerRef.current) {
+        clearTimeout(likeHintSettleTimerRef.current);
+        likeHintSettleTimerRef.current = null;
+      }
+
+      likeHintSettleTimerRef.current = setTimeout(() => {
+        likeHintSettleTimerRef.current = null;
+        if (genreMenuOpenRef.current || commentsOpenRef.current) return;
+        if (!target.isConnected) return;
+        const rect = target.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
+
+        tryShowHint({
+          type: "like",
+          key: getHintLikeReleaseSeenKey(userId),
+          message: LIKE_RELEASE_COACHMARK_COPY,
+          targetEl: target,
+        });
+      }, LIKE_HINT_SETTLE_MS);
+    };
+
+    const onArtistSelfTagReady = (event: Event) => {
+      const detail = (event as CustomEvent<{ target?: HTMLElement | null }>).detail;
+      const target = detail?.target ?? null;
+      if (!(target instanceof HTMLElement)) return;
+
+      contextualHintSessionRef.current = beginArtistSelfTagOccurrence(
+        contextualHintSessionRef.current,
+      );
+
+      if (artistSelfTagSettleTimerRef.current) {
+        clearTimeout(artistSelfTagSettleTimerRef.current);
+        artistSelfTagSettleTimerRef.current = null;
+      }
+
+      // Video-card already waited ARTIST_SELF_TAG_HINT_SETTLE_MS after close;
+      // show on next tick once commentsOpenRef is cleared / layout settled.
+      artistSelfTagSettleTimerRef.current = setTimeout(() => {
+        artistSelfTagSettleTimerRef.current = null;
+        if (genreMenuOpenRef.current || commentsOpenRef.current) return;
+        if (!target.isConnected) return;
+        const rect = target.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
+        tryShowHint({
+          type: "artist",
+          key: getHintArtistSelfTagSeenKey(userId),
+          message: ARTIST_SELF_TAG_COACHMARK_COPY,
+          targetEl: target,
+        });
+      }, 0);
+    };
+
+    const onArtistSelfTagCompleted = () => {
+      setActiveHint((prev) => {
+        if (prev?.type !== "artist") return prev;
+        maybePersistHintSeen(prev.key);
+        suppressOccurrence("artist");
+        markHintSessionDismissed();
+        return null;
       });
+    };
 
     window.addEventListener(HINT_GENRE_OPENED_EVENT, onGenreOpened);
     window.addEventListener(HINT_GENRE_CLOSED_EVENT, onGenreClosed);
     window.addEventListener(HINT_COMMENTS_OPENED_EVENT, onCommentsOpened);
+    window.addEventListener(HINT_COMMENTS_READY_EVENT, onCommentsReady as EventListener);
+    window.addEventListener(HINT_COMMENTS_COMPLETED_EVENT, onCommentsCompleted);
     window.addEventListener(HINT_COMMENTS_CLOSED_EVENT, onCommentsClosed);
-    window.addEventListener(HINT_LIKED_POST_EVENT, onLikedPost);
-    window.addEventListener(HINT_RANDOM_USED_EVENT, onRandomUsed);
+    window.addEventListener(HINT_LIKED_POST_EVENT, onLikedPost as EventListener);
+    window.addEventListener(HINT_ARTIST_SELF_TAG_READY_EVENT, onArtistSelfTagReady as EventListener);
+    window.addEventListener(HINT_ARTIST_SELF_TAG_COMPLETED_EVENT, onArtistSelfTagCompleted);
 
     return () => {
+      if (likeHintSettleTimerRef.current) {
+        clearTimeout(likeHintSettleTimerRef.current);
+        likeHintSettleTimerRef.current = null;
+      }
+      if (discoverHintSettleTimerRef.current) {
+        clearTimeout(discoverHintSettleTimerRef.current);
+        discoverHintSettleTimerRef.current = null;
+      }
+      if (artistSelfTagSettleTimerRef.current) {
+        clearTimeout(artistSelfTagSettleTimerRef.current);
+        artistSelfTagSettleTimerRef.current = null;
+      }
       window.removeEventListener(HINT_GENRE_OPENED_EVENT, onGenreOpened);
       window.removeEventListener(HINT_GENRE_CLOSED_EVENT, onGenreClosed);
       window.removeEventListener(HINT_COMMENTS_OPENED_EVENT, onCommentsOpened);
+      window.removeEventListener(HINT_COMMENTS_READY_EVENT, onCommentsReady as EventListener);
+      window.removeEventListener(HINT_COMMENTS_COMPLETED_EVENT, onCommentsCompleted);
       window.removeEventListener(HINT_COMMENTS_CLOSED_EVENT, onCommentsClosed);
-      window.removeEventListener(HINT_LIKED_POST_EVENT, onLikedPost);
-      window.removeEventListener(HINT_RANDOM_USED_EVENT, onRandomUsed);
+      window.removeEventListener(HINT_LIKED_POST_EVENT, onLikedPost as EventListener);
+      window.removeEventListener(HINT_ARTIST_SELF_TAG_READY_EVENT, onArtistSelfTagReady as EventListener);
+      window.removeEventListener(HINT_ARTIST_SELF_TAG_COMPLETED_EVENT, onArtistSelfTagCompleted);
     };
-  }, [activeHint, currentUser?.id]);
+  }, [currentUser?.id, maybePersistHintSeen, markHintSessionDismissed, suppressOccurrence]);
 
-  const handleHintGotIt = useCallback(() => {
-    if (!activeHint) return;
-    persistHintSeen(activeHint.key);
-    playInteractionLight();
-    setActiveHint(null);
-  }, [activeHint]);
+  const handlePremiumCoachmarkDismiss = useCallback(
+    (type: "like" | "genre" | "comments" | "artist") => {
+      persistHintOnClearRef.current = true;
+      setActiveHint((prev) => {
+        if (prev?.type !== type) return prev;
+        maybePersistHintSeen(prev.key);
+        suppressOccurrence(type);
+        markHintSessionDismissed();
+        return null;
+      });
+    },
+    [maybePersistHintSeen, markHintSessionDismissed, suppressOccurrence],
+  );
+
+  /** Target scrolled away / unmounted — clear without persisting seen. */
+  const handlePremiumCoachmarkTargetLost = useCallback(
+    (type: "like" | "genre" | "comments" | "artist") => {
+      persistHintOnClearRef.current = false;
+      setActiveHint((prev) => {
+        if (prev?.type !== type) return prev;
+        suppressOccurrence(type);
+        markHintSessionDismissed();
+        return null;
+      });
+    },
+    [markHintSessionDismissed, suppressOccurrence],
+  );
 
   useEffect(() => {
     return () => {
-      if (activeHint) persistHintSeen(activeHint.key);
+      if (activeHint && persistHintOnClearRef.current) {
+        maybePersistHintSeen(activeHint.key);
+        markHintSessionDismissed();
+      }
+      persistHintOnClearRef.current = true;
     };
-  }, [activeHint]);
+  }, [activeHint, maybePersistHintSeen, markHintSessionDismissed]);
 
-  const hintOverlay = activeHint ? (
-    <div
-      className="pointer-events-none fixed z-[61]"
-      style={activeHint.style}
-      data-testid={`hint-${activeHint.type}`}
-    >
-      <div className="pointer-events-auto w-[min(88vw,22rem)] rounded-xl border border-[#4ae9df]/35 bg-[#0f1324]/95 p-3 text-white shadow-[0_18px_42px_rgba(0,0,0,0.5)] backdrop-blur-md">
-        <p className="mb-1 text-xs font-semibold text-[#4ae9df]">Quick tip</p>
-        <p className="text-xs leading-relaxed text-white/90">{activeHint.message}</p>
-        <div className="mt-2 flex justify-end">
-          <button
-            type="button"
-            onClick={handleHintGotIt}
-            className="rounded-md border border-[#4ae9df]/45 bg-[#4ae9df]/15 px-2.5 py-1 text-[11px] font-medium text-[#b6fffa] transition-colors hover:bg-[#4ae9df]/25"
-          >
-            Got it
-          </button>
-        </div>
-      </div>
-    </div>
-  ) : null;
+  const premiumCoachmark =
+    activeHint?.type === "like" ||
+    activeHint?.type === "genre" ||
+    activeHint?.type === "comments" ||
+    activeHint?.type === "artist" ? (
+      <ContextualCoachmark
+        open
+        targetEl={activeHint.targetEl ?? null}
+        copy={activeHint.message}
+        onDismiss={() => handlePremiumCoachmarkDismiss(activeHint.type)}
+        onTargetLost={() => handlePremiumCoachmarkTargetLost(activeHint.type)}
+        showHalo={activeHint.type !== "comments"}
+        preferredPlacement={
+          activeHint.type === "genre"
+            ? "below"
+            : activeHint.type === "comments"
+              ? "above"
+              : "left"
+        }
+        placementVariant={
+          activeHint.type === "comments" &&
+          activeHint.placementVariant === "comments-sheet-above"
+            ? "comments-sheet-above"
+            : "default"
+        }
+        /** Above elevated Comments drawer (z-110); leave feed tips at default 62. */
+        stackZIndex={activeHint.type === "comments" ? 115 : 62}
+        dismissOnTargetInteract={activeHint.type !== "comments"}
+        interactionExemptEl={activeHint.interactionExemptEl ?? null}
+        portalRoot={activeHint.portalRoot ?? null}
+        positionMode={activeHint.positionMode ?? "fixed"}
+        className={activeHint.type === "comments" ? "text-center" : undefined}
+        testId={`hint-${activeHint.type}`}
+      />
+    ) : null;
 
   useEffect(() => {
     return () => {
@@ -1207,17 +1483,10 @@ export default function Home() {
   /** Mirrors `randomPost` for guards inside `loadNextRandom` (avoid blocking the final click due to stale `randomExhausted`). */
   const randomPostRef = useRef<PostWithUser | null>(null);
 
+  // Random mode dice remains; proactive Random coaching tip removed (HINTS-PREMIUM-4).
   useEffect(() => {
     randomPostRef.current = randomPost;
   }, [randomPost]);
-
-  // Show the Random rail-dice tip once the dice is on screen (menu entry does not press the rail dice).
-  useEffect(() => {
-    if (sortMode !== "random" || randomViewExiting) return;
-    if (!randomPost || randomLoading) return;
-    if (genreMenuOpen) return;
-    window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
-  }, [sortMode, randomViewExiting, randomPost?.id, randomLoading, genreMenuOpen]);
 
   const postsQuery = useInfiniteQuery<FeedPage, Error, InfiniteData<FeedPage>, readonly [string, { genresKey: string; subgenresKey: string; identification: "all" | "identified" | "unidentified"; sortMode: FeedSortMode }, string | undefined], string | null>({
     queryKey: ["/api/posts", { genresKey, subgenresKey, identification: identificationFilter, sortMode }, currentUser?.id],
@@ -1310,6 +1579,15 @@ export default function Home() {
     homeReadySignalSentRef.current = true;
     window.dispatchEvent(new CustomEvent(HOME_FEED_READY_EVENT));
   }, [isInitialFeedLoad, isError]);
+
+  // STARTUP-CONTINUITY: cached Home — feed data already available, skeleton never shown.
+  // Signal overlay immediately so it does not wait for a skeleton that will never mount.
+  useLayoutEffect(() => {
+    if (isInitialFeedLoad) return; // skeleton will mount and fire its own event
+    if (startupCachedHomeSentRef.current) return;
+    startupCachedHomeSentRef.current = true;
+    window.dispatchEvent(new CustomEvent(HOME_FEED_SKELETON_READY_EVENT));
+  }, [isInitialFeedLoad]);
 
   // Newest re-sorts client-side; Trending/Hottest preserve server merge order until explicit refresh.
   const uiPosts = useMemo(() => {
@@ -1415,14 +1693,15 @@ export default function Home() {
     bumpPlaybackRecovery,
   ]);
 
-  const shouldShowFeedEndCard =
-    sortMode !== "random" &&
-    !isInitialFeedLoad &&
-    !isError &&
-    uiPosts.length > 0 &&
-    hasNextPage === false &&
-    !isFetchingNextPage &&
-    !suppressPlaceholderFeedRows;
+  const shouldShowFeedEndCard = shouldShowHomeFeedEndState({
+    sortMode,
+    isInitialFeedLoad,
+    isError,
+    uiPostsLength: uiPosts.length,
+    hasNextPage,
+    isFetchingNextPage,
+    suppressPlaceholderFeedRows,
+  });
 
   const homeFeedPullRefreshEnabled =
     sortMode !== "random" &&
@@ -3176,7 +3455,6 @@ export default function Home() {
               onFeedOverlayCollapsedChange={setIsFeedOverlayCollapsed}
               feedRandomDice={{
                 onPress: () => {
-                  window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
                   void loadNextRandom();
                 },
                 disabled: randomLoading,
@@ -3191,8 +3469,12 @@ export default function Home() {
               onCommentsClosed={() => {
                 window.dispatchEvent(new CustomEvent(HINT_COMMENTS_CLOSED_EVENT));
               }}
-              onPostLiked={() => {
-                window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
+              onPostLiked={(likeHitTarget) => {
+                window.dispatchEvent(
+                  new CustomEvent(HINT_LIKED_POST_EVENT, {
+                    detail: { target: likeHitTarget ?? null },
+                  }),
+                );
               }}
             />
           ) : randomExhausted ? (
@@ -3206,7 +3488,6 @@ export default function Home() {
                   delayPressMs={DICE_SPIN_ANIMATION_MS}
                   onPress={() => {
                     resetRandomSession();
-                    window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
                     void loadNextRandom({ afterRestart: true });
                   }}
                   aria-label="Start a new random discovery session"
@@ -3239,7 +3520,7 @@ export default function Home() {
             </div>
           )}
         </div>
-        {hintOverlay}
+        {premiumCoachmark}
       </div>
     );
   }
@@ -3274,7 +3555,7 @@ export default function Home() {
             <p className="text-sm">{emptyCopy.subtitle}</p>
           </div>
         </div>
-        {hintOverlay}
+        {premiumCoachmark}
       </div>
     );
   }
@@ -3386,8 +3667,12 @@ export default function Home() {
               onCommentsClosed={() => {
                 window.dispatchEvent(new CustomEvent(HINT_COMMENTS_CLOSED_EVENT));
               }}
-              onPostLiked={() => {
-                window.dispatchEvent(new CustomEvent(HINT_LIKED_POST_EVENT));
+              onPostLiked={(likeHitTarget) => {
+                window.dispatchEvent(
+                  new CustomEvent(HINT_LIKED_POST_EVENT, {
+                    detail: { target: likeHitTarget ?? null },
+                  }),
+                );
               }}
               requestOpenComments={
                 openCommentsTargetPostId === post.id && activePostId === post.id
@@ -3397,40 +3682,14 @@ export default function Home() {
           );
         })}
         {shouldShowFeedEndCard ? (
-          <div
-            key="home-feed-end-card"
-            data-post-id="home-feed-end-card"
-            className="min-h-full h-full relative w-full shrink-0 snap-start snap-always [scroll-snap-stop:always] bg-black"
-          >
-            <div className="absolute inset-0 flex items-center justify-center px-6">
-              <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/45 p-5 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
-                <div className="mb-3 flex items-center justify-center">
-                  <span className="inline-flex rounded-full border border-[#4ae9df]/40 bg-[#4ae9df]/[0.07] p-1.5 motion-reduce:animate-none motion-reduce:shadow-[0_0_0_1px_rgba(74,233,223,0.28)] motion-safe:animate-home-end-dice-ring-pulse">
-                    <RandomDiceButton
-                      active
-                      accentGlow="turquoiseProminent"
-                      onPress={() => {
-                        playInteractionLight();
-                        window.dispatchEvent(new CustomEvent(HINT_RANDOM_USED_EVENT));
-                        handleFeedSortChange("random");
-                      }}
-                      className="!min-h-8 !min-w-8 border-0 bg-transparent p-0 shadow-none opacity-100 transition-transform duration-150 active:scale-95"
-                      iconWrapClassName="!size-5"
-                      iconClassName="!h-full !w-full !text-white"
-                      aria-label="Switch to random discovery"
-                    />
-                  </span>
-                </div>
-                <h3 className="text-base font-semibold tracking-wide text-white">You're all caught up</h3>
-                <p className="mt-2 text-sm leading-relaxed text-white/80">
-                  You've reached the end of the feed. Try the random button to jump into older unidentified clips.
-                </p>
-              </div>
-            </div>
-          </div>
+          <HomeFeedEndState
+            onRandomPress={() => {
+              handleFeedSortChange("random");
+            }}
+          />
         ) : null}
       </div>
-      {hintOverlay}
+      {premiumCoachmark}
     </div>
   );
 }

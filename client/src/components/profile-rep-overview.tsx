@@ -3,6 +3,11 @@ import { TrendingUp } from "lucide-react";
 import type { TrustLevelInfo } from "@shared/trust-level";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import {
+  PROFILE_SECTION_HEADING_ICON_SLOT_CLASS,
+  PROFILE_SECTION_HEADING_ROW_CLASS,
+  PROFILE_SECTION_HEADING_TEXT_CLASS,
+} from "@/lib/profile-section-heading-presentation";
+import {
   repGenreGlowShadow,
   repProgressBarBaseColor,
   repProgressGradientFromGenreBg,
@@ -53,20 +58,21 @@ export function ProfileRepOverview({
   const headerMargin = compact ? "mb-2" : "mb-3";
   const percentileMargin = compact ? "mb-2" : "mb-3";
   const barLabelsMargin = compact ? "mt-1.5" : "mt-2";
-  const iconSize = compact ? "h-4 w-4" : "h-5 w-5";
 
   return (
     <div className={cn(className)}>
       {showSectionHeader ? (
-        <div className={cn("flex items-center justify-start gap-1.5", headerMargin)}>
-          <TrendingUp className={cn(iconSize, "shrink-0 text-accent")} />
+        <div className={cn(PROFILE_SECTION_HEADING_ROW_CLASS, headerMargin)}>
+          <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
+            <TrendingUp className="h-4 w-4 text-accent" />
+          </span>
           {compact ? (
-            <h3 className="font-semibold">
+            <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>
               Rep <span className="text-white/45">·</span>{" "}
               <span data-testid="reputation-level">{trust.displayName}</span>
             </h3>
           ) : (
-            <h3 className="font-semibold">Rep</h3>
+            <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Rep</h3>
           )}
           {showHelp && helpContent ? (
             <StatInfoPopover

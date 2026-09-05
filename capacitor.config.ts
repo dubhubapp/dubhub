@@ -1,3 +1,5 @@
+/// <reference types="@capacitor/splash-screen" />
+
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const DUB_HUB_RUNTIME_BG = '#0f1324';
@@ -15,6 +17,15 @@ const config: CapacitorConfig = {
     backgroundColor: DUB_HUB_RUNTIME_BG,
   },
   plugins: {
+    SplashScreen: {
+      /**
+       * SPLASH-HANDOFF-2: hold native PremiumLaunchScreen until app-ready
+       * (dismissStartupOverlay). Hide is issued from App.tsx — not on React mount.
+       */
+      launchAutoHide: false,
+      backgroundColor: DUB_HUB_RUNTIME_BG,
+      showSpinner: false,
+    },
     StatusBar: {
       /** Draw web content under the status bar; status-bar taps emit `statusTap` (not web touches). */
       overlaysWebView: true,

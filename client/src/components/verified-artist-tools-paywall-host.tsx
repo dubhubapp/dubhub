@@ -10,6 +10,7 @@ import {
   registerVerifiedArtistToolsPaywallOpener,
   type VerifiedArtistToolsUpgradeContext,
 } from "@/lib/verified-artist-tools-upgrade";
+import { setArtistSubscriptionIntroSurfaceBlocker } from "@/lib/artist-subscription-intro";
 
 export function VerifiedArtistToolsPaywallHost() {
   const enabled = isVerifiedArtistToolsPaywallEnabled();
@@ -27,6 +28,11 @@ export function VerifiedArtistToolsPaywallHost() {
     onDismissedRef.current = context.onDismissed;
     setOpen(true);
   }, []);
+
+  useEffect(() => {
+    setArtistSubscriptionIntroSurfaceBlocker("paywall", open);
+    return () => setArtistSubscriptionIntroSurfaceBlocker("paywall", false);
+  }, [open]);
 
   useEffect(() => {
     if (!enabled) {

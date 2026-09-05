@@ -10,7 +10,8 @@ export type VerifiedArtistToolsPaywallSource =
   | "release_link_presave"
   | "future_release_paused"
   | "release_alerts"
-  | "settings";
+  | "settings"
+  | "onboarding_intro";
 
 export type VerifiedArtistToolsPaywallContextCopy = {
   title: string;
@@ -27,18 +28,15 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS = [
   "Unlimited releases and active future releases",
   "Unlimited attached posts and release links",
   "Pre-save, Pre-add and Pre-order links",
-  "Send Release Alerts to listeners already waiting",
+  "See your Release Alerts audience and send alerts to listeners waiting",
 ] as const;
-
-export const VERIFIED_ARTIST_TOOLS_BENEFITS_FOOTER =
-  "Includes future Verified Artist Tools." as const;
 
 /** Shorter list for SE / short viewports — same product meaning. */
 export const VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT = [
   "Unlimited releases and future releases",
   "Unlimited attachments and links",
   "Pre-save, Pre-add and Pre-order links",
-  "Send Release Alerts to listeners already waiting",
+  "See Release Alerts audience and send alerts",
 ] as const;
 
 const CONTEXT_COPY: Record<
@@ -74,11 +72,17 @@ const CONTEXT_COPY: Record<
     title: "Turn on Release Alerts",
     body:
       "Listeners can turn on Release Alerts for your profile at any time. Their interest stays saved, and with Verified Artist Tools you can notify everyone waiting when you share a new release.",
-    emphasizeBenefit: "Send Release Alerts to listeners already waiting",
+    emphasizeBenefit:
+      "See your Release Alerts audience and send alerts to listeners waiting",
   },
   settings: {
     title: "Verified Artist Tools",
     body: "More tools for sharing and managing your releases.",
+  },
+  onboarding_intro: {
+    title: "Take your releases further",
+    body:
+      "Verified Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
   },
 };
 

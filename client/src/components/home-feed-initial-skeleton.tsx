@@ -1,5 +1,7 @@
+import { useLayoutEffect, useRef } from "react";
 import { DubHubSkeletonBar, dubhubSkeletonGlassShellClass } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { HOME_FEED_SKELETON_READY_EVENT } from "@/lib/onboarding";
 
 /** Softer top scrim — reads on `bg-background` rather than a pure-black stage. */
 const feedTopOverlayGradient =
@@ -9,17 +11,29 @@ const feedTopOverlayGradient =
  * Dark feed-stage wash — suggests the Home video panel without a flat black void.
  * Fades into the app shell (`bg-background`) toward the bottom.
  */
+// Use explicit launch-gradient end colour (#0f1324) not bg-background (#101527) so
+// the wash blends into the continuous gradient rather than adding a darker step.
 const feedStageWashClass =
-  "pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-950/55 via-[#0c1020]/45 to-background";
+  "pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-950/55 via-[#0c1020]/45 to-[#0f1324]";
 
 /** Matches `post-genre-tag` / status pill footprint in `video-card.tsx`. */
 const metaPillClass = "h-[1.375rem] rounded ring-1 ring-white/10";
 
 /** Page shell while the sorted Home feed has no cached posts yet (cold initial load). */
 export function HomeFeedInitialSkeleton() {
+  const skeletonReadySentRef = useRef(false);
+
+  useLayoutEffect(() => {
+    // STARTUP-CONTINUITY: fire once when skeleton commits to DOM.
+    // Startup overlay listens here (not HOME_FEED_READY_EVENT which waits for feed data).
+    if (skeletonReadySentRef.current) return;
+    skeletonReadySentRef.current = true;
+    window.dispatchEvent(new CustomEvent(HOME_FEED_SKELETON_READY_EVENT));
+  }, []);
+
   return (
     <div
-      className="flex-1 relative bg-background overflow-hidden"
+      className="flex-1 relative overflow-hidden dubhub-home-skeleton-launch-bg"
       aria-busy="true"
       aria-label="Loading feed"
       data-testid="home-feed-initial-skeleton"

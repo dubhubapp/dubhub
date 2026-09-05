@@ -21,6 +21,7 @@ import {
   resolveLifetimeGiftAnnouncement,
 } from "@/lib/lifetime-gift-announcement";
 import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
+import { setArtistSubscriptionIntroSurfaceBlocker } from "@/lib/artist-subscription-intro";
 import { triggerSuccessHaptic } from "@/lib/verified-artist-tools-haptics";
 import {
   PAYWALL_SHELL_CLASS,
@@ -94,6 +95,11 @@ export function LifetimeGiftAnnouncementHost() {
 
   useEffect(() => {
     if (!open) hapticFiredRef.current = false;
+  }, [open]);
+
+  useEffect(() => {
+    setArtistSubscriptionIntroSurfaceBlocker("lifetime_gift", open);
+    return () => setArtistSubscriptionIntroSurfaceBlocker("lifetime_gift", false);
   }, [open]);
 
   /** Acknowledge only after the sheet has actually been presented and dismissed. */

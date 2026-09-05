@@ -726,7 +726,7 @@ export default function ReleaseCreate() {
       enabled={false}
       onBack={handleBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none dubhub-app-form-canvas",
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none dubhub-app-form-canvas",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
       )}
     >

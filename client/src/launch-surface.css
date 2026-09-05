@@ -1,8 +1,14 @@
 /**
- * Keeps the web/runtime bridge on the dark app surface during handoff.
- * Native LaunchScreen uses brand gradient (#001df8→#0581ff); runtime bridge should not re-flash it.
+ * STARTUP-CONTINUITY-4 / SPLASH-HANDOFF-2
+ *
+ * The native splash is manually held with `@capacitor/splash-screen` until the
+ * existing app-ready / dismissStartupOverlay path issues SplashScreen.hide().
+ *
+ * Therefore the web prepaint layer no longer owns startup artwork; it keeps only
+ * the dark underlay safety colour from index.html/index.css/native shell.
+ *
+ * IMPORTANT:
+ * Do not reintroduce a startup-only `background-color: #0f1324 !important` rule
+ * on `html[data-dubhub-launch-bg] body/#root`. That flat override caused the
+ * visible blank-navy frame during earlier experiments.
  */
-html[data-dubhub-launch-bg] body,
-html[data-dubhub-launch-bg] #root {
-  background-color: #0f1324 !important;
-}

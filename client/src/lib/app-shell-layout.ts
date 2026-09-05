@@ -12,9 +12,12 @@ export const APP_SHELL_SAFE_TOP_CLASS = "pt-[env(safe-area-inset-top,0px)]";
 
 export const APP_MAIN_SHELL_CLASS = `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`;
 
-/** Standard scroll root inside the shell: fills width/height and scrolls vertically. */
+/**
+ * Standard scroll root inside the shell: fills width/height and scrolls vertically.
+ * `overscroll-y-none` stops top/bottom rubber-band on normal routed pages (not Home PTR).
+ */
 export const APP_PAGE_SCROLL_CLASS =
-  "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overscroll-y-contain pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad,0px))]";
+  "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overscroll-y-none pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad,0px))]";
 
 /** Small end pad so the last block isn’t flush against the inner edge above the nav chrome. */
 export const APP_SCROLL_BOTTOM_INSET_CLASS =

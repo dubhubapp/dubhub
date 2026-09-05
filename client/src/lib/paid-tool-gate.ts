@@ -1,7 +1,5 @@
 /**
- * Fail-closed access mode for paid artist tooling surfaces
- * (e.g. outbound Release Alert delivery capability).
- * Audience count visibility is free for verified artists — do not use this for that surface.
+ * Fail-closed access mode for paid artist tooling surfaces.
  * Uses the authoritative subscription-environment selection only.
  */
 
@@ -35,10 +33,18 @@ export function resolvePaidToolGateMode(args: {
   }
 
   if (selection.hasPaidToolAccess !== true) return "locked";
-  // Paid tooling fails closed on stale/unknown freshness.
   if (selection.freshness !== "fresh") return "locked";
   return "available";
 }
+
+/** Locked aggregate count — not the in-app demand notification, which stays free. */
+export const RELEASE_ALERTS_AUDIENCE_LOCKED_COPY = {
+  title: "Release Alerts Audience",
+  body:
+    "The total number of listeners waiting is included with Verified Artist Tools.",
+  ctaLabel: "Unlock with Verified Artist Tools",
+  ctaHint: "Purchase options coming soon",
+} as const;
 
 export const RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY =
   "Release Alerts audience is temporarily unavailable. Artist verification remains free." as const;

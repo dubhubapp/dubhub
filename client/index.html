@@ -2,6 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <style>
+      /*
+       * STARTUP-CONTINUITY-4: native splash is now held with
+       * @capacitor/splash-screen until the React startup overlay commits.
+       * Raw HTML should keep only the dark underlay safety colour.
+       */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0f1324;
+      }
+    </style>
     <script>
       document.documentElement.setAttribute("data-dubhub-launch-bg", "");
     </script>

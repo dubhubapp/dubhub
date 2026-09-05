@@ -18,7 +18,7 @@
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubPremiumLaunchBackground" translatesAutoresizingMaskIntoConstraints="NO" id="PLS-bg-001">
                                 <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                             </imageView>
-                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubPremiumLaunchMark" translatesAutoresizingMaskIntoConstraints="NO" id="PLS-lg-001">
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="DubHubPremiumLaunchMarkBaseline" translatesAutoresizingMaskIntoConstraints="NO" id="PLS-lg-001">
                                 <rect key="frame" x="141.5" y="371" width="110" height="110"/>
                             </imageView>
                         </subviews>
@@ -43,6 +43,6 @@
     </scenes>
     <resources>
         <image name="DubHubPremiumLaunchBackground" width="1" height="256"/>
-        <image name="DubHubPremiumLaunchMark" width="217" height="271"/>
+        <image name="DubHubPremiumLaunchMarkBaseline" width="217" height="271"/>
     </resources>
 </document>

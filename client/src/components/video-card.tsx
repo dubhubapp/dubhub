@@ -48,6 +48,11 @@ import { sharePost } from "@/lib/post-share";
 import { appendReleaseDetailFromFeedParam } from "@/lib/release-detail-navigation";
 import { invalidateAfterAttachedReleaseSaveStateChanged, type ReleaseDetailRecord } from "@/lib/release-cache";
 import {
+  HINT_ARTIST_SELF_TAG_COMPLETED_EVENT,
+  HINT_ARTIST_SELF_TAG_READY_EVENT,
+} from "@/lib/onboarding";
+import { ARTIST_SELF_TAG_HINT_SETTLE_MS } from "@/lib/contextual-coachmark";
+import {
   dubhubVideoDebugEnabled,
   dubhubVideoDebugLog,
   getMediaReadyStateLabel,
@@ -68,11 +73,24 @@ import {
   HOME_SCRUB_SOUND_SHELL_CLASS,
   HOME_SCRUB_TRACK_CLASS,
   HOME_SCRUB_VISUAL_INSET_CLASS,
+  VIEWER_SCRUB_FILL_CLASS,
+  VIEWER_SCRUB_INACTIVE_CLASS,
+  VIEWER_SCRUB_TRACK_CLASS,
+  VIEWER_SCRUB_VISUAL_INSET_CLASS,
   forceUnlockHomeFeedScrollForScrub,
   lockHomeFeedScrollForScrub,
   scrubRatioFromClientX,
   unlockHomeFeedScrollForScrub,
 } from "@/lib/video-feed-scrub";
+import {
+  FULL_SCREEN_VIEWER_ACTION_RAIL_BOTTOM_CLASS,
+  FULL_SCREEN_VIEWER_METADATA_SHIFT_CLASS,
+  FULL_SCREEN_VIEWER_OVERLAY_BOTTOM_ATTACHED_CLASS,
+  FULL_SCREEN_VIEWER_OVERLAY_BOTTOM_CLASS,
+  FULL_SCREEN_VIEWER_OVERLAY_FADE_HEIGHT_ATTACHED_CLASS,
+  FULL_SCREEN_VIEWER_OVERLAY_FADE_HEIGHT_CLASS,
+  isFullScreenPostViewerCard,
+} from "@/lib/full-screen-post-sequence-viewer";
 // Removed placeholder video import - now using real uploaded videos
 
 /**
@@ -109,7 +127,6 @@ function isVideoAreaInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return !!target.closest(VIDEO_AREA_INTERACTIVE_SELECTOR);
 }
-const ARTIST_SELF_TAG_HINT_DISMISSED_EVENT = "dubhub:hint:artist-self-tag-dismissed";
 
 /** Lucide-aligned post metadata icons: same box, stroke 2 @ 24px, `currentColor`. */
 const POST_META_ICON_CLASS = "h-4 w-4 shrink-0 text-gray-300";
@@ -265,7 +282,8 @@ interface VideoCardProps {
   homeFeedPosterFallback?: boolean;
   onCommentsOpened?: () => void;
   onCommentsClosed?: () => void;
-  onPostLiked?: () => void;
+  /** Fires after a successful not-liked → liked mutation. Passes the Like hit-target element when available. */
+  onPostLiked?: (likeHitTarget?: HTMLElement | null) => void;
   /** Home deep-link: open comments drawer once this card is active. */
   requestOpenComments?: boolean;
   onOpenCommentsRequestHandled?: () => void;
@@ -422,7 +440,11 @@ function VideoCardInner({
   useEffect(() => {
     setClipViewerOverlayCollapsed(false);
   }, [post.id]);
-  const [artistSelfTagHintSeen, setArtistSelfTagHintSeen] = useState(true);
+  /** Comments rail hit target — Artist self-tag coachmark anchor (HINTS-PREMIUM-4). */
+  const commentsHitTargetRef = useRef<HTMLDivElement | null>(null);
+  /** Eligible Comments open → fire artist self-tag READY after close. */
+  const artistSelfTagIntentRef = useRef(false);
+  const artistSelfTagReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   /** Last committed `<video>` node; used so key-swap teardown targets the outgoing element (see `setVideoDomRef`). */
@@ -466,10 +488,26 @@ function VideoCardInner({
         const message = error instanceof Error ? error.message : String(error);
         console.log("[CommentsOpen] prefetch error", { postId: post.id, message });
       });
+    // HINTS-PREMIUM-4: intent only after opening Comments on an eligible unidentified post.
+    const tagged = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
+    const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+    const identified =
+      !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && !!artistVerifiedBy;
+    const verifiedArtistViewer = !!contextUser?.id && userType === "artist" && verifiedArtist;
+    artistSelfTagIntentRef.current = verifiedArtistViewer && !identified && !tagged;
     setCommentsPost(post);
     setShowComments(true);
     onCommentsOpened?.();
-  }, [debugComments, onCommentsOpened, post, queryClient, showComments]);
+  }, [
+    contextUser?.id,
+    debugComments,
+    onCommentsOpened,
+    post,
+    queryClient,
+    showComments,
+    userType,
+    verifiedArtist,
+  ]);
 
   useEffect(() => {
     if (!requestOpenComments || !isActive || showComments) return;
@@ -541,6 +579,8 @@ function VideoCardInner({
   const [likeSaveNoteBurstKey, setLikeSaveNoteBurstKey] = useState<number | null>(null);
   const likeSaveNoteBurstTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  /** Like rail 44×44 icon wrap — Home coachmark anchor (HINTS-PREMIUM-2). */
+  const likeHitTargetRef = useRef<HTMLDivElement | null>(null);
   /** Home double-tap like: pending single-tap play/pause timer and last tap sample. */
   const videoSingleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoLastTapRef = useRef<{ time: number; clientX: number; clientY: number } | null>(null);
@@ -552,7 +592,6 @@ function VideoCardInner({
   } | null>(null);
   /** Blocks the next video tap-to-pause after report menu dismiss (outside tap bleeds through). */
   const suppressVideoToggleUntilRef = useRef(0);
-  const hasPlayedArtistSelfTagHintAppearRef = useRef(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
   const videoStageRef = useRef<HTMLDivElement>(null);
@@ -576,66 +615,34 @@ function VideoCardInner({
   const [scrubReadout, setScrubReadout] = useState<{ current: number; total: number } | null>(null);
 
   const currentUserTaggedAsArtist = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
-  const postArtistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
-  const isArtistIdentifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && !!postArtistVerifiedBy;
   const isVerifiedArtistViewer = !!contextUser?.id && userType === "artist" && verifiedArtist;
-  const artistSelfTagHintSeenKey = contextUser?.id
-    ? `dubhub_hint_artist_self_tag_flow_seen_${contextUser.id}`
-    : null;
 
   useEffect(() => {
-    if (!artistSelfTagHintSeenKey) {
-      setArtistSelfTagHintSeen(true);
-      return;
+    artistSelfTagIntentRef.current = false;
+    if (artistSelfTagReadyTimerRef.current) {
+      clearTimeout(artistSelfTagReadyTimerRef.current);
+      artistSelfTagReadyTimerRef.current = null;
     }
-    setArtistSelfTagHintSeen(localStorage.getItem(artistSelfTagHintSeenKey) === "1");
-  }, [artistSelfTagHintSeenKey]);
+  }, [post.id]);
 
   useEffect(() => {
-    if (!artistSelfTagHintSeenKey) return;
-    const onDismissed = (ev: Event) => {
-      const detail = (ev as CustomEvent<{ key?: string }>).detail;
-      if (detail?.key !== artistSelfTagHintSeenKey) return;
-      setArtistSelfTagHintSeen(true);
-    };
-    window.addEventListener(ARTIST_SELF_TAG_HINT_DISMISSED_EVENT, onDismissed as EventListener);
     return () => {
-      window.removeEventListener(ARTIST_SELF_TAG_HINT_DISMISSED_EVENT, onDismissed as EventListener);
+      if (artistSelfTagReadyTimerRef.current) {
+        clearTimeout(artistSelfTagReadyTimerRef.current);
+        artistSelfTagReadyTimerRef.current = null;
+      }
     };
-  }, [artistSelfTagHintSeenKey]);
+  }, []);
 
-  const artistSelfTagHintVisible =
-    isVerifiedArtistViewer &&
-    !isArtistIdentifiedPost &&
-    !currentUserTaggedAsArtist &&
-    !showComments &&
-    !showVerificationDialog &&
-    !showArtistVerificationDialog &&
-    !showReportModal &&
-    !reportMenuOpen &&
-    !artistSelfTagHintSeen;
-
+  // Completing self-tag (became tagged) dismisses the premium coachmark with persist.
+  const wasTaggedAsArtistRef = useRef(currentUserTaggedAsArtist);
   useEffect(() => {
-    if (artistSelfTagHintVisible && !hasPlayedArtistSelfTagHintAppearRef.current) {
-      hasPlayedArtistSelfTagHintAppearRef.current = true;
-      playInteractionLight();
+    const wasTagged = wasTaggedAsArtistRef.current;
+    wasTaggedAsArtistRef.current = currentUserTaggedAsArtist;
+    if (!wasTagged && currentUserTaggedAsArtist && isVerifiedArtistViewer) {
+      window.dispatchEvent(new CustomEvent(HINT_ARTIST_SELF_TAG_COMPLETED_EVENT));
     }
-    if (!artistSelfTagHintVisible) {
-      hasPlayedArtistSelfTagHintAppearRef.current = false;
-    }
-  }, [artistSelfTagHintVisible]);
-
-  const handleDismissArtistSelfTagHint = useCallback(() => {
-    if (!artistSelfTagHintSeenKey) return;
-    localStorage.setItem(artistSelfTagHintSeenKey, "1");
-    setArtistSelfTagHintSeen(true);
-    window.dispatchEvent(
-      new CustomEvent(ARTIST_SELF_TAG_HINT_DISMISSED_EVENT, {
-        detail: { key: artistSelfTagHintSeenKey },
-      }),
-    );
-    playInteractionLight();
-  }, [artistSelfTagHintSeenKey]);
+  }, [currentUserTaggedAsArtist, isVerifiedArtistViewer]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -2037,7 +2044,7 @@ function VideoCardInner({
       lastConfirmedLikedRef.current = data.isLiked;
       lastConfirmedLikesRef.current = data.counts.likes;
       if (!wasPreviouslyLiked && data.isLiked) {
-        onPostLiked?.();
+        onPostLiked?.(likeHitTargetRef.current);
       }
       likeRequestInFlightRef.current = false;
       
@@ -2363,6 +2370,11 @@ function VideoCardInner({
   const overlayCollapsed = galleryMetadataExpand
     ? clipViewerOverlayCollapsed
     : overlayDensityControl && feedOverlayCollapsed;
+  /** Shared Profile / Attached Clips full-screen shell — not Home. */
+  const isFullScreenPostViewer = isFullScreenPostViewerCard({
+    embeddedFeed,
+    clipViewerOverlay,
+  });
 
   const scrubHitRef = useRef<HTMLDivElement>(null);
   const scrubTrackRef = useRef<HTMLDivElement>(null);
@@ -2785,11 +2797,15 @@ function VideoCardInner({
                 </div>
               </div>
             )}
-            {/* Right action rail — top→bottom: Like, Comment, Share, optional verify/delete, Mute */}
+            {/* Right action rail — top→bottom: Like, Comment, Share, optional verify/delete, Mute.
+                Viewer: independent card-local clamp (not metadata stack / Home overlay-bottom). */}
             <div
               data-video-action-rail
               className={cn(
-                "absolute bottom-[calc(var(--video-card-overlay-bottom,0px)+clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem))] right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
+                "absolute right-[max(0.5rem,env(safe-area-inset-right,0px))] z-30 flex w-[var(--video-feed-rail-width)] flex-col items-center gap-4",
+                isFullScreenPostViewer
+                  ? FULL_SCREEN_VIEWER_ACTION_RAIL_BOTTOM_CLASS
+                  : "bottom-[calc(var(--video-card-overlay-bottom,0px)+clamp(calc(4.5rem+env(safe-area-inset-bottom,0px)),14lvh,7rem))]",
                 "transition-opacity duration-300 ease-out motion-reduce:transition-none",
                 isScrubbingUi ? "opacity-[0.2]" : "opacity-100",
               )}
@@ -2853,8 +2869,13 @@ function VideoCardInner({
                   type="button"
                   className={railBtn}
                   onClick={handleLikePress}
+                  data-testid="button-like-post"
                 >
-                  <div className={railIconWrap}>
+                  <div
+                    ref={likeHitTargetRef}
+                    className={railIconWrap}
+                    data-video-like-hit-target=""
+                  >
                     <Heart className={`h-7 w-7 ${hasLiked ? "fill-red-500 text-red-500" : "text-white"}`} />
                   </div>
                   <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
@@ -2871,38 +2892,17 @@ function VideoCardInner({
                     openCommentsDrawer();
                   }}
                 >
-                  <div className={`${railIconWrap} relative`}>
+                  <div
+                    ref={commentsHitTargetRef}
+                    data-video-comments-hit-target
+                    className={`${railIconWrap} relative`}
+                  >
                     <MessageCircle className="h-7 w-7 text-white" />
-                    {artistSelfTagHintVisible ? (
-                      <span className="pointer-events-none absolute inset-0 rounded-full border border-[#4ae9df]/80 shadow-[0_0_0_2px_rgba(74,233,223,0.3),0_0_22px_rgba(74,233,223,0.55)]" />
-                    ) : null}
                   </div>
                   <span className="max-w-[3.25rem] truncate text-center text-[11px] font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
                     {formatCount(Number(post.comments ?? 0) + commentCountBump)}
                   </span>
                 </button>
-                {artistSelfTagHintVisible ? (
-                  <div className="pointer-events-none absolute right-full top-1/2 z-30 mr-3 -translate-y-1/2">
-                    <div className="relative w-56 rounded-xl border border-[#4ae9df]/35 bg-black/80 p-3 text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-md">
-                      <div className="mb-1 text-xs font-semibold text-[#4ae9df]">Is this your ID?</div>
-                      <p className="text-[11px] leading-relaxed text-white/90">
-                        It probably isn't, but if you ever stumble across one of your tracks in the wild just tag yourself in the comments, then close the comments and tap Mark ID to confirm it as yours.
-                      </p>
-                      <button
-                        type="button"
-                        className="pointer-events-auto mt-2 inline-flex rounded-md border border-[#4ae9df]/45 bg-[#4ae9df]/15 px-2 py-1 text-[11px] font-medium text-[#b6fffa] hover:bg-[#4ae9df]/25"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleDismissArtistSelfTagHint();
-                        }}
-                        data-testid="button-dismiss-artist-self-tag-hint"
-                      >
-                        Got it
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
               </div>
 
               <button
@@ -2925,7 +2925,14 @@ function VideoCardInner({
                 <button
                   type="button"
                   className={railBtn}
-                  onClick={() => (isOwner ? setShowVerificationDialog(true) : setShowArtistVerificationDialog(true))}
+                  onClick={() => {
+                    if (isOwner) {
+                      setShowVerificationDialog(true);
+                    } else {
+                      window.dispatchEvent(new CustomEvent(HINT_ARTIST_SELF_TAG_COMPLETED_EVENT));
+                      setShowArtistVerificationDialog(true);
+                    }
+                  }}
                   data-testid={isOwner ? "button-community-verify" : "button-artist-verify"}
                   title={isOwner ? "Mark comment as correct" : "Confirm or deny track"}
                 >
@@ -2981,35 +2988,56 @@ function VideoCardInner({
       {/* LG-NAV-5C: native-mode overlay-bottom is the bar-top exclusion, so the
           metadata gradient would stop there. This sibling continues from-black/80
           to the screen bottom without moving metadata. Height is 0 in React-nav
-          mode (`--video-card-overlay-bottom: 0px`). Do not add backdrop-filter. */}
+          mode (`--video-card-overlay-bottom: 0px`). Do not add backdrop-filter.
+          Full-screen viewer: fade height matches viewer metadata bottom (not Home exclusion). */}
       <div
         aria-hidden
         data-video-card-overlay-fade-extend
         className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[var(--video-card-overlay-bottom,0px)] bg-black/80",
+          "pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-black/80",
+          isFullScreenPostViewer
+            ? moderatorPreview
+              ? FULL_SCREEN_VIEWER_OVERLAY_FADE_HEIGHT_ATTACHED_CLASS
+              : FULL_SCREEN_VIEWER_OVERLAY_FADE_HEIGHT_CLASS
+            : "h-[var(--video-card-overlay-bottom,0px)]",
           "transition-opacity duration-300 ease-in-out motion-reduce:transition-none",
           isScrubbingUi ? "opacity-[0.18]" : "opacity-100",
         )}
       />
-      {/* Bottom content — padding-right reserves rail (scrollport already clears shell nav). Native-nav mode lifts via --video-card-overlay-bottom so the cluster clears the floating bar without restoring the opaque strip. */}
+      {/* Bottom content — padding-right reserves rail (scrollport already clears shell nav). Native-nav mode lifts via --video-card-overlay-bottom so the cluster clears the floating bar without restoring the opaque strip.
+          Full-screen viewer: own bottom contract from scrub Y + gap + safe-area (not Home exclusion). */}
       <div
         data-video-card-overlay
+        data-fullscreen-viewer-overlay={isFullScreenPostViewer ? "1" : undefined}
         className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-[var(--video-card-overlay-bottom,0px)] z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:pl-4",
+          "pointer-events-none absolute inset-x-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent pl-3 pr-[calc(var(--video-feed-rail-width)+0.65rem)] sm:pl-4",
+          isFullScreenPostViewer
+            ? moderatorPreview
+              ? FULL_SCREEN_VIEWER_OVERLAY_BOTTOM_ATTACHED_CLASS
+              : FULL_SCREEN_VIEWER_OVERLAY_BOTTOM_CLASS
+            : "bottom-[var(--video-card-overlay-bottom,0px)]",
           "transition-[opacity,padding-top,padding-bottom] duration-300 ease-in-out motion-reduce:transition-none",
           isScrubbingUi ? "opacity-[0.18]" : "opacity-100",
           overlayCollapsed
             ? "pt-8 pb-3.5 sm:pt-9 sm:pb-4"
             : "py-5 pt-12 sm:py-6 sm:pt-14",
-          embeddedFeed && "pb-3",
-          moderatorPreview && "pb-[calc(env(safe-area-inset-bottom,0px)+5.25rem)]",
+          /* Viewer: bottom offset owns meta→scrub gap; drop stacked pb-3 / 5.25rem pads. */
+          isFullScreenPostViewer
+            ? "pb-0 sm:pb-0"
+            : cn(embeddedFeed && "pb-3", moderatorPreview && "pb-[calc(env(safe-area-inset-bottom,0px)+5.25rem)]"),
         )}
       >
         {/* pointer-events-none here + inherited none on text: wheel/click reach feed + video; only explicit auto hits targets.
-            LG-NAV-5C1: native-only translate shifts this content toward the scrub; overlay box / fade / rail stay put. */}
+            LG-NAV-5C1: native-only translate shifts this content toward the scrub; overlay box / fade / rail stay put.
+            Full-screen viewer: force translate-y-0 (no Home metadata shift). */}
         <div
           data-video-card-overlay-content
-          className="pointer-events-none flex translate-y-[var(--video-card-metadata-shift,0px)] flex-col gap-2 overflow-visible"
+          className={cn(
+            "pointer-events-none flex flex-col gap-2 overflow-visible",
+            isFullScreenPostViewer
+              ? FULL_SCREEN_VIEWER_METADATA_SHIFT_CLASS
+              : "translate-y-[var(--video-card-metadata-shift,0px)]",
+          )}
         >
           <div className="overflow-x-visible py-0.5 pl-0.5 pr-1">
             <div className="flex min-w-0 items-center gap-3">
@@ -3120,14 +3148,7 @@ function VideoCardInner({
               {/* Status + genre + inline toggle (+ extended meta when expanded). Not inside collapse grid — box-shadow glow stays visible. */}
               <div className="shrink-0 overflow-visible px-0.5 py-3 pl-0.5 pr-1 sm:py-3.5">
                 <div className="pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
-                  {statusBadgeEl ? (
-                    <>
-                      {statusBadgeEl}
-                      <span className="text-gray-500 select-none" aria-hidden>
-                        •
-                      </span>
-                    </>
-                  ) : null}
+                  {statusBadgeEl}
                   {genrePillEl}
                   <button
                     type="button"
@@ -3194,12 +3215,15 @@ function VideoCardInner({
                     "grid",
                     overlayCollapseGridTransition,
                     overlayCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+                    /* Viewer: ~10–12px above card (with ReleasePreviewCard mt-2); overlay bottom owns scrub gap. */
+                    isFullScreenPostViewer ? "pt-0.5" : undefined,
                   )}
                 >
                   <div className="min-h-0 overflow-hidden">
                     <div
                       className={cn(
-                        "pointer-events-none overflow-visible pb-3 will-change-[opacity]",
+                        "pointer-events-none overflow-visible will-change-[opacity]",
+                        isFullScreenPostViewer ? "pb-0" : "pb-3",
                         overlayCollapseFade,
                         overlayCollapsed ? "opacity-0" : "opacity-100",
                       )}
@@ -3219,14 +3243,7 @@ function VideoCardInner({
             <>
               <div className="shrink-0 overflow-visible px-0.5 py-3 pl-0.5 pr-1 sm:py-3.5">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
-                  {statusBadgeEl ? (
-                    <>
-                      {statusBadgeEl}
-                      <span className="text-gray-500 select-none" aria-hidden>
-                        •
-                      </span>
-                    </>
-                  ) : null}
+                  {statusBadgeEl}
                   {genrePillEl}
                   {post.djName ? (
                     <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
@@ -3257,7 +3274,10 @@ function VideoCardInner({
               </div>
 
               {releasePreview ? (
-                <div data-video-card-release-slot className="pb-3">
+                <div
+                  data-video-card-release-slot
+                  className={isFullScreenPostViewer ? "pt-0.5" : "pb-3"}
+                >
                   <ReleasePreviewCard
                     releasePreview={releasePreview}
                     isReleaseOwner={isReleaseOwner}
@@ -3269,17 +3289,19 @@ function VideoCardInner({
           )}
         </div>
       </div>
-      {/* Feed scrub: full width, tall hit zone; home feed portals to body so `fixed` stays viewport-anchored on iOS (not the scrollport). */}
+      {/* Feed scrub: full width, tall hit zone; home feed portals to body so `fixed` stays viewport-anchored on iOS (not the scrollport).
+          Viewer (embeddedFeed): Home visual language via VIEWER_SCRUB_* — Y/safe-area/hit/seek unchanged. */}
       {isActive && scrubBarReady && shouldLoadVideo && videoSrc ? (() => {
         const scrubTree = (
           <div
             {...(!embeddedFeed ? { "data-video-feed-scrub": "" } : {})}
             className={cn(
               "pointer-events-none z-[40] flex w-full justify-center px-0",
-              /* Profile snap viewers: tie to card/scrollport. Home: `fixed` + `--video-feed-scrub-bottom` (portal avoids WebKit double-offset). */
+              /* Profile snap viewers: tie to card/scrollport. Home: `fixed` + `--video-feed-scrub-bottom` (portal avoids WebKit double-offset).
+                 Attached Clips: same Y as before; inset owned by VIEWER_SCRUB_VISUAL_INSET_CLASS (not outer px-3). */
               embeddedFeed
                 ? moderatorPreview
-                  ? "absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+28px)] px-3 pb-0"
+                  ? "absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+28px)] pb-0"
                   : "absolute inset-x-0 bottom-0 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]"
                 : "fixed inset-x-0 bottom-[var(--video-feed-scrub-bottom)] pb-0",
             )}
@@ -3337,7 +3359,12 @@ function VideoCardInner({
                 endScrubGesture();
               }}
             >
-              <div className={cn("relative w-full", !embeddedFeed && HOME_SCRUB_VISUAL_INSET_CLASS)}>
+              <div
+                className={cn(
+                  "relative w-full",
+                  embeddedFeed ? VIEWER_SCRUB_VISUAL_INSET_CLASS : HOME_SCRUB_VISUAL_INSET_CLASS,
+                )}
+              >
                 {isScrubbingUi && scrubReadout ? (
                   <div
                     data-video-feed-scrub-readout=""
@@ -3351,27 +3378,17 @@ function VideoCardInner({
                   <div
                     ref={scrubTrackRef}
                     data-video-feed-scrub-track=""
-                    className={
-                      embeddedFeed
-                        ? "pointer-events-none relative h-1 w-full overflow-visible"
-                        : HOME_SCRUB_TRACK_CLASS
-                    }
+                    className={embeddedFeed ? VIEWER_SCRUB_TRACK_CLASS : HOME_SCRUB_TRACK_CLASS}
                   >
                     <div
                       className={
-                        embeddedFeed
-                          ? "absolute inset-0 rounded-full bg-white/15"
-                          : HOME_SCRUB_INACTIVE_CLASS
+                        embeddedFeed ? VIEWER_SCRUB_INACTIVE_CLASS : HOME_SCRUB_INACTIVE_CLASS
                       }
                       aria-hidden
                     />
                     <div
                       ref={scrubFillRef}
-                      className={
-                        embeddedFeed
-                          ? "absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white/55 will-change-transform motion-reduce:transition-none"
-                          : HOME_SCRUB_FILL_CLASS
-                      }
+                      className={embeddedFeed ? VIEWER_SCRUB_FILL_CLASS : HOME_SCRUB_FILL_CLASS}
                       style={{ transform: "scaleX(0)" }}
                     />
                   </div>
@@ -3474,6 +3491,24 @@ function VideoCardInner({
           onClosed={() => {
             setCommentsPost(null);
             onCommentsClosed?.();
+            if (!artistSelfTagIntentRef.current) return;
+            artistSelfTagIntentRef.current = false;
+            if (artistSelfTagReadyTimerRef.current) {
+              clearTimeout(artistSelfTagReadyTimerRef.current);
+              artistSelfTagReadyTimerRef.current = null;
+            }
+            artistSelfTagReadyTimerRef.current = setTimeout(() => {
+              artistSelfTagReadyTimerRef.current = null;
+              const target = commentsHitTargetRef.current;
+              if (!(target instanceof HTMLElement) || !target.isConnected) return;
+              const rect = target.getBoundingClientRect();
+              if (rect.width < 1 || rect.height < 1) return;
+              window.dispatchEvent(
+                new CustomEvent(HINT_ARTIST_SELF_TAG_READY_EVENT, {
+                  detail: { target },
+                }),
+              );
+            }, ARTIST_SELF_TAG_HINT_SETTLE_MS);
           }}
         />
       )}

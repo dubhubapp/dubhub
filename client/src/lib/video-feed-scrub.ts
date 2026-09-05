@@ -23,6 +23,21 @@ export const HOME_SCRUB_FILL_CLASS =
   "absolute inset-y-0 left-0 w-full origin-left bg-white/80 will-change-transform motion-reduce:transition-none" as const;
 
 /**
+ * Full-screen viewer scrub chrome (FULLSCREEN-POST-VIEWER-2B).
+ * Same visual language as Home (3px, rounded-full, white/20 + white/80) with a
+ * balanced L/R inset — not Home's rail-aware asymmetric inset, portal, or bottom var.
+ */
+export const VIEWER_SCRUB_VISUAL_INSET_CLASS = "px-3.5 sm:px-4" as const;
+
+export const VIEWER_SCRUB_TRACK_CLASS =
+  "pointer-events-none relative h-[3px] w-full overflow-hidden rounded-full" as const;
+
+export const VIEWER_SCRUB_INACTIVE_CLASS = "absolute inset-0 bg-white/20" as const;
+
+export const VIEWER_SCRUB_FILL_CLASS =
+  "absolute inset-y-0 left-0 w-full origin-left bg-white/80 will-change-transform motion-reduce:transition-none" as const;
+
+/**
  * Time readout sits above the visual track, not in overlay flow.
  * 2rem clears the release-card bottom that `8px` overlapped.
  */
