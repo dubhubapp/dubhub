@@ -50,17 +50,20 @@ import {
   isMidnightReleaseDueForTimezone,
   midnightReleaseCalendarYmd,
 } from "./release-day-notify-eligibility";
+import { savedReleasesOwnershipPrecedenceSql } from "./saved-releases-ownership";
 
 const MODERATION_NOTIFICATION_MEDIA_PREFIX = "[[dh_preview:";
 const MODERATION_NOTIFICATION_MEDIA_SUFFIX = "]]";
 
 /**
  * Releases tab `scope=saved`: public releases linked via artist-verified posts the user
- * liked OR uploaded (release artist must match `posts.artist_verified_by`).
- * Shared by feed queries and profile `releasesSaved` count — keep in sync.
+ * liked OR uploaded (release artist must match `posts.artist_verified_by`), excluding
+ * releases the viewer owns or is an ACCEPTED collaborator on (ownership precedence).
+ * Shared by feed queries and profile `releasesSaved` count — keep in sync with
+ * isReleaseInViewerSavedFeed.
  */
 function savedReleasesFeedWhereSql(userId: string) {
-  return sql`(r.is_public = true AND ${publicReleaseNotSuspendedSql()} AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
+  return sql`(r.is_public = true AND ${publicReleaseNotSuspendedSql()} AND ${savedReleasesOwnershipPrecedenceSql(userId)} AND (r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id JOIN post_likes pl ON pl.post_id = p.id WHERE pl.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by) OR r.id IN (SELECT DISTINCT r2.id FROM releases r2 JOIN release_posts rp ON rp.release_id = r2.id JOIN posts p ON p.id = rp.post_id WHERE p.user_id = ${userId} AND p.is_verified_artist = true AND p.artist_verified_by IS NOT NULL AND r2.artist_id = p.artist_verified_by)))`;
 }
 
 /** Public discovery must exclude subscription-suspended releases. */
@@ -259,7 +262,7 @@ export interface IStorage {
   ): Promise<HomeWidgetReleaseStorageRow[]>;
   /** Earliest like timestamp per release (liked attached-post path only); omit upload-only saves. */
   getSavedReleaseLikeTimestamps(userId: string): Promise<Map<string, string>>;
-  /** True when this release appears in the user’s Saved Releases feed (liked post or own upload path). */
+  /** True when this release appears in the user’s Saved Releases feed (liked/upload path, excluding owner/ACCEPTED collaborator). */
   isReleaseInViewerSavedFeed(userId: string, releaseId: string): Promise<boolean>;
   /** True when any post attached to this release was uploaded by the user. */
   viewerHasOwnUploadOnRelease(userId: string, releaseId: string): Promise<boolean>;
@@ -3019,7 +3022,7 @@ export class DatabaseStorage implements IStorage {
 
   // --- Releases ---
   // Feed returns releases; links are added by route.
-  // scope: "my" = owned + collaborator + saved; "saved" = only public releases from liked/uploaded (user/artist Saved Releases)
+  // scope: "my" = owned + ACCEPTED collaborator; "saved" = public liked/uploaded attached posts excluding owner/ACCEPTED collaborator
   // view: upcoming / past use Exact release_at vs Midnight UTC calendar; collaborations (user is collaborator, my scope only)
   async getReleasesFeed(userId: string, view?: "upcoming" | "past" | "collaborations", scope?: "my" | "saved"): Promise<any[]> {
     if (!userId) return [];
@@ -3204,6 +3207,7 @@ export class DatabaseStorage implements IStorage {
           FROM releases r
           WHERE r.id = ${releaseId}
             AND r.is_public = true AND r.subscription_suspended_at IS NULL
+            AND ${savedReleasesOwnershipPrecedenceSql(userId)}
             AND (
               EXISTS (
                 SELECT 1
