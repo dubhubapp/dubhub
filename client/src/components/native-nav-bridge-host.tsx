@@ -9,6 +9,7 @@ import {
   nativeNavIsAvailable,
   nativeNavIsCoveredBySheet,
   nativeTabIntent,
+  profileIconRoleFromAccountType,
   selectedTabFromAppState,
   type AppTab,
 } from "@/lib/native-nav-contract";
@@ -19,6 +20,7 @@ import {
   readNativeNavGeometry,
   setNativeNavigationCovered,
   setNativeNavigationVisible,
+  setNativeProfileIconRole,
   setNativeSelectedTab,
   setNativeTabs,
 } from "@/lib/native-nav-bridge";
@@ -66,7 +68,7 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const [location, navigate] = useLocation();
   const { invokeHomeWhileOnHome } = useHomeFeedInteraction();
   const { openSubmitClip, isSubmitClipOpen, isSubmitClipCovering } = useSubmitClip();
-  const { userType } = useUser();
+  const { userType, currentUser, isAuthenticated } = useUser();
   const { openCommentsPostId } = useInAppNotificationSuppression();
   const paywallCovering = useSyncExternalStore(
     subscribeVerifiedArtistToolsPaywallNativeNavCover,
@@ -84,8 +86,13 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const lastSelectedRef = useRef<string | undefined>(undefined);
   const lastAvailableRef = useRef<boolean | undefined>(undefined);
   const lastCoveredRef = useRef<boolean | undefined>(undefined);
+  const lastProfileIconRoleRef = useRef<string | undefined>(undefined);
 
   const isModerator = userType === "moderator";
+  // PROFILE-NAV-2: account_type on currentUser.userType — not nav userType (moderator collapses).
+  const profileIconRole = profileIconRoleFromAccountType(
+    isAuthenticated ? currentUser?.userType : null,
+  );
   const resetPasswordRoute = location === "/reset-password";
   const commentsOpen = !!openCommentsPostId;
   const tabs = enabledAppTabs(isModerator);
@@ -132,6 +139,16 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     lastTabsKeyRef.current = key;
     void setNativeTabs(tabs);
   }, [nativeEnabled, tabs]);
+
+  useEffect(() => {
+    if (!nativeEnabled) {
+      lastProfileIconRoleRef.current = undefined;
+      return;
+    }
+    if (lastProfileIconRoleRef.current === profileIconRole) return;
+    lastProfileIconRoleRef.current = profileIconRole;
+    void setNativeProfileIconRole(profileIconRole);
+  }, [nativeEnabled, profileIconRole]);
 
   useEffect(() => {
     if (!nativeEnabled) return;

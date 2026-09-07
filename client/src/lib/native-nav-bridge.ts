@@ -14,6 +14,7 @@ type NativeNavigationPlugin = {
   setNavigationVisible(options: { visible: boolean }): Promise<void>;
   setNavigationCovered(options: { covered: boolean }): Promise<void>;
   setTabs(options: { tabs: AppTab[] }): Promise<void>;
+  setProfileIconRole(options: { role: "community" | "artist" }): Promise<void>;
   addListener(
     eventName: "selectTab" | "reselectTab" | "geometry",
     listener: (event: { tab?: string; t?: number } & Partial<NativeNavGeometry>) => void,
@@ -77,6 +78,18 @@ export async function setNativeTabs(tabs: AppTab[]): Promise<void> {
   if (!canUseNativeNavBridge()) return;
   try {
     await DubHubNativeNavigation.setTabs({ tabs });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** PROFILE-NAV-2: sync Profile glyph role (account_type → community | artist). */
+export async function setNativeProfileIconRole(
+  role: "community" | "artist",
+): Promise<void> {
+  if (!canUseNativeNavBridge()) return;
+  try {
+    await DubHubNativeNavigation.setProfileIconRole({ role });
   } catch {
     /* ignore */
   }

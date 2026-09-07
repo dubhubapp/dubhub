@@ -23,6 +23,11 @@
 		D0B8B1451FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1251FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png */; };
 		D0B8B1521FED79650016851F /* PremiumLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D0B8B1501FED79650016851F /* PremiumLaunchScreen.storyboard */; };
 		DHLG1BF01 /* DubHubNativeTabBarOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR01 /* DubHubNativeTabBarOverlay.swift */; };
+		DHLG1BF02 /* DubHubNativeTabBarIconAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR02 /* DubHubNativeTabBarIconAnimator.swift */; };
+		DHLG1BF03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift */; };
+		DHLG1BF04 /* DubHubNativeTabBarReleasesVinylAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR04 /* DubHubNativeTabBarReleasesVinylAnimator.swift */; };
+		DHLG1BF05 /* DubHubNativeTabBarProfileArtistAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR05 /* DubHubNativeTabBarProfileArtistAnimator.swift */; };
+		DHLG1BF06 /* DubHubNativeTabBarProfileCommunityAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR06 /* DubHubNativeTabBarProfileCommunityAnimator.swift */; };
 		DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR01 /* HomeWidgetBridgePlugin.swift */; };
 		DHRCWBF02 /* HomeWidgetAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR02 /* HomeWidgetAppGroup.swift */; };
 		DHRCWBF03 /* HomeWidgetPayloadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR03 /* HomeWidgetPayloadModels.swift */; };
@@ -98,6 +103,11 @@
 		D0B8B1251FED79650016852C /* DubHubPremiumLaunchMarkBaseline@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DubHubPremiumLaunchMarkBaseline@3x.png"; sourceTree = "<group>"; };
 		D0B8B1511FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/PremiumLaunchScreen.storyboard; sourceTree = "<group>"; };
 		DHLG1FR01 /* DubHubNativeTabBarOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarOverlay.swift; sourceTree = "<group>"; };
+		DHLG1FR02 /* DubHubNativeTabBarIconAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarIconAnimator.swift; sourceTree = "<group>"; };
+		DHLG1FR03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarLeaderboardEQOverlay.swift; sourceTree = "<group>"; };
+		DHLG1FR04 /* DubHubNativeTabBarReleasesVinylAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarReleasesVinylAnimator.swift; sourceTree = "<group>"; };
+		DHLG1FR05 /* DubHubNativeTabBarProfileArtistAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarProfileArtistAnimator.swift; sourceTree = "<group>"; };
+		DHLG1FR06 /* DubHubNativeTabBarProfileCommunityAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarProfileCommunityAnimator.swift; sourceTree = "<group>"; };
 		DHRCWFR01 /* HomeWidgetBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetBridgePlugin.swift; sourceTree = "<group>"; };
 		DHRCWFR02 /* HomeWidgetAppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetAppGroup.swift; sourceTree = "<group>"; };
 		DHRCWFR03 /* HomeWidgetPayloadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetPayloadModels.swift; sourceTree = "<group>"; };
@@ -174,6 +184,11 @@
 				B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */,
 				DHRCWFR01 /* HomeWidgetBridgePlugin.swift */,
 				DHLG1FR01 /* DubHubNativeTabBarOverlay.swift */,
+				DHLG1FR02 /* DubHubNativeTabBarIconAnimator.swift */,
+				DHLG1FR03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift */,
+				DHLG1FR04 /* DubHubNativeTabBarReleasesVinylAnimator.swift */,
+				DHLG1FR05 /* DubHubNativeTabBarProfileArtistAnimator.swift */,
+				DHLG1FR06 /* DubHubNativeTabBarProfileCommunityAnimator.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				7A8E9F131FED79650016852C /* LaunchLogo */,
@@ -368,6 +383,11 @@
 				A1B2C3D4E5F60718293A4B5C /* SceneDelegate.swift in Sources */,
 				DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */,
 				DHLG1BF01 /* DubHubNativeTabBarOverlay.swift in Sources */,
+				DHLG1BF02 /* DubHubNativeTabBarIconAnimator.swift in Sources */,
+				DHLG1BF03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift in Sources */,
+				DHLG1BF04 /* DubHubNativeTabBarReleasesVinylAnimator.swift in Sources */,
+				DHLG1BF05 /* DubHubNativeTabBarProfileArtistAnimator.swift in Sources */,
+				DHLG1BF06 /* DubHubNativeTabBarProfileCommunityAnimator.swift in Sources */,
 				DHRCWBF02 /* HomeWidgetAppGroup.swift in Sources */,
 				DHRCWBF03 /* HomeWidgetPayloadModels.swift in Sources */,
 				DHRCWBF04 /* HomeWidgetUtcCountdown.swift in Sources */,

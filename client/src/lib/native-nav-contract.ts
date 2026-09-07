@@ -81,6 +81,18 @@ export function nativeTabIntent(tab: AppTab, location: string): NativeTabIntent 
   }
 }
 
+export type ProfileIconRole = "community" | "artist";
+
+/**
+ * PROFILE-NAV-2: Profile tab glyph from profiles.account_type only.
+ * Independent of verifiedArtist, subscription, and nav/moderator userType.
+ */
+export function profileIconRoleFromAccountType(
+  accountType: string | null | undefined,
+): ProfileIconRole {
+  return accountType === "artist" ? "artist" : "community";
+}
+
 /** Layout/exclusion may exist. Logged-out, onboarding, and reset-password are true absence. */
 export function nativeNavIsAvailable(input: {
   nativeNavEnabled: boolean;

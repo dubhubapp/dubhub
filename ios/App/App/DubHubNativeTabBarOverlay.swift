@@ -32,6 +32,7 @@ public class DubHubNativeNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setNavigationVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNavigationCovered", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setTabs", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setProfileIconRole", returnType: CAPPluginReturnPromise),
     ]
 
     public override func load() {
@@ -82,6 +83,15 @@ public class DubHubNativeNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// PROFILE-NAV-2: Profile glyph role from account_type (community | artist).
+    @objc func setProfileIconRole(_ call: CAPPluginCall) {
+        let role = call.getString("role")
+        Self.logIncoming("setProfileIconRole")
+        DubHubNativeTabBarChrome.shared.setProfileIconRole(role) {
+            call.resolve()
+        }
+    }
+
     private static func logIncoming(_ method: String) {
         #if DEBUG
         NSLog(
@@ -115,6 +125,17 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     private var reactVisible = false
     private var reactCovered = false
     private var tabIds: [String] = ["home", "leaderboard", "submit", "releases", "profile"]
+    /// PROFILE-NAV-2: account_type-driven Profile glyph. Defaults to community until JS syncs.
+    private var profileIconRole: String = "community"
+
+    /// PROFILE-NAV-5: read by icon animator / touch cancel without exposing mutation.
+    var isArtistProfileIconRole: Bool { profileIconRole == "artist" }
+
+    var profileIconAssetName: String {
+        profileIconRole == "artist"
+            ? DubHubNativeTabBarProfileArtistAnimator.artistAssetName
+            : DubHubNativeTabBarProfileArtistAnimator.communityAssetName
+    }
     private var applyingSelection = false
     private var selectedTabId: String?
     private var tagToTabId: [Int: String] = [:]
@@ -131,6 +152,10 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     private static let homeIndicatorPhysicalInset: CGFloat = 0
     private var opacityAnimator: UIViewPropertyAnimator?
     private var opacityAnimatorTarget: CGFloat?
+    /// Pending icon micro-animation (animation-only; route events already fired).
+    private var pendingIconAnimationTabId: String?
+    private var pendingIconAnimationItem: UITabBarItem?
+    private var iconAnimationCoalesceWork: DispatchWorkItem?
 
     func bind(plugin: CAPPlugin) {
         self.plugin = plugin
@@ -216,6 +241,59 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         }
     }
 
+    /// PROFILE-NAV-2: update Profile glyph from account_type role without rebuilding the bar.
+    func setProfileIconRole(_ raw: String?, completion: (() -> Void)? = nil) {
+        runOnMain { [weak self] in
+            guard let self else {
+                completion?()
+                return
+            }
+            let next = Self.normalizedProfileIconRole(raw)
+            guard self.profileIconRole != next else {
+                completion?()
+                return
+            }
+            // PROFILE-NAV-5: cancel bass session and restore the *incoming* role asset
+            // (never leave Artist frames after switching to community).
+            let restoreName = next == "artist"
+                ? DubHubNativeTabBarProfileArtistAnimator.artistAssetName
+                : DubHubNativeTabBarProfileArtistAnimator.communityAssetName
+            DubHubNativeTabBarProfileArtistAnimator.cancelAll(
+                in: nil,
+                restoreAssetName: restoreName
+            )
+            DubHubNativeTabBarProfileCommunityAnimator.cancelAll(
+                in: nil,
+                restoreAssetName: restoreName
+            )
+            self.profileIconRole = next
+            self.applyProfileItemImageOnly()
+            completion?()
+        }
+    }
+
+    private static func normalizedProfileIconRole(_ raw: String?) -> String {
+        let trimmed = (raw ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return trimmed == "artist" ? "artist" : "community"
+    }
+
+    /// Swap only the Profile UITabBarItem image; preserve selection, tint, labels, routing.
+    private func applyProfileItemImageOnly() {
+        assertMain("applyProfileItemImageOnly")
+        guard let tabBar, let items = tabBar.items else { return }
+        guard let profileIndex = tabIds.firstIndex(of: "profile"),
+              profileIndex < items.count
+        else {
+            return
+        }
+        let item = items[profileIndex]
+        let image = tabImage(id: "profile", symbol: "person")
+        item.image = image
+        item.selectedImage = nil
+    }
+
     private var isLayoutPresent: Bool {
         DubHubNativeNavigationFlag.isEnabled && reactVisible
     }
@@ -229,10 +307,13 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         hostController = bridgeController
         guard let host = bridgeController.view else { return }
 
-        let bar: UITabBar
-        if let existing = host.viewWithTag(overlayTag) as? UITabBar {
+        let bar: DubHubNativeTabBar
+        if let existing = host.viewWithTag(overlayTag) as? DubHubNativeTabBar {
             bar = existing
         } else {
+            if let legacy = host.viewWithTag(overlayTag) as? UITabBar {
+                legacy.removeFromSuperview()
+            }
             let beforeCreate = snapshot(bridgeController)
             bar = makeTabBar()
             host.addSubview(bar)
@@ -245,6 +326,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
             )
         }
         tabBar = bar
+        bindIconAnimationInteraction(on: bar)
         applyPendingItems(reason: "install")
         applySelectedItem()
         applyPresentation(on: bridgeController)
@@ -257,9 +339,9 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         applyVisualCover(tabBar)
     }
 
-    private func makeTabBar() -> UITabBar {
+    private func makeTabBar() -> DubHubNativeTabBar {
         assertMain("makeTabBar")
-        let tabBar = UITabBar()
+        let tabBar = DubHubNativeTabBar()
         tabBar.tag = overlayTag
         tabBar.delegate = self
         tabBar.isHidden = true
@@ -268,10 +350,54 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         tabBar.translatesAutoresizingMaskIntoConstraints = true
         tabBar.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
         tabBar.accessibilityIdentifier = "dubhub.nativeTabBar.lgNav3"
-        // LG-NAV-6A: selected icon/title only. Do not set an unselected tint,
-        // a custom bar appearance object, or any custom glass/background/platter.
-        tabBar.tintColor = UIColor(red: 10.0 / 255.0, green: 131.0 / 255.0, blue: 255.0 / 255.0, alpha: 1)
+        // NATIVE-NAV-PREMIUM-2A: neutral selected/unselected tints only.
+        // Do not set a custom bar appearance object, or any custom glass/background/platter.
+        tabBar.tintColor = UIColor.white.withAlphaComponent(0.96)
+        tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.50)
+        bindIconAnimationInteraction(on: tabBar)
         return tabBar
+    }
+
+    private func bindIconAnimationInteraction(on tabBar: DubHubNativeTabBar) {
+        tabBar.onInteractionEnded = { [weak self] in
+            self?.flushPendingIconAnimation()
+        }
+    }
+
+    /// Animation-only queue: updates pending tab during drag; plays once on commit.
+    private func requestCommittedIconAnimation(tabId: String, item: UITabBarItem) {
+        pendingIconAnimationTabId = tabId
+        pendingIconAnimationItem = item
+        iconAnimationCoalesceWork?.cancel()
+        if let nativeBar = tabBar as? DubHubNativeTabBar, nativeBar.isInteractionActive {
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.flushPendingIconAnimation()
+        }
+        iconAnimationCoalesceWork = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + DubHubNativeTabBarIconAnimator.coalesceDelay,
+            execute: work
+        )
+    }
+
+    private func flushPendingIconAnimation() {
+        iconAnimationCoalesceWork?.cancel()
+        iconAnimationCoalesceWork = nil
+        guard let tabId = pendingIconAnimationTabId,
+              let item = pendingIconAnimationItem,
+              let tabBar
+        else {
+            return
+        }
+        pendingIconAnimationTabId = nil
+        pendingIconAnimationItem = nil
+        DubHubNativeTabBarIconAnimator.playCommittedSelection(
+            tabId: tabId,
+            item: item,
+            in: tabBar
+        )
     }
 
     private func applyPendingItems(reason: String) {
@@ -346,7 +472,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     }
 
     /// Custom template PDFs. Missing assets fall back to SF so a tab is never dropped.
-    /// Profile always uses the listener glyph in this slice; artist asset is catalog-only.
+    /// PROFILE-NAV-2: Profile glyph follows profileIconRole (account_type), default community.
     private func tabImage(id: String, symbol: String) -> UIImage? {
         let assetName: String?
         switch id {
@@ -359,7 +485,9 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         case "releases":
             assetName = "DubHubTabReleases"
         case "profile":
-            assetName = "DubHubTabProfileListener"
+            assetName = profileIconRole == "artist"
+                ? "DubHubTabProfileArtist"
+                : "DubHubTabProfileListener"
         case "moderator":
             assetName = "DubHubTabModerator"
         default:
@@ -606,7 +734,11 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         payload["t"] = t
         NSLog("[DubHub][LG-NAV-5A] didSelect event=%@ tab=%@ t=%.6f", event, tab, t)
         #endif
+        // Route event first — do not await icon animation.
         plugin?.notifyListeners(event, data: payload)
+        // NATIVE-NAV-PREMIUM-2B: icon micro-anim (Submit/Home); reselect included.
+        // Drag-across: pending tab updates while finger is down; one flush on release.
+        requestCommittedIconAnimation(tabId: tab, item: item)
     }
 
     private func runOnMain(_ work: @escaping () -> Void) {
