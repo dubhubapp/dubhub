@@ -1,8 +1,12 @@
+/** z-[120] stacks above Comments drawer (z-[60]/z-[110]) for long-press Mark path.
+ * Entrance animation mirrors DialogContent defaults so open-from-Comments still
+ * fades/scales instead of popping in while a finger is held.
+ */
 export const ID_MARKING_DIALOG_OVERLAY_CLASS =
-  "fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200";
+  "fixed inset-0 z-[120] bg-black/58 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200 motion-reduce:animate-none motion-reduce:transition-none";
 
 export const ID_MARKING_DIALOG_CONTENT_CLASS =
-  "w-[calc(100%-2rem)] max-w-[30rem] max-h-[80vh] overflow-y-auto rounded-2xl border border-white/20 bg-[#0f1324] p-5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:p-6";
+  "z-[120] w-[calc(100%-2rem)] max-w-[30rem] max-h-[80vh] overflow-y-auto rounded-2xl border border-white/20 bg-[#0f1324] p-5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:p-6 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] duration-200 motion-reduce:animate-none motion-reduce:transition-none";
 
 /**
  * Picker chrome. Cue pills are the frozen C8D.1 semantic system

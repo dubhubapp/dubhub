@@ -870,6 +870,8 @@ export default function Home() {
   const deepLinkWatchdogForPostRef = useRef<string | null>(null);
   /** Comment-context deep link: open comments drawer once target post is active (survives URL cleanup). */
   const pendingOpenCommentsPostIdRef = useRef<string | null>(null);
+  /** Prevent sticky `?openComments=1` from re-arming after the request was consumed. */
+  const openCommentsArmedForPostRef = useRef<string | null>(null);
   const [openCommentsTargetPostId, setOpenCommentsTargetPostId] = useState<string | null>(null);
   const clearPendingOpenComments = useCallback(() => {
     pendingOpenCommentsPostIdRef.current = null;
@@ -3092,6 +3094,7 @@ export default function Home() {
       deepLinkRandomExitForPostRef.current = null;
       deepLinkTerminalHandledRef.current = null;
       deepLinkFiltersNeutralizedRef.current = null;
+      openCommentsArmedForPostRef.current = null;
       clearDeepLinkWatchdog();
       return;
     }
@@ -3101,9 +3104,13 @@ export default function Home() {
     }
 
     if (wantsOpenComments) {
-      pendingOpenCommentsPostIdRef.current = postId;
-      setOpenCommentsTargetPostId(postId);
+      if (openCommentsArmedForPostRef.current !== postId) {
+        openCommentsArmedForPostRef.current = postId;
+        pendingOpenCommentsPostIdRef.current = postId;
+        setOpenCommentsTargetPostId(postId);
+      }
     } else {
+      openCommentsArmedForPostRef.current = null;
       clearPendingOpenComments();
     }
 

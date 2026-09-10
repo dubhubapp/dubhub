@@ -21,6 +21,8 @@ import { UserRoleInlineIcons } from "./moderator-shield";
 import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
+import { isOwnerCommunityMarkEligible } from "@/lib/mark-id-long-press";
+import { isArtistPendingActionEligible } from "@/lib/artist-id-comments-actions";
 import { ReportModal } from "./report-modal";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { 
@@ -43,7 +45,7 @@ import { useUserProfileLightPopup } from "@/components/user-profile-light-popup"
 import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { RandomDiceButton } from "@/components/random-dice-button";
-import { playInteractionLight } from "@/lib/haptic";
+import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { sharePost } from "@/lib/post-share";
 import { appendReleaseDetailFromFeedParam } from "@/lib/release-detail-navigation";
 import { invalidateAfterAttachedReleaseSaveStateChanged, type ReleaseDetailRecord } from "@/lib/release-cache";
@@ -317,6 +319,10 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     const pTaggedSnake = (prev.post as { current_user_tagged_as_artist?: boolean }).current_user_tagged_as_artist;
     const nTaggedSnake = (next.post as { current_user_tagged_as_artist?: boolean }).current_user_tagged_as_artist;
     if (pTaggedSnake !== nTaggedSnake) return false;
+    if (prev.post.currentUserDeniedAsArtist !== next.post.currentUserDeniedAsArtist) return false;
+    const pDeniedSnake = (prev.post as { current_user_denied_as_artist?: boolean }).current_user_denied_as_artist;
+    const nDeniedSnake = (next.post as { current_user_denied_as_artist?: boolean }).current_user_denied_as_artist;
+    if (pDeniedSnake !== nDeniedSnake) return false;
   }
   return (
     prev.isHighlighted === next.isHighlighted &&
@@ -433,7 +439,13 @@ function VideoCardInner({
     setShowSubgenreLabel(false);
   }, [post.id, post.genre, post.subgenre]);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
+  /** Set only for Comments long-press Mark; rail Mark always opens with null. */
+  const [communityVerifyInitialCommentId, setCommunityVerifyInitialCommentId] = useState<string | null>(
+    null,
+  );
   const [showArtistVerificationDialog, setShowArtistVerificationDialog] = useState(false);
+  /** Set only for Comments Confirm ID; rail ID always opens with null. */
+  const [artistVerifyInitialCommentId, setArtistVerifyInitialCommentId] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportMenuOpen, setReportMenuOpen] = useState(false);
   const [clipViewerOverlayCollapsed, setClipViewerOverlayCollapsed] = useState(false);
@@ -509,8 +521,36 @@ function VideoCardInner({
     verifiedArtist,
   ]);
 
+  // Live feed post for eligibility (commentsPost can be a stale open-time snapshot).
   useEffect(() => {
-    if (!requestOpenComments || !isActive || showComments) return;
+    if (!showComments || !commentsPost) return;
+    if (commentsPost.id !== post.id) return;
+    const liveTagged = !!(
+      (post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist
+    );
+    const frozenTagged = !!(
+      (commentsPost as any).currentUserTaggedAsArtist ??
+      (commentsPost as any).current_user_tagged_as_artist
+    );
+    if (!liveTagged || frozenTagged) return;
+    setCommentsPost((prev) =>
+      prev && prev.id === post.id
+        ? {
+            ...prev,
+            currentUserTaggedAsArtist: true,
+            current_user_tagged_as_artist: true,
+          }
+        : prev,
+    );
+  }, [showComments, commentsPost, post]);
+
+  useEffect(() => {
+    if (!requestOpenComments || !isActive) return;
+    // Consume even when already open so sticky ?openComments=1 cannot leave a stuck request.
+    if (showComments) {
+      onOpenCommentsRequestHandled?.();
+      return;
+    }
     openCommentsDrawer();
     onOpenCommentsRequestHandled?.();
   }, [
@@ -2156,6 +2196,52 @@ function VideoCardInner({
     },
   });
 
+  /** Comments “Not my track” — same POST /artist-deny contract as ArtistVerificationDialog. */
+  const artistDenyFromCommentsMutation = useMutation({
+    mutationFn: async (commentId: string) => {
+      return apiRequest("POST", `/api/posts/${post.id}/artist-deny`, { commentId });
+    },
+    onSuccess: () => {
+      playSuccessNotification();
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (contextUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "comments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "artist-tags"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });
+      toast({
+        title: "Not your track",
+        description: "People won't be able to tag you as the artist on this post again.",
+      });
+    },
+    onError: (error: Error & { body?: { code?: string; message?: string } }) => {
+      const body = (error as { body?: { code?: string; message?: string } })?.body;
+      const code = body?.code;
+      if (code === "VERIFIED_ARTIST_REQUIRED") {
+        toast({
+          title: "Verified Artist Required",
+          description: "Verified artist profile required to confirm tracks.",
+          variant: "destructive",
+        });
+      } else if (code === "ARTIST_ALREADY_VERIFIED") {
+        toast({
+          title: "Already verified",
+          description: body?.message || "This post has already been verified by an artist.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Couldn't save",
+          description: body?.message || error.message || "Failed to mark Not my track",
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
   const handleShare = async () => {
     if (clipViewerOverlay) {
       suppressVideoToggleUntilRef.current = Date.now() + 500;
@@ -2741,7 +2827,9 @@ function VideoCardInner({
         const commentCount = Number((post as any).comments ?? post.comments ?? (post as any).comments_count ?? 0);
         const hasComments = commentCount >= 1;
         const isTaggedArtist = !!((post as any).currentUserTaggedAsArtist ?? (post as any).current_user_tagged_as_artist);
-        const deniedByArtist = !!((post as any).deniedByArtist ?? (post as any).denied_by_artist);
+        const currentUserDeniedAsArtist = !!(
+          (post as any).currentUserDeniedAsArtist ?? (post as any).current_user_denied_as_artist
+        );
         const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
         const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
         const isAnyIdentifiedState =
@@ -2757,7 +2845,10 @@ function VideoCardInner({
         const alreadyArtistVerifiedBySomeone = isArtistVerified && !!artistVerifiedBy;
         const canVerifyOwner = !isAnyIdentifiedState && isOwner && hasComments;
         const canVerifyArtist =
-          !isAnyIdentifiedState && isTaggedArtist && !deniedByArtist && !alreadyArtistConfirmed;
+          !isAnyIdentifiedState &&
+          isTaggedArtist &&
+          !currentUserDeniedAsArtist &&
+          !alreadyArtistConfirmed;
         const canVerify = !alreadyArtistVerifiedBySomeone && (canVerifyOwner || canVerifyArtist);
 
         if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
@@ -2927,9 +3018,11 @@ function VideoCardInner({
                   className={railBtn}
                   onClick={() => {
                     if (isOwner) {
+                      setCommunityVerifyInitialCommentId(null);
                       setShowVerificationDialog(true);
                     } else {
                       window.dispatchEvent(new CustomEvent(HINT_ARTIST_SELF_TAG_COMPLETED_EVENT));
+                      setArtistVerifyInitialCommentId(null);
                       setShowArtistVerificationDialog(true);
                     }
                   }}
@@ -3481,6 +3574,28 @@ function VideoCardInner({
           post={commentsPost}
           isOpen={showComments}
           elevatedStack={clipViewerOverlay}
+          ownerCommunityMarkEnabled={isOwnerCommunityMarkEligible(
+            commentsPost,
+            contextUser?.id ?? (post as any).viewer_id ?? null,
+          )}
+          onRequestOwnerCommunityVerify={(commentId) => {
+            setCommunityVerifyInitialCommentId(commentId);
+            setShowVerificationDialog(true);
+          }}
+          artistPendingActionsEnabled={isArtistPendingActionEligible(
+            post,
+            contextUser?.id ?? (post as any).viewer_id ?? null,
+            { verifiedArtist },
+          )}
+          onRequestArtistConfirmId={(commentId) => {
+            setArtistVerifyInitialCommentId(commentId);
+            setShowArtistVerificationDialog(true);
+          }}
+          onRequestArtistNotMyTrack={(commentId) => {
+            if (artistDenyFromCommentsMutation.isPending) return;
+            artistDenyFromCommentsMutation.mutate(commentId);
+          }}
+          artistNotMyTrackPending={artistDenyFromCommentsMutation.isPending}
           onCommentCountDelta={(delta) => setCommentCountBump((n) => n + delta)}
           onClose={() => {
             if (debugComments) {
@@ -3516,13 +3631,21 @@ function VideoCardInner({
       <CommunityVerificationDialog 
         postId={post.id}
         isOpen={showVerificationDialog}
-        onClose={() => setShowVerificationDialog(false)}
+        initialCommentId={communityVerifyInitialCommentId}
+        onClose={() => {
+          setShowVerificationDialog(false);
+          setCommunityVerifyInitialCommentId(null);
+        }}
       />
       {/* Artist Verification Dialog (tagged artist only) */}
       <ArtistVerificationDialog
         postId={post.id}
         isOpen={showArtistVerificationDialog}
-        onClose={() => setShowArtistVerificationDialog(false)}
+        initialCommentId={artistVerifyInitialCommentId}
+        onClose={() => {
+          setShowArtistVerificationDialog(false);
+          setArtistVerifyInitialCommentId(null);
+        }}
       />
       {userProfilePopup}
     </div>

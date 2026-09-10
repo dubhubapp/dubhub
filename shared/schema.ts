@@ -617,6 +617,8 @@ export type PostWithUser = Post & {
   hasLiked?: boolean;
   /** True when the current user (artist) is tagged in a comment on this post */
   currentUserTaggedAsArtist?: boolean;
+  /** Viewer has an artist_video_tags denial row for this post (per-artist). */
+  currentUserDeniedAsArtist?: boolean;
   verificationStatus?: string;
   isVerifiedCommunity?: boolean;
   verifiedByModerator?: boolean;

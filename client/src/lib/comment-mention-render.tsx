@@ -42,6 +42,7 @@ export function renderCommentMentionNodes(
       <span
         key={`mention-${index}-${username}`}
         className={className}
+        data-mark-id-long-press-ignore="true"
         onClick={
           onMentionClick
             ? (e) => {

@@ -9,6 +9,9 @@ export type MentionSuggestion = {
   verified_artist?: boolean;
   source: MentionSuggestionSource;
   isPinnedSelf?: boolean;
+  /** Artist already rejected ownership of the current post — show muted, not selectable. */
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
 type VerifiedArtistRow = {
@@ -34,6 +37,9 @@ export type BuildMentionSuggestionsInput = {
   globalSearchResults?: GlobalSearchUserRow[];
   /** Lowercase usernames already @mentioned in the composer draft (excludes active token). */
   excludedMentionUsernames?: Set<string>;
+  /** Artist IDs that denied ownership of the current post — shown disabled with reason. */
+  deniedArtistIds?: ReadonlySet<string>;
+  deniedArtistHint?: string;
   currentUserId?: string | null;
   pinSelfArtist?: boolean;
   selfUsername?: string | null;
@@ -114,6 +120,8 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
   const maxResults = input.maxResults ?? DEFAULT_MAX_RESULTS;
   const query = input.query;
   const searchResults = input.globalSearchResults ?? [];
+  const deniedArtistIds = input.deniedArtistIds ?? new Set<string>();
+  const deniedHint = input.deniedArtistHint ?? "Confirmed this isn't their track";
   const reservedSearchSlots =
     query.length >= 2 && searchResults.length > 0
       ? Math.min(SEARCH_SLOT_RESERVE_MAX, searchResults.length)
@@ -121,6 +129,15 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
   const b1MaxResults = maxResults - reservedSearchSlots;
   const seen = new Set<string>();
   const results: MentionSuggestion[] = [];
+
+  const withDenialState = (suggestion: MentionSuggestion): MentionSuggestion => {
+    if (!deniedArtistIds.has(suggestion.userId)) return suggestion;
+    return {
+      ...suggestion,
+      disabled: true,
+      disabledReason: deniedHint,
+    };
+  };
 
   const tryAdd = (
     suggestion: MentionSuggestion,
@@ -139,7 +156,7 @@ export function buildMentionSuggestions(input: BuildMentionSuggestionsInput): Me
     if (isSelf && !options?.allowSelf && !suggestion.isPinnedSelf) return;
 
     seen.add(suggestion.userId);
-    results.push(suggestion);
+    results.push(withDenialState(suggestion));
   };
 
   if (input.pinSelfArtist && input.currentUserId && input.selfUsername) {

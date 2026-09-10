@@ -68,12 +68,28 @@ import {
   APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
   APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
   APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
 } from "@/lib/app-material";
 import { findCommentInTree } from "@/lib/comment-selection";
+import {
+  findEarliestCommentIdTaggingArtist,
+  isCommentEligibleForArtistConfirmId,
+  resolveArtistPendingActionsVisible,
+} from "@/lib/artist-id-comments-actions";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
+import {
+  MARK_ID_LONG_PRESS_MS,
+  armMarkIdLongPressSelectionGuard,
+  clearDomTextSelection,
+  disarmMarkIdLongPressSelectionGuard,
+  isCommentEligibleForOwnerMarkAsId,
+  isMarkIdLongPressInteractiveTarget,
+  runAcceptedMarkIdLongPress,
+  shouldCancelMarkIdLongPressForMove,
+} from "@/lib/mark-id-long-press";
 import { COMMENTS_HINT_SETTLE_MS } from "@/lib/contextual-coachmark";
 import {
   HINT_COMMENTS_COMPLETED_EVENT,
@@ -88,7 +104,10 @@ import {
   isValidMentionQuery,
   type MentionSuggestion,
 } from "@/lib/comment-mention-suggestions";
-
+import {
+  ARTIST_DENIED_MENTION_HINT,
+  collectDeniedArtistIdsFromTags,
+} from "@shared/artist-video-tag-status";
 interface CommentsModalProps {
   post: PostWithUser;
   isOpen: boolean;
@@ -99,6 +118,17 @@ interface CommentsModalProps {
   onCommentCountDelta?: (delta: number) => void;
   /** Raise drawer above fullscreen clip overlays (z-[100]). */
   elevatedStack?: boolean;
+  /** Owner + unidentified eligibility from VideoCard Mark gate. */
+  ownerCommunityMarkEnabled?: boolean;
+  /** Open existing CommunityVerificationDialog with this comment preselected. */
+  onRequestOwnerCommunityVerify?: (commentId: string) => void;
+  /** Tagged verified artist + pending eligibility from VideoCard ID gate. */
+  artistPendingActionsEnabled?: boolean;
+  /** Open existing ArtistVerificationDialog with this comment preselected (Confirm ID). */
+  onRequestArtistConfirmId?: (commentId: string) => void;
+  /** Existing artist-deny mutation with a tagging commentId (Not my track). */
+  onRequestArtistNotMyTrack?: (commentId: string) => void;
+  artistNotMyTrackPending?: boolean;
 }
 
 function applyPostPatch(old: unknown, postId: string, patch: (p: PostWithUser) => PostWithUser): unknown {
@@ -256,7 +286,20 @@ function computeCommentsSheetMaxPxWithoutVisualViewport(): number {
   return Math.min(preferredCap, visibleBudget);
 }
 
-export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountDelta, elevatedStack = false }: CommentsModalProps) {
+export function CommentsModal({
+  post,
+  isOpen,
+  onClose,
+  onClosed,
+  onCommentCountDelta,
+  elevatedStack = false,
+  ownerCommunityMarkEnabled = false,
+  onRequestOwnerCommunityVerify,
+  artistPendingActionsEnabled = false,
+  onRequestArtistConfirmId,
+  onRequestArtistNotMyTrack,
+  artistNotMyTrackPending = false,
+}: CommentsModalProps) {
   const drawerStackZ = elevatedStack ? "z-[110]" : "z-[60]";
   const reportDialogStackZ = elevatedStack ? "z-[120]" : "z-[70]";
   const alertDialogStackZ = elevatedStack ? "z-[120]" : "z-[80]";
@@ -267,6 +310,16 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
   const closeCommittedRef = useRef(false);
   const drawerContentRef = useRef<HTMLDivElement | null>(null);
   const savedDrawerTouchActionRef = useRef<string | null>(null);
+  const markIdLongPressSessionRef = useRef<{
+    commentId: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    holdTimer: ReturnType<typeof setTimeout> | null;
+    openTimerCancel: (() => void) | null;
+    accepted: boolean;
+    rowEl: HTMLElement | null;
+  } | null>(null);
 
   const handleClose = useCallback(() => {
     if (closeCommittedRef.current) return;
@@ -274,6 +327,133 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
     playInteractionLight();
     onClose();
   }, [onClose]);
+
+  const clearMarkIdLongPress = useCallback(() => {
+    const session = markIdLongPressSessionRef.current;
+    if (!session) return;
+    if (session.holdTimer) clearTimeout(session.holdTimer);
+    session.openTimerCancel?.();
+    disarmMarkIdLongPressSelectionGuard(session.rowEl);
+    markIdLongPressSessionRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) clearMarkIdLongPress();
+  }, [isOpen, clearMarkIdLongPress]);
+
+  useEffect(() => {
+    return () => clearMarkIdLongPress();
+  }, [clearMarkIdLongPress]);
+
+  const onMarkIdLongPressPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLElement>, commentId: string, commentBody: unknown) => {
+      if (!ownerCommunityMarkEnabled || !onRequestOwnerCommunityVerify) return;
+      if (!isCommentEligibleForOwnerMarkAsId(commentBody)) return;
+      if (isMarkIdLongPressInteractiveTarget(e.target)) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+
+      clearMarkIdLongPress();
+      const pointerId = e.pointerId;
+      const rowEl = e.currentTarget;
+      armMarkIdLongPressSelectionGuard(rowEl);
+
+      const holdTimer = setTimeout(() => {
+        const session = markIdLongPressSessionRef.current;
+        if (!session || session.pointerId !== pointerId || session.accepted) return;
+        session.accepted = true;
+        if (session.holdTimer) {
+          clearTimeout(session.holdTimer);
+          session.holdTimer = null;
+        }
+
+        const { cancelOpen } = runAcceptedMarkIdLongPress({
+          suppressNativeSelection: () => {
+            armMarkIdLongPressSelectionGuard(session.rowEl);
+            clearDomTextSelection();
+          },
+          playHaptic: () => playInteractionLight(),
+          openDialog: () => {
+            const latest = markIdLongPressSessionRef.current;
+            if (!latest || latest.pointerId !== pointerId || !latest.accepted) return;
+            latest.openTimerCancel = null;
+            onRequestOwnerCommunityVerify(commentId);
+            // Keep selection guard briefly so a still-held finger does not
+            // re-trigger WebKit selection into the newly mounted dialog.
+            window.setTimeout(() => {
+              disarmMarkIdLongPressSelectionGuard(latest.rowEl);
+              if (markIdLongPressSessionRef.current === latest) {
+                markIdLongPressSessionRef.current = null;
+              }
+            }, 180);
+          },
+        });
+        session.openTimerCancel = cancelOpen;
+      }, MARK_ID_LONG_PRESS_MS);
+
+      markIdLongPressSessionRef.current = {
+        commentId,
+        pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        holdTimer,
+        openTimerCancel: null,
+        accepted: false,
+        rowEl,
+      };
+    },
+    [clearMarkIdLongPress, onRequestOwnerCommunityVerify, ownerCommunityMarkEnabled],
+  );
+
+  const onMarkIdLongPressPointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLElement>) => {
+      const session = markIdLongPressSessionRef.current;
+      if (!session || session.accepted || session.pointerId !== e.pointerId) return;
+      if (
+        shouldCancelMarkIdLongPressForMove(session.startX, session.startY, e.clientX, e.clientY)
+      ) {
+        clearMarkIdLongPress();
+      }
+    },
+    [clearMarkIdLongPress],
+  );
+
+  const onMarkIdLongPressPointerEnd = useCallback(
+    (e: ReactPointerEvent<HTMLElement>) => {
+      const session = markIdLongPressSessionRef.current;
+      if (!session || session.pointerId !== e.pointerId) return;
+      // Short press / cancelled hold: clear. Accepted: leave open delay running.
+      if (!session.accepted) {
+        clearMarkIdLongPress();
+        return;
+      }
+      clearDomTextSelection();
+    },
+    [clearMarkIdLongPress],
+  );
+
+  const bindMarkIdLongPressHandlers = useCallback(
+    (commentId: string, commentBody: unknown) => {
+      if (!ownerCommunityMarkEnabled || !onRequestOwnerCommunityVerify) return {};
+      if (!isCommentEligibleForOwnerMarkAsId(commentBody)) return {};
+      return {
+        onPointerDown: (e: ReactPointerEvent<HTMLElement>) =>
+          onMarkIdLongPressPointerDown(e, commentId, commentBody),
+        onPointerMove: onMarkIdLongPressPointerMove,
+        onPointerUp: onMarkIdLongPressPointerEnd,
+        onPointerCancel: onMarkIdLongPressPointerEnd,
+        onContextMenu: (e: React.MouseEvent<HTMLElement>) => {
+          e.preventDefault();
+        },
+      };
+    },
+    [
+      onMarkIdLongPressPointerDown,
+      onMarkIdLongPressPointerEnd,
+      onMarkIdLongPressPointerMove,
+      onRequestOwnerCommunityVerify,
+      ownerCommunityMarkEnabled,
+    ],
+  );
 
   const [newComment, setNewComment] = useState("");
   const [showArtistDropdown, setShowArtistDropdown] = useState(false);
@@ -283,6 +463,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
   const [deleteConfirmCommentId, setDeleteConfirmCommentId] = useState<string | null>(null);
+  const [showNotMyTrackConfirm, setShowNotMyTrackConfirm] = useState(false);
   const [nativeKeyboardInsetPx, setNativeKeyboardInsetPx] = useState(0);
   const [nativeKeyboardLayoutActive, setNativeKeyboardLayoutActive] = useState(false);
   const { toast } = useToast();
@@ -877,6 +1058,37 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
     refetchOnMount: "always",
   });
   const comments = Array.isArray(commentsData) ? commentsData : [];
+  const reviewingArtistIdentity = useMemo(() => {
+    if (!contextUser?.id || !verifiedArtist) return null;
+    return {
+      id: String(contextUser.id),
+      username: contextUsername ?? contextUser.username ?? null,
+    };
+  }, [contextUser?.id, contextUser?.username, contextUsername, verifiedArtist]);
+  const artistTagActionsVisible = useMemo(
+    () =>
+      resolveArtistPendingActionsVisible({
+        post,
+        currentUserId: contextUser?.id ?? null,
+        verifiedArtist,
+        feedFlagEnabled: artistPendingActionsEnabled,
+        comments,
+        artist: reviewingArtistIdentity,
+      }),
+    [
+      artistPendingActionsEnabled,
+      comments,
+      contextUser?.id,
+      post,
+      reviewingArtistIdentity,
+      verifiedArtist,
+    ],
+  );
+  const reviewingArtistForIdActions = artistTagActionsVisible ? reviewingArtistIdentity : null;
+  const notMyTrackCommentId = useMemo(() => {
+    if (!reviewingArtistForIdActions) return null;
+    return findEarliestCommentIdTaggingArtist(comments, reviewingArtistForIdActions);
+  }, [comments, reviewingArtistForIdActions]);
   const verifiedCommentId =
     post.verifiedCommentId ??
     (post as { verified_comment_id?: string | null }).verified_comment_id ??
@@ -913,6 +1125,23 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
     enabled: isOpen,
   });
 
+  const { data: postArtistTags = [] } = useQuery<
+    Array<{ artist_id?: string; artistId?: string; status?: string }>
+  >({
+    queryKey: ["/api/posts", post.id, "artist-tags"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/posts/${post.id}/artist-tags`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: isOpen && !!post.id,
+    staleTime: 30_000,
+  });
+
+  const deniedArtistIdsOnPost = useMemo(
+    () => collectDeniedArtistIdsFromTags(postArtistTags),
+    [postArtistTags],
+  );
   const { data: apiCurrentUser } = useQuery({
     queryKey: ["/api/user/current"],
     enabled: isOpen,
@@ -1027,6 +1256,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
   };
 
   const handleMentionSelect = (suggestion: MentionSuggestion) => {
+    if (suggestion.disabled) return;
     const mentionStart = currentMentionStart;
     const mentionEnd = mentionQueryEndRef.current;
     if (mentionStart !== -1) {
@@ -1149,6 +1379,8 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
       threadParticipants,
       globalSearchResults: shouldFetchGlobalMentionSearch ? globalMentionSearchUsers : [],
       excludedMentionUsernames,
+      deniedArtistIds: deniedArtistIdsOnPost,
+      deniedArtistHint: ARTIST_DENIED_MENTION_HINT,
       currentUserId: contextUser?.id,
       pinSelfArtist: shouldPinCurrentArtistInMentions,
       selfUsername: contextUsername,
@@ -1161,6 +1393,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
     shouldFetchGlobalMentionSearch,
     globalMentionSearchUsers,
     excludedMentionUsernames,
+    deniedArtistIdsOnPost,
     contextUser?.id,
     shouldPinCurrentArtistInMentions,
     contextUsername,
@@ -1495,7 +1728,10 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
   }, [isOpen, post.id, nativeKeyboardInsetPx]);
 
   useEffect(() => {
-    if (!isOpen) setDeleteConfirmCommentId(null);
+    if (!isOpen) {
+      setDeleteConfirmCommentId(null);
+      setShowNotMyTrackConfirm(false);
+    }
   }, [isOpen]);
 
   return (
@@ -1532,6 +1768,47 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
               onClick={confirmDeleteComment}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={showNotMyTrackConfirm}
+        onOpenChange={(open) => {
+          if (!open) setShowNotMyTrackConfirm(false);
+        }}
+      >
+        <AlertDialogContent
+          className={cn(alertDialogStackZ, APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS)}
+          overlayClassName={cn(alertDialogStackZ, APP_MATERIAL_OVERLAY_BACKDROP_CLASS)}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Not your track?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+              Confirm this track isn&apos;t yours. People won&apos;t be able to tag you as the
+              artist on this post again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              data-testid="not-my-track-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
+              disabled={artistNotMyTrackPending || !notMyTrackCommentId}
+              data-testid="not-my-track-confirm"
+              onClick={() => {
+                if (!notMyTrackCommentId || !onRequestArtistNotMyTrack) return;
+                setShowNotMyTrackConfirm(false);
+                onRequestArtistNotMyTrack(notMyTrackCommentId);
+              }}
+            >
+              Not my track
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1649,6 +1926,29 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
             the header divider.
           */}
           <div className="space-y-2 pt-4">
+          {reviewingArtistForIdActions && artistTagActionsVisible ? (
+            <div
+              className="mb-1 rounded-lg border border-[#FFD700]/18 bg-[rgba(255,215,0,0.04)] px-3 py-2 dark:border-[#FFD700]/16 dark:bg-[rgba(255,215,0,0.06)]"
+              data-testid="artist-tag-comments-banner"
+            >
+              <p className="text-[13px] font-medium leading-snug text-gray-900 dark:text-white">
+                Tagged as your track
+              </p>
+              <p className="mt-0.5 text-[11px] leading-snug text-gray-600 dark:text-white/60">
+                Someone thinks this track is yours. Confirm the ID below, or let us know if it
+                isn&apos;t.
+              </p>
+              <button
+                type="button"
+                className="mt-1.5 inline-flex min-h-11 items-center px-0.5 text-[13px] font-semibold text-gray-800 underline-offset-2 hover:underline dark:text-white/90 dark:hover:text-white"
+                data-testid="not-my-track-button"
+                disabled={!notMyTrackCommentId || artistNotMyTrackPending || !onRequestArtistNotMyTrack}
+                onClick={() => setShowNotMyTrackConfirm(true)}
+              >
+                Not my track
+              </button>
+            </div>
+          ) : null}
           {(() => {
             let filteredComments = [...comments];
             
@@ -1765,6 +2065,10 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                   <div
                     data-testid="pinned-verified-reply"
                     className={cn("flex items-start space-x-2", COMMENTS_NORMAL_ROW_CLASS)}
+                    {...bindMarkIdLongPressHandlers(
+                      pinnedVerifiedReply.id,
+                      pinnedVerifiedReply.body,
+                    )}
                   >
                     <button
                       type="button"
@@ -1798,6 +2102,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <div className="flex items-center space-x-1">
                           <span
+                            data-mark-id-long-press-ignore="true"
                             className={`cursor-pointer text-xs font-medium hover:underline sm:text-[13px] ${
                               pinnedVerifiedReply.user.account_type === "artist" &&
                               pinnedVerifiedReply.user.verified_artist
@@ -1904,6 +2209,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                   key={comment.id}
                   data-comment-id={comment.id}
                   className={cn("flex items-start space-x-2", highlightClass)}
+                  {...bindMarkIdLongPressHandlers(comment.id, comment.body)}
                 >
                   {commentIsDeleted ? (
                     <div className="relative flex-shrink-0 p-0" aria-hidden>
@@ -1955,6 +2261,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <div className="flex items-center space-x-1">
                     <span 
+                      data-mark-id-long-press-ignore="true"
                       className={`text-xs font-medium cursor-pointer hover:underline sm:text-[13px] ${
                         comment.user.account_type === 'artist' && comment.user.verified_artist
                           ? "text-[#FFD700]"
@@ -2069,8 +2376,22 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                       >
                         Reply
                       </button>
-                      <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                      {reviewingArtistForIdActions &&
+                      onRequestArtistConfirmId &&
+                      isCommentEligibleForArtistConfirmId(comment, reviewingArtistForIdActions) ? (
+                        <button
+                          type="button"
+                          className="text-[11px] font-medium text-[#0a83ff] hover:text-[#3b9bff] sm:text-xs dark:text-[#5babff] dark:hover:text-[#7cbcff]"
+                          data-testid={`confirm-id-button-${comment.id}`}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                          }}
+                          onClick={() => onRequestArtistConfirmId(comment.id)}
+                        >
+                          Confirm ID
+                        </button>
+                      ) : null}
+                      <DropdownMenu>                          <DropdownMenuTrigger asChild>
                             <button
                               type="button"
                               className="-my-1.5 inline-flex h-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:ring-ring dark:focus-visible:ring-offset-[color:var(--dark)] sm:h-8 sm:w-8"
@@ -2199,6 +2520,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                           key={reply.id}
                           data-comment-id={reply.id}
                           className="flex items-start space-x-2"
+                          {...bindMarkIdLongPressHandlers(reply.id, reply.body)}
                         >
                           <button
                             type="button"
@@ -2234,6 +2556,7 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                             <div className="flex items-center space-x-1">
                               <span 
+                                data-mark-id-long-press-ignore="true"
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
                                   reply.user.account_type === 'artist' && reply.user.verified_artist
                                     ? "text-[#FFD700]"
@@ -2341,6 +2664,25 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                                     data-testid={`reply-button-${reply.id}`}
                                   >
                                     Reply
+                                  </button>
+                                ) : null}
+                                {reviewingArtistForIdActions &&
+                                onRequestArtistConfirmId &&
+                                !replyIsDeleted &&
+                                isCommentEligibleForArtistConfirmId(
+                                  reply,
+                                  reviewingArtistForIdActions,
+                                ) ? (
+                                  <button
+                                    type="button"
+                                    className="text-xs font-medium text-[#0a83ff] hover:text-[#3b9bff] dark:text-[#5babff] dark:hover:text-[#7cbcff]"
+                                    data-testid={`confirm-id-button-${reply.id}`}
+                                    onPointerDown={(e) => {
+                                      e.preventDefault();
+                                    }}
+                                    onClick={() => onRequestArtistConfirmId(reply.id)}
+                                  >
+                                    Confirm ID
                                   </button>
                                 ) : null}
                                 <DropdownMenu>
@@ -2511,19 +2853,24 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                   const isPinnedCurrentArtist =
                     suggestion.isPinnedSelf &&
                     suggestion.username?.toLowerCase() === normalizedContextUsername;
+                  const isDeniedOnPost = suggestion.disabled === true;
                   const avatarSrc = suggestion.avatar_url ?? undefined;
                   return (
                   <button
                     key={suggestion.userId}
                     type="button"
+                    disabled={isDeniedOnPost}
+                    aria-disabled={isDeniedOnPost}
                     onPointerDown={(e) => {
                       e.preventDefault();
                     }}
                     onClick={() => handleMentionSelect(suggestion)}
                     className={`flex w-full items-center space-x-3 border-b border-gray-100 p-2.5 text-left last:border-b-0 dark:border-border ${
-                      isPinnedCurrentArtist
-                        ? "border-l-2 border-l-[#FFD700]/70 bg-amber-50/90 hover:bg-amber-100/90 dark:border-l-[#FFD700]/60 dark:bg-amber-950/40 dark:hover:bg-amber-950/55"
-                        : "hover:bg-gray-50 dark:hover:bg-muted"
+                      isDeniedOnPost
+                        ? "cursor-not-allowed opacity-55"
+                        : isPinnedCurrentArtist
+                          ? "border-l-2 border-l-[#FFD700]/70 bg-amber-50/90 hover:bg-amber-100/90 dark:border-l-[#FFD700]/60 dark:bg-amber-950/40 dark:hover:bg-amber-950/55"
+                          : "hover:bg-gray-50 dark:hover:bg-muted"
                     }`}
                     data-testid={`mention-option-${suggestion.userId}`}
                   >
@@ -2536,18 +2883,24 @@ export function CommentsModal({ post, isOpen, onClose, onClosed, onCommentCountD
                       <div className="flex items-center space-x-2">
                         <span
                           className={`text-sm font-medium ${
-                            isVerifiedArtistSuggestion
-                              ? "text-yellow-600 dark:text-yellow-500"
-                              : "text-gray-900 dark:text-white"
+                            isDeniedOnPost
+                              ? "text-gray-500 dark:text-white/45"
+                              : isVerifiedArtistSuggestion
+                                ? "text-yellow-600 dark:text-yellow-500"
+                                : "text-gray-900 dark:text-white"
                           }`}
                         >
                           {formatUsernameDisplay(suggestion.username)}
                         </span>
-                        {isVerifiedArtistSuggestion ? (
+                        {isVerifiedArtistSuggestion && !isDeniedOnPost ? (
                           <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
                         ) : null}
                       </div>
-                      {isPinnedCurrentArtist ? (
+                      {isDeniedOnPost ? (
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-muted-foreground">
+                          {suggestion.disabledReason ?? ARTIST_DENIED_MENTION_HINT}
+                        </span>
+                      ) : isPinnedCurrentArtist ? (
                         <div className="mt-0.5 space-y-0.5">
                           <span className="block text-xs text-gray-600 dark:text-white/75">
                             Tag yourself if this is your ID

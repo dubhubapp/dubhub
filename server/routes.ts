@@ -670,6 +670,10 @@ async function processArtistTags(
       seenArtistIds.add(artist.id);
 
       try {
+        if (await storage.hasArtistDeniedPost(postId, artist.id)) {
+          // Artist already rejected ownership of this post — no new tag, no artist_tag_comment.
+          continue;
+        }
         await storage.createArtistVideoTag({
           postId,
           artistId: artist.id,
@@ -683,6 +687,8 @@ async function processArtistTags(
           `);
         }
       } catch (tagError) {
+        const code = (tagError as any)?.code;
+        if (code === "ARTIST_DENIED_ON_POST") continue;
         console.error("[processArtistTags] Failed to create tag for artist", artist.id, tagError);
       }
     }
@@ -1810,6 +1816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         viewer_id: currentUserId,
         verification_status: p.verificationStatus,
         current_user_tagged_as_artist: !!p.currentUserTaggedAsArtist,
+        current_user_denied_as_artist: !!p.currentUserDeniedAsArtist,
       }));
 
       const nextCursor = page.nextCursor ? encodeFeedCursor(page.nextCursor as FeedCursor) : null;
@@ -1877,6 +1884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         viewer_id: currentUserId,
         verification_status: post.verificationStatus,
         current_user_tagged_as_artist: !!post.currentUserTaggedAsArtist,
+        current_user_denied_as_artist: !!post.currentUserDeniedAsArtist,
       };
       res.json(payload);
     } catch (error) {
@@ -3419,6 +3427,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             verified_comment_id = NULL
         WHERE id = ${postId}
       `);
+
+      // Per-artist denial source of truth (posts.denied_by_artist is post-level only).
+      await storage.markArtistDeniedOnPost(postId, artistId, artistId);
 
       res.json({ message: "Post denied by artist" });
     } catch (error) {

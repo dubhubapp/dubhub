@@ -187,6 +187,13 @@ export interface IStorage {
   // Artist Tagging
   createArtistVideoTag(tag: { postId: string; artistId: string; taggedBy: string }): Promise<any>;
   getArtistVideoTags(postId: string): Promise<any[]>;
+  /** Per-artist ownership denial on a post (artist_video_tags.status denied/rejected). */
+  hasArtistDeniedPost(postId: string, artistId: string): Promise<boolean>;
+  /**
+   * Mark pending tags for this artist+post as denied; insert a denied row if none exist.
+   * Does not alter confirmed tags.
+   */
+  markArtistDeniedOnPost(postId: string, artistId: string, taggedBy: string): Promise<void>;
 
   // Comment @user mentions (Phase C1 — persistence only)
   createCommentUserMention(data: {
@@ -625,6 +632,16 @@ export class DatabaseStorage implements IStorage {
                  )`
               : sql`false`
           } AS current_user_tagged_as_artist,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM artist_video_tags avt_denied
+                   WHERE avt_denied.post_id = p.id
+                     AND avt_denied.artist_id = ${currentUserId}
+                     AND lower(avt_denied.status) IN ('denied', 'rejected')
+                 )`
+              : sql`false`
+          } AS current_user_denied_as_artist,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
@@ -738,6 +755,7 @@ export class DatabaseStorage implements IStorage {
         comments: Number(row.comments_count ?? 0),
         hasLiked: !!row.has_liked,
         currentUserTaggedAsArtist: !!row.current_user_tagged_as_artist,
+        currentUserDeniedAsArtist: !!row.current_user_denied_as_artist,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -873,6 +891,16 @@ export class DatabaseStorage implements IStorage {
                  )`
               : sql`false`
           } AS current_user_tagged_as_artist,
+          ${
+            currentUserId
+              ? sql`EXISTS (
+                   SELECT 1 FROM artist_video_tags avt_denied
+                   WHERE avt_denied.post_id = p.id
+                     AND avt_denied.artist_id = ${currentUserId}
+                     AND lower(avt_denied.status) IN ('denied', 'rejected')
+                 )`
+              : sql`false`
+          } AS current_user_denied_as_artist,
           (SELECT r.id FROM release_posts rp
            JOIN releases r ON r.id = rp.release_id
            WHERE rp.post_id = p.id AND r.is_public = true AND r.subscription_suspended_at IS NULL
@@ -967,6 +995,7 @@ export class DatabaseStorage implements IStorage {
         comments: Number(row.comments_count ?? 0),
         hasLiked: !!row.has_liked,
         currentUserTaggedAsArtist: !!row.current_user_tagged_as_artist,
+        currentUserDeniedAsArtist: !!row.current_user_denied_as_artist,
         user: {
           id: row.profile_id,
           username: row.profile_username,
@@ -1797,6 +1826,12 @@ export class DatabaseStorage implements IStorage {
     const { postId, artistId, taggedBy } = tag;
 
     try {
+      if (await this.hasArtistDeniedPost(postId, artistId)) {
+        const err = new Error("ARTIST_DENIED_ON_POST");
+        (err as any).code = "ARTIST_DENIED_ON_POST";
+        throw err;
+      }
+
       const result = await db.execute(sql`
         INSERT INTO artist_video_tags (post_id, artist_id, tagged_by, status, created_at)
         VALUES (
@@ -1817,6 +1852,52 @@ export class DatabaseStorage implements IStorage {
       return rows[0];
     } catch (error) {
       console.error("[createArtistVideoTag] Error:", error);
+      throw error;
+    }
+  }
+
+  async hasArtistDeniedPost(postId: string, artistId: string): Promise<boolean> {
+    try {
+      const result = await db.execute(sql`
+        SELECT 1
+        FROM artist_video_tags
+        WHERE post_id = ${postId}
+          AND artist_id = ${artistId}
+          AND lower(status) IN ('denied', 'rejected')
+        LIMIT 1
+      `);
+      return ((result as any).rows || []).length > 0;
+    } catch (error) {
+      console.error("[hasArtistDeniedPost] Error:", error);
+      return false;
+    }
+  }
+
+  async markArtistDeniedOnPost(postId: string, artistId: string, taggedBy: string): Promise<void> {
+    try {
+      await db.execute(sql`
+        UPDATE artist_video_tags
+        SET status = 'denied'
+        WHERE post_id = ${postId}
+          AND artist_id = ${artistId}
+          AND lower(status) = 'pending'
+      `);
+
+      const alreadyDenied = await this.hasArtistDeniedPost(postId, artistId);
+      if (alreadyDenied) return;
+
+      await db.execute(sql`
+        INSERT INTO artist_video_tags (post_id, artist_id, tagged_by, status, created_at)
+        VALUES (
+          ${postId},
+          ${artistId},
+          ${taggedBy},
+          'denied',
+          NOW()
+        )
+      `);
+    } catch (error) {
+      console.error("[markArtistDeniedOnPost] Error:", error);
       throw error;
     }
   }

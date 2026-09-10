@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ import {
   ID_MARKING_PICKER_ROW_SELECTED_CLASS,
 } from "./id-marking-dialog-styles";
 import {
-  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
 } from "@/lib/app-material";
@@ -44,9 +43,16 @@ interface ArtistVerificationDialogProps {
   postId: string;
   isOpen: boolean;
   onClose: () => void;
+  /** When opening from Comments Confirm ID; rail ID leaves this unset. */
+  initialCommentId?: string | null;
 }
 
-export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVerificationDialogProps) {
+export function ArtistVerificationDialog({
+  postId,
+  isOpen,
+  onClose,
+  initialCommentId = null,
+}: ArtistVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { verifiedArtist, currentUser } = useUser();
@@ -67,6 +73,16 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
     dialogContentRef,
     ID_MARKING_DIALOG_CONTENT_CLASS,
   );
+
+  // Rail ID: empty selection. Comments Confirm ID: preselect. Never auto-submit.
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedCommentId("");
+      return;
+    }
+    const trimmed = typeof initialCommentId === "string" ? initialCommentId.trim() : "";
+    setSelectedCommentId(trimmed);
+  }, [isOpen, initialCommentId]);
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
@@ -240,10 +256,11 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
       }
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "artist-tags"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });
       toast({
-        title: "Track Denied",
-        description: "You have denied this track.",
+        title: "Not your track",
+        description: "People won't be able to tag you as the artist on this post again.",
       });
       onClose();
     },
@@ -265,8 +282,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
         handleClose();
       } else {
         toast({
-          title: "Denial Failed",
-          description: body?.message || error.message || "Failed to deny",
+          title: "Couldn't save",
+          description: body?.message || error.message || "Failed to mark Not my track",
           variant: "destructive",
         });
       }
@@ -393,7 +410,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
             <DialogHeader className="space-y-1 text-center">
               <DialogTitle className="text-lg font-semibold tracking-tight text-white">Artist Identification</DialogTitle>
               <DialogDescription className="text-sm leading-relaxed text-white/65">
-                You were tagged in this post. Select the correct ID, then confirm or deny.
+                You were tagged in this post. Select the correct ID, then confirm or mark Not my
+                track.
               </DialogDescription>
             </DialogHeader>
 
@@ -401,7 +419,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
               {isLoading ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
                   <p className="text-sm leading-relaxed text-white/65">
-                    Confirm or deny the first or most relevant comment that tagged you.
+                    Confirm the first or most relevant comment that tagged you, or mark Not my
+                    track.
                   </p>
                   <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15">
                     <div className="flex flex-col items-center gap-2 text-white/75">
@@ -413,7 +432,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
               ) : commentsList.length === 0 ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
                   <p className="text-sm leading-relaxed text-white/65">
-                    Confirm or deny the first or most relevant comment that tagged you.
+                    Confirm the first or most relevant comment that tagged you, or mark Not my
+                    track.
                   </p>
                   <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
                     <p>No comments yet. Select a comment to respond to.</p>
@@ -422,7 +442,8 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
               ) : (
                 <div className="space-y-4">
                   <p className="text-sm leading-relaxed text-white/65">
-                    Confirm or deny the first or most relevant comment that tagged you.
+                    Confirm the first or most relevant comment that tagged you, or mark Not my
+                    track.
                   </p>
                   <RadioGroup
                     value={selectedCommentId}
@@ -554,13 +575,13 @@ export function ArtistVerificationDialog({ postId, isOpen, onClose }: ArtistVeri
                       Cancel
                     </Button>
                     <Button
-                      variant="destructive"
+                      variant="outline"
                       onClick={handleDeny}
                       disabled={!selectedCommentId || denyMutation.isPending}
-                      className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
+                      className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
                       data-testid="button-artist-deny"
                     >
-                      {denyMutation.isPending ? "Denying..." : "Deny"}
+                      {denyMutation.isPending ? "Saving…" : "Not my track"}
                     </Button>
                     <Button
                       onClick={handleConfirm}

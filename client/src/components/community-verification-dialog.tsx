@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
 import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,9 +34,16 @@ interface CommunityVerificationDialogProps {
   postId: string;
   isOpen: boolean;
   onClose: () => void;
+  /** When opening from Comments long-press; rail Mark leaves this unset. */
+  initialCommentId?: string | null;
 }
 
-export function CommunityVerificationDialog({ postId, isOpen, onClose }: CommunityVerificationDialogProps) {
+export function CommunityVerificationDialog({
+  postId,
+  isOpen,
+  onClose,
+  initialCommentId = null,
+}: CommunityVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentUser } = useUser();
@@ -50,6 +57,16 @@ export function CommunityVerificationDialog({ postId, isOpen, onClose }: Communi
     dialogContentRef,
     `${ID_MARKING_DIALOG_CONTENT_CLASS} overflow-x-hidden`,
   );
+
+  // Rail Mark: empty selection. Long-press: preselect that comment. Never auto-submit.
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedCommentId("");
+      return;
+    }
+    const trimmed = typeof initialCommentId === "string" ? initialCommentId.trim() : "";
+    setSelectedCommentId(trimmed);
+  }, [isOpen, initialCommentId]);
 
   const { data: comments = [], isLoading } = useQuery<CommentWithUser[]>({
     queryKey: ["/api/posts", postId, "comments"],
