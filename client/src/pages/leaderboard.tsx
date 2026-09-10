@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type CSSProperties,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Trophy, Medal, Award, Ticket, Calendar, Mic, Headphones } from "lucide-react";
+import { Trophy, Medal, Award, Calendar } from "lucide-react";
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
@@ -12,32 +21,69 @@ import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
-import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { APP_MATERIAL_AUTH_CANVAS_CLASS } from "@/lib/app-material";
 import { Capacitor } from "@capacitor/core";
 import { playInteractionLight } from "@/lib/haptic";
 import {
+  LEADERBOARD_SCOPES,
+  LEADERBOARD_SCOPE_HERO_PANEL_CLASS,
+  LEADERBOARD_SCOPE_HERO_TRACK_CLASS,
+  LEADERBOARD_SCOPE_HERO_VIEWPORT_CLASS,
+  LEADERBOARD_SCOPE_PAGER_PANEL_CLASS,
+  LEADERBOARD_SCOPE_PAGER_ROW_ATTR,
+  LEADERBOARD_SCOPE_PAGER_TRACK_CLASS,
+  LEADERBOARD_SCOPE_PAGER_VIEWPORT_CLASS,
+  LEADERBOARD_SCOPE_SNAP_EASING,
+  LEADERBOARD_SCOPE_SNAP_MS,
+  applyLeaderboardPagerPanelImperativeUnlock,
+  clearLeaderboardPagerPanelImperativeUnlock,
+  interpolateLeaderboardNavIndicator,
+  leaderboardPagerUnlockCovers,
+  leaderboardPrimaryIndicatorMetricsFromLabelRect,
+  leaderboardPrimaryTabEmphasisColor,
+  leaderboardScopeIndex,
   planLeaderboardScopeChange,
+  prefersLeaderboardPagerReducedMotion,
+  resolveLeaderboardPagerHostHeightPx,
+  resolveLeaderboardPagerPrepareUnlockIndices,
+  resolveLeaderboardPagerVertUnlockIndices,
+  resolveLeaderboardPrimaryTabEmphasis,
   useLeaderboardScopeSwipe,
+  consumeLeaderboardPagerClickSuppression,
+  type LeaderboardNavIndicatorMetrics,
+  type LeaderboardPagerProgressEvent,
 } from "@/lib/leaderboard-scope-swipe";
 import {
   LEADERBOARD_BODY_ENTER_CLASS,
   LEADERBOARD_CONTENT_TOP_GAP_CLASS,
   LEADERBOARD_INITIAL_PAINT_ROWS,
   LEADERBOARD_LIST_CLASS,
+  LEADERBOARD_PAGE_SCROLL_CLASS,
   LEADERBOARD_PRIMARY_ACTIVE_CLASS,
   LEADERBOARD_PRIMARY_INACTIVE_CLASS,
   LEADERBOARD_PRIMARY_INDICATOR_CLASS,
+  LEADERBOARD_PRIMARY_INDICATOR_TAP_MS,
   LEADERBOARD_PRIMARY_LABEL_CLASS,
   LEADERBOARD_PRIMARY_ROW_CLASS,
+  LEADERBOARD_PRIMARY_TABLIST_CLASS,
   LEADERBOARD_PRIMARY_TRIGGER_BASE_CLASS,
   LEADERBOARD_PRIZE_SECTION_CLASS,
   LEADERBOARD_REP_FILL_CLASS,
   LEADERBOARD_REP_MIN_WIDTH_PX,
   LEADERBOARD_REP_TRACK_CLASS,
+  LEADERBOARD_REWARD_HERO_FADE_OVERLAP_CLASS,
+  LEADERBOARD_REWARD_HERO_IMAGE_CLASS,
+  LEADERBOARD_REWARD_HERO_META_CLASS,
+  LEADERBOARD_REWARD_HERO_META_SCRIM_CLASS,
+  LEADERBOARD_REWARD_HERO_META_WRAP_CLASS,
+  LEADERBOARD_REWARD_HERO_POSTER_STAGE_CLASS,
+  LEADERBOARD_REWARD_HERO_SENTINEL_CLASS,
+  LEADERBOARD_REWARD_HERO_TOP_SCRIM_CLASS,
   LEADERBOARD_ROW_BASE_CLASS,
   LEADERBOARD_ROW_CURRENT_CLASS,
   LEADERBOARD_SCORE_COLUMN_CLASS,
+  LEADERBOARD_SCORE_VALUE_CLASS,
   LEADERBOARD_SKELETON_BONE_CLASS,
   LEADERBOARD_SKELETON_ROW_COUNT,
   LEADERBOARD_SECONDARY_ACTIVE_CLASS,
@@ -63,11 +109,18 @@ import {
   type LeaderboardTimeFilter,
 } from "@/lib/leaderboard-presentation";
 import {
+  getLeaderboardRewardHeroConfig,
+  LEADERBOARD_REWARD_HERO_NAVY,
+  leaderboardRewardHeroShowsCountdown,
+  type LeaderboardRewardHeroConfig,
+} from "@/lib/leaderboard-reward-hero";
+import {
   repProgressBarBaseColor,
   repProgressPremiumGradientFromGenreBg,
   whiteRepProgressGradient,
 } from "@/lib/profile-rep-styles";
 import { lgNav5aMark, useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
+import { lbSwipe8Ensure, lbSwipe8Log } from "@/lib/leaderboard-swipe-8-runtime-audit";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -87,35 +140,6 @@ type LeaderboardRankResponse = {
   entry: LeaderboardEntry | null;
 };
 
-// Editable monthly rewards - update these each month
-const MONTHLY_REWARDS = {
-  users: "2 x VIP Music Festival Tickets",
-  artists: "4 hours studio time",
-};
-
-const PRIZE_CARD_THEMES = {
-  users: {
-    glowShadow: "shadow-[0_0_24px_-6px_rgba(251,191,36,0.35)]",
-    card: "border-amber-500/30 bg-black/35",
-    pill: "border-amber-400/35 bg-amber-400/15 text-amber-200 shadow-[0_0_12px_-2px_rgba(251,191,36,0.4)]",
-    title: "text-amber-50",
-    countdown: "border-amber-400/30 text-amber-300/80",
-    gradient: "bg-[radial-gradient(ellipse_at_top,rgba(251,191,36,0.1)_0%,transparent_55%)]",
-    sponsor: "Presented by Music Festival",
-    rankLine: "Top ranked community member this month",
-  },
-  artists: {
-    glowShadow: "shadow-[0_0_24px_-6px_rgba(168,85,247,0.35)]",
-    card: "border-purple-500/30 bg-black/35",
-    pill: "border-purple-400/35 bg-purple-400/15 text-purple-200 shadow-[0_0_12px_-2px_rgba(168,85,247,0.4)]",
-    title: "text-purple-50",
-    countdown: "border-purple-400/30 text-purple-300/80",
-    gradient: "bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.1)_0%,transparent_55%)]",
-    sponsor: "Presented by Industry Partner",
-    rankLine: "Top ranked artist this month",
-  },
-} as const;
-
 const getCurrentMonth = () => new Date().toLocaleString("default", { month: "long" });
 
 function getDaysRemainingInMonth(): number {
@@ -134,6 +158,437 @@ function formatRank(rank: number) {
   return `#${rank}`;
 }
 
+function getRankIcon(rank: number) {
+  if (rank === 1) return <Trophy className="w-6 h-6 text-yellow-500" />;
+  if (rank === 2) return <Medal className="w-6 h-6 text-gray-400" />;
+  if (rank === 3) return <Award className="w-6 h-6 text-amber-600" />;
+  return null;
+}
+
+function rewardHeroAccentRgba(accent: string, alpha: number): string {
+  const hex = accent.trim().replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return `rgba(15, 19, 36, ${alpha})`;
+  }
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function rewardHeroGradientStack(
+  config: LeaderboardRewardHeroConfig,
+  hasImage: boolean,
+): { overlapFade: string; fallbackFill: string } {
+  const accentWhisper = rewardHeroAccentRgba(config.accentColor, hasImage ? 0.12 : 0.28);
+  const accentSoft = rewardHeroAccentRgba(config.accentColor, hasImage ? 0.32 : 0.42);
+  const bgSoft = rewardHeroAccentRgba(config.backgroundColor, hasImage ? 0.38 : 0.55);
+  const navyMid = "rgba(15, 19, 36, 0.72)";
+  const navy = LEADERBOARD_REWARD_HERO_NAVY;
+  return {
+    // Softer long fade (HERO-12): art readable through early band; solid navy only at end.
+    overlapFade: hasImage
+      ? `linear-gradient(to bottom, transparent 0%, ${accentWhisper} 25%, ${bgSoft} 50%, ${navyMid} 72%, ${navy} 88%, ${navy} 100%)`
+      : `linear-gradient(to bottom, ${accentSoft} 0%, ${config.backgroundColor} 42%, ${navy} 100%)`,
+    fallbackFill: `radial-gradient(ellipse 130% 90% at 50% 0%, ${accentSoft} 0%, ${config.backgroundColor} 48%, ${navy} 100%)`,
+  };
+}
+
+/** Stable open-profile callback — kept narrow to avoid remount churn (LEADERBOARD-SWIPE-13B). */
+type LeaderboardOpenProfileFn = (
+  username: string,
+  options: {
+    anchor: { x: number; y: number };
+    surfaceGenreHint?: string | null;
+  },
+) => void;
+
+type LeaderboardEntryRowProps = {
+  entry: LeaderboardEntry;
+  rank: number;
+  currentUserId: string | undefined;
+  onOpenProfile: LeaderboardOpenProfileFn;
+  forceCurrentUser?: boolean;
+};
+
+/** Module-level — must not be redefined inside Leaderboard() or scope changes remount rows. */
+export function LeaderboardEntryRow({
+  entry,
+  rank,
+  currentUserId,
+  onOpenProfile,
+  forceCurrentUser = false,
+}: LeaderboardEntryRowProps) {
+  const isCurrentUser = entry.user_id === currentUserId;
+  const highlightAsCurrent = forceCurrentUser || isCurrentUser;
+  const isVerifiedArtist = entry.account_type === "artist" && entry.verified_artist === true;
+  const trustLevel = deriveTrustLevel(entry.reputation ?? 0);
+  const levelProgress = Math.min(
+    100,
+    Math.max(0, Number.isFinite(trustLevel.progressPct) ? trustLevel.progressPct : 0),
+  );
+  const visibleProgress = leaderboardVisibleProgressPct(levelProgress);
+  const genreStyle = getGenreChipStyle(entry.favorite_genre ?? null);
+  const genreHex = genreStyle?.bgColor ?? null;
+  const baseColor = repProgressBarBaseColor(genreHex);
+  const barFill = genreHex
+    ? repProgressPremiumGradientFromGenreBg(genreHex)
+    : whiteRepProgressGradient();
+  const progressAriaText = leaderboardRepProgressAriaValueText(trustLevel);
+
+  const profileImageUrl =
+    resolveAvatarUrlForProfile(entry.avatar_url, entry.account_type) ?? "";
+
+  const handleOpenProfile = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (consumeLeaderboardPagerClickSuppression()) return;
+    onOpenProfile(entry.username, {
+      anchor: { x: e.clientX, y: e.clientY },
+      surfaceGenreHint: entry.favorite_genre,
+    });
+  };
+
+  return (
+    <div
+      className={cn(
+        LEADERBOARD_ROW_BASE_CLASS,
+        highlightAsCurrent && LEADERBOARD_ROW_CURRENT_CLASS,
+      )}
+      data-testid={`leaderboard-entry-${entry.user_id}`}
+      {...{ [LEADERBOARD_SCOPE_PAGER_ROW_ATTR]: "true" }}
+    >
+      {/* Rank */}
+      <div className="w-10 flex items-center justify-center" data-testid={`rank-${rank}`}>
+        {getRankIcon(rank) || (
+          <span className="font-mono text-base font-semibold text-muted-foreground">
+            {formatRank(rank)}
+          </span>
+        )}
+      </div>
+
+      {/* Avatar with Profile Picture */}
+      <button
+        type="button"
+        className="relative ios-press ios-press-soft shrink-0 p-0"
+        aria-label={`View profile ${formatUsernameDisplay(entry.username) || entry.username}`}
+        data-testid={`avatar-${entry.user_id}`}
+        onClick={handleOpenProfile}
+      >
+        <img
+          src={profileImageUrl}
+          alt=""
+          className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(profileImageUrl) ? "avatar-default-media" : ""}`}
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.style.display = "none";
+            target.nextElementSibling?.classList.remove("hidden");
+          }}
+        />
+        <div className="hidden w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-white font-bold">
+          {(formatUsernameDisplay(entry.username).replace(/^@/, "") || entry.username || "?")
+            .charAt(0)
+            .toUpperCase()}
+        </div>
+      </button>
+
+      {/* User Info */}
+      <div className="flex-1 min-w-0">
+        <div className="relative z-[1] mb-1.5 flex min-w-0 items-center gap-x-2">
+          <button
+            type="button"
+            className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+            data-testid={`username-${entry.user_id}`}
+            onClick={handleOpenProfile}
+          >
+            <span className="min-w-0 truncate">
+              {formatUsernameDisplay(entry.username) || entry.username}
+            </span>
+            <UserRoleInlineIcons
+              verifiedArtist={isVerifiedArtist}
+              moderator={entry.moderator}
+            />
+          </button>
+          {highlightAsCurrent && (
+            <span className={LEADERBOARD_YOU_PILL_CLASS}>
+              You
+            </span>
+          )}
+        </div>
+
+        <div className="relative z-0 flex items-center gap-2">
+          <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
+            {trustLevel.displayName}
+          </span>
+          <div className={LEADERBOARD_REP_TRACK_CLASS}>
+            <div
+              className={LEADERBOARD_REP_FILL_CLASS}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(levelProgress)}
+              aria-valuetext={progressAriaText}
+              aria-label={progressAriaText}
+              data-testid={`reputation-bar-${entry.user_id}`}
+              style={{
+                width: `${visibleProgress}%`,
+                minWidth: visibleProgress > 0 ? `${LEADERBOARD_REP_MIN_WIDTH_PX}px` : "0px",
+                backgroundImage: barFill,
+                backgroundColor: baseColor,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* IDs metric — value remains entry.correct_ids */}
+      <div className={LEADERBOARD_SCORE_COLUMN_CLASS}>
+        <div
+          className={LEADERBOARD_SCORE_VALUE_CLASS}
+          data-testid={`confirmed-ids-${entry.user_id}`}
+        >
+          {entry.correct_ids}
+        </div>
+        {/* No CSS uppercase — preserves acronym casing "ID" / "IDs". */}
+        <div className="mt-1 text-[10px] tracking-wide text-muted-foreground">
+          {leaderboardIdsUnitLabel(entry.correct_ids)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Module-level prize banner — stable across Community ↔ Artists commits. */
+export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
+  const config = getLeaderboardRewardHeroConfig(tab);
+  const monthUpper = getCurrentMonth().toUpperCase();
+  const showCountdown = leaderboardRewardHeroShowsCountdown(config);
+  const daysRemaining = showCountdown
+    ? formatDaysRemaining(getDaysRemainingInMonth())
+    : null;
+  const hasImage = Boolean(config.imageSrc?.trim());
+  const gradients = rewardHeroGradientStack(config, hasImage);
+  const accent = config.accentColor;
+
+  return (
+    <div
+      className={LEADERBOARD_PRIZE_SECTION_CLASS}
+      style={
+        {
+          "--lb-reward-accent": accent,
+          "--lb-reward-bg": config.backgroundColor,
+        } as CSSProperties
+      }
+    >
+      <div className="relative" data-testid="rewards-banner" data-leaderboard-hero-scope={tab}>
+        <div className={LEADERBOARD_REWARD_HERO_POSTER_STAGE_CLASS}>
+          {hasImage ? (
+            <img
+              src={config.imageSrc}
+              alt=""
+              aria-hidden
+              draggable={false}
+              className={LEADERBOARD_REWARD_HERO_IMAGE_CLASS}
+              data-testid="rewards-banner-image"
+            />
+          ) : (
+            <div
+              className="absolute inset-0 w-full"
+              style={{ backgroundImage: gradients.fallbackFill }}
+              aria-hidden
+              data-testid="rewards-banner-fallback"
+            />
+          )}
+
+          <div className={LEADERBOARD_REWARD_HERO_TOP_SCRIM_CLASS} aria-hidden />
+
+          <div
+            className={LEADERBOARD_REWARD_HERO_FADE_OVERLAP_CLASS}
+            style={{ backgroundImage: gradients.overlapFade }}
+            aria-hidden
+            data-testid="rewards-banner-fade"
+          />
+        </div>
+
+        <div className={LEADERBOARD_REWARD_HERO_META_WRAP_CLASS}>
+          <div className={LEADERBOARD_REWARD_HERO_META_SCRIM_CLASS} aria-hidden />
+          <div className={LEADERBOARD_REWARD_HERO_META_CLASS}>
+            {config.logoSrc ? (
+              <img
+                src={config.logoSrc}
+                alt=""
+                className="mb-1 h-8 w-auto max-w-[9rem] object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
+                data-testid="rewards-banner-logo"
+              />
+            ) : null}
+
+            <span
+              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-[0_0_12px_-2px_rgba(0,0,0,0.35)] [text-shadow:0_1px_2px_rgba(0,0,0,0.85),0_2px_10px_rgba(0,0,0,0.55)]"
+              style={{
+                borderColor: rewardHeroAccentRgba(accent, 0.55),
+                color: accent,
+                backgroundColor: rewardHeroAccentRgba(accent, 0.14),
+              }}
+              data-testid="rewards-banner-prize-label"
+            >
+              <Trophy className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+              {monthUpper} PRIZE
+            </span>
+
+            <h3
+              className="max-w-[20rem] px-1 text-base font-bold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.95),0_3px_16px_rgba(0,0,0,0.72)] sm:text-lg"
+              data-testid="rewards-banner-title"
+            >
+              {config.prizeTitle}
+            </h3>
+
+            {showCountdown && daysRemaining ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium shadow-[0_0_10px_-2px_rgba(0,0,0,0.3)] [text-shadow:0_1px_2px_rgba(0,0,0,0.85),0_2px_10px_rgba(0,0,0,0.55)]"
+                style={{
+                  borderColor: rewardHeroAccentRgba(accent, 0.45),
+                  color: accent,
+                  backgroundColor: "rgba(15,19,36,0.28)",
+                }}
+                data-testid="rewards-banner-countdown"
+              >
+                <Calendar className="h-3 w-3 shrink-0 opacity-80" />
+                {daysRemaining}
+              </span>
+            ) : null}
+
+            {config.sponsor ? (
+              <p
+                className="text-[10px] text-white/85 [text-shadow:0_1px_2px_rgba(0,0,0,0.8),0_2px_12px_rgba(0,0,0,0.55)]"
+                data-testid="rewards-banner-sponsor"
+              >
+                {config.sponsor}
+              </p>
+            ) : null}
+
+            <p
+              className="text-[10px] text-white/72 [text-shadow:0_1px_2px_rgba(0,0,0,0.75),0_2px_12px_rgba(0,0,0,0.5)]"
+              data-testid="rewards-banner-eligibility"
+            >
+              {config.eligibilityCopy}
+            </p>
+
+            {config.termsLabel?.trim() ? (
+              config.termsHref?.trim() ? (
+                <a
+                  href={config.termsHref.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[9px] text-white/55 underline-offset-2 hover:underline [text-shadow:0_1px_2px_rgba(0,0,0,0.7),0_2px_10px_rgba(0,0,0,0.45)]"
+                  data-testid="rewards-banner-terms"
+                >
+                  {config.termsLabel.trim()}
+                </a>
+              ) : (
+                <p
+                  className="text-[9px] text-white/55 [text-shadow:0_1px_2px_rgba(0,0,0,0.7),0_2px_10px_rgba(0,0,0,0.45)]"
+                  data-testid="rewards-banner-terms"
+                >
+                  {config.termsLabel.trim()}
+                </p>
+              )
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type LeaderboardListProps = {
+  entries: LeaderboardEntry[];
+  emptyLabel: string;
+  isLoading: boolean;
+  outsideTop: LeaderboardRankResponse | null;
+  currentUserId: string | undefined;
+  onOpenProfile: LeaderboardOpenProfileFn;
+  onViewAllTime: () => void;
+};
+
+/** Module-level list — stable type across activeTab commits (LEADERBOARD-SWIPE-13B). */
+export function LeaderboardList({
+  entries,
+  emptyLabel,
+  isLoading,
+  outsideTop,
+  currentUserId,
+  onOpenProfile,
+  onViewAllTime,
+}: LeaderboardListProps) {
+  if (isLoading) {
+    return (
+      <div
+        className={LEADERBOARD_LIST_CLASS}
+        aria-busy="true"
+        aria-label="Loading leaderboard"
+        data-testid="leaderboard-loading-skeleton"
+      >
+        {Array.from({ length: LEADERBOARD_SKELETON_ROW_COUNT }, (_, i) => (
+          <div key={i} className={LEADERBOARD_ROW_BASE_CLASS}>
+            <div className={`h-6 w-10 shrink-0 ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+            <div className={`h-10 w-10 shrink-0 rounded-full ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className={`h-4 w-2/3 max-w-[10rem] ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+              <div className={`h-2 w-full rounded-full ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+            </div>
+            <div className={`h-8 w-[68px] shrink-0 ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-muted-foreground">{emptyLabel}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => {
+            if (consumeLeaderboardPagerClickSuppression()) return;
+            onViewAllTime();
+          }}
+          data-testid="view-all-time"
+        >
+          View All Time Leaderboard
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={LEADERBOARD_LIST_CLASS}>
+      {entries.map((entry, index) => (
+        <LeaderboardEntryRow
+          key={entry.user_id}
+          entry={entry}
+          rank={index + 1}
+          currentUserId={currentUserId}
+          onOpenProfile={onOpenProfile}
+        />
+      ))}
+
+      {outsideTop?.entry && (
+        <div className="border-t border-white/15 pt-1">
+          <LeaderboardEntryRow
+            entry={outsideTop.entry}
+            rank={outsideTop.rank}
+            currentUserId={currentUserId}
+            onOpenProfile={onOpenProfile}
+            forceCurrentUser
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Leaderboard() {
   useLgNav5aDestinationProbe("leaderboard");
   const { currentUser } = useUser();
@@ -141,9 +596,40 @@ export default function Leaderboard() {
   const [activeTab, setActiveTab] = useState<LeaderboardScope>("users");
   const [timeFilter, setTimeFilter] = useState<LeaderboardTimeFilter>("month");
   const pageScrollRef = useRef<HTMLDivElement | null>(null);
-  const swipeContentRef = useRef<HTMLDivElement | null>(null);
+  const stickyChromeRef = useRef<HTMLDivElement | null>(null);
+  const heroGlassSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [stickyGlassActive, setStickyGlassActive] = useState(false);
+  /** HERO-16 — touch listener host wrapping reward hero + pager viewport. */
+  const gestureHostRef = useRef<HTMLDivElement | null>(null);
+  /** HERO-18 — follower track; same translateX as list pager. */
+  const heroTrackRef = useRef<HTMLDivElement | null>(null);
+  /** Pager clip + width geometry only (travel distance). */
+  const pagerViewportRef = useRef<HTMLDivElement | null>(null);
+  const pagerTrackRef = useRef<HTMLDivElement | null>(null);
+  const pagerPanelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const activeTabRef = useRef<LeaderboardScope>(activeTab);
   activeTabRef.current = activeTab;
+  const prevActiveTabRef = useRef<LeaderboardScope>(activeTab);
+  const primaryTablistRef = useRef<HTMLDivElement | null>(null);
+  const primaryIndicatorRef = useRef<HTMLSpanElement | null>(null);
+  const primaryLabelRefs = useRef<Partial<Record<LeaderboardScope, HTMLSpanElement | null>>>(
+    {},
+  );
+  const primaryTriggerRefs = useRef<Partial<Record<LeaderboardScope, HTMLButtonElement | null>>>(
+    {},
+  );
+  const primaryNavMetricsRef = useRef<
+    Partial<Record<LeaderboardScope, LeaderboardNavIndicatorMetrics>>
+  >({});
+  const primaryIndicatorPhaseRef = useRef<"idle" | "dragging" | "snapping">("idle");
+  /** Imperative unlock indices for live gesture prepare (no React state). */
+  const imperativeUnlockIndicesRef = useRef<number[] | null>(null);
+  const pagerHeightPhaseRef = useRef<LeaderboardPagerProgressEvent["phase"]>("idle");
+  const pagerHostHeightKeyRef = useRef("");
+  const pagerPanelHeightCacheRef = useRef<{ key: string; heights: Record<number, number> }>({
+    key: "",
+    heights: {},
+  });
   const currentUserId = currentUser?.id;
 
   /**
@@ -162,11 +648,9 @@ export default function Leaderboard() {
     setLeaderboardScope(v as LeaderboardScope);
   };
 
-  useLeaderboardScopeSwipe({
-    scopeRef: activeTabRef,
-    containerRef: swipeContentRef,
-    onCommitScope: setLeaderboardScope,
-  });
+  const handleViewAllTimeLeaderboard = useCallback(() => {
+    setTimeFilter("all");
+  }, []);
 
   // Fetch user leaderboard
   const {
@@ -178,7 +662,10 @@ export default function Leaderboard() {
     dataUpdatedAt: usersDataUpdatedAt,
   } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardUsersQueryKey(timeFilter),
-    enabled: activeTab === "users",
+    // LEADERBOARD-SWIPE-11B — both lists warm for adjacent finger-follow paint.
+    enabled: true,
+    // LEADERBOARD-TIMEFRAME-2 — keep prior timeframe rows painted until new key resolves.
+    placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
       const res = await apiRequest("GET", `/api/leaderboard/users?${params.toString()}`);
@@ -195,7 +682,10 @@ export default function Leaderboard() {
     fetchStatus: artistsFetchStatus,
   } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardArtistsQueryKey(timeFilter),
-    enabled: activeTab === "artists",
+    // LEADERBOARD-SWIPE-11B — both lists warm for adjacent finger-follow paint.
+    enabled: true,
+    // LEADERBOARD-TIMEFRAME-2 — keep prior timeframe rows painted until new key resolves.
+    placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
       const res = await apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`);
@@ -271,20 +761,34 @@ export default function Leaderboard() {
     return artistMyRank;
   }, [currentUserId, artistHasCurrentUserInTop, artistMyRank]);
 
-  const activeEntries = activeTab === "users" ? userTopEntries : artistTopEntries;
-  const activeLoading = activeTab === "users" ? isLoadingUsers : isLoadingArtists;
-  const firstPaintReleased = useLeaderboardFirstPaintRelease(
-    !activeLoading && activeEntries.length > 0,
+  const usersFirstPaintReleased = useLeaderboardFirstPaintRelease(
+    !isLoadingUsers && userTopEntries.length > 0,
     pageScrollRef,
   );
-  const paintedEntries = useMemo(
-    () => leaderboardFirstPaintSlice(activeEntries, firstPaintReleased),
-    [activeEntries, firstPaintReleased],
+  const artistsFirstPaintReleased = useLeaderboardFirstPaintRelease(
+    !isLoadingArtists && artistTopEntries.length > 0,
+    pageScrollRef,
   );
-  const paintOutsideTop = leaderboardShouldPaintOutsideTop(
-    activeEntries.length,
-    firstPaintReleased,
+  const paintedUserEntries = useMemo(
+    () => leaderboardFirstPaintSlice(userTopEntries, usersFirstPaintReleased),
+    [userTopEntries, usersFirstPaintReleased],
   );
+  const paintedArtistEntries = useMemo(
+    () => leaderboardFirstPaintSlice(artistTopEntries, artistsFirstPaintReleased),
+    [artistTopEntries, artistsFirstPaintReleased],
+  );
+  const paintUserOutsideTop = leaderboardShouldPaintOutsideTop(
+    userTopEntries.length,
+    usersFirstPaintReleased,
+  );
+  const paintArtistOutsideTop = leaderboardShouldPaintOutsideTop(
+    artistTopEntries.length,
+    artistsFirstPaintReleased,
+  );
+  const firstPaintReleased =
+    activeTab === "users" ? usersFirstPaintReleased : artistsFirstPaintReleased;
+  const paintedEntries =
+    activeTab === "users" ? paintedUserEntries : paintedArtistEntries;
 
   useLgNav5aRenderCycle("leaderboard", {
     tab: activeTab,
@@ -314,6 +818,457 @@ export default function Leaderboard() {
     },
   });
 
+  const applyPrimaryNavIndicator = useCallback(
+    (
+      metrics: LeaderboardNavIndicatorMetrics,
+      opts: { animate: boolean; durationMs: number; reducedMotion: boolean },
+    ) => {
+      const el = primaryIndicatorRef.current;
+      if (!el) return;
+      const reduced = opts.reducedMotion || prefersLeaderboardPagerReducedMotion();
+      if (opts.animate && !reduced) {
+        el.style.transition = `left ${opts.durationMs}ms ${LEADERBOARD_SCOPE_SNAP_EASING}, width ${opts.durationMs}ms ${LEADERBOARD_SCOPE_SNAP_EASING}, bottom ${opts.durationMs}ms ${LEADERBOARD_SCOPE_SNAP_EASING}`;
+      } else {
+        el.style.transition = "none";
+      }
+      el.style.left = `${metrics.left}px`;
+      el.style.width = `${Math.max(0, metrics.width)}px`;
+      el.style.bottom = `${metrics.bottom}px`;
+    },
+    [],
+  );
+
+  const measurePrimaryNavTriggers = useCallback(() => {
+    const list = primaryTablistRef.current;
+    if (!list) return;
+    const listRect = list.getBoundingClientRect();
+    const next: Partial<Record<LeaderboardScope, LeaderboardNavIndicatorMetrics>> = {};
+    for (const id of LEADERBOARD_SCOPES) {
+      const label = primaryLabelRefs.current[id];
+      if (!label) continue;
+      const rect = label.getBoundingClientRect();
+      next[id] = leaderboardPrimaryIndicatorMetricsFromLabelRect({
+        labelLeft: rect.left,
+        labelWidth: rect.width,
+        labelBottom: rect.bottom,
+        listLeft: listRect.left,
+        listBottom: listRect.bottom,
+      });
+    }
+    primaryNavMetricsRef.current = next;
+  }, []);
+
+  const syncPrimaryNavIndicatorToScope = useCallback(
+    (scope: LeaderboardScope, opts: { animate: boolean; durationMs: number }) => {
+      measurePrimaryNavTriggers();
+      const metrics = primaryNavMetricsRef.current[scope];
+      if (!metrics) return;
+      applyPrimaryNavIndicator(metrics, {
+        animate: opts.animate,
+        durationMs: opts.durationMs,
+        reducedMotion: prefersLeaderboardPagerReducedMotion(),
+      });
+    },
+    [applyPrimaryNavIndicator, measurePrimaryNavTriggers],
+  );
+
+  const measurePagerPanelHeight = useCallback((index: number) => {
+    const el = pagerPanelRefs.current[index];
+    if (!el) return 0;
+    return Math.ceil(
+      Math.max(el.scrollHeight, el.offsetHeight, el.getBoundingClientRect().height),
+    );
+  }, []);
+
+  const pagerGeometryCacheKey = useCallback(() => {
+    const width = Math.round(
+      pagerViewportRef.current?.getBoundingClientRect().width ||
+        (typeof window !== "undefined" ? window.innerWidth : 0),
+    );
+    return `${activeTab}:${timeFilter}:${width}`;
+  }, [activeTab, timeFilter]);
+
+  const cachePagerPanelHeights = useCallback(
+    (indices: readonly number[]) => {
+      const key = pagerGeometryCacheKey();
+      const prev = pagerPanelHeightCacheRef.current;
+      const heights =
+        prev.key === key ? { ...prev.heights } : ({} as Record<number, number>);
+      for (const index of indices) {
+        heights[index] = measurePagerPanelHeight(index);
+      }
+      pagerPanelHeightCacheRef.current = { key, heights };
+    },
+    [measurePagerPanelHeight, pagerGeometryCacheKey],
+  );
+
+  const readCachedPagerPanelHeight = useCallback(
+    (index: number) => {
+      const cache = pagerPanelHeightCacheRef.current;
+      if (cache.key !== pagerGeometryCacheKey()) return null;
+      const h = cache.heights[index];
+      return typeof h === "number" ? h : null;
+    },
+    [pagerGeometryCacheKey],
+  );
+
+  const applyHostMinHeightFromCache = useCallback(
+    (
+      phase: LeaderboardPagerProgressEvent["phase"],
+      unlock: number[] | null,
+      opts?: { currentIndex: number; adjacentIndex: number | null },
+    ) => {
+      const viewport = pagerViewportRef.current;
+      if (!viewport) return;
+      if (phase === "idle" || !unlock || unlock.length === 0) {
+        viewport.style.minHeight = "";
+        return;
+      }
+      cachePagerPanelHeights(unlock);
+      if (opts) {
+        const currentHeight =
+          readCachedPagerPanelHeight(opts.currentIndex) ??
+          measurePagerPanelHeight(opts.currentIndex);
+        const adjacentHeight =
+          opts.adjacentIndex == null
+            ? null
+            : (readCachedPagerPanelHeight(opts.adjacentIndex) ??
+              measurePagerPanelHeight(opts.adjacentIndex));
+        const hostH = resolveLeaderboardPagerHostHeightPx({
+          phase,
+          currentHeight,
+          adjacentHeight,
+        });
+        viewport.style.minHeight = `${hostH}px`;
+        return;
+      }
+      let maxH = 0;
+      for (const index of unlock) {
+        maxH = Math.max(
+          maxH,
+          readCachedPagerPanelHeight(index) ?? measurePagerPanelHeight(index),
+        );
+      }
+      viewport.style.minHeight = `${maxH}px`;
+    },
+    [cachePagerPanelHeights, measurePagerPanelHeight, readCachedPagerPanelHeight],
+  );
+
+  /** Remove temporary unlock tokens from all prepared panels (idempotent). */
+  const clearImperativePagerUnlock = useCallback(() => {
+    const indices = imperativeUnlockIndicesRef.current;
+    if (indices) {
+      for (const index of indices) {
+        clearLeaderboardPagerPanelImperativeUnlock(pagerPanelRefs.current[index]);
+      }
+    }
+    // Also clear any stray tokens on both shells (safe if already cleared).
+    for (let i = 0; i < LEADERBOARD_SCOPES.length; i++) {
+      clearLeaderboardPagerPanelImperativeUnlock(pagerPanelRefs.current[i]);
+    }
+    imperativeUnlockIndicesRef.current = null;
+  }, []);
+
+  /**
+   * LEADERBOARD-SWIPE-10C — single idempotent prepare cleanup:
+   * unlock classes + viewport minHeight + phase keys.
+   */
+  const clearLeaderboardPagerImperativePrepare = useCallback(() => {
+    clearImperativePagerUnlock();
+    pagerHostHeightKeyRef.current = "";
+    pagerHeightPhaseRef.current = "idle";
+    const viewport = pagerViewportRef.current;
+    if (viewport) viewport.style.minHeight = "";
+  }, [clearImperativePagerUnlock]);
+
+  /**
+   * During drag/snap: geometry locked at imperative prepare — no React unlock.
+   * Idle: settle unlock + host height.
+   */
+  const applyPagerHostHeight = useCallback(
+    (event: Pick<LeaderboardPagerProgressEvent, "phase" | "currentIndex" | "adjacentIndex">) => {
+      const key = `${event.phase}:${event.currentIndex}:${event.adjacentIndex ?? "x"}`;
+
+      if (event.phase === "idle") {
+        clearLeaderboardPagerImperativePrepare();
+        return;
+      }
+
+      if (key === pagerHostHeightKeyRef.current) {
+        return;
+      }
+
+      const unlock = resolveLeaderboardPagerVertUnlockIndices({
+        phase: event.phase,
+        currentIndex: event.currentIndex,
+        adjacentIndex: event.adjacentIndex,
+      });
+
+      // Normal path: prepare already unlocked current±1 imperatively.
+      if (leaderboardPagerUnlockCovers(imperativeUnlockIndicesRef.current, unlock)) {
+        pagerHostHeightKeyRef.current = key;
+        pagerHeightPhaseRef.current = event.phase;
+        return;
+      }
+
+      // Fallback safety (prepare missed a panel): unlock sync via refs — still no React.
+      if (unlock) {
+        const merged = new Set(imperativeUnlockIndicesRef.current ?? []);
+        for (const index of unlock) {
+          merged.add(index);
+          applyLeaderboardPagerPanelImperativeUnlock(pagerPanelRefs.current[index]);
+        }
+        imperativeUnlockIndicesRef.current = Array.from(merged).sort((a, b) => a - b);
+        applyHostMinHeightFromCache(event.phase, imperativeUnlockIndicesRef.current, {
+          currentIndex: event.currentIndex,
+          adjacentIndex: event.adjacentIndex,
+        });
+      }
+      pagerHostHeightKeyRef.current = key;
+      pagerHeightPhaseRef.current = event.phase;
+    },
+    [applyHostMinHeightFromCache, clearLeaderboardPagerImperativePrepare],
+  );
+
+  const clearPrimaryTabVisualEmphasis = useCallback(() => {
+    for (const id of LEADERBOARD_SCOPES) {
+      const el = primaryTriggerRefs.current[id];
+      if (!el) continue;
+      el.style.transition = "";
+      el.style.color = "";
+    }
+  }, []);
+
+  const applyPrimaryTabVisualEmphasis = useCallback(
+    (event: LeaderboardPagerProgressEvent) => {
+      const reduced = event.reducedMotion || prefersLeaderboardPagerReducedMotion();
+      const durationMs = event.durationMs ?? LEADERBOARD_SCOPE_SNAP_MS;
+      for (let tabIndex = 0; tabIndex < LEADERBOARD_SCOPES.length; tabIndex++) {
+        const id = LEADERBOARD_SCOPES[tabIndex]!;
+        const el = primaryTriggerRefs.current[id];
+        if (!el) continue;
+        const emphasis = resolveLeaderboardPrimaryTabEmphasis({
+          tabIndex,
+          currentIndex: event.currentIndex,
+          adjacentIndex: event.adjacentIndex,
+          progress: event.progress,
+        });
+        if (event.animate && !reduced) {
+          el.style.transition = `color ${durationMs}ms ${LEADERBOARD_SCOPE_SNAP_EASING}`;
+        } else {
+          el.style.transition = "none";
+        }
+        // Color/opacity only — font-weight stays on committed classes (no reflow).
+        el.style.color = leaderboardPrimaryTabEmphasisColor(emphasis);
+      }
+    },
+    [],
+  );
+
+  const handlePagerProgress = useCallback(
+    (event: LeaderboardPagerProgressEvent) => {
+      primaryIndicatorPhaseRef.current = event.phase;
+      applyPagerHostHeight(event);
+      if (event.phase === "idle") {
+        clearPrimaryTabVisualEmphasis();
+      } else {
+        applyPrimaryTabVisualEmphasis(event);
+      }
+      const currentId = LEADERBOARD_SCOPES[event.currentIndex];
+      if (!currentId) return;
+      if (!primaryNavMetricsRef.current[currentId]) {
+        measurePrimaryNavTriggers();
+      }
+      const metricsMap = primaryNavMetricsRef.current;
+      const from = metricsMap[currentId];
+      if (!from) return;
+
+      if (event.adjacentIndex == null || event.progress <= 0) {
+        applyPrimaryNavIndicator(from, {
+          animate: event.animate,
+          durationMs: event.durationMs ?? LEADERBOARD_SCOPE_SNAP_MS,
+          reducedMotion: event.reducedMotion,
+        });
+        return;
+      }
+
+      const adjacentId = LEADERBOARD_SCOPES[event.adjacentIndex];
+      if (adjacentId && !metricsMap[adjacentId]) {
+        measurePrimaryNavTriggers();
+      }
+      const to = adjacentId ? primaryNavMetricsRef.current[adjacentId] : null;
+      if (!to) {
+        applyPrimaryNavIndicator(from, {
+          animate: event.animate,
+          durationMs: event.durationMs ?? LEADERBOARD_SCOPE_SNAP_MS,
+          reducedMotion: event.reducedMotion,
+        });
+        return;
+      }
+
+      const lerped = interpolateLeaderboardNavIndicator(from, to, event.progress);
+      applyPrimaryNavIndicator(
+        { ...lerped, bottom: from.bottom },
+        {
+          animate: event.animate,
+          durationMs: event.durationMs ?? LEADERBOARD_SCOPE_SNAP_MS,
+          reducedMotion: event.reducedMotion,
+        },
+      );
+    },
+    [
+      applyPrimaryNavIndicator,
+      applyPagerHostHeight,
+      applyPrimaryTabVisualEmphasis,
+      clearPrimaryTabVisualEmphasis,
+      measurePrimaryNavTriggers,
+    ],
+  );
+
+  const handleGesturePrepare = useCallback(() => {
+    const currentIndex = leaderboardScopeIndex(activeTabRef.current);
+    const prepareUnlock = resolveLeaderboardPagerPrepareUnlockIndices(currentIndex);
+    const viewport = pagerViewportRef.current;
+
+    // 1) Synchronous imperative unlock BEFORE any drag transform / React commit.
+    for (const index of prepareUnlock) {
+      applyLeaderboardPagerPanelImperativeUnlock(pagerPanelRefs.current[index]);
+    }
+    imperativeUnlockIndicesRef.current = prepareUnlock;
+    pagerHeightPhaseRef.current = "dragging";
+    pagerHostHeightKeyRef.current = `prepare:${currentIndex}`;
+
+    // 2) Measure expanded panels, cache heights, set host minHeight once.
+    const width = Math.round(
+      viewport?.getBoundingClientRect().width ||
+        (typeof window !== "undefined" ? window.innerWidth : 0),
+    );
+    const heights: Record<number, number> = {};
+    let maxH = 0;
+    for (const index of prepareUnlock) {
+      const h = measurePagerPanelHeight(index);
+      heights[index] = h;
+      maxH = Math.max(maxH, h);
+    }
+    pagerPanelHeightCacheRef.current = {
+      key: `${activeTabRef.current}:${timeFilter}:${width}`,
+      heights,
+    };
+    if (viewport) {
+      viewport.style.minHeight = `${maxH}px`;
+    }
+
+    // 3) Warm nav metrics for underline/emphasis.
+    measurePrimaryNavTriggers();
+    // Intentionally no React unlock state — listeners stay stable.
+  }, [measurePagerPanelHeight, measurePrimaryNavTriggers, timeFilter]);
+
+  const handleGestureAbort = useCallback(() => {
+    clearLeaderboardPagerImperativePrepare();
+  }, [clearLeaderboardPagerImperativePrepare]);
+
+  useLeaderboardScopeSwipe({
+    scopeRef: activeTabRef,
+    activeScope: activeTab,
+    gestureHostRef,
+    viewportRef: pagerViewportRef,
+    trackRef: pagerTrackRef,
+    heroTrackRef,
+    onCommitScope: setLeaderboardScope,
+    onPagerProgress: handlePagerProgress,
+    onGesturePrepare: handleGesturePrepare,
+    onGestureAbort: handleGestureAbort,
+  });
+
+  useLayoutEffect(() => {
+    // LEADERBOARD-SWIPE-8 TEMP — tab change + post-geometry height dump.
+    lbSwipe8Ensure();
+    if (primaryIndicatorPhaseRef.current === "dragging") return;
+
+    const oldScope = prevActiveTabRef.current;
+    const track = pagerTrackRef.current;
+    const viewport = pagerViewportRef.current;
+    const readTx = () => {
+      if (!track) return null;
+      const raw = getComputedStyle(track).transform;
+      if (!raw || raw === "none") return 0;
+      try {
+        return new DOMMatrixReadOnly(raw).m41;
+      } catch {
+        return null;
+      }
+    };
+    const beforeTx = readTx();
+    const width = viewport?.getBoundingClientRect().width ?? null;
+
+    const reduced = prefersLeaderboardPagerReducedMotion();
+    syncPrimaryNavIndicatorToScope(activeTab, {
+      animate: primaryIndicatorPhaseRef.current === "idle" && !reduced,
+      durationMs: LEADERBOARD_PRIMARY_INDICATOR_TAP_MS,
+    });
+    primaryIndicatorPhaseRef.current = "idle";
+    clearPrimaryTabVisualEmphasis();
+    // LEADERBOARD-SWIPE-13B — settle cleanup AFTER React commits destination
+    // data-state="active". Successful swipe keeps unlock/minHeight until here.
+    const destState =
+      pagerPanelRefs.current[leaderboardScopeIndex(activeTab)]?.dataset.state ?? null;
+    clearLeaderboardPagerImperativePrepare();
+    // Finalization after inactive collapse + minHeight clear (tap + swipe).
+    const scroller = pageScrollRef.current;
+    if (scroller) scroller.scrollTop = 0;
+
+    const afterTx = readTx();
+    if (oldScope !== activeTab) {
+      lbSwipe8Log({
+        event: "TAB_CHANGE",
+        activeScope: activeTab,
+        phase: "idle",
+        sourceIndex: leaderboardScopeIndex(activeTab),
+        viewportWidth: width,
+        currentTranslate: afterTx,
+        baseTranslate: beforeTx,
+        targetScope: activeTab,
+        note: `${oldScope}->${activeTab}`,
+        extra: {
+          oldScope,
+          newScope: activeTab,
+          destDataState: destState,
+          transformBefore: beforeTx,
+          transformAfter: afterTx,
+          pageScrollTop: scroller?.scrollTop ?? null,
+          pageScrollHeight: scroller?.scrollHeight ?? null,
+          pageClientHeight: scroller?.clientHeight ?? null,
+          viewportInlineMinHeight: viewport?.style.minHeight || "",
+          heights: lbSwipe8Ensure().captureHeights(`tab-${oldScope}-to-${activeTab}`),
+        },
+      });
+    }
+    prevActiveTabRef.current = activeTab;
+  }, [
+    activeTab,
+    clearLeaderboardPagerImperativePrepare,
+    clearPrimaryTabVisualEmphasis,
+    syncPrimaryNavIndicatorToScope,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      clearLeaderboardPagerImperativePrepare();
+    };
+  }, [clearLeaderboardPagerImperativePrepare]);
+
+  useLayoutEffect(() => {
+    const onResize = () => {
+      if (primaryIndicatorPhaseRef.current !== "idle") return;
+      syncPrimaryNavIndicatorToScope(activeTabRef.current, {
+        animate: false,
+        durationMs: 0,
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [syncPrimaryNavIndicatorToScope]);
+
   /** iOS status-bar tap → scroll leaderboard to top (page-scoped; no refresh). */
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
@@ -326,315 +1281,73 @@ export default function Leaderboard() {
     return () => window.removeEventListener("statusTap", onStatusTap);
   }, []);
 
-  const getRankIcon = (rank: number) => {
-    if (rank === 1) return <Trophy className="w-6 h-6 text-yellow-500" />;
-    if (rank === 2) return <Medal className="w-6 h-6 text-gray-400" />;
-    if (rank === 3) return <Award className="w-6 h-6 text-amber-600" />;
-    return null;
-  };
+  /**
+   * Adaptive sticky glass — IntersectionObserver on hero-end sentinel.
+   * Root is pageScrollRef only (not window). Binary transparent ↔ glass.
+   */
+  useEffect(() => {
+    const root = pageScrollRef.current;
+    const sticky = stickyChromeRef.current;
+    const sentinel = heroGlassSentinelRef.current;
+    if (!root || !sticky || !sentinel) return;
 
-  const LeaderboardEntryRow = ({
-    entry,
-    rank,
-    forceCurrentUser = false,
-  }: {
-    entry: LeaderboardEntry;
-    rank: number;
-    forceCurrentUser?: boolean;
-  }) => {
-    const isCurrentUser = entry.user_id === currentUserId;
-    const highlightAsCurrent = forceCurrentUser || isCurrentUser;
-    const isVerifiedArtist = entry.account_type === "artist" && entry.verified_artist === true;
-    const trustLevel = deriveTrustLevel(entry.reputation ?? 0);
-    const levelProgress = Math.min(
-      100,
-      Math.max(0, Number.isFinite(trustLevel.progressPct) ? trustLevel.progressPct : 0),
-    );
-    const visibleProgress = leaderboardVisibleProgressPct(levelProgress);
-    const genreStyle = getGenreChipStyle(entry.favorite_genre ?? null);
-    const genreHex = genreStyle?.bgColor ?? null;
-    const baseColor = repProgressBarBaseColor(genreHex);
-    const barFill = genreHex
-      ? repProgressPremiumGradientFromGenreBg(genreHex)
-      : whiteRepProgressGradient();
-    const progressAriaText = leaderboardRepProgressAriaValueText(trustLevel);
+    let observer: IntersectionObserver | null = null;
 
-    const profileImageUrl =
-      resolveAvatarUrlForProfile(entry.avatar_url, entry.account_type) ?? "";
-
-    const handleOpenProfile = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      openByUsername(entry.username, {
-        anchor: { x: e.clientX, y: e.clientY },
-        surfaceGenreHint: entry.favorite_genre,
-      });
+    const connect = () => {
+      observer?.disconnect();
+      const stickyHeight = Math.max(1, Math.round(sticky.getBoundingClientRect().height));
+      observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+          // Intersecting below sticky → hero still behind tabs → transparent.
+          // Not intersecting → hero cleared under chrome → glass.
+          setStickyGlassActive(!entry.isIntersecting);
+        },
+        {
+          root,
+          rootMargin: `-${stickyHeight}px 0px 0px 0px`,
+          threshold: 0,
+        },
+      );
+      observer.observe(sentinel);
     };
 
-    return (
-      <div
-        className={cn(
-          LEADERBOARD_ROW_BASE_CLASS,
-          highlightAsCurrent && LEADERBOARD_ROW_CURRENT_CLASS,
-        )}
-        data-testid={`leaderboard-entry-${entry.user_id}`}
-      >
-        {/* Rank */}
-        <div className="w-10 flex items-center justify-center" data-testid={`rank-${rank}`}>
-          {getRankIcon(rank) || (
-            <span className="font-mono text-base font-semibold text-muted-foreground">
-              {formatRank(rank)}
-            </span>
-          )}
-        </div>
-
-        {/* Avatar with Profile Picture */}
-        <button
-          type="button"
-          className="relative ios-press ios-press-soft shrink-0 p-0"
-          aria-label={`View profile ${formatUsernameDisplay(entry.username) || entry.username}`}
-          data-testid={`avatar-${entry.user_id}`}
-          onClick={handleOpenProfile}
-        >
-          <img
-            src={profileImageUrl}
-            alt=""
-            className={`avatar-media w-10 h-10 rounded-full ${isDefaultAvatarUrl(profileImageUrl) ? "avatar-default-media" : ""}`}
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = "none";
-              target.nextElementSibling?.classList.remove("hidden");
-            }}
-          />
-          <div className="hidden w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-white font-bold">
-            {(formatUsernameDisplay(entry.username).replace(/^@/, "") || entry.username || "?")
-              .charAt(0)
-              .toUpperCase()}
-          </div>
-        </button>
-
-        {/* User Info */}
-        <div className="flex-1 min-w-0">
-          <div className="relative z-[1] mb-1.5 flex min-w-0 items-center gap-x-2">
-            <button
-              type="button"
-              className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
-              data-testid={`username-${entry.user_id}`}
-              onClick={handleOpenProfile}
-            >
-              <span className="min-w-0 truncate">
-                {formatUsernameDisplay(entry.username) || entry.username}
-              </span>
-              <UserRoleInlineIcons
-                verifiedArtist={isVerifiedArtist}
-                moderator={entry.moderator}
-              />
-            </button>
-            {highlightAsCurrent && (
-              <span className={LEADERBOARD_YOU_PILL_CLASS}>
-                You
-              </span>
-            )}
-          </div>
-
-          <div className="relative z-0 flex items-center gap-2">
-            <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
-              {trustLevel.displayName}
-            </span>
-            <div className={LEADERBOARD_REP_TRACK_CLASS}>
-              <div
-                className={LEADERBOARD_REP_FILL_CLASS}
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(levelProgress)}
-                aria-valuetext={progressAriaText}
-                aria-label={progressAriaText}
-                data-testid={`reputation-bar-${entry.user_id}`}
-                style={{
-                  width: `${visibleProgress}%`,
-                  minWidth: visibleProgress > 0 ? `${LEADERBOARD_REP_MIN_WIDTH_PX}px` : "0px",
-                  backgroundImage: barFill,
-                  backgroundColor: baseColor,
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* IDs metric — value remains entry.correct_ids */}
-        <div className={LEADERBOARD_SCORE_COLUMN_CLASS}>
-          <div
-            className="font-mono text-lg font-bold leading-none"
-            data-testid={`confirmed-ids-${entry.user_id}`}
-          >
-            {entry.correct_ids}
-          </div>
-          {/* No CSS uppercase — preserves acronym casing "ID" / "IDs". */}
-          <div className="mt-1 text-[10px] tracking-wide text-muted-foreground">
-            {leaderboardIdsUnitLabel(entry.correct_ids)}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const RewardsBanner = ({ tab }: { tab: "users" | "artists" }) => {
-    const theme = PRIZE_CARD_THEMES[tab];
-    const reward = MONTHLY_REWARDS[tab];
-    const monthUpper = getCurrentMonth().toUpperCase();
-    const daysRemaining = formatDaysRemaining(getDaysRemainingInMonth());
-
-    return (
-      <div className={LEADERBOARD_PRIZE_SECTION_CLASS}>
-        <div className="relative" data-testid="rewards-banner">
-          <div
-            className={`pointer-events-none absolute inset-0 rounded-xl ${theme.glowShadow}`}
-            aria-hidden
-          />
-          <div
-            className={`relative overflow-hidden rounded-xl border px-4 py-3.5 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${theme.card}`}
-          >
-            <div
-              className={`pointer-events-none absolute inset-0 ${theme.gradient}`}
-              aria-hidden
-            />
-            <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-              {tab === "users" ? (
-                <>
-                  <Ticket className="absolute -right-1 top-1 h-14 w-14 rotate-[18deg] text-amber-400/[0.07]" />
-                  <Ticket className="absolute -left-2 bottom-0 h-12 w-12 -rotate-[14deg] text-amber-400/[0.06]" />
-                  <Ticket className="absolute right-[18%] bottom-1 h-9 w-9 rotate-[-8deg] text-yellow-500/[0.05]" />
-                  <div className="absolute left-[12%] top-[38%] h-7 w-7 rounded-full border-2 border-amber-400/[0.06]" />
-                  <div className="absolute right-[28%] top-[22%] h-5 w-5 rounded-full border-2 border-yellow-500/[0.05]" />
-                </>
-              ) : (
-                <>
-                  <Mic className="absolute -right-1 top-1 h-14 w-14 rotate-[12deg] text-purple-400/[0.07]" />
-                  <Headphones className="absolute -left-2 bottom-0 h-12 w-12 -rotate-[10deg] text-purple-400/[0.06]" />
-                  <Mic className="absolute right-[20%] bottom-1 h-9 w-9 rotate-[-6deg] text-purple-500/[0.05]" />
-                  <div className="absolute left-[14%] top-[36%] h-7 w-7 rounded-full border-2 border-purple-400/[0.06]" />
-                  <div className="absolute right-[30%] top-[20%] h-5 w-5 rounded-full border-2 border-purple-500/[0.05]" />
-                </>
-              )}
-            </div>
-
-            <div className="relative flex flex-col items-center gap-1.5 text-center">
-              <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${theme.pill}`}
-              >
-                🏆 {monthUpper} PRIZE
-              </span>
-
-              <h3
-                className={`max-w-full px-1 text-base font-bold leading-snug sm:text-lg ${theme.title}`}
-              >
-                {reward}
-              </h3>
-
-              <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${theme.countdown}`}
-              >
-                <Calendar className="h-3 w-3 shrink-0 opacity-80" />
-                {daysRemaining}
-              </span>
-
-              <p className="text-[10px] text-muted-foreground/90">{theme.sponsor}</p>
-
-              <p className="text-[10px] text-muted-foreground/75">{theme.rankLine}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const LeaderboardList = ({
-    entries,
-    emptyLabel,
-    isLoading,
-    outsideTop,
-  }: {
-    entries: LeaderboardEntry[];
-    emptyLabel: string;
-    isLoading: boolean;
-    outsideTop: LeaderboardRankResponse | null;
-  }) => {
-    if (isLoading) {
-      return (
-        <div
-          className={LEADERBOARD_LIST_CLASS}
-          aria-busy="true"
-          aria-label="Loading leaderboard"
-          data-testid="leaderboard-loading-skeleton"
-        >
-          {Array.from({ length: LEADERBOARD_SKELETON_ROW_COUNT }, (_, i) => (
-            <div key={i} className={LEADERBOARD_ROW_BASE_CLASS}>
-              <div className={`h-6 w-10 shrink-0 ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
-              <div className={`h-10 w-10 shrink-0 rounded-full ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className={`h-4 w-2/3 max-w-[10rem] ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
-                <div className={`h-2 w-full rounded-full ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
-              </div>
-              <div className={`h-8 w-[68px] shrink-0 ${LEADERBOARD_SKELETON_BONE_CLASS}`} />
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    if (entries.length === 0) {
-      return (
-        <div className="py-12 text-center">
-          <p className="text-muted-foreground">{emptyLabel}</p>
-          <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() => setTimeFilter("all")}
-            data-testid="view-all-time"
-          >
-            View All Time Leaderboard
-          </Button>
-        </div>
-      );
-    }
-
-    return (
-      <div className={LEADERBOARD_LIST_CLASS}>
-        {entries.map((entry, index) => (
-          <LeaderboardEntryRow key={entry.user_id} entry={entry} rank={index + 1} />
-        ))}
-
-        {outsideTop?.entry && (
-          <div className="border-t border-white/15 pt-1">
-            <LeaderboardEntryRow
-              entry={outsideTop.entry}
-              rank={outsideTop.rank}
-              forceCurrentUser
-            />
-          </div>
-        )}
-      </div>
-    );
-  };
+    connect();
+    const onResize = () => connect();
+    window.addEventListener("resize", onResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   return (
     <div
       ref={pageScrollRef}
       data-lg-nav-5a-dest="leaderboard"
-      className={`${APP_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
+      className={`${LEADERBOARD_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
     >
       <div className="mx-auto max-w-4xl px-4 pb-6">
         <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange}>
-          <div className={LEADERBOARD_STICKY_CHROME_CLASS}>
+          <div
+            ref={stickyChromeRef}
+            className={LEADERBOARD_STICKY_CHROME_CLASS}
+            data-lb-sticky-glass={stickyGlassActive ? "true" : "false"}
+            data-testid="leaderboard-sticky-chrome"
+          >
             <TabsList
-              className={cn(LEADERBOARD_PRIMARY_ROW_CLASS, "h-auto w-full bg-transparent p-0")}
+              ref={primaryTablistRef}
+              className={cn(LEADERBOARD_PRIMARY_ROW_CLASS, LEADERBOARD_PRIMARY_TABLIST_CLASS)}
               data-testid="leaderboard-tabs"
               aria-label="Leaderboard scope"
             >
               <TabsTrigger
                 value="users"
                 data-testid="tab-users"
+                ref={(el) => {
+                  primaryTriggerRefs.current.users = el;
+                }}
                 className={cn(
                   LEADERBOARD_PRIMARY_TRIGGER_BASE_CLASS,
                   activeTab === "users"
@@ -643,10 +1356,11 @@ export default function Leaderboard() {
                 )}
               >
                 <span
-                  className={cn(
-                    LEADERBOARD_PRIMARY_LABEL_CLASS,
-                    activeTab === "users" && LEADERBOARD_PRIMARY_INDICATOR_CLASS,
-                  )}
+                  ref={(el) => {
+                    primaryLabelRefs.current.users = el;
+                  }}
+                  className={LEADERBOARD_PRIMARY_LABEL_CLASS}
+                  data-leaderboard-primary-label="users"
                 >
                   Community
                 </span>
@@ -654,6 +1368,9 @@ export default function Leaderboard() {
               <TabsTrigger
                 value="artists"
                 data-testid="tab-artists"
+                ref={(el) => {
+                  primaryTriggerRefs.current.artists = el;
+                }}
                 className={cn(
                   LEADERBOARD_PRIMARY_TRIGGER_BASE_CLASS,
                   activeTab === "artists"
@@ -662,14 +1379,21 @@ export default function Leaderboard() {
                 )}
               >
                 <span
-                  className={cn(
-                    LEADERBOARD_PRIMARY_LABEL_CLASS,
-                    activeTab === "artists" && LEADERBOARD_PRIMARY_INDICATOR_CLASS,
-                  )}
+                  ref={(el) => {
+                    primaryLabelRefs.current.artists = el;
+                  }}
+                  className={LEADERBOARD_PRIMARY_LABEL_CLASS}
+                  data-leaderboard-primary-label="artists"
                 >
                   Artists
                 </span>
               </TabsTrigger>
+              <span
+                ref={primaryIndicatorRef}
+                className={LEADERBOARD_PRIMARY_INDICATOR_CLASS}
+                aria-hidden
+                data-testid="leaderboard-primary-indicator"
+              />
             </TabsList>
 
             <div
@@ -705,35 +1429,97 @@ export default function Leaderboard() {
           </div>
 
           <div
-            ref={swipeContentRef}
-            className={cn("relative z-0 w-full", LEADERBOARD_CONTENT_TOP_GAP_CLASS)}
-            data-testid="leaderboard-swipe-region"
+            ref={gestureHostRef}
+            className="relative w-full"
+            data-testid="leaderboard-gesture-host"
           >
             <div
-              data-lg-nav-5a-fade="leaderboard"
-              className={LEADERBOARD_BODY_ENTER_CLASS || undefined}
+              className={LEADERBOARD_SCOPE_HERO_VIEWPORT_CLASS}
+              data-testid="leaderboard-hero-viewport"
             >
-              {activeTab === "users" ? (
-                <>
-                  <RewardsBanner tab="users" />
-                  <LeaderboardList
-                    entries={paintedEntries}
-                    emptyLabel="No community members found for this period"
-                    isLoading={isLoadingUsers}
-                    outsideTop={paintOutsideTop ? userOutsideTop : null}
-                  />
-                </>
-              ) : (
-                <>
-                  <RewardsBanner tab="artists" />
-                  <LeaderboardList
-                    entries={paintedEntries}
-                    emptyLabel="No artists found for this period"
-                    isLoading={isLoadingArtists}
-                    outsideTop={paintOutsideTop ? artistOutsideTop : null}
-                  />
-                </>
+              <div
+                ref={heroTrackRef}
+                className={LEADERBOARD_SCOPE_HERO_TRACK_CLASS}
+                data-testid="leaderboard-hero-track"
+              >
+                {LEADERBOARD_SCOPES.map((scope) => (
+                  <div
+                    key={scope}
+                    className={LEADERBOARD_SCOPE_HERO_PANEL_CLASS}
+                    data-testid={`leaderboard-hero-panel-${scope}`}
+                  >
+                    <RewardsBanner tab={scope} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div
+              ref={heroGlassSentinelRef}
+              className={LEADERBOARD_REWARD_HERO_SENTINEL_CLASS}
+              aria-hidden
+              data-testid="leaderboard-reward-hero-sentinel"
+            />
+
+            <div
+              ref={pagerViewportRef}
+              className={cn(
+                LEADERBOARD_SCOPE_PAGER_VIEWPORT_CLASS,
+                LEADERBOARD_CONTENT_TOP_GAP_CLASS,
               )}
+              data-testid="leaderboard-swipe-region"
+            >
+              <div
+                ref={pagerTrackRef}
+                className={LEADERBOARD_SCOPE_PAGER_TRACK_CLASS}
+                data-testid="leaderboard-pager-track"
+                data-lg-nav-5a-fade="leaderboard"
+              >
+                {LEADERBOARD_SCOPES.map((scope, index) => {
+                  const isActive = activeTab === scope;
+                  return (
+                    <div
+                      key={scope}
+                      ref={(el) => {
+                        pagerPanelRefs.current[index] = el;
+                      }}
+                      className={cn(
+                        LEADERBOARD_SCOPE_PAGER_PANEL_CLASS,
+                        LEADERBOARD_BODY_ENTER_CLASS || undefined,
+                      )}
+                      data-state={isActive ? "active" : "inactive"}
+                      data-testid={`leaderboard-pager-panel-${scope}`}
+                    >
+                      <LeaderboardList
+                        entries={
+                          scope === "users" ? paintedUserEntries : paintedArtistEntries
+                        }
+                        emptyLabel={
+                          scope === "users"
+                            ? "No community members found for this period"
+                            : "No artists found for this period"
+                        }
+                        isLoading={
+                          scope === "users"
+                            ? isLoadingUsers && paintedUserEntries.length === 0
+                            : isLoadingArtists && paintedArtistEntries.length === 0
+                        }
+                        outsideTop={
+                          scope === "users"
+                            ? paintUserOutsideTop
+                              ? userOutsideTop
+                              : null
+                            : paintArtistOutsideTop
+                              ? artistOutsideTop
+                              : null
+                        }
+                        currentUserId={currentUserId}
+                        onOpenProfile={openByUsername}
+                        onViewAllTime={handleViewAllTimeLeaderboard}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </Tabs>

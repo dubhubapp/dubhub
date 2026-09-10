@@ -60,18 +60,21 @@ describe("shared sticky tab chrome contract", () => {
     assert.equal(RELEASE_TRACKER_PRIMARY_ROW_CLASS, STICKY_TAB_PRIMARY_ROW_CLASS);
   });
 
-  it("Leaderboard and Releases share chrome geometry; Releases may add material modifiers", () => {
-    assert.equal(LEADERBOARD_STICKY_CHROME_CLASS, STICKY_TAB_CHROME_CLASS);
+  it("Leaderboard uses transparent sticky override; Releases keep frosted material chrome", () => {
+    assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /sticky top-0/);
+    assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /bg-transparent/);
+    assert.doesNotMatch(LEADERBOARD_STICKY_CHROME_CLASS, /bg-background\/80|dubhub-app-releases-sticky/);
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /sticky top-0/);
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /backdrop-blur-md/);
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /safe-area-inset-top/);
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /\+0\.25rem/);
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /pb-1/);
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /dubhub-app-releases-sticky/);
-    assert.equal(LEADERBOARD_CONTENT_TOP_GAP_CLASS, STICKY_TAB_CONTENT_TOP_GAP_CLASS);
+    assert.equal(LEADERBOARD_CONTENT_TOP_GAP_CLASS, "pt-0");
     assert.equal(RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS, STICKY_TAB_CONTENT_TOP_GAP_CLASS);
     assert.equal(STICKY_TAB_CONTENT_TOP_GAP_CLASS, "pt-2");
-    assert.equal(LEADERBOARD_STICKY_FADE_CLASS, STICKY_TAB_BLUR_DISSOLVE_FADE_CLASS);
+    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /h-0/);
+    assert.doesNotMatch(LEADERBOARD_STICKY_FADE_CLASS, /backdrop-blur|bg-background\/35/);
     assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /leaderboard-sticky-blur-dissolve/);
     assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /h-12/);
     assert.match(RELEASE_TRACKER_STICKY_FADE_CLASS, /backdrop-blur-md/);
@@ -85,7 +88,7 @@ describe("shared sticky tab chrome contract", () => {
 });
 
 describe("Leaderboard sticky polish wiring", () => {
-  it("keeps primary/secondary semantics and mounts overlay dissolve outside prize", () => {
+  it("keeps primary/secondary semantics and mounts fade slot outside prize", () => {
     assert.match(leaderboardSrc, /data-testid="leaderboard-tabs"/);
     assert.match(leaderboardSrc, /data-testid="time-filters"/);
     assert.match(leaderboardSrc, /LEADERBOARD_STICKY_CHROME_CLASS/);
@@ -94,16 +97,15 @@ describe("Leaderboard sticky polish wiring", () => {
     assert.match(LEADERBOARD_STICKY_FADE_CLASS, /pointer-events-none/);
     assert.match(LEADERBOARD_STICKY_FADE_CLASS, /absolute/);
     assert.match(LEADERBOARD_STICKY_FADE_CLASS, /top-full/);
-    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /h-12/);
-    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /backdrop-blur-md/);
-    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /leaderboard-sticky-blur-dissolve/);
-    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /bg-background\/35/);
+    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /h-0/);
+    assert.doesNotMatch(LEADERBOARD_STICKY_FADE_CLASS, /backdrop-blur|bg-background\/35/);
     assert.doesNotMatch(LEADERBOARD_STICKY_FADE_CLASS, /\bmb-|\bmt-|\bpy-/);
-    const stickyOpen = leaderboardSrc.indexOf("<div className={LEADERBOARD_STICKY_CHROME_CLASS}>");
+    const stickyOpen = leaderboardSrc.indexOf("LEADERBOARD_STICKY_CHROME_CLASS");
     const stickyClose = leaderboardSrc.indexOf("leaderboard-swipe-region");
     const stickyBlock = leaderboardSrc.slice(stickyOpen, stickyClose);
     assert.match(stickyBlock, /leaderboard-sticky-fade/);
-    assert.doesNotMatch(stickyBlock, /RewardsBanner|rewards-banner/);
+    assert.match(stickyBlock, /RewardsBanner tab=\{scope\}/);
+    assert.match(stickyBlock, /leaderboard-reward-hero-sentinel/);
     assert.doesNotMatch(stickyBlock, /border-b /);
   });
 

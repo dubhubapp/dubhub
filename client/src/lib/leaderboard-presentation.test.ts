@@ -12,6 +12,7 @@ import {
   LEADERBOARD_PRIMARY_INDICATOR_CLASS,
   LEADERBOARD_PRIMARY_ROW_CLASS,
   LEADERBOARD_PRIZE_SECTION_CLASS,
+  LEADERBOARD_REWARD_HERO_POSTER_STAGE_CLASS,
   LEADERBOARD_REP_FILL_CLASS,
   LEADERBOARD_REP_MIN_WIDTH_PX,
   LEADERBOARD_REP_TRACK_CLASS,
@@ -19,6 +20,7 @@ import {
   LEADERBOARD_ROW_BASE_CLASS,
   LEADERBOARD_ROW_CURRENT_CLASS,
   LEADERBOARD_SCORE_COLUMN_CLASS,
+  LEADERBOARD_SCORE_VALUE_CLASS,
   LEADERBOARD_SKELETON_BONE_CLASS,
   LEADERBOARD_SKELETON_ROW_COUNT,
   LEADERBOARD_SECONDARY_ROW_CLASS,
@@ -51,8 +53,10 @@ describe("Leaderboard presentation — primary / secondary nav", () => {
     assert.match(leaderboardSrc, />\s*Artists\s*</);
     assert.match(leaderboardSrc, /LEADERBOARD_PRIMARY_ROW_CLASS/);
     assert.match(leaderboardSrc, /LEADERBOARD_PRIMARY_INDICATOR_CLASS/);
+    assert.match(leaderboardSrc, /data-testid="leaderboard-primary-indicator"/);
     assert.equal(LEADERBOARD_PRIMARY_ROW_CLASS.includes("flex"), true);
-    assert.match(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /after:bg-\[#0a83ff\]/);
+    assert.match(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /bg-\[#0a83ff\]/);
+    assert.doesNotMatch(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /after:/);
   });
 
   it("replaces timeframe dropdown with This Month / This Year / All Time tabs", () => {
@@ -85,38 +89,40 @@ describe("Leaderboard presentation — primary / secondary nav", () => {
 });
 
 describe("Leaderboard presentation — sticky chrome + prize", () => {
-  it("uses Releases-like sticky chrome without a giant enclosing card", () => {
+  it("uses Leaderboard-only transparent sticky chrome without a giant enclosing card", () => {
     assert.match(leaderboardSrc, /LEADERBOARD_STICKY_CHROME_CLASS/);
     assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /sticky top-0/);
     assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /safe-area-inset-top/);
+    assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /bg-transparent/);
     assert.doesNotMatch(LEADERBOARD_STICKY_CHROME_CLASS, /rounded-2xl/);
+    assert.doesNotMatch(LEADERBOARD_STICKY_CHROME_CLASS, /bg-background\/80|dubhub-app-releases-sticky/);
     assert.doesNotMatch(leaderboardSrc, /rounded-2xl border border-white\/10 bg-black\/35/);
   });
 
-  it("keeps Community and Artists prize copy + themes", () => {
-    assert.match(leaderboardSrc, /2 x VIP Music Festival Tickets/);
-    assert.match(leaderboardSrc, /4 hours studio time/);
-    assert.match(leaderboardSrc, /Presented by Music Festival/);
-    assert.match(leaderboardSrc, /Presented by Industry Partner/);
-    assert.match(leaderboardSrc, /Top ranked community member this month/);
-    assert.match(leaderboardSrc, /Top ranked artist this month/);
+  it("keeps Community and Artists reward copy via config-driven hero", () => {
+    assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig/);
     assert.match(leaderboardSrc, /rewards-banner/);
-    assert.match(leaderboardSrc, /border-amber-500\/30/);
-    assert.match(leaderboardSrc, /border-purple-500\/30/);
+    assert.match(leaderboardSrc, /RewardsBanner tab=\{scope\}/);
+    assert.match(leaderboardSrc, /leaderboard-hero-track/);
+    assert.doesNotMatch(leaderboardSrc, /MONTHLY_REWARDS|PRIZE_CARD_THEMES/);
+    assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);
   });
 
-  it("gives the prize a little extra top room so the glow clears the sticky fade", () => {
+  it("full-bleed prize hero pulls under sticky chrome with clamped cover stage", () => {
     assert.match(leaderboardSrc, /LEADERBOARD_PRIZE_SECTION_CLASS/);
-    assert.match(LEADERBOARD_PRIZE_SECTION_CLASS, /mt-3/);
-    assert.match(LEADERBOARD_PRIZE_SECTION_CLASS, /mb-4/);
+    assert.doesNotMatch(LEADERBOARD_PRIZE_SECTION_CLASS, /-mx-4/);
+    assert.doesNotMatch(LEADERBOARD_PRIZE_SECTION_CLASS, /-mt-\[calc\(env\(safe-area-inset-top/);
+    assert.match(LEADERBOARD_PRIZE_SECTION_CLASS, /mb-1\.5/);
+    assert.doesNotMatch(LEADERBOARD_PRIZE_SECTION_CLASS, /min-h-\[clamp/);
     assert.doesNotMatch(LEADERBOARD_PRIZE_SECTION_CLASS, /shadow-/);
-    assert.match(leaderboardSrc, /glowShadow/);
+    assert.match(LEADERBOARD_REWARD_HERO_POSTER_STAGE_CLASS, /min-h-\[clamp\(12rem,34dvh,20rem\)\]/);
   });
 
   it("does not make the prize sticky", () => {
-    const stickyOpen = leaderboardSrc.indexOf("<div className={LEADERBOARD_STICKY_CHROME_CLASS}>");
+    const stickyOpen = leaderboardSrc.indexOf('data-testid="leaderboard-sticky-chrome"');
     assert.notEqual(stickyOpen, -1);
-    const stickyClose = leaderboardSrc.indexOf("</div>", stickyOpen);
+    const stickyClose = leaderboardSrc.indexOf('data-testid="leaderboard-sticky-fade"', stickyOpen);
+    assert.notEqual(stickyClose, -1);
     const stickyMarkup = leaderboardSrc.slice(stickyOpen, stickyClose);
     assert.doesNotMatch(stickyMarkup, /RewardsBanner|rewards-banner|MONTHLY_REWARDS/);
     assert.match(stickyMarkup, /leaderboard-tabs/);
@@ -172,9 +178,15 @@ describe("Leaderboard query keys + domain freeze", () => {
     assert.equal(LEADERBOARD_TOP_LIMIT, 100);
   });
 
-  it("gates list/rank queries to the visible Community or Artists scope", () => {
-    assert.match(leaderboardSrc, /enabled: activeTab === "users"/);
-    assert.match(leaderboardSrc, /enabled: activeTab === "artists"/);
+  it("keeps both list queries warm; my-rank stays committed-scope gated", () => {
+    assert.match(
+      leaderboardSrc,
+      /leaderboardUsersQueryKey\(timeFilter\),[\s\S]*?enabled: true/,
+    );
+    assert.match(
+      leaderboardSrc,
+      /leaderboardArtistsQueryKey\(timeFilter\),[\s\S]*?enabled: true/,
+    );
     assert.match(leaderboardSrc, /enabled: !!currentUserId && activeTab === "users"/);
     assert.match(leaderboardSrc, /enabled: !!currentUserId && activeTab === "artists"/);
   });
@@ -197,7 +209,8 @@ describe("Leaderboard query keys + domain freeze", () => {
     assert.match(leaderboardSrc, /useLeaderboardFirstPaintRelease/);
     assert.match(leaderboardSrc, /leaderboardFirstPaintSlice/);
     assert.doesNotMatch(leaderboardSrc, /setTimeout\(/);
-    assert.doesNotMatch(leaderboardSrc, /react-window|react-virtual|IntersectionObserver/);
+    assert.doesNotMatch(leaderboardSrc, /react-window|react-virtual/);
+    assert.match(leaderboardSrc, /IntersectionObserver/);
   });
 
   it("does not fade prize/list on first /leaderboard paint or in-page remounts", () => {
@@ -222,8 +235,75 @@ describe("Leaderboard query keys + domain freeze", () => {
   });
 
   it("does not touch ranking SQL / karma / swipe / releases", () => {
-    assert.doesNotMatch(leaderboardSrc, /getLeaderboard|ROW_NUMBER|rank_score/);
+    assert.doesNotMatch(leaderboardSrc, /getLeaderboard\b|ROW_NUMBER|rank_score/);
     assert.doesNotMatch(leaderboardSrc, /release-tracker|ArtworkReleaseBrowser/);
+  });
+});
+
+describe("LEADERBOARD-TIMEFRAME-2 — previous-data placeholder", () => {
+  it("A/B: Community and Artists list queries keep previous data as placeholder", () => {
+    assert.match(
+      leaderboardSrc,
+      /leaderboardUsersQueryKey\(timeFilter\),[\s\S]*?placeholderData: \(previousData\) => previousData/,
+    );
+    assert.match(
+      leaderboardSrc,
+      /leaderboardArtistsQueryKey\(timeFilter\),[\s\S]*?placeholderData: \(previousData\) => previousData/,
+    );
+  });
+
+  it("C: query keys still include current timeFilter", () => {
+    assert.deepEqual(leaderboardUsersQueryKey("year"), ["/api/leaderboard/users", "year"]);
+    assert.deepEqual(leaderboardArtistsQueryKey("all"), ["/api/leaderboard/artists", "all"]);
+    assert.match(leaderboardSrc, /leaderboardUsersQueryKey\(timeFilter\)/);
+    assert.match(leaderboardSrc, /leaderboardArtistsQueryKey\(timeFilter\)/);
+  });
+
+  it("D: timeframe switch does not force skeleton while placeholder rows exist", () => {
+    assert.match(
+      leaderboardSrc,
+      /isLoadingUsers && paintedUserEntries\.length === 0/,
+    );
+    assert.match(
+      leaderboardSrc,
+      /isLoadingArtists && paintedArtistEntries\.length === 0/,
+    );
+  });
+
+  it("E: cold first-load skeleton path remains available", () => {
+    assert.equal(LEADERBOARD_SKELETON_ROW_COUNT, 8);
+    assert.match(leaderboardSrc, /leaderboard-loading-skeleton/);
+    assert.match(leaderboardSrc, /if \(isLoading\)/);
+  });
+
+  it("F: my-rank gating unchanged", () => {
+    assert.match(
+      leaderboardSrc,
+      /leaderboardUsersMyRankQueryKey[\s\S]{0,200}enabled: !!currentUserId && activeTab === "users"/,
+    );
+    assert.match(
+      leaderboardSrc,
+      /leaderboardArtistsMyRankQueryKey[\s\S]{0,200}enabled: !!currentUserId && activeTab === "artists"/,
+    );
+    assert.doesNotMatch(
+      leaderboardSrc,
+      /leaderboardUsersMyRankQueryKey[\s\S]{0,220}placeholderData/,
+    );
+    assert.doesNotMatch(
+      leaderboardSrc,
+      /leaderboardArtistsMyRankQueryKey[\s\S]{0,220}placeholderData/,
+    );
+  });
+
+  it("G: row keys remain entry.user_id", () => {
+    assert.match(leaderboardSrc, /key=\{entry\.user_id\}/);
+  });
+
+  it("H: primary pager contracts untouched", () => {
+    assert.match(leaderboardSrc, /useLeaderboardScopeSwipe/);
+    assert.match(leaderboardSrc, /LEADERBOARD_SCOPE_PAGER_PANEL_CLASS/);
+    assert.match(leaderboardSrc, /applyLeaderboardPagerPanelImperativeUnlock/);
+    assert.match(leaderboardSrc, /clearLeaderboardPagerImperativePrepare/);
   });
 });
 
@@ -299,5 +379,20 @@ describe("Leaderboard reputation bar — semantics + premium treatment", () => {
     assert.match(leaderboardSrc, /entry\.correct_ids/);
     assert.match(LEADERBOARD_SCORE_COLUMN_CLASS, /w-\[68px\]/);
     assert.match(LEADERBOARD_SCORE_COLUMN_CLASS, /pr-3/);
+  });
+
+  it("LEADERBOARD-ZERO-1 — ID count disables slashed-zero on the shared row value only", () => {
+    assert.match(leaderboardSrc, /LEADERBOARD_SCORE_VALUE_CLASS/);
+    assert.match(leaderboardSrc, /confirmed-ids-\$\{entry\.user_id\}/);
+    assert.match(LEADERBOARD_SCORE_VALUE_CLASS, /font-mono/);
+    assert.match(LEADERBOARD_SCORE_VALUE_CLASS, /text-lg/);
+    assert.match(LEADERBOARD_SCORE_VALUE_CLASS, /font-bold/);
+    assert.match(LEADERBOARD_SCORE_VALUE_CLASS, /leading-none/);
+    assert.match(
+      LEADERBOARD_SCORE_VALUE_CLASS,
+      /\[font-feature-settings:'zero'_0\]/,
+    );
+    // Shared LeaderboardEntryRow covers Community + Artists; rank mono stays untouched.
+    assert.match(leaderboardSrc, /font-mono text-base font-semibold text-muted-foreground/);
   });
 });
