@@ -11,6 +11,7 @@ import { pool } from "./db";
 import { reconcileArtistFutureReleaseSuspensions } from "./reconcile-artist-future-release-suspensions";
 import { isFutureReleaseSuspensionEnforcementEnabled } from "./future-release-suspension";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
+import { runLeaderboardMonthFreezeEnsureSafe } from "./leaderboard-monthly-freeze";
 
 const app = express();
 
@@ -233,6 +234,19 @@ async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
   const futureReleaseSuspensionCronExpr = isDev ? "*/15 * * * *" : "0 * * * *";
   cron.schedule(futureReleaseSuspensionCronExpr, () => {
     void runFutureReleaseSuspensionReconcileBatch();
+  });
+
+  // Completed-month leaderboard freeze: hourly (Railway may miss exact midnight).
+  // Startup reconcile below covers downtime around month boundary.
+  cron.schedule("0 * * * *", () => {
+    void runLeaderboardMonthFreezeEnsureSafe({
+      logPrefix: "[Cron][LeaderboardMonthlyFreeze]",
+    });
+  });
+
+  // Non-blocking startup ensure — never delays listen on freeze failure.
+  void runLeaderboardMonthFreezeEnsureSafe({
+    logPrefix: "[startup][LeaderboardMonthlyFreeze]",
   });
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

@@ -6,6 +6,12 @@ import { registerReleaseSharePreviewRoutes } from "./releaseSharePreview";
 import { registerArtistProfileSharePreviewRoutes } from "./artistProfileSharePreview";
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
+import {
+  freezeLeaderboardMonth,
+  getUserLeaderboardAchievements,
+  normalizeYearMonthInput,
+  parseFreezeScopes,
+} from "./leaderboard-monthly-freeze";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { parseReleaseCalendarDate, requestBodyAttemptsReleaseTimingMutation, RELEASE_TIMING_LOCKED_CODE, RELEASE_TIMING_LOCKED_MESSAGE, RELEASE_TITLE_LOCKED_CODE, RELEASE_TITLE_LOCKED_MESSAGE } from "@shared/release-timing";
 import { toPublicArtistProfileQuestionAnswers } from "@shared/artist-profile-questions";
@@ -1711,11 +1717,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { email: _email, ...publicUser } = user;
+      const achievements = await getUserLeaderboardAchievements(
+        user.id,
+        user.account_type,
+      );
       const userProfile = {
         ...publicUser,
         reputation,
         correct_ids: correctIdsAgg,
         karma: reputation,
+        ...achievements,
         ...(publicLight !== undefined ? { publicLight } : {}),
         ...(publicReleases !== undefined ? { publicReleases } : {}),
         ...(publicProfileQuestionAnswers !== undefined ? { publicProfileQuestionAnswers } : {}),
@@ -2769,6 +2780,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE user_id = ${userId}
       `);
       const commentsWritten = Number((commentsWrittenResult as any).rows?.[0]?.count ?? 0);
+
+      const profile = await storage.getUser(userId);
+      const achievements = await getUserLeaderboardAchievements(
+        userId,
+        profile?.account_type,
+      );
       
       res.json({
         totalIDs,
@@ -2781,6 +2798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         commentsWritten,
         releasesSaved,
         artistIds,
+        ...achievements,
       });
     } catch (error) {
       console.error("[/api/user/:id/stats] Error:", error);
@@ -6651,6 +6669,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[/api/admin/run-release-day-notifications] Error:", error);
       res.status(500).json({ message: "Failed to run release-day notifications" });
+    }
+  });
+
+  // Admin: Idempotent completed-month leaderboard freeze (recovery / manual).
+  app.post("/api/admin/leaderboard/freeze-month", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      if (!req.dbUser.moderator) return res.status(403).json({ message: "Moderator only" });
+
+      const yearMonthRaw = String(req.body?.yearMonth ?? req.query?.yearMonth ?? "").trim();
+      if (!yearMonthRaw) {
+        return res.status(400).json({ message: "yearMonth is required (YYYY-MM)" });
+      }
+
+      let yearMonth: string;
+      let scopes: Array<"community" | "artist">;
+      try {
+        yearMonth = normalizeYearMonthInput(yearMonthRaw);
+        scopes = parseFreezeScopes(req.body?.scope ?? req.query?.scope);
+      } catch (parseErr) {
+        return res.status(400).json({
+          message: parseErr instanceof Error ? parseErr.message : "Invalid freeze input",
+        });
+      }
+
+      const results = [];
+      for (const scope of scopes) {
+        try {
+          results.push(await freezeLeaderboardMonth({ scope, yearMonth }));
+        } catch (freezeErr) {
+          const message =
+            freezeErr instanceof Error ? freezeErr.message : "Failed to freeze month";
+          if (/completed|current or future|month start|before 2026-09|not reconstructed|authoritative snapshot/i.test(message)) {
+            return res.status(400).json({ message, scope, yearMonth });
+          }
+          throw freezeErr;
+        }
+      }
+
+      res.json({
+        yearMonth,
+        results,
+        message: `Frozen ${results.length} scope(s) for ${yearMonth}`,
+      });
+    } catch (error) {
+      console.error("[/api/admin/leaderboard/freeze-month] Error:", error);
+      res.status(500).json({ message: "Failed to freeze leaderboard month" });
     }
   });
 

@@ -393,6 +393,50 @@ Notes:
 
 ---
 
+## leaderboard_monthly_finishes
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | uuid | NO | gen_random_uuid() | Primary key |
+| scope | text | NO | – | `community` \| `artist` |
+| year_month | date | NO | – | UTC calendar month start (day 1) |
+| user_id | uuid | NO | – | FK → profiles.id ON DELETE CASCADE |
+| rank | integer | NO | – | Final ROW_NUMBER for that month (>= 1) |
+| period_score | integer | NO | – | Period event score; CHECK > 0 |
+| period_correct_ids | integer | NO | – | Period confirmed IDs (>= 0) |
+| frozen_at | timestamptz | NO | now() | When this finish row was written |
+
+Constraints / indexes:
+- UNIQUE (scope, year_month, user_id)
+- year_month must equal `date_trunc('month', year_month)::date`
+- INDEX (user_id, scope, rank)
+- INDEX (year_month, scope, rank)
+
+Notes:
+- Backend-owned snapshot of completed UTC months only (no historical reconstruction).
+- Persist all qualifying finishers (`period_score > 0`), not only Top 100.
+- Source for Best Monthly Rank (`ORDER BY rank ASC, year_month DESC`) and Monthly Top 100 (`rank <= 100`).
+- RLS enabled; no client policies (server role writes).
+
+---
+
+## leaderboard_monthly_freeze_runs
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | uuid | NO | gen_random_uuid() | Primary key |
+| scope | text | NO | – | `community` \| `artist` |
+| year_month | date | NO | – | UTC calendar month start |
+| frozen_at | timestamptz | NO | now() | Last successful freeze |
+| finisher_count | integer | NO | – | Qualifying finishers written (>= 0) |
+
+Constraints:
+- UNIQUE (scope, year_month)
+- year_month month-start check (same as finishes)
+
+Notes:
+- Distinguishes “froze with zero finishers” from “freeze never ran”.
+
+---
+
 ## reserved_artist_usernames
 | Column     | Type                        | Nullable | Default                                             | Notes |
 |------------|-----------------------------|----------|-----------------------------------------------------|-------|

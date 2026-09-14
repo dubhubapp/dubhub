@@ -23,6 +23,19 @@ import {
   canArtistDeliverReleaseAlerts,
   resolveServerSubscriptionEnvironment,
 } from "./artist-release-alert-delivery";
+import {
+  assertFreezableUtcMonth,
+  formatUtcDateOnly,
+  leaderboardScopeFromUserType,
+  parseUtcDateOnly,
+  qualifyingFinishesForSnapshot,
+  selectBestMonthlyFinish,
+  utcMonthWindowFromYearMonth,
+  type BestMonthlyFinish,
+  type LeaderboardMonthlyScope,
+  type LeaderboardPeriodWindow,
+  type RankedPeriodEntry,
+} from "./leaderboard-monthly-domain";
 import { runMaybeNotifyReleasePublic } from "./maybe-notify-release-public";
 import { notifyNewlyAttachedPostAudience } from "./notify-newly-attached-post-audience";
 import { runNotifyReleaseLikers } from "./notify-release-likers";
@@ -242,6 +255,41 @@ export interface IStorage {
     communityTotal?: number;
     communityTopPercent?: number | null;
   }>;
+  /**
+   * Shared period scorer for live month/year windows and completed-month freeze.
+   * Ranks every profile of `userType` with half-open `[periodStart, periodEnd)`.
+   */
+  rankLeaderboardPeriod(
+    userType: "user" | "artist",
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<RankedPeriodEntry[]>;
+  isLeaderboardMonthFrozen(
+    scope: LeaderboardMonthlyScope,
+    yearMonth: string | Date,
+  ): Promise<boolean>;
+  /**
+   * Idempotent freeze write for a completed UTC month.
+   * Persists only period_score > 0 rows; records freeze_runs (including zero finishers).
+   */
+  replaceLeaderboardMonthlyFinishes(
+    scope: LeaderboardMonthlyScope,
+    yearMonth: string | Date,
+    finishes: RankedPeriodEntry[],
+    opts?: { now?: Date },
+  ): Promise<{ finisherCount: number }>;
+  getBestMonthlyFinish(
+    userId: string,
+    scope: LeaderboardMonthlyScope,
+  ): Promise<BestMonthlyFinish | null>;
+  hasMonthlyTop100(
+    userId: string,
+    scope: LeaderboardMonthlyScope,
+  ): Promise<boolean>;
+  countMonthlyTop100Finishes(
+    userId: string,
+    scope: LeaderboardMonthlyScope,
+  ): Promise<number>;
   getArtistStats(artistId: string): Promise<any>;
 
   // Releases
@@ -2771,6 +2819,39 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /**
+   * Resolve live month/year bounds via Postgres DATE_TRUNC(NOW()) so behaviour
+   * matches pre-refactor session-TZ month/year windows, then score with the shared
+   * half-open `[periodStart, periodEnd)` filter used by freeze.
+   */
+  async resolveLiveLeaderboardPeriodWindow(
+    timeFilter: "month" | "year" | "all",
+  ): Promise<LeaderboardPeriodWindow | null> {
+    if (timeFilter === "all") return null;
+    if (timeFilter === "month") {
+      const result = await db.execute(sql`
+        SELECT
+          DATE_TRUNC('month', NOW()) AS period_start,
+          DATE_TRUNC('month', NOW()) + INTERVAL '1 month' AS period_end
+      `);
+      const row = (result as any).rows?.[0];
+      return {
+        periodStart: new Date(row.period_start),
+        periodEnd: new Date(row.period_end),
+      };
+    }
+    const result = await db.execute(sql`
+      SELECT
+        DATE_TRUNC('year', NOW()) AS period_start,
+        DATE_TRUNC('year', NOW()) + INTERVAL '1 year' AS period_end
+    `);
+    const row = (result as any).rows?.[0];
+    return {
+      periodStart: new Date(row.period_start),
+      periodEnd: new Date(row.period_end),
+    };
+  }
+
   async getLeaderboard(
     userType: "user" | "artist",
     timeFilter: "month" | "year" | "all" = "all",
@@ -2782,8 +2863,11 @@ export class DatabaseStorage implements IStorage {
       //  - `correct_ids`: period confirmed IDs when month/year filtered, else lifetime `user_karma.correct_ids`
       // Ranking (ORDER BY): period event score + period confirmed IDs when filtered, else lifetime aggregates
       const accountType = userType === "user" ? "user" : "artist";
-      const applyMonth = timeFilter === "month";
-      const applyYear = timeFilter === "year";
+      const achievementScope = leaderboardScopeFromUserType(userType);
+      const window = await this.resolveLiveLeaderboardPeriodWindow(timeFilter);
+      const applyPeriod = window != null;
+      const periodStart = window?.periodStart ?? new Date(0);
+      const periodEnd = window?.periodEnd ?? new Date(0);
       const result = await db.execute(sql`
         WITH period_events AS (
           SELECT
@@ -2793,9 +2877,8 @@ export class DatabaseStorage implements IStorage {
           FROM user_karma_events e
           WHERE e.revoked_at IS NULL
             AND (
-              (${applyMonth} = false AND ${applyYear} = false)
-              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
-              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+              (${applyPeriod} = false)
+              OR (e.created_at >= ${periodStart} AND e.created_at < ${periodEnd})
             )
           GROUP BY e.user_id
         ),
@@ -2807,9 +2890,8 @@ export class DatabaseStorage implements IStorage {
           WHERE e.revoked_at IS NULL
             AND e.event_type IN ('confirmed_id', 'community_approved')
             AND (
-              (${applyMonth} = false AND ${applyYear} = false)
-              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
-              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+              (${applyPeriod} = false)
+              OR (e.created_at >= ${periodStart} AND e.created_at < ${periodEnd})
             )
           GROUP BY e.user_id
         )
@@ -2822,7 +2904,7 @@ export class DatabaseStorage implements IStorage {
           p.verified_artist,
           COALESCE(uk.score, 0) AS reputation,
           CASE
-            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
+            WHEN ${applyPeriod} = true THEN COALESCE(pc.correct_ids, 0)
             ELSE COALESCE(uk.correct_ids, 0)
           END AS correct_ids,
           p.created_at AS created_at,
@@ -2852,7 +2934,14 @@ export class DatabaseStorage implements IStorage {
               ) q2
             ),
             'other'
-          ) AS favorite_genre
+          ) AS favorite_genre,
+          EXISTS (
+            SELECT 1
+            FROM leaderboard_monthly_finishes f
+            WHERE f.user_id = p.id
+              AND f.scope = ${achievementScope}
+              AND f.rank <= 100
+          ) AS has_monthly_top_100
         FROM profiles p
         LEFT JOIN user_karma uk ON uk.user_id = p.id
         LEFT JOIN period_events pe ON pe.user_id = p.id
@@ -2860,11 +2949,11 @@ export class DatabaseStorage implements IStorage {
         WHERE p.account_type = ${accountType}
         ORDER BY
           CASE
-            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
+            WHEN ${applyPeriod} = true THEN COALESCE(pe.score, 0)
             ELSE COALESCE(uk.score, 0)
           END DESC,
           CASE
-            WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
+            WHEN ${applyPeriod} = true THEN COALESCE(pc.correct_ids, 0)
             ELSE COALESCE(uk.correct_ids, 0)
           END DESC,
           p.username ASC,
@@ -2872,7 +2961,10 @@ export class DatabaseStorage implements IStorage {
         LIMIT 100
       `);
 
-      return (result as any).rows || [];
+      return ((result as any).rows || []).map((row: any) => ({
+        ...row,
+        hasMonthlyTop100: Boolean(row.has_monthly_top_100),
+      }));
     } catch (error) {
       console.error("[getLeaderboard] Error:", error);
       return [];
@@ -2893,8 +2985,11 @@ export class DatabaseStorage implements IStorage {
       // Same field semantics as getLeaderboard. `rank_score` is internal-only (excluded from final SELECT)
       // so ROW_NUMBER ranks by period activity when filtered while `reputation` stays lifetime for UI.
       const accountType = userType === "user" ? "user" : "artist";
-      const applyMonth = timeFilter === "month";
-      const applyYear = timeFilter === "year";
+      const achievementScope = leaderboardScopeFromUserType(userType);
+      const window = await this.resolveLiveLeaderboardPeriodWindow(timeFilter);
+      const applyPeriod = window != null;
+      const periodStart = window?.periodStart ?? new Date(0);
+      const periodEnd = window?.periodEnd ?? new Date(0);
 
       const result = await db.execute(sql`
         WITH period_events AS (
@@ -2905,9 +3000,8 @@ export class DatabaseStorage implements IStorage {
           FROM user_karma_events e
           WHERE e.revoked_at IS NULL
             AND (
-              (${applyMonth} = false AND ${applyYear} = false)
-              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
-              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+              (${applyPeriod} = false)
+              OR (e.created_at >= ${periodStart} AND e.created_at < ${periodEnd})
             )
           GROUP BY e.user_id
         ),
@@ -2919,9 +3013,8 @@ export class DatabaseStorage implements IStorage {
           WHERE e.revoked_at IS NULL
             AND e.event_type IN ('confirmed_id', 'community_approved')
             AND (
-              (${applyMonth} = false AND ${applyYear} = false)
-              OR (${applyMonth} = true AND DATE_TRUNC('month', e.created_at) = DATE_TRUNC('month', NOW()))
-              OR (${applyYear} = true AND DATE_TRUNC('year', e.created_at) = DATE_TRUNC('year', NOW()))
+              (${applyPeriod} = false)
+              OR (e.created_at >= ${periodStart} AND e.created_at < ${periodEnd})
             )
           GROUP BY e.user_id
         ),
