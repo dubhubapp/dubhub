@@ -23,6 +23,7 @@ import {
 } from "@/lib/profile-banner-presentation";
 import {
   PROFILE_PRIMARY_NAV_GROUP_CLASS,
+  PROFILE_PRIMARY_NAV_INDICATOR_CLASS,
   PROFILE_PRIMARY_NAV_SHELL_CLASS,
 } from "@/lib/profile-primary-nav-presentation";
 import { PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS } from "@/lib/profile-posts-filter-presentation";
@@ -104,11 +105,16 @@ describe("C5B profile canvas + banner", () => {
     assert.doesNotMatch(PROFILE_BANNER_NO_BANNER_GRADIENT, /74,233,223/);
     assert.doesNotMatch(bannerHelperSrc, /74,233,223/);
     assert.match(bannerHelperSrc, /profile-banner-no-banner-atmosphere/);
+    assert.doesNotMatch(bannerHelperSrc, /PROFILE_DEFAULT_BANNER_PALETTE|getProfileDefaultBannerStyle|hashProfileBannerSeed/);
   });
 
   it("shows no-banner gradient only when banner absent or failed", () => {
     assert.match(userProfileSrc, /showBannerDefaultGradient = !hasProfileBanner \|\| bannerImageFailed/);
     assert.match(publicProfileSrc, /showBannerDefaultGradient = !bannerUrl \|\| bannerImageFailed/);
+    assert.match(userProfileSrc, /showBannerDefaultGradient \? <ProfileBannerDefaultGradient \/>/);
+    assert.match(publicProfileSrc, /showBannerDefaultGradient \? <ProfileBannerDefaultGradient \/>/);
+    assert.doesNotMatch(userProfileSrc, /ProfileBannerDefaultGradient\s+userId=/);
+    assert.doesNotMatch(publicProfileSrc, /ProfileBannerDefaultGradient\s+userId=/);
     assert.doesNotMatch(
       userProfileSrc,
       /showBannerDefaultGradient = !hasProfileBanner \|\| bannerImageFailed \|\| !bannerImageReady/,
@@ -147,17 +153,18 @@ describe("C5B public profile Back", () => {
 
 describe("C5B profile tabs + sticky", () => {
   it("migrates generic underlines to interactive blue", () => {
-    assert.match(PROFILE_PRIMARY_NAV_GROUP_CLASS, /after:bg-\[#0a83ff\]/);
+    assert.match(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /bg-\[#0a83ff\]/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_GROUP_CLASS, /after:/);
     assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-\[#0a83ff\]/);
-    assert.match(userProfileSrc, /after:bg-\[#0a83ff\]/);
-    assert.doesNotMatch(PROFILE_PRIMARY_NAV_GROUP_CLASS, /after:bg-accent/);
+    assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_INDICATOR_CLASS|bg-\[#0a83ff\]/);
+    assert.doesNotMatch(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /bg-accent/);
     assert.doesNotMatch(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-accent/);
   });
 
   it("profile primary shell is non-sticky after C5B.2 (Releases/Leaderboard sticky untouched)", () => {
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /sticky|backdrop-blur|releases-sticky/);
     assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /sticky top-0/);
-    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /leaderboard-sticky-blur-dissolve/);
+    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /h-0/);
   });
 });
 
@@ -186,26 +193,28 @@ describe("C5B semantic colour freezes", () => {
 });
 
 describe("C5B leaderboard", () => {
-  it("applies premium canvas + sticky wash", () => {
+  it("applies premium canvas; Leaderboard sticky is transparent for reward hero", () => {
     assert.match(leaderboardSrc, /APP_MATERIAL_AUTH_CANVAS_CLASS/);
-    assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /dubhub-app-releases-sticky/);
-    assert.match(LEADERBOARD_STICKY_FADE_CLASS, /dubhub-app-releases-sticky-fade/);
+    assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /sticky top-0/);
+    assert.match(LEADERBOARD_STICKY_CHROME_CLASS, /bg-transparent/);
+    assert.doesNotMatch(LEADERBOARD_STICKY_CHROME_CLASS, /dubhub-app-releases-sticky/);
+    assert.doesNotMatch(LEADERBOARD_STICKY_FADE_CLASS, /dubhub-app-releases-sticky-fade/);
   });
 
   it("uses blue underlines for scope and timeframe", () => {
-    assert.match(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /after:bg-\[#0a83ff\]/);
+    assert.match(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /bg-\[#0a83ff\]/);
     assert.match(LEADERBOARD_SECONDARY_ACTIVE_CLASS, /after:bg-\[#0a83ff\]/);
-    assert.doesNotMatch(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /after:bg-accent/);
+    assert.doesNotMatch(LEADERBOARD_PRIMARY_INDICATOR_CLASS, /bg-accent/);
     assert.doesNotMatch(LEADERBOARD_SECONDARY_ACTIVE_CLASS, /after:bg-accent/);
   });
 
-  it("keeps flat rows, medals, rewards themes, and quiet current-user wash", () => {
+  it("keeps flat rows, medals, config-driven rewards, and quiet current-user wash", () => {
     assert.match(LEADERBOARD_LIST_CLASS, /divide-white\/\[0\.08\]/);
     assert.doesNotMatch(LEADERBOARD_LIST_CLASS, /backdrop-blur/);
     assert.match(leaderboardSrc, /text-yellow-500/);
     assert.match(leaderboardSrc, /text-amber-600/);
-    assert.match(leaderboardSrc, /border-amber-500\/30/);
-    assert.match(leaderboardSrc, /border-purple-500\/30/);
+    assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig/);
+    assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);
     assert.equal(LEADERBOARD_ROW_CURRENT_CLASS, "");
     assert.match(LEADERBOARD_YOU_PILL_CLASS, /bg-\[#0a83ff\]/);
     assert.doesNotMatch(LEADERBOARD_ROW_CURRENT_CLASS, /shadow-\[0_0_/);

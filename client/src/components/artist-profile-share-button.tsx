@@ -26,7 +26,7 @@ export function ArtistProfileShareButton({
       if (result === "copied") {
         toast({
           title: "Link Copied",
-          description: "Artist profile link copied to clipboard",
+          description: "Profile link copied to clipboard",
         });
       } else if (result === "failed") {
         toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
@@ -47,7 +47,7 @@ export function ArtistProfileShareButton({
         className,
       )}
       onClick={() => void handleShare()}
-      aria-label={shareLabel === "Share" ? "Share artist profile" : shareLabel}
+      aria-label={shareLabel === "Share" ? "Share profile" : shareLabel}
       data-testid="button-share-artist-profile"
     >
       <Send className="h-3 w-3 shrink-0" aria-hidden />

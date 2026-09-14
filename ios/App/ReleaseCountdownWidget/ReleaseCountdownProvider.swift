@@ -61,7 +61,12 @@ struct ReleaseCountdownProvider: TimelineProvider {
             }
             guard let release = HomeWidgetPayloadLoader.resolveActiveRelease(in: envelope) else {
                 return Timeline(
-                    entries: [ReleaseCountdownEntryFactory.makeEntry(from: .empty, at: now)],
+                    entries: [
+                        ReleaseCountdownEntryFactory.makeEntry(
+                            from: .empty(eligibility: nil),
+                            at: now
+                        )
+                    ],
                     policy: .atEnd
                 )
             }

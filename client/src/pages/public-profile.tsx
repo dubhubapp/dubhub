@@ -410,12 +410,9 @@ export default function PublicProfile() {
     Boolean(currentUser?.id) &&
     currentUser?.id !== profileId;
 
-  const isShareableVerifiedArtist =
-    profile.verified_artist === true &&
-    profile.account_type === "artist" &&
-    Boolean(profile.username?.trim());
+  const canShareProfile = Boolean(profile.username?.trim());
 
-  const showArtistProfileActions = isShareableVerifiedArtist || showArtistReleaseAlerts;
+  const showArtistProfileActions = canShareProfile || showArtistReleaseAlerts;
 
   return (
     <SwipeBackPage
@@ -572,7 +569,7 @@ export default function PublicProfile() {
                         </span>
                       </div>
                     ) : null}
-                    {isShareableVerifiedArtist && profile.username ? (
+                    {canShareProfile && profile.username ? (
                       <ArtistProfileShareButton username={profile.username} variant="onDark" />
                     ) : null}
                     {showArtistReleaseAlerts && profileId ? (

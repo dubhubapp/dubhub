@@ -33,6 +33,7 @@ public class DubHubNativeNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setNavigationCovered", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setTabs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setProfileIconRole", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setProfileBadgeCount", returnType: CAPPluginReturnPromise),
     ]
 
     public override func load() {
@@ -92,6 +93,15 @@ public class DubHubNativeNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// PROFILE-NAV-BADGE-1: Profile unread badge from React nav-feed count (≤0 clears).
+    @objc func setProfileBadgeCount(_ call: CAPPluginCall) {
+        let count = call.getInt("count") ?? Int(call.getDouble("count") ?? 0)
+        Self.logIncoming("setProfileBadgeCount")
+        DubHubNativeTabBarChrome.shared.setProfileBadgeCount(count) {
+            call.resolve()
+        }
+    }
+
     private static func logIncoming(_ method: String) {
         #if DEBUG
         NSLog(
@@ -127,6 +137,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     private var tabIds: [String] = ["home", "leaderboard", "submit", "releases", "profile"]
     /// PROFILE-NAV-2: account_type-driven Profile glyph. Defaults to community until JS syncs.
     private var profileIconRole: String = "community"
+    /// PROFILE-NAV-BADGE-1: stored so setTabs / applyPendingItems can reapply badgeValue.
+    private var profileBadgeCount: Int = 0
 
     /// PROFILE-NAV-5: read by icon animator / touch cancel without exposing mutation.
     var isArtistProfileIconRole: Bool { profileIconRole == "artist" }
@@ -272,6 +284,24 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         }
     }
 
+    /// PROFILE-NAV-BADGE-1: push-only unread badge; ≤0 clears. Does not touch routing/selection.
+    func setProfileBadgeCount(_ count: Int, completion: (() -> Void)? = nil) {
+        runOnMain { [weak self] in
+            guard let self else {
+                completion?()
+                return
+            }
+            let next = max(0, count)
+            guard self.profileBadgeCount != next else {
+                completion?()
+                return
+            }
+            self.profileBadgeCount = next
+            self.applyProfileItemBadgeOnly()
+            completion?()
+        }
+    }
+
     private static func normalizedProfileIconRole(_ raw: String?) -> String {
         let trimmed = (raw ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -279,7 +309,14 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         return trimmed == "artist" ? "artist" : "community"
     }
 
-    /// Swap only the Profile UITabBarItem image; preserve selection, tint, labels, routing.
+    /// Matches React `formatNotificationBadgeCount` (99+).
+    private static func formattedProfileBadgeValue(_ count: Int) -> String? {
+        if count <= 0 { return nil }
+        if count > 99 { return "99+" }
+        return String(count)
+    }
+
+    /// Swap only the Profile UITabBarItem image; preserve selection, tint, labels, routing, badge.
     private func applyProfileItemImageOnly() {
         assertMain("applyProfileItemImageOnly")
         guard let tabBar, let items = tabBar.items else { return }
@@ -292,6 +329,18 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         let image = tabImage(id: "profile", symbol: "person")
         item.image = image
         item.selectedImage = nil
+    }
+
+    /// PROFILE-NAV-BADGE-1: apply stored unread count to Profile item only.
+    private func applyProfileItemBadgeOnly() {
+        assertMain("applyProfileItemBadgeOnly")
+        guard let tabBar, let items = tabBar.items else { return }
+        guard let profileIndex = tabIds.firstIndex(of: "profile"),
+              profileIndex < items.count
+        else {
+            return
+        }
+        items[profileIndex].badgeValue = Self.formattedProfileBadgeValue(profileBadgeCount)
     }
 
     private var isLayoutPresent: Bool {
@@ -351,11 +400,46 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         tabBar.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
         tabBar.accessibilityIdentifier = "dubhub.nativeTabBar.lgNav3"
         // NATIVE-NAV-PREMIUM-2A: neutral selected/unselected tints only.
-        // Do not set a custom bar appearance object, or any custom glass/background/platter.
+        // Do not construct a custom tab-bar appearance object (preserves system glass/platter).
         tabBar.tintColor = UIColor.white.withAlphaComponent(0.96)
         tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.50)
+        // PROFILE-NAV-BADGE-1A: compact badge metrics on system appearance only.
+        Self.applyCompactBadgeAppearance(on: tabBar)
         bindIconAnimationInteraction(on: tabBar)
         return tabBar
+    }
+
+    /// PROFILE-NAV-BADGE-1A: slightly smaller badge, nudged toward the icon top-right.
+    /// Copies system appearance and edits badge metrics only — no custom bar background.
+    private static func applyCompactBadgeAppearance(on tabBar: UITabBar) {
+        let appearance = tabBar.standardAppearance.copy() as! UITabBarAppearance
+        applyCompactBadgeMetrics(to: appearance.stackedLayoutAppearance)
+        applyCompactBadgeMetrics(to: appearance.inlineLayoutAppearance)
+        applyCompactBadgeMetrics(to: appearance.compactInlineLayoutAppearance)
+        tabBar.standardAppearance = appearance
+        tabBar.scrollEdgeAppearance = appearance
+    }
+
+    private static func applyCompactBadgeMetrics(to itemAppearance: UITabBarItemAppearance) {
+        // Default UITabBar badge reads large/loose; ~10pt + mild inset feels attached.
+        let font = UIFont.systemFont(ofSize: 10, weight: .bold)
+        let textAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor.white,
+        ]
+        // Positive = down/right; negative = up/left. Pull left + slightly down toward icon.
+        let position = UIOffset(horizontal: -3, vertical: 2)
+        let states = [
+            itemAppearance.normal,
+            itemAppearance.selected,
+            itemAppearance.disabled,
+            itemAppearance.focused,
+        ]
+        for state in states {
+            state.badgeTextAttributes = textAttrs
+            state.badgeBackgroundColor = .systemRed
+            state.badgePositionAdjustment = position
+        }
     }
 
     private func bindIconAnimationInteraction(on tabBar: DubHubNativeTabBar) {
@@ -425,6 +509,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         }
         tagToTabId = map
         tabBar.items = items
+        // PROFILE-NAV-BADGE-1: items are rebuilt from scratch — reapply stored badge.
+        applyProfileItemBadgeOnly()
     }
 
     private func applySelectedItem() {

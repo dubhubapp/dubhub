@@ -781,7 +781,10 @@ describe("pre-login onboarding slice 3 presentation", () => {
     assert.equal("toolLabel" in artistBenefits[3], false);
     assert.equal("toolLabel" in artistBenefits[4], false);
     assert.equal(artistBenefits[5].visual, "artistTools");
-    assert.match(paywallCopySrc, /Send Release Alerts to listeners already waiting/);
+    assert.match(
+      paywallCopySrc,
+      /See your Release Alerts audience and send alerts to listeners waiting/,
+    );
     const joined = JSON.stringify(artistBenefits);
     assert.doesNotMatch(
       joined,

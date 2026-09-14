@@ -20,6 +20,7 @@ export const PROFILE_BANNER_SURFACE = "#0f1324" as const;
 
 /**
  * No-banner / default Profile page canvas — full premium blue→indigo top wash.
+ * Class: `.dubhub-app-releases-canvas` (modern layered app background).
  */
 export const PROFILE_BANNER_PAGE_CANVAS_CLASS = APP_MATERIAL_AUTH_CANVAS_CLASS;
 
@@ -87,8 +88,8 @@ export const PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE: CSSProperties = {
 };
 
 /**
- * Premium no-banner atmosphere — blue → indigo → navy.
- * No teal celebration orbs (C5B). Unchanged for no-banner profiles.
+ * Premium no-banner atmosphere — shared blue → indigo → navy (pre-seeded experiment).
+ * No teal celebration orbs (C5B).
  */
 export const PROFILE_BANNER_NO_BANNER_GRADIENT =
   "linear-gradient(180deg, rgba(10,131,255,0.20) 0%, rgba(0,29,249,0.12) 10%, rgba(22,38,92,0.55) 26%, rgba(15,22,48,0.88) 42%, #0f1324 58%, #0f1324 100%)" as const;

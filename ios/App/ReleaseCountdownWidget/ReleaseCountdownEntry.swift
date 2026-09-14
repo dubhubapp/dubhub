@@ -22,7 +22,10 @@ enum ReleaseCountdownDisplayState: Equatable {
         /// Artist mode never pages even if count > 1.
         allowsPaging: Bool
     )
+    /// No active countdown (listener empty / retention expired / no selection).
     case empty
+    /// Stamped empty payload with eligibility `no_eligible_artist_release`.
+    case emptyArtist
     case refresh
 }
 
@@ -37,7 +40,9 @@ enum ReleaseCountdownEntryFactory {
         at date: Date
     ) -> ReleaseCountdownEntry {
         switch load {
-        case .empty, .invalid:
+        case .empty(let eligibility):
+            return ReleaseCountdownEntry(date: date, state: emptyDisplayState(eligibility: eligibility))
+        case .invalid:
             return ReleaseCountdownEntry(date: date, state: .empty)
         case .expired:
             return ReleaseCountdownEntry(date: date, state: .refresh)
@@ -101,6 +106,14 @@ enum ReleaseCountdownEntryFactory {
                 )
             )
         }
+    }
+
+    /// Uses stamped DTO eligibility only — never invents account UI state in WidgetKit.
+    private static func emptyDisplayState(eligibility: String?) -> ReleaseCountdownDisplayState {
+        if eligibility == "no_eligible_artist_release" {
+            return .emptyArtist
+        }
+        return .empty
     }
 
     private static func resolveArtworkLocalPath(

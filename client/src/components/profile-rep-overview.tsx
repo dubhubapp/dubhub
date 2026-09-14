@@ -64,7 +64,7 @@ export function ProfileRepOverview({
       {showSectionHeader ? (
         <div className={cn(PROFILE_SECTION_HEADING_ROW_CLASS, headerMargin)}>
           <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-            <TrendingUp className="h-4 w-4 text-accent" />
+            <TrendingUp className="h-4 w-4 text-white" />
           </span>
           {compact ? (
             <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>

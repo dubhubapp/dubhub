@@ -16,8 +16,8 @@ export const HOME_WIDGET_SETUP_GUIDE_COPY = {
   body: "Keep track of the release from your Home Screen.",
   steps: [
     "Touch and hold your Home Screen.",
-    "Add a widget and search for Dub Hub.",
-    "Choose your Countdown size.",
+    "Add a widget and search for dub hub.",
+    "Choose your countdown size.",
   ],
   primaryCta: "Got it",
   secondaryCta: "Not now",

@@ -115,4 +115,18 @@ describe("home widget setup guide", () => {
     ].join(" ");
     assert.doesNotMatch(blob, /widget added|now on your home screen|automatically/i);
   });
+
+  it("uses lowercase dub hub brand and countdown in steps", () => {
+    assert.equal(
+      HOME_WIDGET_SETUP_GUIDE_COPY.steps[1],
+      "Add a widget and search for dub hub.",
+    );
+    assert.equal(
+      HOME_WIDGET_SETUP_GUIDE_COPY.steps[2],
+      "Choose your countdown size.",
+    );
+    const blob = HOME_WIDGET_SETUP_GUIDE_COPY.steps.join(" ");
+    assert.doesNotMatch(blob, /Dub Hub/);
+    assert.doesNotMatch(blob, /your Countdown/);
+  });
 });

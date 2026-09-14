@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   enableArtistReleaseAlertWithDemandDedup,
   formatReleaseAlertEnabledDemandMessage,
@@ -289,5 +292,42 @@ describe("enableArtistReleaseAlertWithDemandDedup", () => {
     assert.equal(fake.state.membership.size, 0);
     assert.equal(fake.state.markers.size, 0);
     assert.equal(fake.state.notifications.length, 0);
+  });
+
+  it("does not require paid entitlement to enable or notify (free and paid artists)", async () => {
+    const fake = createFakeStore();
+    const result = await enableArtistReleaseAlertWithDemandDedup(
+      LISTENER_A,
+      ARTIST_ID,
+      fake.deps,
+    );
+    assert.equal(result.created, true);
+    assert.equal(fake.state.notifications.length, 1);
+    const keys = Object.keys(fake.deps);
+    assert.equal(keys.includes("canArtistUsePaidTools"), false);
+    assert.equal(keys.includes("hasPaidToolAccess"), false);
+  });
+});
+
+describe("ARTIST-SUB-INTRO-1 demand notification is in-app only", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+
+  it("enableArtistReleaseAlert inserts release_alert_enabled without push fan-out", () => {
+    const storageSrc = readFileSync(join(here, "./storage.ts"), "utf8");
+    const start = storageSrc.indexOf("async enableArtistReleaseAlert(");
+    const next = storageSrc.indexOf("async countArtistReleaseAlertsForArtist(");
+    assert.ok(start > 0 && next > start);
+    const block = storageSrc.slice(start, next);
+    assert.match(block, /notification_type, read, created_at/);
+    assert.match(block, /'release_alert_enabled'/);
+    assert.doesNotMatch(block, /sendPushToUser/);
+    assert.doesNotMatch(block, /canArtistUsePaidTools/);
+    assert.doesNotMatch(block, /hasPaidToolAccess/);
+  });
+
+  it("demand enable module never imports push", () => {
+    const src = readFileSync(join(here, "./artist-release-alert-demand-enable.ts"), "utf8");
+    assert.doesNotMatch(src, /sendPushToUser|pushSend/);
+    assert.doesNotMatch(src, /canArtistUsePaidTools|hasPaidToolAccess/);
   });
 });

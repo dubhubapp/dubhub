@@ -91,6 +91,15 @@ export function isArtistPendingPostStateEligible(
   return !alreadyArtistVerifiedBySomeone;
 }
 
+/** Client-side viewer denial flags after successful POST /artist-deny (Comments refresh). */
+export function markViewerArtistDeniedOnPost<T extends ArtistPendingActionPostFields>(post: T): T {
+  return {
+    ...post,
+    currentUserDeniedAsArtist: true,
+    current_user_denied_as_artist: true,
+  };
+}
+
 /**
  * Resolve whether Comments should show artist tag actions while mounted.
  * Prefers live post flag; falls back to hydrated comments when flag is stale.

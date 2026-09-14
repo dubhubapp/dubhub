@@ -174,3 +174,19 @@ describe("video-card genre pill wiring", () => {
     assert.doesNotMatch(spanBlock, /post-genre-swap-affordance/);
   });
 });
+
+describe("video-card status and genre pill adjacency", () => {
+  it("renders status and genre pills in the metadata row without a separator dot", () => {
+    assert.match(videoCardSrc, /const statusBadgeEl = getStatusBadge\(\)/);
+    assert.match(videoCardSrc, /\{statusBadgeEl\}/);
+    assert.match(videoCardSrc, /\{genrePillEl\}/);
+    assert.match(videoCardSrc, /data-testid="post-genre-tag"/);
+    assert.match(videoCardSrc, /data-testid="post-genre-swap-affordance"/);
+    assert.match(
+      videoCardSrc,
+      /flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300/,
+    );
+    assert.doesNotMatch(videoCardSrc, />\s*•\s*</);
+    assert.doesNotMatch(videoCardSrc, /text-gray-500 select-none/);
+  });
+});

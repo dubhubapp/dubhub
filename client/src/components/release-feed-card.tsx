@@ -1,7 +1,7 @@
 import { ReleaseStatusPill } from "@/components/release-status-pill";
 import { ReleaseArtworkThumb } from "@/components/release-artwork-thumb";
 import { CountdownStatusBadge } from "@/components/countdown-status-badge";
-import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
+import { CollaborationStatusPill } from "@/components/collaboration-status-pill";
 import { buildReleaseFeedCardAccessibilityLabel } from "@/lib/home-widget-countdown-icon";
 import { formatReleaseByline, sanitizeReleaseText } from "@/lib/release-display";
 import { sortLinksByPlatform } from "@/lib/platforms";
@@ -19,14 +19,16 @@ import {
   RELEASE_FEED_ARTWORK_SIZE_CLASS,
   RELEASE_FEED_CTA_ICON_ONLY_CLASS,
   RELEASE_FEED_CTA_ICON_SLOT_CLASS,
-  RELEASE_FEED_CTA_LIST_CLASS,
   RELEASE_FEED_CTA_SEMANTIC_CLASS,
   RELEASE_FEED_META_COLUMN_CLASS,
-  RELEASE_FEED_META_STACK_CLASS,
   RELEASE_FEED_ROW_BASE_CLASS,
-  RELEASE_FEED_STATUS_ROW_CLASS,
+  resolveReleaseFeedCardRhythm,
   stopReleaseRowNavigation,
 } from "@/lib/release-tracker-presentation";
+import {
+  RELEASE_TRACKER_TAB_PAGER_CARD_ATTR,
+  consumeReleaseTrackerPagerCardClickSuppression,
+} from "@/lib/release-tracker-tab-swipe";
 import { cn } from "@/lib/utils";
 
 export type ReleaseFeedCardData = {
@@ -120,7 +122,6 @@ export function ReleaseFeedCard({
   showByline,
 }: ReleaseFeedCardProps) {
   const normalized = normalizeReleaseCardFields(r);
-  const collabDisplay = getCollaborationStatusDisplay(r.collaboratorStatus);
   const savedOutToday = !!highlight?.savedOutToday;
   const releaseDayHighlight = !!highlight?.releaseDayHighlight;
   const isOwnerReleaseDay = !!highlight?.isOwnerReleaseDay;
@@ -134,6 +135,7 @@ export function ReleaseFeedCard({
   });
   const paused = isPersistedReleaseSubscriptionSuspended(r);
   const bylineVisible = showByline !== false;
+  const rhythm = resolveReleaseFeedCardRhythm({ showByline: bylineVisible });
   const byline = bylineVisible ? formatReleaseByline(r.artistUsername, r.collaborators) : "";
   const scheduleLabel = r.isComingSoon
     ? "Coming soon..."
@@ -165,12 +167,28 @@ export function ReleaseFeedCard({
     ? sortLinksByPlatform(filterPublicReleaseLinks(r.links, upcoming))
     : [];
 
+  const titleEl = normalized.title ? (
+    <p className={rhythm.titleClass}>{normalized.title}</p>
+  ) : null;
+  const bylineEl = byline ? (
+    <p className={rhythm.bylineClass}>{byline}</p>
+  ) : null;
+  const dateEl = scheduleLabel ? (
+    <p className={rhythm.dateClass}>{scheduleLabel}</p>
+  ) : null;
+  const bannerEl = preReleaseBanner ? (
+    <p className={cn(rhythm.dateClass, "text-primary")}>{preReleaseBanner}</p>
+  ) : null;
+
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={accessibilityLabel}
-      onClick={onOpen}
+      onClick={() => {
+        if (consumeReleaseTrackerPagerCardClickSuppression()) return;
+        onOpen();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -192,7 +210,9 @@ export function ReleaseFeedCard({
           !isOwnerReleaseDay &&
           "rounded-md bg-amber-500/[0.05] pl-2.5 -ml-2.5 border-l-2 border-amber-400/55",
       )}
+      {...{ [RELEASE_TRACKER_TAB_PAGER_CARD_ATTR]: "true" }}
       data-countdown-selected={showCountdownSelectedIndicator ? "true" : "false"}
+      data-release-feed-rhythm={rhythm.bylineVisible ? "byline" : "solo"}
     >
       <ReleaseArtworkThumb
         artworkUrl={normalized.artworkUrl}
@@ -201,26 +221,28 @@ export function ReleaseFeedCard({
         testId={`release-feed-artwork-${r.id}`}
       />
       <div className={RELEASE_FEED_META_COLUMN_CLASS}>
-        <div className={RELEASE_FEED_META_STACK_CLASS}>
-          {normalized.title ? (
-            <p className="line-clamp-2 min-w-0 break-all text-[15px] font-semibold leading-snug text-foreground">
-              {normalized.title}
-            </p>
-          ) : null}
-          {byline ? (
-            <p className="min-w-0 truncate text-xs leading-snug text-muted-foreground">
-              {byline}
-            </p>
-          ) : null}
-          {scheduleLabel ? (
-            <p className="text-xs text-muted-foreground">
-              {scheduleLabel}
-            </p>
-          ) : null}
-          {preReleaseBanner ? (
-            <p className="text-xs text-primary">{preReleaseBanner}</p>
-          ) : null}
-          <div className={RELEASE_FEED_STATUS_ROW_CLASS} data-testid="release-feed-status-row">
+        <div className={rhythm.metaStackClass}>
+          {titleEl && rhythm.useTextShells && rhythm.titleRowClass ? (
+            <div className={rhythm.titleRowClass}>{titleEl}</div>
+          ) : (
+            titleEl
+          )}
+          {bylineEl && rhythm.useTextShells && rhythm.bylineRowClass ? (
+            <div className={rhythm.bylineRowClass}>{bylineEl}</div>
+          ) : (
+            bylineEl
+          )}
+          {dateEl && rhythm.useTextShells && rhythm.dateRowClass ? (
+            <div className={rhythm.dateRowClass}>{dateEl}</div>
+          ) : (
+            dateEl
+          )}
+          {bannerEl && rhythm.useTextShells && rhythm.dateRowClass ? (
+            <div className={rhythm.dateRowClass}>{bannerEl}</div>
+          ) : (
+            bannerEl
+          )}
+          <div className={rhythm.statusRowClass} data-testid="release-feed-status-row">
             <ReleaseStatusPill
               paused={paused}
               isComingSoon={r.isComingSoon}
@@ -235,11 +257,11 @@ export function ReleaseFeedCard({
                 testId={`release-countdown-selected-indicator-${r.id}`}
               />
             ) : null}
-            {collabDisplay ? <span className={collabDisplay.className}>{collabDisplay.label}</span> : null}
+            <CollaborationStatusPill status={r.collaboratorStatus} />
           </div>
         </div>
         {publicLinks.length > 0 ? (
-          <div className={RELEASE_FEED_CTA_LIST_CLASS} data-testid="release-feed-link-actions">
+          <div className={rhythm.ctaListClass} data-testid="release-feed-link-actions">
             {publicLinks.map((link) => {
               const presentation = resolveReleaseLinkSurfacePresentation({
                 platform: link.platform,

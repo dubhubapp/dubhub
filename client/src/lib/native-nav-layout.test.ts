@@ -194,7 +194,11 @@ describe("LG-NAV-5C placement vs control exclusion", () => {
     assert.match(videoCardSrc, /data-video-card-overlay-fade-extend/);
     assert.match(
       videoCardSrc,
-      /h-\[var\(--video-card-overlay-bottom,0px\)\] bg-black\/80/,
+      /h-\[var\(--video-card-overlay-bottom,0px\)\]/,
+    );
+    assert.match(
+      videoCardSrc,
+      /data-video-card-overlay-fade-extend[\s\S]*?bg-black\/80/,
     );
     assert.match(
       videoCardSrc,
@@ -234,12 +238,16 @@ describe("LG-NAV-5C placement vs control exclusion", () => {
     );
     assert.match(
       videoCardSrc,
-      /data-video-action-rail[\s\S]*bottom-\[calc\(var\(--video-card-overlay-bottom,0px\)\+clamp/,
+      /bottom-\[calc\(var\(--video-card-overlay-bottom,0px\)\+clamp/,
     );
     assert.match(videoCardSrc, /bottom-\[var\(--video-feed-scrub-bottom\)\]/);
     assert.match(
       videoCardSrc,
-      /h-\[var\(--video-card-overlay-bottom,0px\)\] bg-black\/80/,
+      /h-\[var\(--video-card-overlay-bottom,0px\)\]/,
+    );
+    assert.match(
+      videoCardSrc,
+      /data-video-card-overlay-fade-extend[\s\S]*?bg-black\/80/,
     );
     assert.match(
       skeletonSrc,
@@ -291,15 +299,12 @@ describe("LG-NAV-5C placement vs control exclusion", () => {
 
   it("omits an empty release slot and reserves 12px under a painted release card", () => {
     assert.match(videoCardSrc, /data-video-card-release-slot/);
-    assert.match(
-      videoCardSrc,
-      /\{releasePreview \? \([\s\S]*data-video-card-release-slot/,
-    );
+    assert.match(videoCardSrc, /\{releasePreview \? \([\s\S]*data-video-card-release-slot/);
     assert.doesNotMatch(
       videoCardSrc,
       /\{releasePreview \? \(\s*<ReleasePreviewCard/,
     );
-    assert.match(videoCardSrc, /data-video-card-release-slot[\s\S]*?pb-3/);
+    assert.match(videoCardSrc, /isFullScreenPostViewer \? "pt-0\.5" : "pb-3"/);
     assert.match(cssSrc, /--video-card-metadata-shift:\s*11px/);
   });
 });

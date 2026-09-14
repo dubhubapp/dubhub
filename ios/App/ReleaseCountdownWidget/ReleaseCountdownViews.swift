@@ -38,7 +38,7 @@ struct ReleaseCountdownEntryView: View {
         return true
     }
 
-    /// Bottom-corner Dub Hub `d` mark. Source PNG has an opaque black plate —
+    /// Bottom-corner dub hub `d` mark. Source PNG has an opaque black plate —
     /// `.screen` blend drops black so white 3D mark sits on artwork without editing the asset.
     private var dubHubBrandMark: some View {
         let side: CGFloat = family == .systemSmall ? 19 : 24
@@ -89,15 +89,27 @@ struct ReleaseCountdownEntryView: View {
         case .empty:
             emptyContent(
                 title: "Release Countdown",
-                message: "Choose a release in Dub Hub."
+                message: "Choose a saved release in dub hub to start a new countdown."
             )
-            .accessibilityLabel("Release Countdown. Open Dub Hub to choose a release.")
+            .accessibilityLabel(
+                "Release Countdown. Choose a saved release in dub hub to start a new countdown."
+            )
+        case .emptyArtist:
+            emptyContent(
+                title: "Release Countdown",
+                message: "Create your next release in dub hub to start a countdown."
+            )
+            .accessibilityLabel(
+                "Release Countdown. Create your next release in dub hub to start a countdown."
+            )
         case .refresh:
             emptyContent(
                 title: "Release Countdown",
-                message: "Open Dub Hub to refresh your Countdown."
+                message: "Open dub hub to refresh your countdown."
             )
-            .accessibilityLabel("Release Countdown. Open Dub Hub to refresh your Release Countdown.")
+            .accessibilityLabel(
+                "Release Countdown. Open dub hub to refresh your countdown."
+            )
         }
     }
 
@@ -105,7 +117,7 @@ struct ReleaseCountdownEntryView: View {
         switch state {
         case let .release(_, _, _, _, _, _, _, deepLink, _, _, _, _):
             return deepLink
-        case .empty, .refresh:
+        case .empty, .emptyArtist, .refresh:
             return URL(string: "https://dubhub.uk/")!
         }
     }
@@ -117,7 +129,7 @@ struct ReleaseCountdownEntryView: View {
             artworkBackdrop(
                 ReleaseCountdownArtworkImage.load(localPath: artworkLocalPath)
             )
-        case .empty, .refresh:
+        case .empty, .emptyArtist, .refresh:
             brandBackground
         }
     }

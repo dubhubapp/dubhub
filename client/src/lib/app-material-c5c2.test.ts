@@ -64,6 +64,7 @@ describe("C5C.2 no-banner + geometry safety", () => {
     assert.match(PROFILE_BANNER_NO_BANNER_GRADIENT, /#0f1324 58%/);
     assert.doesNotMatch(PROFILE_BANNER_NO_BANNER_GRADIENT, /74,233,223/);
     assert.equal(profilePageCanvasClass(false), "dubhub-app-releases-canvas");
+    assert.doesNotMatch(bannerHelperSrc, /getProfileDefaultBannerStyle|hashProfileBannerSeed/);
   });
 
   it("preserves banner image geometry, crop, and overflow clip", () => {

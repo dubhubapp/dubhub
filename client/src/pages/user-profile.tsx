@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon } from "lucide-react";
+import { Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import {
@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type CSSProperties } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
@@ -74,13 +74,18 @@ import {
   PROFILE_TAB_PAGER_SNAP_MS,
   PROFILE_TAB_PAGER_TRACK_CLASS,
   PROFILE_TAB_PAGER_VIEWPORT_CLASS,
+  applyProfilePagerPanelImperativeUnlock,
   clampElementScrollTopIfNeeded,
+  clearProfilePagerPanelImperativeUnlock,
   consumeProfilePagerCardClickSuppression,
   interpolateProfileNavIndicator,
   prefersProfilePagerReducedMotion,
+  profilePagerUnlockCovers,
+  profilePrimaryTabEmphasisColor,
   profileTabIndex,
-  resolveProfilePagerHostHeightPx,
+  resolveProfilePagerPrepareUnlockIndices,
   resolveProfilePagerVertUnlockIndices,
+  resolveProfilePrimaryTabEmphasis,
   useProfileTabPager,
   type ProfileNavIndicatorMetrics,
   type ProfilePagerProgressEvent,
@@ -97,7 +102,6 @@ import {
   profilePageCanvasClass,
 } from "@/lib/profile-banner-presentation";
 import { cn, formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
-import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import { APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_NAV_ROW_CLASS,
@@ -141,6 +145,7 @@ import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { type StatsCardItem } from "@/components/stats-card-section";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
+import { countVisibleUnreadNotifications } from "@/lib/nav-notification-unread-count";
 import {
   getEffectiveNotificationType,
   getNotificationGroupKind,
@@ -159,6 +164,26 @@ import {
   PROFILE_OPEN_NOTIFICATIONS_TAB_EVENT,
   setProfileNotificationsTabOpen,
 } from "@/lib/in-app-notification-suppression";
+import {
+  PROFILE_GRID_MAX_MOUNTED_TILES,
+  PROFILE_GRID_WINDOW_ROWS,
+  PROFILE_PAGE_SCROLL_CLASS,
+  PROFILE_POSTS_LIKES_GRID_CLASS,
+  canFreezeProfileGridRowStride,
+  clampProfileGridRowWindow,
+  initialProfileGridRowWindow,
+  measureProfileGridOffsetTop,
+  measureProfileGridRowStride,
+  profileGridAbsoluteIndex,
+  profileGridItemSlice,
+  profileGridSpacerHeights,
+  profileGridTotalRows,
+  resolveProfileGridStickyRowWindow,
+  type ProfileGridRowWindow,
+} from "@/lib/profile-grid-window";
+
+const PROFILE_POSTS_LIKES_CARD_CLASS =
+  "ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-zinc-950 border border-white/10 hover:border-white/25 transition-colors text-left";
 
 /** Compact skeleton rows for Profile → Notifications initial load. */
 function ProfileNotificationsLoadingSkeleton() {
@@ -276,27 +301,29 @@ function formatGenreDisplayLabel(genreKey: string): string {
   return g.charAt(0).toUpperCase() + g.slice(1);
 }
 
-function getGenreChipColors(genre: string) {
-  switch (genre.toLowerCase()) {
-    case "dnb":
-      return { bg: "bg-purple-600/20", text: "text-purple-400" };
-    case "ukg":
-      return { bg: "bg-green-600/20", text: "text-green-400" };
-    case "dubstep":
-      return { bg: "bg-red-600/20", text: "text-red-400" };
-    case "bassline":
-      return { bg: "bg-blue-600/20", text: "text-blue-400" };
-    case "house":
-      return { bg: "bg-yellow-600/20", text: "text-yellow-400" };
-    case "techno":
-      return { bg: "bg-pink-600/20", text: "text-pink-400" };
-    case "trance":
-      return { bg: "bg-cyan-600/20", text: "text-cyan-400" };
-    case "other":
-      return { bg: "bg-gray-600/20", text: "text-gray-400" };
-    default:
-      return { bg: "bg-gray-600/20", text: "text-gray-400" };
-  }
+/** Activity genre chip chrome — same footprint as owner fav-genre / public glow pills. */
+const ACTIVITY_GENRE_VALUE_PILL_CLASS =
+  "inline-flex min-h-[1.625rem] items-center justify-center rounded px-2 py-1 text-[10px] font-semibold leading-none ring-1 ring-white/15";
+
+function ActivityGenreStatChip({
+  genre,
+  count,
+  testId,
+}: {
+  genre: string;
+  count: number;
+  testId: string;
+}) {
+  const chip = getGenreChipStyle(genre);
+  const pillStyle = getGenreGlowPillStyle(chip.bgColor, chip.textClass) as CSSProperties;
+  return (
+    <div className="flex min-w-[64px] flex-col items-center gap-1" data-testid={testId}>
+      <span className={ACTIVITY_GENRE_VALUE_PILL_CLASS} style={pillStyle}>
+        <span className="truncate">{chip.label}</span>
+      </span>
+      <span className="text-xs font-medium text-gray-400">{count}</span>
+    </div>
+  );
 }
 
 /** Vertical rhythm between Overview sections — equal inset around `divide-y` rules.
@@ -383,7 +410,7 @@ function ProfileCommunityActivitySection({
         <button
           type="button"
           onClick={onToggleGenres}
-          className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-accent hover:text-accent/80"
+          className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-white/70 hover:text-white"
           aria-expanded={showActivityGenres}
           data-testid="your-activity-toggle-genres"
         >
@@ -441,19 +468,14 @@ function ProfileCommunityActivitySection({
               </p>
             ) : identifiedGenreStats.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {identifiedGenreStats.map((genreStat) => {
-                  const colorSet = getGenreChipColors(genreStat.genre);
-                  return (
-                    <div
-                      key={`idd-${genreStat.genre}-${genreStat.count}`}
-                      className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
-                      data-testid={`identified-genres-genre-${genreStat.genre.toLowerCase()}`}
-                    >
-                      <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
-                      <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
-                    </div>
-                  );
-                })}
+                {identifiedGenreStats.map((genreStat) => (
+                  <ActivityGenreStatChip
+                    key={`idd-${genreStat.genre}-${genreStat.count}`}
+                    genre={genreStat.genre}
+                    count={genreStat.count}
+                    testId={`identified-genres-genre-${genreStat.genre.toLowerCase()}`}
+                  />
+                ))}
               </div>
             ) : (
               <p className="text-gray-400 text-sm" data-testid="identified-genres-empty">
@@ -482,19 +504,14 @@ function ProfileCommunityActivitySection({
               </p>
             ) : genreStats.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {genreStats.map((genreStat) => {
-                  const colorSet = getGenreChipColors(genreStat.genre);
-                  return (
-                    <div
-                      key={`posted-${genreStat.genre}-${genreStat.count}`}
-                      className={`flex min-w-[64px] flex-col items-center rounded-lg border border-white/10 ${colorSet.bg} px-3 py-2`}
-                      data-testid={`posted-genres-genre-${genreStat.genre.toLowerCase()}`}
-                    >
-                      <span className={`text-sm font-semibold ${colorSet.text}`}>{genreStat.genre}</span>
-                      <span className="mt-0.5 text-xs font-medium text-gray-400">{genreStat.count}</span>
-                    </div>
-                  );
-                })}
+                {genreStats.map((genreStat) => (
+                  <ActivityGenreStatChip
+                    key={`posted-${genreStat.genre}-${genreStat.count}`}
+                    genre={genreStat.genre}
+                    count={genreStat.count}
+                    testId={`posted-genres-genre-${genreStat.genre.toLowerCase()}`}
+                  />
+                ))}
               </div>
             ) : (
               <p className="text-gray-400 text-sm" data-testid="posted-genres-empty">
@@ -524,26 +541,35 @@ function stripLeadingUsernameMention(
 }
 
 /** Shared placeholder for profile/notification post preview tiles (no stored thumbnail yet). */
-function ProfilePreviewPlaceholder({ mode }: { mode: "loading" | "unavailable" }) {
+function ProfilePreviewPlaceholder({
+  mode,
+}: {
+  mode: "loading" | "unavailable" | "static";
+}) {
   const isLoading = mode === "loading";
+  const isStatic = mode === "static";
   return (
     <div
       className="absolute inset-0 z-[1] flex items-center justify-center border border-white/[0.06] bg-gradient-to-b from-zinc-900/90 via-zinc-800/85 to-zinc-950/95 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
       aria-hidden
     >
-      <div className="flex flex-col items-center gap-1.5">
-        {isLoading ? (
-          <>
-            <VinylLoader size="sm" inline className="scale-[0.65]" />
-            <span className="text-center text-[10px] font-medium tracking-wide text-white/55">Loading preview</span>
-          </>
-        ) : (
-          <>
-            <ImageOff className="h-5 w-5 text-white/45" aria-hidden />
-            <span className="text-[10px] font-medium text-white/50">Preview unavailable</span>
-          </>
-        )}
-      </div>
+      {isStatic ? null : (
+        <div className="flex flex-col items-center gap-1.5">
+          {isLoading ? (
+            <>
+              <VinylLoader size="sm" inline className="scale-[0.65]" />
+              <span className="text-center text-[10px] font-medium tracking-wide text-white/55">
+                Loading preview
+              </span>
+            </>
+          ) : (
+            <>
+              <ImageOff className="h-5 w-5 text-white/45" aria-hidden />
+              <span className="text-[10px] font-medium text-white/50">Preview unavailable</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -555,9 +581,18 @@ function markCachedImageReady(img: HTMLImageElement | null): boolean {
 function ProfilePostThumbnail({
   thumbnailSrc,
   videoSrc,
+  /**
+   * Profile grid tiles: prefer a static face over mounting live `<video>` when
+   * no thumbnail URL exists (launch content is thumbnail-backed; avoids grid decode cost).
+   */
+  disableVideoFallback = false,
+  /** Defer gradient scrim until media/static face is ready (stable first paint). */
+  scrimWhenReady = false,
 }: {
   thumbnailSrc: string | null;
   videoSrc: string | null;
+  disableVideoFallback?: boolean;
+  scrimWhenReady?: boolean;
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -573,16 +608,39 @@ function ProfilePostThumbnail({
     }
   }, [thumbnailSrc, videoSrc]);
   const shouldRenderImage = !!thumbnailSrc && !failed && !loadTimedOut;
-  const shouldRenderVideo = !shouldRenderImage && !!videoSrc && !failed && !loadTimedOut;
+  const shouldRenderVideo =
+    !disableVideoFallback && !shouldRenderImage && !!videoSrc && !failed && !loadTimedOut;
+  const showStaticVideoPlaceholder =
+    disableVideoFallback && !shouldRenderImage && !!videoSrc && !failed && !loadTimedOut;
   const hasAnySource = !!thumbnailSrc || !!videoSrc;
-  const showUnavailable = failed || !hasAnySource || loadTimedOut;
-  const showLoadingPlaceholder = !showUnavailable && hasAnySource && !mediaReady;
+  const showUnavailable =
+    !showStaticVideoPlaceholder && (failed || !hasAnySource || loadTimedOut);
+  const showLoadingPlaceholder =
+    !showUnavailable &&
+    !showStaticVideoPlaceholder &&
+    hasAnySource &&
+    !mediaReady &&
+    (shouldRenderImage || shouldRenderVideo);
 
   useEffect(() => {
-    if (!hasAnySource || mediaReady || showUnavailable) return;
+    if (
+      !hasAnySource ||
+      mediaReady ||
+      showUnavailable ||
+      showStaticVideoPlaceholder
+    ) {
+      return;
+    }
     const t = window.setTimeout(() => setLoadTimedOut(true), 12_000);
     return () => window.clearTimeout(t);
-  }, [hasAnySource, mediaReady, showUnavailable, thumbnailSrc, videoSrc]);
+  }, [
+    hasAnySource,
+    mediaReady,
+    showUnavailable,
+    showStaticVideoPlaceholder,
+    thumbnailSrc,
+    videoSrc,
+  ]);
 
   const mediaClass = `absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${
     mediaReady ? "z-[2] opacity-100" : "z-0 opacity-0 pointer-events-none"
@@ -591,6 +649,7 @@ function ProfilePostThumbnail({
   return (
     <div className="relative h-full w-full overflow-hidden bg-zinc-950">
       {showLoadingPlaceholder ? <ProfilePreviewPlaceholder mode="loading" /> : null}
+      {showStaticVideoPlaceholder ? <ProfilePreviewPlaceholder mode="static" /> : null}
       {showUnavailable ? <ProfilePreviewPlaceholder mode="unavailable" /> : null}
       {shouldRenderImage ? (
         <img
@@ -629,6 +688,9 @@ function ProfilePostThumbnail({
           }}
           onError={() => setFailed(true)}
         />
+      ) : null}
+      {scrimWhenReady && (mediaReady || showStaticVideoPlaceholder || showUnavailable) ? (
+        <div className="pointer-events-none absolute inset-0 z-[3] bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
       ) : null}
     </div>
   );
@@ -732,6 +794,21 @@ export default function UserProfile() {
   const [artistStatsMode, setArtistStatsMode] = useState<"artist" | "user">("artist");
   const [postFilter, setPostFilter] = useState<ProfileIdentificationFilter>("all");
   const [likesFilter, setLikesFilter] = useState<ProfileIdentificationFilter>("all");
+  /** Posts/Likes sticky row windows (persist across tab swipe; capped ≤21 tiles). */
+  const [postsGridWindow, setPostsGridWindow] = useState<ProfileGridRowWindow>(() =>
+    initialProfileGridRowWindow(0),
+  );
+  const [likedGridWindow, setLikedGridWindow] = useState<ProfileGridRowWindow>(() =>
+    initialProfileGridRowWindow(0),
+  );
+  /** Frozen row stride + cached shell offsets (shared Profile scroller; no per-tab scroll restore). */
+  const profileGridRowStrideRef = useRef(0);
+  const profileGridStrideReadyRef = useRef(false);
+  const profileGridOffsetTopRef = useRef<Partial<Record<"posts" | "liked", number>>>({});
+  const postsGridShellRef = useRef<HTMLDivElement | null>(null);
+  const likedGridShellRef = useRef<HTMLDivElement | null>(null);
+  const postsGridRef = useRef<HTMLDivElement | null>(null);
+  const likedGridRef = useRef<HTMLDivElement | null>(null);
   /** Local-only toggle for genre detail inside the Your Activity card (collapsed by default). */
   const [showActivityGenres, setShowActivityGenres] = useState(false);
   const [likesViewerStartIndex, setLikesViewerStartIndex] = useState<number | null>(null);
@@ -888,23 +965,9 @@ export default function UserProfile() {
   const unreadCount = useMemo(() => {
     const feed = Array.isArray(navFeedNotifications) ? navFeedNotifications : [];
     const list = notifications.length > 0 ? notifications : feed;
-    if (!Array.isArray(list)) return 0;
-    try {
-      return list.filter(
-        (n) =>
-          n &&
-          !n.read &&
-          isNotificationVisibleByUserPreferences(n, notificationPrefs) &&
-          !(userType === "moderator" && isModeratorQueueNotification(notificationRowFields(n))),
-      ).length;
-    } catch {
-      return list.filter(
-        (n) =>
-          n &&
-          !n.read &&
-          !(userType === "moderator" && isModeratorQueueNotification(notificationRowFields(n))),
-      ).length;
-    }
+    return countVisibleUnreadNotifications(list, notificationPrefs, {
+      isModerator: userType === "moderator",
+    });
   }, [notifications, navFeedNotifications, notificationPrefs, userType]);
 
   const mergeUniqueNotifications = (incoming: NotificationWithUser[], mode: "prepend" | "append") => {
@@ -992,6 +1055,39 @@ export default function UserProfile() {
   );
   const identifiedLikedCount = useMemo(() => countIdentifiedPosts(likedPosts), [likedPosts]);
   const unidentifiedLikedCount = useMemo(() => countUnidentifiedPosts(likedPosts), [likedPosts]);
+
+  // Reset/clamp row windows on identity/filter; do NOT reset on activeTab swipe.
+  useEffect(() => {
+    setPostsGridWindow(initialProfileGridRowWindow(0));
+    setLikedGridWindow(initialProfileGridRowWindow(0));
+    profileGridRowStrideRef.current = 0;
+    profileGridStrideReadyRef.current = false;
+    profileGridOffsetTopRef.current = {};
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    setPostsGridWindow(initialProfileGridRowWindow(profileGridTotalRows(filteredPosts.length)));
+    profileGridOffsetTopRef.current.posts = undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: filter change
+  }, [postFilter]);
+
+  useEffect(() => {
+    setLikedGridWindow(initialProfileGridRowWindow(profileGridTotalRows(filteredLikedPosts.length)));
+    profileGridOffsetTopRef.current.liked = undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: filter change
+  }, [likesFilter]);
+
+  useEffect(() => {
+    setPostsGridWindow((prev) =>
+      clampProfileGridRowWindow(prev, profileGridTotalRows(filteredPosts.length)),
+    );
+  }, [filteredPosts.length]);
+
+  useEffect(() => {
+    setLikedGridWindow((prev) =>
+      clampProfileGridRowWindow(prev, profileGridTotalRows(filteredLikedPosts.length)),
+    );
+  }, [filteredLikedPosts.length]);
 
   const genreStats = useMemo(() => {
     const genreCounts = new Map<string, number>();
@@ -1182,22 +1278,34 @@ export default function UserProfile() {
     },
   ];
 
-  // Compact key-stat row under the profile identity header. Reuses the same
-  // values/icons as the overview cards (single source of truth) and only applies
-  // a clean text tone so it reads as an icon row rather than a boxed dashboard.
-  const KEY_STAT_TONES: Record<string, string> = {
-    Posts: "text-gray-200",
-    IDs: "text-green-300",
-    Likes: "text-pink-300",
-    Comments: "text-cyan-300",
-    Accuracy: "text-violet-300",
+  // Compact key-stat row under the profile identity header. Reuses overview
+  // values for Posts–Comments; fifth slot is categorical Rep (not Accuracy).
+  // Accuracy remains in Your Activity via userOverviewItems.
+  // Icons + values share one neutral white tone; labels stay muted.
+  const KEY_STAT_ICON_TONES: Record<string, string> = {
+    Posts: "text-white",
+    IDs: "text-white",
+    Likes: "text-white",
+    Comments: "text-white",
+    Rep: "text-white",
   };
-  const keyStatRow = (["Posts", "IDs", "Likes", "Comments", "Accuracy"] as const)
-    .map((label) => {
-      const item = userOverviewItems.find((i) => i.label === label);
-      return item ? { ...item, tone: KEY_STAT_TONES[label] } : null;
-    })
-    .filter((x): x is StatsCardItem & { tone: string } => x != null);
+  const KEY_STAT_VALUE_CLASS =
+    "flex min-h-[2rem] w-full items-center justify-center px-0.5 text-center font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]";
+  const keyStatRow: Array<StatsCardItem & { iconTone: string }> = [
+    ...(["Posts", "IDs", "Likes", "Comments"] as const)
+      .map((label) => {
+        const item = userOverviewItems.find((i) => i.label === label);
+        return item ? { ...item, iconTone: KEY_STAT_ICON_TONES[label] } : null;
+      })
+      .filter((x): x is StatsCardItem & { iconTone: string } => x != null),
+    {
+      label: "Rep",
+      value: repTrustForProfile.displayName,
+      Icon: TrendingUp,
+      toneClassName: "text-white",
+      iconTone: KEY_STAT_ICON_TONES.Rep,
+    },
+  ];
 
   useEffect(() => {
     if (!bannerUrl || typeof window === "undefined") {
@@ -2574,14 +2682,158 @@ export default function UserProfile() {
   };
 
   const tabsValue: ProfileTabId = isProfileTabId(activeTab) ? activeTab : "profile";
+
+  const syncProfileGridRowWindowFromScroll = useCallback(
+    (tab: "posts" | "liked", scrollTop: number) => {
+      const scroller = profilePageScrollRef.current;
+      const shell = tab === "posts" ? postsGridShellRef.current : likedGridShellRef.current;
+      const grid = tab === "posts" ? postsGridRef.current : likedGridRef.current;
+      const itemCount = tab === "posts" ? filteredPosts.length : filteredLikedPosts.length;
+      const totalRows = profileGridTotalRows(itemCount);
+      if (!scroller || !shell || totalRows <= 0) return;
+
+      // Freeze stride once from ≥2 real rows — never overwrite mid-scroll.
+      if (!profileGridStrideReadyRef.current && canFreezeProfileGridRowStride(grid)) {
+        const measured = measureProfileGridRowStride(grid);
+        if (measured > 0) {
+          profileGridRowStrideRef.current = measured;
+          profileGridStrideReadyRef.current = true;
+        }
+      }
+
+      const strideReady = profileGridStrideReadyRef.current;
+      const stride = profileGridRowStrideRef.current;
+
+      // Cache shell offset; refresh only when missing (resize/identity/filter clears).
+      let gridOffsetTop = profileGridOffsetTopRef.current[tab];
+      if (gridOffsetTop == null) {
+        gridOffsetTop = measureProfileGridOffsetTop(scroller, shell);
+        profileGridOffsetTopRef.current[tab] = gridOffsetTop;
+      }
+
+      const setWindow = tab === "posts" ? setPostsGridWindow : setLikedGridWindow;
+      setWindow((prev) => {
+        const next = resolveProfileGridStickyRowWindow({
+          scrollTop,
+          gridOffsetTop: gridOffsetTop!,
+          rowStride: stride,
+          totalRows,
+          current: prev,
+          strideReady,
+        });
+        return prev.startRow === next.startRow && prev.endRow === next.endRow
+          ? prev
+          : next;
+      });
+    },
+    [filteredPosts.length, filteredLikedPosts.length],
+  );
+
+  /** rAF-throttled sticky row window on the shared Profile page scroller. */
+  useEffect(() => {
+    const scroller = profilePageScrollRef.current;
+    if (!scroller) return;
+    if (tabsValue !== "posts" && tabsValue !== "liked") return;
+
+    let rafId = 0;
+    const run = () => {
+      rafId = 0;
+      syncProfileGridRowWindowFromScroll(tabsValue, scroller.scrollTop);
+    };
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(run);
+    };
+
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    rafId = window.requestAnimationFrame(run);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  }, [tabsValue, syncProfileGridRowWindowFromScroll, postsGridWindow, likedGridWindow]);
+
+  /** Invalidate frozen stride + offsets when viewport width changes. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => {
+      profileGridRowStrideRef.current = 0;
+      profileGridStrideReadyRef.current = false;
+      profileGridOffsetTopRef.current = {};
+      const scroller = profilePageScrollRef.current;
+      if (!scroller) return;
+      if (tabsValue === "posts" || tabsValue === "liked") {
+        syncProfileGridRowWindowFromScroll(tabsValue, scroller.scrollTop);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [tabsValue, syncProfileGridRowWindowFromScroll]);
+
+  const postsGridSlice = useMemo(() => {
+    const totalRows = profileGridTotalRows(filteredPosts.length);
+    const rowWindow = clampProfileGridRowWindow(postsGridWindow, totalRows);
+    // Spacers use frozen stride only; until ready, zero spacers (startRow stays 0).
+    const stride = profileGridStrideReadyRef.current
+      ? profileGridRowStrideRef.current
+      : 0;
+    return {
+      window: rowWindow,
+      ...profileGridItemSlice({
+        startRow: rowWindow.startRow,
+        endRow: rowWindow.endRow,
+        itemCount: filteredPosts.length,
+      }),
+      spacers: profileGridSpacerHeights({
+        startRow: rowWindow.startRow,
+        endRow: rowWindow.endRow,
+        totalRows,
+        rowStride: stride,
+      }),
+    };
+  }, [filteredPosts.length, postsGridWindow]);
+
+  const likedGridSlice = useMemo(() => {
+    const totalRows = profileGridTotalRows(filteredLikedPosts.length);
+    const rowWindow = clampProfileGridRowWindow(likedGridWindow, totalRows);
+    const stride = profileGridStrideReadyRef.current
+      ? profileGridRowStrideRef.current
+      : 0;
+    return {
+      window: rowWindow,
+      ...profileGridItemSlice({
+        startRow: rowWindow.startRow,
+        endRow: rowWindow.endRow,
+        itemCount: filteredLikedPosts.length,
+      }),
+      spacers: profileGridSpacerHeights({
+        startRow: rowWindow.startRow,
+        endRow: rowWindow.endRow,
+        totalRows,
+        rowStride: stride,
+      }),
+    };
+  }, [filteredLikedPosts.length, likedGridWindow]);
+
   const profileTabPagerViewportRef = useRef<HTMLDivElement | null>(null);
   const profileTabPagerTrackRef = useRef<HTMLDivElement | null>(null);
   const profilePagerPanelRefs = useRef<(HTMLElement | null)[]>([null, null, null, null]);
   const profilePagerHostHeightKeyRef = useRef("");
   const profilePagerHeightPhaseRef = useRef<ProfilePagerProgressEvent["phase"]>("idle");
-  const [pagerVertUnlockIndices, setPagerVertUnlockIndices] = useState<number[] | null>(null);
+  /** PROFILE-SWIPE-POLISH-4 — true while prepare→snap owns host geometry (no remasure). */
+  const profilePagerGestureGeometryLockedRef = useRef(false);
+  /** Imperative current±1 unlock indices during gesture (React state stays idle). */
+  const imperativeUnlockIndicesRef = useRef<number[] | null>(null);
+  /**
+   * Cached panel heights for gesture host minHeight (measure at prepare).
+   */
+  const profilePagerPanelHeightCacheRef = useRef<{
+    key: string;
+    heights: Record<number, number>;
+  }>({ key: "", heights: {} });
   const profileTabsListRef = useRef<HTMLDivElement | null>(null);
   const profileNavIndicatorRef = useRef<HTMLSpanElement | null>(null);
+  const profileTabTriggerRefs = useRef<Partial<Record<ProfileSwipeTabId, HTMLElement | null>>>({});
   const profileNavMetricsRef = useRef<Partial<Record<ProfileSwipeTabId, ProfileNavIndicatorMetrics>>>(
     {},
   );
@@ -2658,72 +2910,123 @@ export default function UserProfile() {
     );
   }, []);
 
-  /** PROFILE-GRID-VIEWER-2A-FIX — unlock current+adjacent, then discrete host minHeight. */
+  const clearImperativePagerUnlock = useCallback(() => {
+    const indices = imperativeUnlockIndicesRef.current;
+    if (indices) {
+      for (const index of indices) {
+        clearProfilePagerPanelImperativeUnlock(profilePagerPanelRefs.current[index]);
+      }
+    }
+    imperativeUnlockIndicesRef.current = null;
+    profilePagerGestureGeometryLockedRef.current = false;
+  }, []);
+
+  /** PROFILE-SWIPE-POLISH-4 — idle / settle: collapse unlock + clear host minHeight. */
+  const settleProfilePagerGestureGeometry = useCallback(() => {
+    clearImperativePagerUnlock();
+    profilePagerHostHeightKeyRef.current = "";
+    profilePagerHeightPhaseRef.current = "idle";
+    const viewport = profileTabPagerViewportRef.current;
+    if (viewport) viewport.style.minHeight = "";
+    requestAnimationFrame(() => {
+      const page = profilePageScrollRef.current;
+      if (page) clampElementScrollTopIfNeeded(page);
+    });
+  }, [clearImperativePagerUnlock]);
+
+  /**
+   * During drag/snap: geometry is locked at prepare — no React unlock, no remasure.
+   * Idle: settle unlock + host height.
+   */
   const applyProfilePagerHostHeight = useCallback(
     (event: Pick<ProfilePagerProgressEvent, "phase" | "currentIndex" | "adjacentIndex">) => {
       const key = `${event.phase}:${event.currentIndex}:${event.adjacentIndex ?? "x"}`;
-      if (key === profilePagerHostHeightKeyRef.current && event.phase !== "idle") {
+
+      if (event.phase === "idle") {
+        settleProfilePagerGestureGeometry();
         return;
       }
-      profilePagerHostHeightKeyRef.current = key;
-      profilePagerHeightPhaseRef.current = event.phase;
+
+      if (key === profilePagerHostHeightKeyRef.current) {
+        return;
+      }
 
       const unlock = resolveProfilePagerVertUnlockIndices({
         phase: event.phase,
         currentIndex: event.currentIndex,
         adjacentIndex: event.adjacentIndex,
       });
-      setPagerVertUnlockIndices((prev) => {
-        if (prev == null && unlock == null) return prev;
-        if (
-          prev != null &&
-          unlock != null &&
-          prev.length === unlock.length &&
-          prev.every((v, i) => v === unlock[i])
-        ) {
-          return prev;
-        }
-        return unlock;
-      });
 
-      if (event.phase === "idle") {
-        const viewport = profileTabPagerViewportRef.current;
-        if (viewport) viewport.style.minHeight = "";
-        requestAnimationFrame(() => {
-          const page = profilePageScrollRef.current;
-          if (page) clampElementScrollTopIfNeeded(page);
+      // Normal path: prepare already unlocked current±1 imperatively.
+      if (profilePagerUnlockCovers(imperativeUnlockIndicesRef.current, unlock)) {
+        profilePagerHostHeightKeyRef.current = key;
+        profilePagerHeightPhaseRef.current = event.phase;
+        return;
+      }
+
+      // Fallback safety (prepare missed a panel): unlock sync via refs — still no React,
+      // and do NOT rewrite minHeight once geometry is locked.
+      if (unlock) {
+        const merged = new Set(imperativeUnlockIndicesRef.current ?? []);
+        for (const index of unlock) {
+          merged.add(index);
+          applyProfilePagerPanelImperativeUnlock(profilePagerPanelRefs.current[index]);
+        }
+        imperativeUnlockIndicesRef.current = [...merged].sort((a, b) => a - b);
+      }
+      profilePagerHostHeightKeyRef.current = key;
+      profilePagerHeightPhaseRef.current = event.phase;
+    },
+    [settleProfilePagerGestureGeometry],
+  );
+
+  const clearProfilePrimaryTabVisualEmphasis = useCallback(() => {
+    for (const id of PROFILE_SWIPE_TAB_IDS) {
+      const el = profileTabTriggerRefs.current[id];
+      if (!el) continue;
+      el.style.transition = "";
+      el.style.color = "";
+    }
+  }, []);
+
+  const applyProfilePrimaryTabVisualEmphasis = useCallback(
+    (event: ProfilePagerProgressEvent) => {
+      const reduced = event.reducedMotion || prefersProfilePagerReducedMotion();
+      const durationMs = event.durationMs ?? PROFILE_TAB_PAGER_SNAP_MS;
+      for (let tabIndex = 0; tabIndex < PROFILE_SWIPE_TAB_IDS.length; tabIndex++) {
+        const id = PROFILE_SWIPE_TAB_IDS[tabIndex]!;
+        const el = profileTabTriggerRefs.current[id];
+        if (!el) continue;
+        const emphasis = resolveProfilePrimaryTabEmphasis({
+          tabIndex,
+          currentIndex: event.currentIndex,
+          adjacentIndex: event.adjacentIndex,
+          progress: event.progress,
         });
+        if (event.animate && !reduced) {
+          el.style.transition = `color ${durationMs}ms ${PROFILE_TAB_PAGER_SNAP_EASING}`;
+        } else {
+          el.style.transition = "none";
+        }
+        // Color/opacity only — font-weight stays fixed on trigger classes (no reflow).
+        el.style.color = profilePrimaryTabEmphasisColor(emphasis);
       }
     },
     [],
   );
 
-  // Measure after vertical unlock classes commit to the DOM (not every pointermove).
-  useLayoutEffect(() => {
-    const viewport = profileTabPagerViewportRef.current;
-    if (!viewport) return;
-    const phase = profilePagerHeightPhaseRef.current;
-    if (phase !== "dragging" && phase !== "snapping") {
-      viewport.style.minHeight = "";
-      return;
-    }
-    const unlock = pagerVertUnlockIndices;
-    if (!unlock || unlock.length === 0) return;
-    const currentHeight = measureProfilePagerPanelHeight(unlock[0]!);
-    const adjacentHeight =
-      unlock.length > 1 ? measureProfilePagerPanelHeight(unlock[1]!) : null;
-    const hostH = resolveProfilePagerHostHeightPx({
-      phase,
-      currentHeight,
-      adjacentHeight,
-    });
-    viewport.style.minHeight = `${hostH}px`;
-  }, [pagerVertUnlockIndices, measureProfilePagerPanelHeight]);
+  // PROFILE-SWIPE-POLISH-4: host minHeight is set once at imperative prepare and
+  // stays locked until idle — no React unlock layout-effect remasure during drag.
 
   const handleProfilePagerProgress = useCallback(
     (event: ProfilePagerProgressEvent) => {
       profileNavIndicatorPhaseRef.current = event.phase;
       applyProfilePagerHostHeight(event);
+      if (event.phase === "idle") {
+        clearProfilePrimaryTabVisualEmphasis();
+      } else {
+        applyProfilePrimaryTabVisualEmphasis(event);
+      }
       const currentId = PROFILE_SWIPE_TAB_IDS[event.currentIndex];
       if (!currentId) return;
       // Cache metrics; only measure when missing (not every pointermove).
@@ -2767,8 +3070,60 @@ export default function UserProfile() {
         },
       );
     },
-    [applyProfileNavIndicator, applyProfilePagerHostHeight, measureProfileNavTriggers],
+    [
+      applyProfileNavIndicator,
+      applyProfilePagerHostHeight,
+      applyProfilePrimaryTabVisualEmphasis,
+      clearProfilePrimaryTabVisualEmphasis,
+      measureProfileNavTriggers,
+    ],
   );
+
+  const handleProfilePagerGesturePrepare = useCallback(() => {
+    const currentIndex = profileTabIndex(profileTabSwipeTabRef.current);
+    const prepareUnlock = resolveProfilePagerPrepareUnlockIndices(currentIndex);
+    const viewport = profileTabPagerViewportRef.current;
+
+    // 1) Synchronous imperative unlock BEFORE any drag transform / React commit.
+    for (const index of prepareUnlock) {
+      applyProfilePagerPanelImperativeUnlock(profilePagerPanelRefs.current[index]);
+    }
+    imperativeUnlockIndicesRef.current = prepareUnlock;
+    profilePagerGestureGeometryLockedRef.current = true;
+    profilePagerHeightPhaseRef.current = "dragging";
+    profilePagerHostHeightKeyRef.current = `prepare:${currentIndex}`;
+
+    // 2) Measure expanded panels (after unlock), cache heights + set host once.
+    const width = Math.round(
+      viewport?.getBoundingClientRect().width ||
+        (typeof window !== "undefined" ? window.innerWidth : 0),
+    );
+    const heights: Record<number, number> = {};
+    let maxH = 0;
+    for (const index of prepareUnlock) {
+      const h = measureProfilePagerPanelHeight(index);
+      heights[index] = h;
+      maxH = Math.max(maxH, h);
+    }
+    profilePagerPanelHeightCacheRef.current = {
+      key: `${tabsValue}:${width}`,
+      heights,
+    };
+    if (viewport) {
+      viewport.style.minHeight = `${maxH}px`;
+    }
+
+    // 3) Warm nav metrics for underline/emphasis (0 rect reads on armed moves).
+    measureProfileNavTriggers();
+
+    // Intentionally no setPagerVertUnlockIndices — React unlock stays idle during gesture.
+  }, [measureProfileNavTriggers, measureProfilePagerPanelHeight, tabsValue]);
+
+  const handleProfilePagerGestureAbort = useCallback(() => {
+    if (profileNavIndicatorPhaseRef.current === "dragging") return;
+    settleProfilePagerGestureGeometry();
+    clearProfilePrimaryTabVisualEmphasis();
+  }, [clearProfilePrimaryTabVisualEmphasis, settleProfilePagerGestureGeometry]);
 
   useProfileTabPager({
     enabled: postsViewerStartIndex === null && likesViewerStartIndex === null,
@@ -2778,6 +3133,8 @@ export default function UserProfile() {
     trackRef: profileTabPagerTrackRef,
     onCommitTab: handleProfileTabChange,
     onPagerProgress: handleProfilePagerProgress,
+    onGesturePrepare: handleProfilePagerGesturePrepare,
+    onGestureAbort: handleProfilePagerGestureAbort,
   });
 
   useEffect(() => {
@@ -2789,19 +3146,24 @@ export default function UserProfile() {
       animate: animateTap,
       durationMs: PROFILE_PRIMARY_NAV_INDICATOR_TAP_MS,
     });
+    // Tap / commit: clear transient drag colors so committed classes win.
+    clearProfilePrimaryTabVisualEmphasis();
     profileNavIndicatorPhaseRef.current = "idle";
     // Settle pager host to committed active panel height (tap or swipe commit).
-    profilePagerHostHeightKeyRef.current = "";
-    applyProfilePagerHostHeight({
-      phase: "idle",
-      currentIndex: profileTabIndex(tabsValue),
-      adjacentIndex: null,
-    });
-  }, [tabsValue, syncProfileNavIndicatorToTab, applyProfilePagerHostHeight]);
+    settleProfilePagerGestureGeometry();
+    measureProfileNavTriggers();
+  }, [
+    tabsValue,
+    syncProfileNavIndicatorToTab,
+    settleProfilePagerGestureGeometry,
+    clearProfilePrimaryTabVisualEmphasis,
+    measureProfileNavTriggers,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => {
+      profilePagerPanelHeightCacheRef.current = { key: "", heights: {} };
       if (profileNavIndicatorPhaseRef.current !== "idle") return;
       syncProfileNavIndicatorToTab(profileTabSwipeTabRef.current, {
         animate: false,
@@ -2816,7 +3178,9 @@ export default function UserProfile() {
   const profilePagerPanelClass = (panelIndex: number, ...extra: Array<string | undefined>) =>
     cn(
       PROFILE_TAB_PAGER_PANEL_CLASS,
-      pagerVertUnlockIndices?.includes(panelIndex) && PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
+      // Imperative unlock ref keeps className stable if React re-renders mid-gesture.
+      imperativeUnlockIndicesRef.current?.includes(panelIndex) &&
+        PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
       ...extra,
     );
 
@@ -2825,7 +3189,7 @@ export default function UserProfile() {
       ref={profilePageScrollRef}
       data-lg-nav-5a-dest="profile"
       className={cn(
-        APP_PAGE_SCROLL_CLASS,
+        PROFILE_PAGE_SCROLL_CLASS,
         "overflow-x-hidden",
         profilePageCanvasClass(hasReadyUploadedBanner),
       )}
@@ -2884,47 +3248,6 @@ export default function UserProfile() {
               />
             )}
 
-            <DropdownMenu open={isBannerMenuOpen} onOpenChange={setIsBannerMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="ios-press ios-press-soft absolute right-4 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm hover:bg-black/60"
-                  data-testid="button-edit-profile-banner"
-                  aria-label="Edit profile banner"
-                >
-                  <ImageIcon className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="min-w-[10rem]"
-                key={hasProfileBanner ? "profile-banner-set" : "profile-banner-empty"}
-              >
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleBannerImagePick();
-                  }}
-                  data-testid="menu-change-profile-banner"
-                >
-                  {hasProfileBanner ? "Change banner" : "Add banner"}
-                </DropdownMenuItem>
-                {hasProfileBanner ? (
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setIsBannerMenuOpen(false);
-                      removeProfileBannerMutation.mutate();
-                    }}
-                    disabled={removeProfileBannerMutation.isPending}
-                    data-testid="menu-remove-profile-banner"
-                  >
-                    Remove banner
-                  </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <div className="relative z-10 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
               <div className="mb-4 flex items-start gap-4">
                 <div className="flex shrink-0 flex-col items-center gap-2">
@@ -2969,27 +3292,6 @@ export default function UserProfile() {
                       <Camera className="w-4 h-4 text-black" />
                     </button>
                   </div>
-                  {/* Rep tier badge under avatar — community owners only; artists use fav genre in actions row */}
-                  {!(verifiedArtist && userType === "artist") ? (
-                    reputationLoading ? (
-                      <DubHubSkeletonBar
-                        tone="faint"
-                        className="h-6 w-[5.5rem] rounded-full"
-                        aria-hidden
-                        data-testid="profile-rep-badge-skeleton"
-                      />
-                    ) : (
-                      <div
-                        className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-black/35 px-2.5 py-1 backdrop-blur-sm"
-                        data-testid="profile-rep-badge"
-                      >
-                        <TrendingUp className="w-3.5 h-3.5 shrink-0 text-accent" />
-                        <span className="text-xs font-semibold text-accent">
-                          {repTrustForProfile.displayName}
-                        </span>
-                      </div>
-                    )
-                  ) : null}
                 </div>
                 <div className="min-w-0 flex-1 pt-1">
                   <div className="flex items-center gap-1.5">
@@ -3006,6 +3308,46 @@ export default function UserProfile() {
                         moderator={isModerator}
                       />
                     )}
+                    <DropdownMenu open={isBannerMenuOpen} onOpenChange={setIsBannerMenuOpen}>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="ios-press ios-press-soft ml-auto shrink-0 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm hover:bg-black/60"
+                          data-testid="button-edit-profile-banner"
+                          aria-label="Edit profile banner"
+                        >
+                          <ImageIcon className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-[10rem]"
+                        key={hasProfileBanner ? "profile-banner-set" : "profile-banner-empty"}
+                      >
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleBannerImagePick();
+                          }}
+                          data-testid="menu-change-profile-banner"
+                        >
+                          {hasProfileBanner ? "Change banner" : "Add banner"}
+                        </DropdownMenuItem>
+                        {hasProfileBanner ? (
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setIsBannerMenuOpen(false);
+                              removeProfileBannerMutation.mutate();
+                            }}
+                            disabled={removeProfileBannerMutation.isPending}
+                            data-testid="menu-remove-profile-banner"
+                          >
+                            Remove banner
+                          </DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
                     {userData.joinedDateLine}
@@ -3013,7 +3355,7 @@ export default function UserProfile() {
                 </div>
               </div>
 
-              {verifiedArtist && userType === "artist" && userData.username ? (
+              {userData.username ? (
                 <div
                   className="mb-4 flex items-end gap-2"
                   data-testid="artist-profile-actions"
@@ -3044,10 +3386,18 @@ export default function UserProfile() {
                 <ProfileKeyStatsSkeleton />
               ) : (
                 <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
-                  {keyStatRow.map(({ label, value, Icon, tone }) => (
+                  {keyStatRow.map(({ label, value, Icon, iconTone }) => (
                     <div key={label} className="flex flex-col items-center gap-1 text-center">
-                      <Icon className={`w-4 h-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`} />
-                      <span className={`text-base font-bold leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`}>
+                      <Icon
+                        className={`w-4 h-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${iconTone}`}
+                      />
+                      <span
+                        className={
+                          label === "Rep"
+                            ? `${KEY_STAT_VALUE_CLASS} text-[11px] leading-tight`
+                            : `${KEY_STAT_VALUE_CLASS} text-base leading-none`
+                        }
+                      >
                         {value}
                       </span>
                       <span className="text-[10px] leading-tight text-gray-300/90">{label}</span>
@@ -3075,6 +3425,9 @@ export default function UserProfile() {
                 <TabsTrigger
                   value="profile"
                   data-testid="tab-profile"
+                  ref={(el) => {
+                    profileTabTriggerRefs.current.profile = el;
+                  }}
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
                   <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
@@ -3087,6 +3440,9 @@ export default function UserProfile() {
                 <TabsTrigger
                   value="posts"
                   data-testid="tab-posts"
+                  ref={(el) => {
+                    profileTabTriggerRefs.current.posts = el;
+                  }}
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
                   <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
@@ -3099,6 +3455,9 @@ export default function UserProfile() {
                 <TabsTrigger
                   value="liked"
                   data-testid="tab-liked"
+                  ref={(el) => {
+                    profileTabTriggerRefs.current.liked = el;
+                  }}
                   className={PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS}
                 >
                   <span className={PROFILE_PRIMARY_NAV_GROUP_CLASS} data-profile-nav-group>
@@ -3111,6 +3470,9 @@ export default function UserProfile() {
                 <TabsTrigger
                   value="notifications"
                   data-testid="tab-notifications"
+                  ref={(el) => {
+                    profileTabTriggerRefs.current.notifications = el;
+                  }}
                   aria-label={
                     unreadCount > 0
                       ? `Notifications, ${formatNotificationBadgeCount(unreadCount)} unread`
@@ -3371,43 +3733,69 @@ export default function UserProfile() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {filteredPosts.map((post, index) => {
-                    const thumbnailSrc = getPostThumbnail(post);
-                    const videoSrc = getPostVideoPreview(post);
-                    return (
-                      <button
-                        key={post.id}
-                        type="button"
-                        onClick={(event) => {
-                          if (consumeProfilePagerCardClickSuppression()) {
-                            event.preventDefault();
-                            return;
-                          }
-                          openPostsPostViewer(index);
-                        }}
-                        className="ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
-                        data-testid={`posts-thumbnail-${post.id}`}
-                        data-profile-pager-card="true"
-                        aria-label={`Open your post: ${post.description?.slice(0, 40) || post.id}`}
-                      >
-                        <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />
+                <div
+                  ref={postsGridShellRef}
+                  data-testid="profile-posts-grid-shell"
+                  data-profile-grid-max-tiles={PROFILE_GRID_MAX_MOUNTED_TILES}
+                  data-profile-grid-window-rows={PROFILE_GRID_WINDOW_ROWS}
+                >
+                  <div
+                    aria-hidden
+                    data-testid="profile-posts-grid-top-spacer"
+                    style={{ height: postsGridSlice.spacers.topPx }}
+                  />
+                  <div ref={postsGridRef} className={PROFILE_POSTS_LIKES_GRID_CLASS}>
+                    {filteredPosts
+                      .slice(postsGridSlice.startIndex, postsGridSlice.endIndex)
+                      .map((post, localIndex) => {
+                        const absoluteIndex = profileGridAbsoluteIndex(
+                          postsGridSlice.window.startRow,
+                          localIndex,
+                        );
+                        const thumbnailSrc = getPostThumbnail(post);
+                        const videoSrc = getPostVideoPreview(post);
+                        return (
+                          <button
+                            key={post.id}
+                            type="button"
+                            onClick={(event) => {
+                              if (consumeProfilePagerCardClickSuppression()) {
+                                event.preventDefault();
+                                return;
+                              }
+                              openPostsPostViewer(absoluteIndex);
+                            }}
+                            className={PROFILE_POSTS_LIKES_CARD_CLASS}
+                            data-testid={`posts-thumbnail-${post.id}`}
+                            data-profile-pager-card="true"
+                            aria-label={`Open your post: ${post.description?.slice(0, 40) || post.id}`}
+                          >
+                            <ProfilePostThumbnail
+                              thumbnailSrc={thumbnailSrc}
+                              videoSrc={videoSrc}
+                              disableVideoFallback
+                              scrimWhenReady
+                            />
 
-                        <div className="absolute inset-0 z-[3] bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+                            <ProfileGridStatusPill post={post} />
 
-                        <ProfileGridStatusPill post={post} />
-
-                        <div className="absolute bottom-2 left-2 right-2 z-10">
-                          <p className="text-xs text-white/95 font-medium truncate">
-                            {formatUsernameDisplay(post.user.username)}
-                          </p>
-                          {post.description ? (
-                            <p className="text-[11px] text-white/80 truncate">{post.description}</p>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
+                            <div className="absolute bottom-2 left-2 right-2 z-10">
+                              <p className="text-xs text-white/95 font-medium truncate">
+                                {formatUsernameDisplay(post.user.username)}
+                              </p>
+                              {post.description ? (
+                                <p className="text-[11px] text-white/80 truncate">{post.description}</p>
+                              ) : null}
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                  <div
+                    aria-hidden
+                    data-testid="profile-posts-grid-bottom-spacer"
+                    style={{ height: postsGridSlice.spacers.bottomPx }}
+                  />
                 </div>
               )}
             </TabsContent>
@@ -3459,43 +3847,69 @@ export default function UserProfile() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {filteredLikedPosts.map((post, index) => {
-                    const thumbnailSrc = getPostThumbnail(post);
-                    const videoSrc = getPostVideoPreview(post);
-                    return (
-                      <button
-                        key={post.id}
-                        type="button"
-                        onClick={(event) => {
-                          if (consumeProfilePagerCardClickSuppression()) {
-                            event.preventDefault();
-                            return;
-                          }
-                          openLikedPostViewer(index);
-                        }}
-                        className="ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-surface border border-white/10 hover:border-white/25 transition-colors text-left"
-                        data-testid={`liked-thumbnail-${post.id}`}
-                        data-profile-pager-card="true"
-                        aria-label={`Open liked post by ${formatUsernameDisplay(post.user.username)}`}
-                      >
-                        <ProfilePostThumbnail thumbnailSrc={thumbnailSrc} videoSrc={videoSrc} />
+                <div
+                  ref={likedGridShellRef}
+                  data-testid="profile-liked-grid-shell"
+                  data-profile-grid-max-tiles={PROFILE_GRID_MAX_MOUNTED_TILES}
+                  data-profile-grid-window-rows={PROFILE_GRID_WINDOW_ROWS}
+                >
+                  <div
+                    aria-hidden
+                    data-testid="profile-liked-grid-top-spacer"
+                    style={{ height: likedGridSlice.spacers.topPx }}
+                  />
+                  <div ref={likedGridRef} className={PROFILE_POSTS_LIKES_GRID_CLASS}>
+                    {filteredLikedPosts
+                      .slice(likedGridSlice.startIndex, likedGridSlice.endIndex)
+                      .map((post, localIndex) => {
+                        const absoluteIndex = profileGridAbsoluteIndex(
+                          likedGridSlice.window.startRow,
+                          localIndex,
+                        );
+                        const thumbnailSrc = getPostThumbnail(post);
+                        const videoSrc = getPostVideoPreview(post);
+                        return (
+                          <button
+                            key={post.id}
+                            type="button"
+                            onClick={(event) => {
+                              if (consumeProfilePagerCardClickSuppression()) {
+                                event.preventDefault();
+                                return;
+                              }
+                              openLikedPostViewer(absoluteIndex);
+                            }}
+                            className={PROFILE_POSTS_LIKES_CARD_CLASS}
+                            data-testid={`liked-thumbnail-${post.id}`}
+                            data-profile-pager-card="true"
+                            aria-label={`Open liked post by ${formatUsernameDisplay(post.user.username)}`}
+                          >
+                            <ProfilePostThumbnail
+                              thumbnailSrc={thumbnailSrc}
+                              videoSrc={videoSrc}
+                              disableVideoFallback
+                              scrimWhenReady
+                            />
 
-                        <div className="absolute inset-0 z-[3] bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+                            <ProfileGridStatusPill post={post} />
 
-                        <ProfileGridStatusPill post={post} />
-
-                        <div className="absolute bottom-2 left-2 right-2 z-10">
-                          <p className="text-xs text-white/95 font-medium truncate">
-                            {formatUsernameDisplay(post.user.username)}
-                          </p>
-                          {post.description ? (
-                            <p className="text-[11px] text-white/80 truncate">{post.description}</p>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
+                            <div className="absolute bottom-2 left-2 right-2 z-10">
+                              <p className="text-xs text-white/95 font-medium truncate">
+                                {formatUsernameDisplay(post.user.username)}
+                              </p>
+                              {post.description ? (
+                                <p className="text-[11px] text-white/80 truncate">{post.description}</p>
+                              ) : null}
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                  <div
+                    aria-hidden
+                    data-testid="profile-liked-grid-bottom-spacer"
+                    style={{ height: likedGridSlice.spacers.bottomPx }}
+                  />
                 </div>
               )}
             </TabsContent>

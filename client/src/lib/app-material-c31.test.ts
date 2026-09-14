@@ -93,7 +93,7 @@ describe("C3.1 Delete Release surface", () => {
 });
 
 describe("C3.1 smoked Schedule / timezone sheets", () => {
-  it("uses opt-in sheet backdrop + glass surface; Comments/paywall untouched", () => {
+  it("uses opt-in sheet backdrop + glass surface; Comments untouched; paywall shares sheet tokens", () => {
     assert.equal(APP_MATERIAL_SHEET_BACKDROP_CLASS, "dubhub-app-sheet-backdrop");
     assert.match(drawerSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS/);
     assert.match(drawerSrc, /APP_MATERIAL_SHEET_SURFACE_CLASS/);
@@ -102,7 +102,7 @@ describe("C3.1 smoked Schedule / timezone sheets", () => {
     assert.match(cssSrc, /\.dubhub-app-sheet-backdrop/);
     assert.match(cssSrc, /\.dark \.dubhub-app-sheet-surface[\s\S]*?backdrop-filter:\s*blur\(20px\)/);
     assert.doesNotMatch(commentsSrc, /APP_MATERIAL_SHEET_BACKDROP|dubhub-app-sheet-backdrop/);
-    assert.doesNotMatch(paywallSrc, /APP_MATERIAL_SHEET_BACKDROP|dubhub-app-sheet-backdrop/);
+    assert.match(paywallSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS/);
     assert.match(drawerSrc, /APP_MATERIAL_FORM_PRIMARY_CLASS/);
     assert.match(statusSrc, /APP_MATERIAL_SEGMENT_ACTIVE_CLASS/);
     assert.match(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /dubhub-app-segment-active/);

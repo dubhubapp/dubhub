@@ -13,6 +13,10 @@ import {
   HOME_SCRUB_SOUND_SHELL_CLASS,
   HOME_SCRUB_TRACK_CLASS,
   HOME_SCRUB_VISUAL_INSET_CLASS,
+  VIEWER_SCRUB_FILL_CLASS,
+  VIEWER_SCRUB_INACTIVE_CLASS,
+  VIEWER_SCRUB_TRACK_CLASS,
+  VIEWER_SCRUB_VISUAL_INSET_CLASS,
   scrubRatioFromClientX,
 } from "./video-feed-scrub";
 
@@ -68,7 +72,10 @@ describe("HOME-SCRUB-4 glyph inset + scrub-state + Home sound", () => {
     assert.doesNotMatch(HOME_SCRUB_VISUAL_INSET_CLASS, /^pl-3 /);
     assert.doesNotMatch(HOME_SCRUB_VISUAL_INSET_CLASS, /pr-3/);
     assert.doesNotMatch(HOME_SCRUB_VISUAL_INSET_CLASS, /0\.65rem/);
-    assert.match(videoCardSrc, /!embeddedFeed && HOME_SCRUB_VISUAL_INSET_CLASS/);
+    assert.match(
+      videoCardSrc,
+      /embeddedFeed \? VIEWER_SCRUB_VISUAL_INSET_CLASS : HOME_SCRUB_VISUAL_INSET_CLASS/,
+    );
     assert.match(HOME_SCRUB_TRACK_CLASS, /h-\[3px\]/);
     assert.match(HOME_SCRUB_TRACK_CLASS, /overflow-hidden/);
     assert.match(HOME_SCRUB_TRACK_CLASS, /rounded-full/);
@@ -100,20 +107,52 @@ describe("HOME-SCRUB-4 glyph inset + scrub-state + Home sound", () => {
     assert.doesNotMatch(apply, /scrubHitRef\.current/);
   });
 
-  it("leaves embeddedFeed scrub full-width, 4px, and previous colours", () => {
+  it("viewer scrub chrome matches Home visual language with balanced inset", () => {
+    assert.equal(VIEWER_SCRUB_VISUAL_INSET_CLASS, "px-3.5 sm:px-4");
+    assert.equal(VIEWER_SCRUB_TRACK_CLASS, HOME_SCRUB_TRACK_CLASS);
+    assert.equal(VIEWER_SCRUB_INACTIVE_CLASS, HOME_SCRUB_INACTIVE_CLASS);
+    assert.equal(VIEWER_SCRUB_FILL_CLASS, HOME_SCRUB_FILL_CLASS);
+    assert.match(VIEWER_SCRUB_TRACK_CLASS, /h-\[3px\]/);
+    assert.match(VIEWER_SCRUB_TRACK_CLASS, /rounded-full/);
+    assert.match(VIEWER_SCRUB_TRACK_CLASS, /overflow-hidden/);
+    assert.match(VIEWER_SCRUB_INACTIVE_CLASS, /bg-white\/20/);
+    assert.match(VIEWER_SCRUB_FILL_CLASS, /bg-white\/80/);
+    assert.doesNotMatch(VIEWER_SCRUB_VISUAL_INSET_CLASS, /video-feed-rail-width/);
+    assert.match(videoCardSrc, /VIEWER_SCRUB_VISUAL_INSET_CLASS/);
+    assert.match(videoCardSrc, /VIEWER_SCRUB_TRACK_CLASS/);
+    assert.match(videoCardSrc, /VIEWER_SCRUB_INACTIVE_CLASS/);
+    assert.match(videoCardSrc, /VIEWER_SCRUB_FILL_CLASS/);
     assert.match(
       videoCardSrc,
-      /embeddedFeed\s*\?\s*"pointer-events-none relative h-1 w-full overflow-visible"/,
+      /embeddedFeed \? VIEWER_SCRUB_VISUAL_INSET_CLASS : HOME_SCRUB_VISUAL_INSET_CLASS/,
     );
     assert.match(
       videoCardSrc,
-      /embeddedFeed\s*\?\s*"absolute inset-0 rounded-full bg-white\/15"/,
+      /embeddedFeed \? VIEWER_SCRUB_TRACK_CLASS : HOME_SCRUB_TRACK_CLASS/,
     );
     assert.match(
       videoCardSrc,
-      /embeddedFeed\s*\?\s*"absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white\/55/,
+      /embeddedFeed \? VIEWER_SCRUB_INACTIVE_CLASS : HOME_SCRUB_INACTIVE_CLASS/,
     );
-    assert.match(videoCardSrc, /!embeddedFeed && HOME_SCRUB_VISUAL_INSET_CLASS/);
+    assert.match(
+      videoCardSrc,
+      /embeddedFeed \? VIEWER_SCRUB_FILL_CLASS : HOME_SCRUB_FILL_CLASS/,
+    );
+    /* Attached Clips: no duplicate outer px-3 — inset owned by VIEWER_SCRUB_VISUAL_INSET_CLASS. */
+    assert.match(
+      videoCardSrc,
+      /bottom-\[calc\(env\(safe-area-inset-bottom,0px\)\+28px\)\] pb-0/,
+    );
+    assert.doesNotMatch(
+      videoCardSrc,
+      /bottom-\[calc\(env\(safe-area-inset-bottom,0px\)\+28px\)\] px-3 pb-0/,
+    );
+    /* Y / hit padding unchanged. */
+    assert.match(
+      videoCardSrc,
+      /"absolute inset-x-0 bottom-0 pb-\[max\(0\.25rem,env\(safe-area-inset-bottom,0px\)\)\]"/,
+    );
+    assert.match(videoCardSrc, /embeddedFeed \? "pt-1\.5 pb-1"/);
   });
 
   it("restores pre-workaround overlay/release opacity (parent 0.18 while scrubbing)", () => {
@@ -123,9 +162,9 @@ describe("HOME-SCRUB-4 glyph inset + scrub-state + Home sound", () => {
     assert.doesNotMatch(videoCardSrc, /HOME_SCRUB_METADATA_DIM_CLASS/);
     assert.match(
       videoCardSrc,
-      /data-video-card-release-slot[\s\S]*?className=\{\s*cn\(\s*"grid"/,
+      /\{releasePreview \? \([\s\S]*?data-video-card-release-slot[\s\S]*?className=\{\s*cn\(\s*"grid"/,
     );
-    assert.match(videoCardSrc, /data-video-card-release-slot className="pb-3"/);
+    assert.match(videoCardSrc, /isFullScreenPostViewer \? "pt-0\.5" : "pb-3"/);
     assert.match(
       videoCardSrc,
       /translate-y-\[var\(--video-card-metadata-shift,0px\)\]/,

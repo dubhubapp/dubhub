@@ -7,6 +7,7 @@ import {
   DISCOVER_GENRE_PAGE_HEADING_ROW_CLASS,
   DISCOVER_PAGE_ARROW_Y_CLASS,
 } from "./discover-subgenre-chips";
+import { DISCOVER_FEED_MODE_ICON_COLOR_CLASS } from "./discover-feed-mode-presentation";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const genreFilterSrc = readFileSync(join(here, "../components/genre-filter.tsx"), "utf8");
@@ -86,10 +87,13 @@ describe("discover menu chrome", () => {
       genreFilterSrc,
       /border-red-400\/80 ring-2 ring-red-400\/45 shadow-\[inset_0_1px_0_rgba\(255,255,255,0\.40\),0_0_8px_2px_rgba\(239,68,68,0\.55\)/,
     );
-    assert.match(genreFilterSrc, /text-amber-300/);
-    assert.match(genreFilterSrc, /text-cyan-200/);
-    assert.match(genreFilterSrc, /text-red-200/);
-    assert.match(genreFilterSrc, /text-\[#8ffdf4\]/);
+    assert.match(genreFilterSrc, /DISCOVER_FEED_MODE_ICON_COLOR_CLASS/);
+    assert.equal(DISCOVER_FEED_MODE_ICON_COLOR_CLASS.trending, "text-amber-300");
+    assert.equal(DISCOVER_FEED_MODE_ICON_COLOR_CLASS.newest, "text-green-400");
+    assert.equal(DISCOVER_FEED_MODE_ICON_COLOR_CLASS.hottest, "text-red-200");
+    assert.equal(DISCOVER_FEED_MODE_ICON_COLOR_CLASS.random, "text-red-500");
+    assert.doesNotMatch(genreFilterSrc, /text-\[#8ffdf4\]/);
+    assert.doesNotMatch(genreFilterSrc, /text-cyan-200/);
   });
 
   it("aligns Feed and Status to the shared Discover content inset", () => {
@@ -132,9 +136,10 @@ describe("discover menu chrome", () => {
     assert.match(genreFilterSrc, /bg-\[#0a83ff\]\/40/);
     assert.doesNotMatch(genreFilterSrc, /bg-accent\b/);
     assert.doesNotMatch(genreFilterSrc, /rgba\(34,211,238/);
-    assert.match(genreFilterSrc, /text-amber-200/);
-    assert.match(genreFilterSrc, /text-cyan-100/);
-    assert.match(genreFilterSrc, /text-red-200/);
+    assert.match(genreFilterSrc, /DISCOVER_FEED_MODE_ICON_COLOR_CLASS\.trending/);
+    assert.match(genreFilterSrc, /DISCOVER_FEED_MODE_ICON_COLOR_CLASS\.newest/);
+    assert.match(genreFilterSrc, /DISCOVER_FEED_MODE_ICON_COLOR_CLASS\.hottest/);
+    assert.doesNotMatch(genreFilterSrc, /text-cyan-100/);
     assert.match(genreFilterSrc, /border-white\/10 bg-black\/20/);
     assert.match(collapsedSrc, /discoverMenuInactiveChipClass/);
     assert.match(genreFilterSrc, /border-white\/10 bg-white\/\[0\.06\]/);

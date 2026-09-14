@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useHomeFeedInteraction } from "@/lib/home-feed-interaction-context";
 import { useSubmitClip } from "@/lib/submit-clip-context";
 import { useUser } from "@/lib/user-context";
 import { useInAppNotificationSuppression } from "@/lib/in-app-notification-suppression";
+import { apiRequest } from "@/lib/queryClient";
+import { useNotificationPreferences } from "@/lib/notification-preferences";
+import { countVisibleUnreadNotifications } from "@/lib/nav-notification-unread-count";
 import {
   enabledAppTabs,
   nativeNavIsAvailable,
@@ -20,6 +24,7 @@ import {
   readNativeNavGeometry,
   setNativeNavigationCovered,
   setNativeNavigationVisible,
+  setNativeProfileBadgeCount,
   setNativeProfileIconRole,
   setNativeSelectedTab,
   setNativeTabs,
@@ -70,6 +75,7 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const { openSubmitClip, isSubmitClipOpen, isSubmitClipCovering } = useSubmitClip();
   const { userType, currentUser, isAuthenticated } = useUser();
   const { openCommentsPostId } = useInAppNotificationSuppression();
+  const notificationPrefs = useNotificationPreferences();
   const paywallCovering = useSyncExternalStore(
     subscribeVerifiedArtistToolsPaywallNativeNavCover,
     isVerifiedArtistToolsPaywallCoveringNativeNav,
@@ -87,12 +93,36 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const lastAvailableRef = useRef<boolean | undefined>(undefined);
   const lastCoveredRef = useRef<boolean | undefined>(undefined);
   const lastProfileIconRoleRef = useRef<string | undefined>(undefined);
+  const lastProfileBadgeCountRef = useRef<number | undefined>(undefined);
 
   const isModerator = userType === "moderator";
   // PROFILE-NAV-2: account_type on currentUser.userType — not nav userType (moderator collapses).
   const profileIconRole = profileIconRoleFromAccountType(
     isAuthenticated ? currentUser?.userType : null,
   );
+
+  // PROFILE-NAV-BADGE-1: same nav-feed SoT as Profile / React bottom nav (no second query).
+  const { data: navFeedNotifications = [] } = useQuery<unknown[]>({
+    queryKey: ["/api/user", currentUser?.id, "notifications", "nav-feed"],
+    enabled: !!currentUser?.id && isAuthenticated,
+    staleTime: 0,
+    refetchInterval: 20000,
+    queryFn: async () => {
+      if (!currentUser?.id) return [];
+      const res = await apiRequest("GET", `/api/user/${currentUser.id}/notifications?limit=100`);
+      const payload = await res.json();
+      return Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.notifications)
+          ? payload.notifications
+          : [];
+    },
+  });
+  const profileBadgeCount =
+    isAuthenticated && currentUser?.id
+      ? countVisibleUnreadNotifications(navFeedNotifications, notificationPrefs, { isModerator })
+      : 0;
+
   const resetPasswordRoute = location === "/reset-password";
   const commentsOpen = !!openCommentsPostId;
   const tabs = enabledAppTabs(isModerator);
@@ -129,6 +159,7 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     return () => {
       void setNativeNavigationCovered(false);
       void setNativeNavigationVisible(false);
+      void setNativeProfileBadgeCount(0);
     };
   }, []);
 
@@ -149,6 +180,22 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     lastProfileIconRoleRef.current = profileIconRole;
     void setNativeProfileIconRole(profileIconRole);
   }, [nativeEnabled, profileIconRole]);
+
+  // PROFILE-NAV-BADGE-1: push unread count; clear on logout / native-nav disabled.
+  useEffect(() => {
+    if (!nativeEnabled || !isAuthenticated) {
+      if (lastProfileBadgeCountRef.current !== 0) {
+        lastProfileBadgeCountRef.current = 0;
+        void setNativeProfileBadgeCount(0);
+      } else {
+        lastProfileBadgeCountRef.current = 0;
+      }
+      return;
+    }
+    if (lastProfileBadgeCountRef.current === profileBadgeCount) return;
+    lastProfileBadgeCountRef.current = profileBadgeCount;
+    void setNativeProfileBadgeCount(profileBadgeCount);
+  }, [nativeEnabled, isAuthenticated, profileBadgeCount]);
 
   useEffect(() => {
     if (!nativeEnabled) return;

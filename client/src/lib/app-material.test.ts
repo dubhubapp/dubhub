@@ -21,13 +21,19 @@ import {
   RELEASE_FEED_SKELETON_VARIANT,
   RELEASE_TRACKER_ADD_HREF,
   RELEASE_TRACKER_EMPTY_CLASS,
+  RELEASE_TRACKER_EMPTY_REGION_CLASS,
   RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
   RELEASE_TRACKER_PAGE_CLASS,
   RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS,
-  RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS,
+  RELEASE_TRACKER_SECONDARY_INDICATOR_CLASS,
   RELEASE_TRACKER_STICKY_CHROME_CLASS,
   RELEASE_TRACKER_STICKY_FADE_CLASS,
   getReleaseTrackerEmptyCopy,
+  getMyUpcomingEmptyReleaseCtaLabel,
+  resolveMyUpcomingEmptyReleaseCtaLabel,
+  MY_UPCOMING_EMPTY_CTA_FIRST,
+  MY_UPCOMING_EMPTY_CTA_NEXT,
+  MY_UPCOMING_EMPTY_CTA_UNRESOLVED,
 } from "@/lib/release-tracker-presentation";
 import {
   RELEASE_COMING_SOON_PILL_CLASS,
@@ -62,7 +68,7 @@ describe("C1 Releases atmosphere scope", () => {
   it("uses the approved interactive blue (#0a83ff) for generic tab indicators only", () => {
     assert.equal(APP_MATERIAL_INTERACTIVE_BLUE, "#0a83ff");
     assert.match(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /after:bg-\[#0a83ff\]/);
-    assert.match(RELEASE_TRACKER_SECONDARY_ACTIVE_CLASS, /after:bg-\[#0a83ff\]/);
+    assert.match(RELEASE_TRACKER_SECONDARY_INDICATOR_CLASS, /bg-\[#0a83ff\]/);
     assert.doesNotMatch(RELEASE_TRACKER_PRIMARY_INDICATOR_CLASS, /bg-accent|4ae9df|teal/);
   });
 });
@@ -102,9 +108,16 @@ describe("C1 frozen geometry + anti-card rows", () => {
       getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "my" }).title,
       "No upcoming releases",
     );
-    assert.match(trackerSrc, /Add your first release/);
+    assert.equal(resolveMyUpcomingEmptyReleaseCtaLabel(), MY_UPCOMING_EMPTY_CTA_UNRESOLVED);
+    assert.equal(getMyUpcomingEmptyReleaseCtaLabel(false), MY_UPCOMING_EMPTY_CTA_FIRST);
+    assert.equal(getMyUpcomingEmptyReleaseCtaLabel(true), MY_UPCOMING_EMPTY_CTA_NEXT);
+    assert.match(trackerSrc, /resolveMyUpcomingEmptyReleaseCtaLabel/);
+    assert.match(trackerSrc, /showMyUpcomingEmptyCta/);
     assert.match(trackerSrc, /RELEASE_TRACKER_EMPTY_CLASS/);
-    assert.match(RELEASE_TRACKER_EMPTY_CLASS, /py-14/);
+    assert.match(trackerSrc, /RELEASE_TRACKER_EMPTY_REGION_CLASS/);
+    assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /flex-1/);
+    assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /justify-center/);
+    assert.doesNotMatch(RELEASE_TRACKER_EMPTY_CLASS, /py-14/);
     assert.doesNotMatch(trackerSrc, /backdrop-blur.*empty|empty.*backdrop-blur/);
   });
 

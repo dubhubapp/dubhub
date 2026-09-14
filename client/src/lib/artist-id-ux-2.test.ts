@@ -53,5 +53,7 @@ describe("ARTIST-ID-UX-2 server denial contracts", () => {
     assert.match(commentsSrc, /collectDeniedArtistIdsFromTags/);
     assert.match(commentsSrc, /suggestion\.disabled/);
     assert.match(commentsSrc, /font-semibold text-gray-800/);
+    assert.match(commentsSrc, /after:absolute after:-inset-y-3 after:inset-x-0/);
+    assert.doesNotMatch(commentsSrc, /-mb-1\.5 mt-1 inline-flex min-h-11/);
   });
 });

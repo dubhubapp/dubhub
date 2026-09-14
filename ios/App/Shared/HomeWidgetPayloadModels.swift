@@ -46,7 +46,9 @@ struct HomeWidgetReleaseDto: Codable, Equatable {
 
 enum HomeWidgetPayloadLoadResult: Equatable {
     case release(HomeWidgetBridgeEnvelope)
-    case empty
+    /// Empty / unavailable stamped payload. Eligibility is preserved so WidgetKit
+    /// can distinguish artist-no-next copy without inventing account UI state.
+    case empty(eligibility: String?)
     case expired
     case invalid
 }
@@ -56,9 +58,9 @@ enum HomeWidgetPayloadLoader {
         defaults: UserDefaults? = HomeWidgetAppGroup.userDefaults(),
         now: Date = Date()
     ) -> HomeWidgetPayloadLoadResult {
-        guard let defaults else { return .empty }
+        guard let defaults else { return .empty(eligibility: nil) }
         guard let raw = defaults.string(forKey: HomeWidgetAppGroup.payloadKey), !raw.isEmpty else {
-            return .empty
+            return .empty(eligibility: nil)
         }
         return parse(jsonString: raw, now: now)
     }
@@ -92,7 +94,8 @@ enum HomeWidgetPayloadLoader {
 
         let mode = envelope.dto.mode
         if mode == "empty" || mode == "unavailable" {
-            return .empty
+            let eligibility = envelope.dto.eligibility.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .empty(eligibility: eligibility.isEmpty ? nil : eligibility)
         }
 
         if mode == "artist" || mode == "listener" {

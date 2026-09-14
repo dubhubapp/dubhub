@@ -66,10 +66,16 @@ describe("C2 opt-in overlay material (not global primitive rewrite)", () => {
     assert.match(APP_MATERIAL_DIALOG_CONTENT_CLASS, /max-w-md/);
   });
 
-  it("leaves Comments and push-prompt material / mechanics alone", () => {
-    assert.doesNotMatch(commentsSrc, /APP_MATERIAL_OVERLAY|dubhub-app-overlay|dubhub-app-sheet/);
-    assert.doesNotMatch(pushSrc, /APP_MATERIAL_OVERLAY|dubhub-app-overlay/);
+  it("leaves Comments Drawer custom; nested delete confirm may use overlay tokens", () => {
+    assert.doesNotMatch(commentsSrc, /APP_MATERIAL_SHEET_SURFACE_CLASS|dubhub-app-sheet-surface/);
+    assert.doesNotMatch(commentsSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS|dubhub-app-sheet-backdrop/);
+    assert.match(commentsSrc, /COMMENTS_SHEET_SURFACE_CLASS/);
     assert.match(commentsSrc, /DrawerContent/);
+    assert.match(commentsSrc, /APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS/);
+    assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
+    assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS/);
+    assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS/);
+    assert.doesNotMatch(pushSrc, /APP_MATERIAL_OVERLAY|dubhub-app-overlay/);
     assert.match(pushSrc, /#4ae9df/);
   });
 

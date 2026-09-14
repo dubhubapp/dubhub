@@ -18,9 +18,8 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { X, Send, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2, Pin } from "lucide-react";
+import { X, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2, Pin } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import {
@@ -210,8 +209,61 @@ const COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS =
 const COMMENTS_SHEET_SURFACE_CLASS =
   "bottom-0 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[#141a2e] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-sm dark:[background-image:linear-gradient(180deg,rgba(46,62,118,0.32)_0%,rgba(20,26,46,0)_38%)] [&>div:first-child]:bg-black/25 dark:[&>div:first-child]:bg-white/22";
 
+/** Plain header icon control — generous hit target, no visible circle chrome. */
 const COMMENTS_HEADER_ICON_BUTTON_CLASS =
-  "inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full border border-black/5 bg-black/[0.04] text-gray-500 transition-colors hover:bg-black/[0.07] hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-1 dark:border-white/10 dark:bg-white/[0.06] dark:text-white/80 dark:hover:bg-white/[0.1] dark:hover:text-white dark:focus-visible:ring-[#0a83ff]/45 dark:focus-visible:ring-offset-[#141a2e]";
+  "inline-flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center border-0 bg-transparent p-0 text-gray-500 transition-colors hover:bg-transparent hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-1 dark:text-white/80 dark:hover:bg-transparent dark:hover:text-white dark:focus-visible:ring-[#0a83ff]/45 dark:focus-visible:ring-offset-[#141a2e]";
+
+/**
+ * COMMENTS-CHROME-2E geometry (presentation only).
+ *
+ * Avatar box: h-7/sm:h-8 with border-2 under border-box → visible outer Ø = 28/32px.
+ * Filled send discs read smaller than bordered avatars at equal CSS size, so the
+ * send visible Ø is +2px (30/34) to match the avatar’s visible outer circle.
+ * Row uses equal outer padding + equal column gaps (no translate/negative margin).
+ */
+const COMMENTS_COMPOSER_AVATAR_BOX_CLASS = "h-7 w-7 sm:h-8 sm:w-8";
+const COMMENTS_COMPOSER_ROW_CLASS =
+  "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5";
+
+/**
+ * Composer send — visible circle Ø matches avatar outer (28/32 + 2px optical).
+ * Visible in both states; enabled lights up, disabled stays muted.
+ * Size is constant so input width does not shift when enabling.
+ */
+const COMMENTS_COMPOSER_SEND_BUTTON_CLASS =
+  "inline-flex h-[30px] w-[30px] flex-shrink-0 touch-manipulation items-center justify-center rounded-full border-0 bg-[#0a83ff] p-0 text-white shadow-none transition-colors hover:bg-[#3b9bff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:bg-black/[0.06] disabled:text-gray-400 disabled:hover:bg-black/[0.06] sm:h-[34px] sm:w-[34px] dark:bg-[#0a83ff] dark:text-white dark:hover:bg-[#3b9bff] dark:focus-visible:ring-offset-[#141a2e] dark:disabled:bg-white/[0.08] dark:disabled:text-white/35 dark:disabled:hover:bg-white/[0.08]";
+
+/** Icon footprint inside the send circle (circle itself is avatar-matched). */
+const COMMENTS_COMPOSER_SEND_ICON_CLASS = "h-3.5 w-3.5 sm:h-4 sm:w-4";
+
+/**
+ * COMMENTS-CHROME-2G: thin outlined upward send arrow (open head, not filled).
+ * Chevron is one continuous stroke (left → tip → right); stem is a second subpath
+ * from tip down. Tip is a linejoin, not two independent Lucide paths overlapping.
+ * Centerline x=12; wings (6.5,10.5)/(17.5,10.5); tip (12,5); stem base (12,19).
+ */
+function CommentsComposerSendArrow({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
+      <path
+        d="M6.5 10.5L12 5L17.5 10.5M12 5V19"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Comment like — 32px hit target, no resting/hover/liked circular disc. */
+const COMMENTS_LIKE_BUTTON_CLASS =
+  "flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center border-0 bg-transparent p-0 hover:bg-transparent focus:bg-transparent active:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/40 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-[#141a2e]";
+
+const COMMENTS_LIKE_BUTTON_LIKED_CLASS = "text-pink-600 dark:text-pink-400";
+
+const COMMENTS_LIKE_BUTTON_UNLIKED_CLASS = "text-gray-500 dark:text-white/40";
 
 /** Canonical Home Identified pill chrome — presentation only. */
 const COMMENTS_IDENTIFIED_PILL_CLASS = STATUS_GLOW_PILL_CLASS;
@@ -1857,13 +1909,13 @@ export function CommentsModal({
       >
         <DrawerTitle className="sr-only">Comments for track</DrawerTitle>
         <DrawerDescription className="sr-only">View and add comments for this track</DrawerDescription>
-        {/* Header */}
+        {/* Header — title absolutely centered; sort alone on the right (no X). */}
         <div className="relative flex items-center justify-between border-b border-black/5 px-4 py-3 dark:border-white/[0.08]">
-          <div className="relative z-20 h-8 w-[4.5rem]" aria-hidden />
+          <div className="relative z-20 h-8 w-8" aria-hidden />
           <h3 className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 text-base font-semibold text-gray-900 dark:text-white">
             Comments
           </h3>
-          <div className="relative z-20 flex items-center gap-1">
+          <div className="relative z-20 flex items-center justify-end">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -1903,14 +1955,6 @@ export function CommentsModal({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClose}
-              className={cn(COMMENTS_HEADER_ICON_BUTTON_CLASS, "h-7 w-7")}
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 
@@ -1940,7 +1984,7 @@ export function CommentsModal({
               </p>
               <button
                 type="button"
-                className="mt-1.5 inline-flex min-h-11 items-center px-0.5 text-[13px] font-semibold text-gray-800 underline-offset-2 hover:underline dark:text-white/90 dark:hover:text-white"
+                className="relative mt-1 inline-flex items-center text-[13px] font-semibold text-gray-800 leading-snug underline-offset-2 hover:underline after:absolute after:-inset-y-3 after:inset-x-0 after:content-[''] dark:text-white/90 dark:hover:text-white"
                 data-testid="not-my-track-button"
                 disabled={!notMyTrackCommentId || artistNotMyTrackPending || !onRequestArtistNotMyTrack}
                 onClick={() => setShowNotMyTrackConfirm(true)}
@@ -2477,11 +2521,12 @@ export function CommentsModal({
                     <div className="mt-0.5 flex w-8 shrink-0 flex-col items-center">
                       <button
                         type="button"
-                        className={`flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-muted ${
+                        className={cn(
+                          COMMENTS_LIKE_BUTTON_CLASS,
                           comment.userVote === "upvote"
-                            ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
-                            : "text-gray-500 dark:text-white/40"
-                        }`}
+                            ? COMMENTS_LIKE_BUTTON_LIKED_CLASS
+                            : COMMENTS_LIKE_BUTTON_UNLIKED_CLASS,
+                        )}
                         onClick={() => handleToggleCommentLike(comment.id)}
                         data-testid={`button-like-${comment.id}`}
                       >
@@ -2735,11 +2780,12 @@ export function CommentsModal({
                                 <div className="mt-0.5 flex w-8 shrink-0 flex-col items-center">
                                   <button
                                     type="button"
-                                    className={`flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-muted ${
+                                    className={cn(
+                                      COMMENTS_LIKE_BUTTON_CLASS,
                                       reply.userVote === "upvote"
-                                        ? "bg-pink-50 text-pink-600 dark:bg-pink-950/50 dark:text-pink-400"
-                                        : "text-gray-500 dark:text-white/40"
-                                    }`}
+                                        ? COMMENTS_LIKE_BUTTON_LIKED_CLASS
+                                        : COMMENTS_LIKE_BUTTON_UNLIKED_CLASS,
+                                    )}
                                     onClick={() => handleToggleCommentLike(reply.id)}
                                     data-testid={`button-like-${reply.id}`}
                                   >
@@ -2922,13 +2968,12 @@ export function CommentsModal({
             )}
             
             <form onSubmit={handleSubmit}>
-              <div className="flex items-end space-x-2">
+              {/* 2E: equal outer pad + equal gap-x; send Ø optically matches avatar outer. */}
+              <div className={COMMENTS_COMPOSER_ROW_CLASS}>
                 <label
                   htmlFor={composerFieldId}
-                  className="flex min-w-0 flex-1 cursor-text touch-manipulation items-end gap-2"
+                  className={`flex ${COMMENTS_COMPOSER_AVATAR_BOX_CLASS} flex-shrink-0 cursor-text touch-manipulation items-center justify-center`}
                   onPointerDown={(e) => {
-                    const t = e.target as HTMLElement;
-                    if (t.closest("textarea")) return;
                     if (addCommentMutation.isPending) return;
                     e.preventDefault();
                     commentInputRef.current?.focus({ preventScroll: true });
@@ -2937,112 +2982,112 @@ export function CommentsModal({
                   <img
                     src={userProfileImage || undefined}
                     alt=""
-                    className={`avatar-media pointer-events-none h-7 w-7 flex-shrink-0 rounded-full border-2 sm:h-8 sm:w-8 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""} ${
+                    className={`avatar-media pointer-events-none ${COMMENTS_COMPOSER_AVATAR_BOX_CLASS} rounded-full border-2 ${isDefaultAvatarUrl(userProfileImage) ? "avatar-default-media" : ""} ${
                       verifiedArtist
                         ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                         : "border-gray-200 dark:border-border"
                     }`}
                   />
-                  <Textarea
-                    id={composerFieldId}
-                    ref={commentInputRef}
-                    value={newComment}
-                    onChange={handleCommentChange}
-                    onKeyDown={handleComposerKeyDown}
-                    onFocus={() => {
-                      logKeyboardTiming("composer:focus");
-                      if (!nativeKeyboardLayoutActive) {
-                        logKeyboardTiming("composer:focus:before-sync");
-                        viewportHostVvSyncRef.current?.();
-                        logKeyboardTiming("composer:focus:after-sync");
-                        logKeyboardTiming("composer:focus:raf-scheduled:1");
-                        requestAnimationFrame(() => {
-                          logKeyboardTiming("composer:focus:raf-fired:1-before-sync");
-                          viewportHostVvSyncRef.current?.();
-                          logKeyboardTiming("composer:focus:raf-fired:1-after-sync");
-                          logKeyboardTiming("composer:focus:raf-scheduled:2");
-                          requestAnimationFrame(() => {
-                            logKeyboardTiming("composer:focus:raf-fired:2-before-sync");
-                            viewportHostVvSyncRef.current?.();
-                            logKeyboardTiming("composer:focus:raf-fired:2-after-sync");
-                          });
-                        });
-                      } else {
-                        logKeyboardTiming("composer:focus:vv-sync-skipped-native-ios");
-                      }
-                      if (commentsKeyboardDebugEnabled()) {
-                        queueMicrotask(() =>
-                          logCommentsKeyboardSnapshot("textarea-focus", { postId: post.id }),
-                        );
-                        if (!nativeKeyboardLayoutActive) {
-                          logKeyboardTiming("composer:focus:timeout-scheduled", { delayMs: 350 });
-                          window.setTimeout(() => {
-                            logKeyboardTiming("composer:focus:timeout-fired", { delayMs: 350 });
-                            logCommentsKeyboardSnapshot("textarea-focus+~350ms", { postId: post.id });
-                          }, 350);
-                        } else {
-                          logKeyboardTiming("composer:focus:timeout-skipped-native-ios");
-                        }
-                      }
-                    }}
-                    onBlur={() => {
-                      logKeyboardTiming("composer:blur");
-                      if (!nativeKeyboardLayoutActive) {
-                        logKeyboardTiming("composer:blur:before-sync");
-                        viewportHostVvSyncRef.current?.();
-                        logKeyboardTiming("composer:blur:after-sync");
-                        logKeyboardTiming("composer:blur:raf-scheduled:1");
-                        requestAnimationFrame(() => {
-                          logKeyboardTiming("composer:blur:raf-fired:1-before-sync");
-                          viewportHostVvSyncRef.current?.();
-                          logKeyboardTiming("composer:blur:raf-fired:1-after-sync");
-                          logKeyboardTiming("composer:blur:raf-scheduled:2");
-                          requestAnimationFrame(() => {
-                            logKeyboardTiming("composer:blur:raf-fired:2-before-sync");
-                            viewportHostVvSyncRef.current?.();
-                            logKeyboardTiming("composer:blur:raf-fired:2-after-sync");
-                          });
-                        });
-                      } else {
-                        logKeyboardTiming("composer:blur:vv-sync-skipped-native-ios");
-                      }
-                      if (commentsKeyboardDebugEnabled()) {
-                        queueMicrotask(() =>
-                          logCommentsKeyboardSnapshot("textarea-blur", { postId: post.id }),
-                        );
-                      }
-                    }}
-                    placeholder={
-                      replyingTo
-                        ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
-                        : shouldShowArtistSelfTagPlaceholder
-                          ? "Tag yourself if this is your ID..."
-                          : "What do you think?"
-                    }
-                    className="block max-h-28 min-h-[44px] flex-1 resize-none overflow-y-auto rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
-                    disabled={addCommentMutation.isPending}
-                    data-testid="comment-input"
-                    maxLength={INPUT_LIMITS.commentBody}
-                    rows={1}
-                    enterKeyHint="send"
-                    autoComplete="on"
-                    autoCorrect="on"
-                    spellCheck={true}
-                  />
                 </label>
-                <Button
+                <Textarea
+                  id={composerFieldId}
+                  ref={commentInputRef}
+                  value={newComment}
+                  onChange={handleCommentChange}
+                  onKeyDown={handleComposerKeyDown}
+                  onFocus={() => {
+                    logKeyboardTiming("composer:focus");
+                    if (!nativeKeyboardLayoutActive) {
+                      logKeyboardTiming("composer:focus:before-sync");
+                      viewportHostVvSyncRef.current?.();
+                      logKeyboardTiming("composer:focus:after-sync");
+                      logKeyboardTiming("composer:focus:raf-scheduled:1");
+                      requestAnimationFrame(() => {
+                        logKeyboardTiming("composer:focus:raf-fired:1-before-sync");
+                        viewportHostVvSyncRef.current?.();
+                        logKeyboardTiming("composer:focus:raf-fired:1-after-sync");
+                        logKeyboardTiming("composer:focus:raf-scheduled:2");
+                        requestAnimationFrame(() => {
+                          logKeyboardTiming("composer:focus:raf-fired:2-before-sync");
+                          viewportHostVvSyncRef.current?.();
+                          logKeyboardTiming("composer:focus:raf-fired:2-after-sync");
+                        });
+                      });
+                    } else {
+                      logKeyboardTiming("composer:focus:vv-sync-skipped-native-ios");
+                    }
+                    if (commentsKeyboardDebugEnabled()) {
+                      queueMicrotask(() =>
+                        logCommentsKeyboardSnapshot("textarea-focus", { postId: post.id }),
+                      );
+                      if (!nativeKeyboardLayoutActive) {
+                        logKeyboardTiming("composer:focus:timeout-scheduled", { delayMs: 350 });
+                        window.setTimeout(() => {
+                          logKeyboardTiming("composer:focus:timeout-fired", { delayMs: 350 });
+                          logCommentsKeyboardSnapshot("textarea-focus+~350ms", { postId: post.id });
+                        }, 350);
+                      } else {
+                        logKeyboardTiming("composer:focus:timeout-skipped-native-ios");
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    logKeyboardTiming("composer:blur");
+                    if (!nativeKeyboardLayoutActive) {
+                      logKeyboardTiming("composer:blur:before-sync");
+                      viewportHostVvSyncRef.current?.();
+                      logKeyboardTiming("composer:blur:after-sync");
+                      logKeyboardTiming("composer:blur:raf-scheduled:1");
+                      requestAnimationFrame(() => {
+                        logKeyboardTiming("composer:blur:raf-fired:1-before-sync");
+                        viewportHostVvSyncRef.current?.();
+                        logKeyboardTiming("composer:blur:raf-fired:1-after-sync");
+                        logKeyboardTiming("composer:blur:raf-scheduled:2");
+                        requestAnimationFrame(() => {
+                          logKeyboardTiming("composer:blur:raf-fired:2-before-sync");
+                          viewportHostVvSyncRef.current?.();
+                          logKeyboardTiming("composer:blur:raf-fired:2-after-sync");
+                        });
+                      });
+                    } else {
+                      logKeyboardTiming("composer:blur:vv-sync-skipped-native-ios");
+                    }
+                    if (commentsKeyboardDebugEnabled()) {
+                      queueMicrotask(() =>
+                        logCommentsKeyboardSnapshot("textarea-blur", { postId: post.id }),
+                      );
+                    }
+                  }}
+                  placeholder={
+                    replyingTo
+                      ? `Replying to ${formatUsernameDisplay(replyingTo.username)}...`
+                      : shouldShowArtistSelfTagPlaceholder
+                        ? "Tag yourself if this is your ID..."
+                        : "What do you think?"
+                  }
+                  className="block max-h-28 min-h-[44px] min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
+                  disabled={addCommentMutation.isPending}
+                  data-testid="comment-input"
+                  maxLength={INPUT_LIMITS.commentBody}
+                  rows={1}
+                  enterKeyHint="send"
+                  autoComplete="on"
+                  autoCorrect="on"
+                  spellCheck={true}
+                />
+                <button
                   type="submit"
-                  size="sm"
                   disabled={
                     !newComment.trim() ||
                     newComment.length > INPUT_LIMITS.commentBody ||
                     addCommentMutation.isPending
                   }
-                  className="h-10 w-10 flex-shrink-0 rounded-full p-0 bg-white/90 text-slate-900 hover:bg-white disabled:bg-white/15 disabled:text-white/35 disabled:opacity-100"
+                  className={COMMENTS_COMPOSER_SEND_BUTTON_CLASS}
+                  aria-label="Send comment"
                   data-testid="comment-submit"
                 >
-                  <Send className="w-4 h-4" />
-                </Button>
+                  <CommentsComposerSendArrow className={COMMENTS_COMPOSER_SEND_ICON_CLASS} />
+                </button>
               </div>
               {newComment.length > INPUT_LIMITS.commentBody && (
                 <p className="mt-1 text-right text-[11px] text-red-500 dark:text-red-400">

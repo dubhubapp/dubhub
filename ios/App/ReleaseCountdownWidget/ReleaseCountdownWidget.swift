@@ -9,7 +9,7 @@ struct ReleaseCountdownWidget: Widget {
             ReleaseCountdownEntryView(entry: entry)
         }
         .configurationDisplayName("Release Countdown")
-        .description("Count down to a saved Dub Hub release on your Home Screen.")
+        .description("Count down to a saved dub hub release on your Home Screen.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

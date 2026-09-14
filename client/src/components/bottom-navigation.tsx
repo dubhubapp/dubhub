@@ -7,8 +7,8 @@ import { useUser } from "@/lib/user-context";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
-import { isNotificationVisibleByUserPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
-import { isModeratorQueueNotification } from "@shared/notification-types";
+import { useNotificationPreferences } from "@/lib/notification-preferences";
+import { countVisibleUnreadNotifications } from "@/lib/nav-notification-unread-count";
 import { formatNotificationBadgeCount } from "@/lib/utils";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
@@ -71,38 +71,9 @@ export function BottomNavigation() {
   });
 
   const navList = Array.isArray(navNotifications) ? navNotifications : [];
-  let unreadCount = 0;
-  try {
-    unreadCount = navList.filter((n: any) => {
-      if (!n || n.read) return false;
-      if (
-        isModerator &&
-        isModeratorQueueNotification({
-          message: n.message,
-          releaseId: n.releaseId ?? n.release_id,
-          postId: n.postId ?? n.post_id,
-          notificationType: n.notificationType ?? n.notification_type,
-        })
-      ) {
-        return false;
-      }
-      return isNotificationVisibleByUserPreferences(n, notificationPrefs);
-    }).length;
-  } catch {
-    unreadCount = navList.filter(
-      (n: any) =>
-        !n?.read &&
-        !(
-          isModerator &&
-          isModeratorQueueNotification({
-            message: n?.message,
-            releaseId: n?.releaseId ?? n?.release_id,
-            postId: n?.postId ?? n?.post_id,
-            notificationType: n?.notificationType ?? n?.notification_type,
-          })
-        ),
-    ).length;
-  }
+  const unreadCount = countVisibleUnreadNotifications(navList, notificationPrefs, {
+    isModerator,
+  });
 
   const { data: pendingVerifications = [] } = useQuery<any[]>({
     queryKey: ["/api/moderator/pending-verifications"],

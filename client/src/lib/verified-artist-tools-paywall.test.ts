@@ -22,6 +22,7 @@ import type {
   UserSubscriptionStatusResponse,
 } from "./subscription-status";
 import { PAYWALL_SUCCESS_CONFIRMATION_LINES } from "./verified-artist-tools-paywall-lifecycle";
+import { RELEASE_ALERTS_AUDIENCE_LOCKED_COPY } from "./paid-tool-gate";
 
 describe("verified-artist-tools-paywall-flag", () => {
   it("requires exact true", () => {
@@ -50,6 +51,7 @@ describe("verified-artist-tools-paywall-copy", () => {
     "future_release_paused",
     "release_alerts",
     "settings",
+    "onboarding_intro",
   ];
 
   it("returns contextual title/body for every source", () => {
@@ -68,8 +70,24 @@ describe("verified-artist-tools-paywall-copy", () => {
     assert.equal(joined.toLowerCase().includes("credibility"), false);
     assert.equal(joined.toLowerCase().includes("insight"), false);
     assert.equal(joined.toLowerCase().includes("unlock release alerts"), false);
-    assert.match(joined, /Send Release Alerts to listeners already waiting/);
-    assert.doesNotMatch(joined, /Release Alerts for waiting listeners/);
+    assert.equal(
+      VERIFIED_ARTIST_TOOLS_BENEFITS[0],
+      "Unlimited releases and active future releases",
+    );
+    assert.equal(
+      VERIFIED_ARTIST_TOOLS_BENEFITS[1],
+      "Unlimited attached posts and release links",
+    );
+    assert.equal(
+      VERIFIED_ARTIST_TOOLS_BENEFITS[2],
+      "Pre-save, Pre-add and Pre-order links",
+    );
+    assert.equal(
+      VERIFIED_ARTIST_TOOLS_BENEFITS[3],
+      "See your Release Alerts audience and send alerts to listeners waiting",
+    );
+    assert.doesNotMatch(joined, /Includes future Verified Artist Tools/);
+    assert.doesNotMatch(joined, /countdown/i);
   });
 
   it("capitalises Tools in product naming surfaces", () => {
@@ -79,8 +97,10 @@ describe("verified-artist-tools-paywall-copy", () => {
     );
     assert.match(
       PAYWALL_SUCCESS_CONFIRMATION_LINES.join(" "),
-      /Send Release Alerts to listeners already waiting/,
+      /See your Release Alerts audience and send alerts to listeners waiting/,
     );
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Verified Artist Tools/);
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/);
   });
 
   it("release_alerts paywall keeps listener-interest semantics", () => {
@@ -92,7 +112,7 @@ describe("verified-artist-tools-paywall-copy", () => {
     assert.match(copy.body, /notify everyone waiting/i);
     assert.equal(
       copy.emphasizeBenefit,
-      "Send Release Alerts to listeners already waiting",
+      "See your Release Alerts audience and send alerts to listeners waiting",
     );
     assert.doesNotMatch(copy.body, /listeners need to pay|pay to opt in/i);
     assert.doesNotMatch(copy.body, /verification.*(requires|needs) payment/i);

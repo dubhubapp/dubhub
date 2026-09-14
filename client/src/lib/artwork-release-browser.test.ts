@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   shouldShowSavedReleaseCountdownIndicator,
 } from "@/lib/home-widget-countdown-icon";
+import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
 import {
   ARTWORK_ATTRACT_MAX_MOVE_PX,
   ARTWORK_CROSSING_HAPTIC_MIN_INTERVAL_MS,
@@ -527,15 +528,15 @@ describe("Artwork C.2 settle-only metadata", () => {
     );
   });
 
-  it("one release safe; two linear; three+ loop; List/Collaborations unchanged", () => {
+  it("one release safe; two linear; three+ loop; Collaborations artwork supported", () => {
     assert.equal(resolveArtworkEmblaOptions({ realCount: 1, startIndex: 0 }).loop, false);
     assert.equal(resolveArtworkEmblaOptions({ realCount: 1, startIndex: 0 }).dragFree, true);
     assert.equal(resolveArtworkEmblaOptions({ realCount: 2, startIndex: 0 }).loop, false);
     assert.equal(resolveArtworkEmblaOptions({ realCount: 3, startIndex: 0 }).loop, true);
-    assert.equal(isArtworkViewSupported("collaborations"), false);
+    assert.equal(isArtworkViewSupported("collaborations"), true);
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "artwork", view: "collaborations" }),
-      "list",
+      "artwork",
     );
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "list", view: "upcoming" }),
@@ -570,11 +571,11 @@ describe("Artwork C ambience", () => {
 });
 
 describe("Artwork C preservation", () => {
-  it("Collaborations still forces List; sequence helper unchanged", () => {
-    assert.equal(isArtworkViewSupported("collaborations"), false);
+  it("Collaborations supports Artwork; sequence helper unchanged", () => {
+    assert.equal(isArtworkViewSupported("collaborations"), true);
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "artwork", view: "collaborations" }),
-      "list",
+      "artwork",
     );
     assert.deepEqual(
       buildArtworkReleaseSequence({
@@ -843,21 +844,21 @@ describe("Artwork C.3 geometric crossing + attraction + thumb pad", () => {
     );
   });
 
-  it("List View and Collaborations contracts unchanged", () => {
+  it("List View and Collaborations artwork contracts", () => {
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "list", view: "upcoming" }),
       "list",
     );
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "artwork", view: "collaborations" }),
-      "list",
+      "artwork",
     );
   });
 
-  it("stored Artwork restores on Upcoming and Past after Collaborations forces List", () => {
+  it("stored Artwork preference applies on Upcoming, Past, and Collaborations", () => {
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "artwork", view: "collaborations" }),
-      "list",
+      "artwork",
     );
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "artwork", view: "upcoming" }),
@@ -869,7 +870,7 @@ describe("Artwork C.3 geometric crossing + attraction + thumb pad", () => {
     );
     assert.equal(isArtworkViewSupported("upcoming"), true);
     assert.equal(isArtworkViewSupported("past"), true);
-    assert.equal(isArtworkViewSupported("collaborations"), false);
+    assert.equal(isArtworkViewSupported("collaborations"), true);
   });
 });
 
@@ -1029,14 +1030,14 @@ describe("Artwork C.4 committed-target metadata + softer attraction", () => {
     assert.equal(ARTWORK_SETTLE_ALIGN_THRESHOLD_PX, 10);
   });
 
-  it("List View and Collaborations remain unchanged", () => {
+  it("List View and Collaborations artwork preference honored", () => {
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "list", view: "upcoming" }),
       "list",
     );
     assert.equal(
       resolveArtworkEffectiveLayout({ requested: "artwork", view: "collaborations" }),
-      "list",
+      "artwork",
     );
   });
 });
@@ -1100,13 +1101,18 @@ describe("Artwork View Countdown status-row indicator", () => {
   it("renders the shared Countdown badge beside the status pill, not as a floating square", () => {
     const statusRow = artworkBrowserSrc.indexOf('data-testid="artwork-release-status-row"');
     const pill = artworkBrowserSrc.indexOf("<ReleaseStatusPill");
+    const collabPill = artworkBrowserSrc.indexOf("<CollaborationStatusPill");
     const indicator = artworkBrowserSrc.indexOf(
       "artwork-countdown-selected-indicator-",
     );
     assert.ok(statusRow > 0);
     assert.ok(pill > statusRow);
-    assert.ok(indicator > pill);
-    assert.match(artworkBrowserSrc, /artwork-release-status-row[\s\S]*ReleaseStatusPill[\s\S]*CountdownStatusBadge/);
+    assert.ok(collabPill > pill);
+    assert.ok(indicator > collabPill);
+    assert.match(
+      artworkBrowserSrc,
+      /artwork-release-status-row[\s\S]*ReleaseStatusPill[\s\S]*CollaborationStatusPill[\s\S]*CountdownStatusBadge/,
+    );
     assert.doesNotMatch(artworkBrowserSrc, /absolute right-1 top-0/);
     assert.doesNotMatch(artworkBrowserSrc, /bg-black\/55/);
     assert.doesNotMatch(artworkBrowserSrc, /text-accent/);
@@ -1145,5 +1151,69 @@ describe("Artwork View Countdown status-row indicator", () => {
     assert.equal(ARTWORK_EMBLA_DURATION, 30);
     assert.match(artworkBrowserSrc, /useEmblaCarousel\(emblaOptions\)/);
     assert.doesNotMatch(artworkBrowserSrc, /align:\s*"center"/);
+  });
+});
+
+describe("COLLABORATIONS-ARTWORK-1 — Collaborations Artwork + status", () => {
+  it("A: isArtworkViewSupported collaborations is true", () => {
+    assert.equal(isArtworkViewSupported("collaborations"), true);
+  });
+
+  it("B: resolveArtworkEffectiveLayout does not force collaborations to list", () => {
+    assert.equal(
+      resolveArtworkEffectiveLayout({ requested: "artwork", view: "collaborations" }),
+      "artwork",
+    );
+    assert.equal(
+      resolveArtworkEffectiveLayout({ requested: "list", view: "collaborations" }),
+      "list",
+    );
+  });
+
+  it("C: Artwork toggle is enabled on Collaborations via isArtworkViewSupported", () => {
+    assert.match(trackerSrc, /artworkSupported = isArtworkViewSupported\(effectiveView\)/);
+    assert.match(trackerSrc, /disabled=\{!artworkSupported\}/);
+    assert.equal(isArtworkViewSupported("collaborations"), true);
+  });
+
+  it("D/E/F: collaboration status copy reused for Pending / Accepted / Declined", () => {
+    assert.equal(getCollaborationStatusDisplay("PENDING")?.label, "Collaboration Pending");
+    assert.equal(getCollaborationStatusDisplay("ACCEPTED")?.label, "Collaboration Accepted");
+    assert.equal(getCollaborationStatusDisplay("REJECTED")?.label, "Collaboration Declined");
+    assert.match(artworkBrowserSrc, /CollaborationStatusPill/);
+    assert.match(artworkBrowserSrc, /selected\.collaboratorStatus/);
+  });
+
+  it("G: ReleaseStatusPill still renders alongside collaboration status", () => {
+    assert.match(
+      artworkBrowserSrc,
+      /artwork-release-status-row[\s\S]*ReleaseStatusPill[\s\S]*CollaborationStatusPill/,
+    );
+  });
+
+  it("H: no Accept/Decline action added to artwork tile", () => {
+    assert.doesNotMatch(
+      artworkBrowserSrc,
+      /\/collaborators\/\$\{|\/collaborators\/.*\/accept|\/collaborators\/.*\/reject/,
+    );
+    assert.doesNotMatch(artworkBrowserSrc, /Invitation accepted|Invitation declined/);
+    assert.doesNotMatch(artworkBrowserSrc, />\s*Accept\s*</);
+    assert.doesNotMatch(artworkBrowserSrc, />\s*Reject\s*</);
+  });
+
+  it("I: list swipe pager remains disabled when effectiveLayout === artwork", () => {
+    assert.match(
+      trackerSrc,
+      /listPagerEnabled = !!currentUser\?\.id && effectiveLayout === "list"/,
+    );
+  });
+
+  it("J: My/Saved scope behavior unchanged", () => {
+    assert.match(trackerSrc, /const setScope = \(s: FeedScope\)/);
+    assert.match(trackerSrc, /s === "saved" \? "upcoming"/);
+    assert.doesNotMatch(
+      readFileSync(join(here, "./artwork-release-browser.ts"), "utf8"),
+      /List-only for this prototype/,
+    );
   });
 });

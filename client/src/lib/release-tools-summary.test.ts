@@ -44,7 +44,7 @@ describe("formatReleaseCollaboratorsRowSummary", () => {
       }),
       /pending/i,
     );
-    assert.match(
+    assert.equal(
       formatReleaseCollaboratorsRowSummary({
         existing: [
           { username: "artist1", status: "ACCEPTED" },
@@ -52,9 +52,9 @@ describe("formatReleaseCollaboratorsRowSummary", () => {
         ],
         staged: [],
       }),
-      /\+ 1 more/i,
+      "@artist1, @artist2",
     );
-    assert.match(
+    assert.equal(
       formatReleaseCollaboratorsRowSummary({
         existing: [
           { username: "a", status: "ACCEPTED" },
@@ -62,7 +62,7 @@ describe("formatReleaseCollaboratorsRowSummary", () => {
         ],
         staged: [],
       }),
-      /2 artists · 1 pending/,
+      "@a, @b · 1 pending",
     );
   });
 

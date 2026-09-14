@@ -3028,11 +3028,11 @@ export class DatabaseStorage implements IStorage {
             p.verified_artist,
             COALESCE(uk.score, 0) AS reputation,
             CASE
-              WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pc.correct_ids, 0)
+              WHEN ${applyPeriod} = true THEN COALESCE(pc.correct_ids, 0)
               ELSE COALESCE(uk.correct_ids, 0)
             END AS correct_ids,
             CASE
-              WHEN ${applyMonth} = true OR ${applyYear} = true THEN COALESCE(pe.score, 0)
+              WHEN ${applyPeriod} = true THEN COALESCE(pe.score, 0)
               ELSE COALESCE(uk.score, 0)
             END AS rank_score,
             p.created_at AS created_at,
@@ -3062,7 +3062,14 @@ export class DatabaseStorage implements IStorage {
                 ) q2
               ),
               'other'
-            ) AS favorite_genre
+            ) AS favorite_genre,
+            EXISTS (
+              SELECT 1
+              FROM leaderboard_monthly_finishes f
+              WHERE f.user_id = p.id
+                AND f.scope = ${achievementScope}
+                AND f.rank <= 100
+            ) AS has_monthly_top_100
           FROM profiles p
           LEFT JOIN user_karma uk ON uk.user_id = p.id
           LEFT JOIN period_events pe ON pe.user_id = p.id
@@ -3089,6 +3096,7 @@ export class DatabaseStorage implements IStorage {
           correct_ids,
           created_at,
           favorite_genre,
+          has_monthly_top_100,
           rank,
           community_total
         FROM ranked
@@ -3104,11 +3112,225 @@ export class DatabaseStorage implements IStorage {
         communityTotal > 0 && rank > 0
           ? Math.min(100, Math.max(1, Math.ceil((100 * rank) / communityTotal)))
           : null;
-      return { rank, entry: row, communityTotal, communityTopPercent };
+      const entry = {
+        ...row,
+        hasMonthlyTop100: Boolean(row.has_monthly_top_100),
+      };
+      return { rank, entry, communityTotal, communityTopPercent };
     } catch (error) {
       console.error("[getLeaderboardUserRank] Error:", error);
       return { rank: 0, entry: null, communityTotal: 0, communityTopPercent: null };
     }
+  }
+
+  /**
+   * Shared period ranking for freeze (and any historic window).
+   * Same ORDER BY / ROW_NUMBER as live month my-rank; half-open created_at filter.
+   */
+  async rankLeaderboardPeriod(
+    userType: "user" | "artist",
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<RankedPeriodEntry[]> {
+    try {
+      if (!(periodStart instanceof Date) || !(periodEnd instanceof Date) || !(periodStart < periodEnd)) {
+        throw new Error("rankLeaderboardPeriod requires periodStart < periodEnd");
+      }
+      const accountType = userType === "user" ? "user" : "artist";
+      const result = await db.execute(sql`
+        WITH period_events AS (
+          SELECT
+            e.user_id,
+            COALESCE(SUM(e.score_delta), 0)::int AS score,
+            COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
+          FROM user_karma_events e
+          WHERE e.revoked_at IS NULL
+            AND e.created_at >= ${periodStart}
+            AND e.created_at < ${periodEnd}
+          GROUP BY e.user_id
+        ),
+        period_confirmed AS (
+          SELECT
+            e.user_id,
+            COALESCE(SUM(e.correct_ids_delta), 0)::int AS correct_ids
+          FROM user_karma_events e
+          WHERE e.revoked_at IS NULL
+            AND e.event_type IN ('confirmed_id', 'community_approved')
+            AND e.created_at >= ${periodStart}
+            AND e.created_at < ${periodEnd}
+          GROUP BY e.user_id
+        ),
+        scoped AS (
+          SELECT
+            p.id AS user_id,
+            p.username,
+            COALESCE(pe.score, 0)::int AS period_score,
+            COALESCE(pc.correct_ids, 0)::int AS period_correct_ids
+          FROM profiles p
+          LEFT JOIN period_events pe ON pe.user_id = p.id
+          LEFT JOIN period_confirmed pc ON pc.user_id = p.id
+          WHERE p.account_type = ${accountType}
+        ),
+        ranked AS (
+          SELECT
+            user_id,
+            username,
+            period_score,
+            period_correct_ids,
+            ROW_NUMBER() OVER (
+              ORDER BY period_score DESC, period_correct_ids DESC, username ASC, user_id ASC
+            ) AS rank
+          FROM scoped
+        )
+        SELECT user_id, username, period_score, period_correct_ids, rank
+        FROM ranked
+        ORDER BY rank ASC
+      `);
+
+      const rows = (result as any).rows || [];
+      return rows.map((row: any) => ({
+        userId: String(row.user_id),
+        username: String(row.username ?? ""),
+        periodScore: Number(row.period_score ?? 0),
+        periodCorrectIds: Number(row.period_correct_ids ?? 0),
+        rank: Number(row.rank ?? 0),
+      }));
+    } catch (error) {
+      console.error("[rankLeaderboardPeriod] Error:", error);
+      throw error;
+    }
+  }
+
+  async isLeaderboardMonthFrozen(
+    scope: LeaderboardMonthlyScope,
+    yearMonth: string | Date,
+  ): Promise<boolean> {
+    const month = formatUtcDateOnly(parseUtcDateOnly(yearMonth));
+    const result = await db.execute(sql`
+      SELECT 1
+      FROM leaderboard_monthly_freeze_runs
+      WHERE scope = ${scope}
+        AND year_month = ${month}::date
+      LIMIT 1
+    `);
+    return ((result as any).rows?.length ?? 0) > 0;
+  }
+
+  async replaceLeaderboardMonthlyFinishes(
+    scope: LeaderboardMonthlyScope,
+    yearMonth: string | Date,
+    finishes: RankedPeriodEntry[],
+    opts?: { now?: Date },
+  ): Promise<{ finisherCount: number }> {
+    const now = opts?.now ?? new Date();
+    assertFreezableUtcMonth(yearMonth, now);
+    const { yearMonth: month } = utcMonthWindowFromYearMonth(yearMonth);
+    const qualifying = qualifyingFinishesForSnapshot(finishes);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `DELETE FROM leaderboard_monthly_finishes
+         WHERE scope = $1 AND year_month = $2::date`,
+        [scope, month],
+      );
+      for (const row of qualifying) {
+        await client.query(
+          `INSERT INTO leaderboard_monthly_finishes (
+             scope, year_month, user_id, rank, period_score, period_correct_ids, frozen_at
+           ) VALUES ($1, $2::date, $3::uuid, $4, $5, $6, NOW())
+           ON CONFLICT (scope, year_month, user_id) DO UPDATE SET
+             rank = EXCLUDED.rank,
+             period_score = EXCLUDED.period_score,
+             period_correct_ids = EXCLUDED.period_correct_ids,
+             frozen_at = EXCLUDED.frozen_at`,
+          [
+            scope,
+            month,
+            row.userId,
+            row.rank,
+            row.periodScore,
+            row.periodCorrectIds,
+          ],
+        );
+      }
+      await client.query(
+        `INSERT INTO leaderboard_monthly_freeze_runs (
+           scope, year_month, frozen_at, finisher_count
+         ) VALUES ($1, $2::date, NOW(), $3)
+         ON CONFLICT (scope, year_month) DO UPDATE SET
+           frozen_at = EXCLUDED.frozen_at,
+           finisher_count = EXCLUDED.finisher_count`,
+        [scope, month, qualifying.length],
+      );
+      await client.query("COMMIT");
+      return { finisherCount: qualifying.length };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("[replaceLeaderboardMonthlyFinishes] Error:", error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getBestMonthlyFinish(
+    userId: string,
+    scope: LeaderboardMonthlyScope,
+  ): Promise<BestMonthlyFinish | null> {
+    const result = await db.execute(sql`
+      SELECT rank, year_month, period_score, period_correct_ids
+      FROM leaderboard_monthly_finishes
+      WHERE user_id = ${userId}
+        AND scope = ${scope}
+      ORDER BY rank ASC, year_month DESC
+      LIMIT 1
+    `);
+    const row = (result as any).rows?.[0];
+    if (!row) return null;
+    const yearMonthRaw = row.year_month;
+    const yearMonth =
+      yearMonthRaw instanceof Date
+        ? formatUtcDateOnly(yearMonthRaw)
+        : String(yearMonthRaw).slice(0, 10);
+    return selectBestMonthlyFinish([
+      {
+        userId,
+        rank: Number(row.rank),
+        yearMonth,
+        periodScore: Number(row.period_score ?? 0),
+        periodCorrectIds: Number(row.period_correct_ids ?? 0),
+      },
+    ]);
+  }
+
+  async hasMonthlyTop100(
+    userId: string,
+    scope: LeaderboardMonthlyScope,
+  ): Promise<boolean> {
+    const result = await db.execute(sql`
+      SELECT 1
+      FROM leaderboard_monthly_finishes
+      WHERE user_id = ${userId}
+        AND scope = ${scope}
+        AND rank <= 100
+      LIMIT 1
+    `);
+    return ((result as any).rows?.length ?? 0) > 0;
+  }
+
+  async countMonthlyTop100Finishes(
+    userId: string,
+    scope: LeaderboardMonthlyScope,
+  ): Promise<number> {
+    const result = await db.execute(sql`
+      SELECT COUNT(*)::int AS count
+      FROM leaderboard_monthly_finishes
+      WHERE user_id = ${userId}
+        AND scope = ${scope}
+        AND rank <= 100
+    `);
+    return Number((result as any).rows?.[0]?.count ?? 0);
   }
 
   async getArtistStats(artistId: string): Promise<any> {

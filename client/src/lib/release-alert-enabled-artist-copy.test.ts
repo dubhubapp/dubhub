@@ -82,6 +82,15 @@ describe("formatReleaseAlertEnabledArtistCopy", () => {
     );
   });
 
+  it("does not expose audience count in the demand notification", () => {
+    const copy = formatReleaseAlertEnabledArtistCopy({
+      listenerUsername: "fan",
+      deliveryEnabled: false,
+    });
+    assert.doesNotMatch(copy.body, /\bcount\b|how many|audience total/i);
+    assert.match(copy.body, /@fan is waiting for your next release/);
+  });
+
   it("missing username fails safely", () => {
     assert.equal(
       formatReleaseAlertEnabledArtistCopy({

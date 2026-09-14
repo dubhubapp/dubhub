@@ -276,6 +276,16 @@ describe("ARTIST-ID-UX-1B card polish + Not my track", () => {
     assert.doesNotMatch(commentsSrc, /You&apos;ve been tagged in this track/);
     assert.match(commentsSrc, /confirm-id-button-/);
     assert.match(commentsSrc, /not-my-track-button/);
+    // ARTIST-ID-UX-2B: symmetric py-2; compact label + after: hit area (no min-h / -mb hacks)
+    assert.match(commentsSrc, /px-3 py-2 dark:border-\[#FFD700\]\/16/);
+    assert.match(
+      commentsSrc,
+      /relative mt-1 inline-flex items-center text-\[13px\] font-semibold text-gray-800 leading-snug/,
+    );
+    assert.match(commentsSrc, /after:absolute after:-inset-y-3 after:inset-x-0 after:content-\[''\]/);
+    assert.doesNotMatch(commentsSrc, /not-my-track-button[\s\S]{0,220}min-h-11/);
+    assert.doesNotMatch(commentsSrc, /not-my-track-button[\s\S]{0,220}-mb-1\.5/);
+    assert.doesNotMatch(commentsSrc, /inline-flex min-h-11 items-center px-0\.5 text-\[13px\]/);
   });
 
   it("Not my track uses existing artist-deny mutation contract", () => {

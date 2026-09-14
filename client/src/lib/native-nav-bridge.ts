@@ -15,6 +15,8 @@ type NativeNavigationPlugin = {
   setNavigationCovered(options: { covered: boolean }): Promise<void>;
   setTabs(options: { tabs: AppTab[] }): Promise<void>;
   setProfileIconRole(options: { role: "community" | "artist" }): Promise<void>;
+  /** PROFILE-NAV-BADGE-1: unread count for Profile UITabBarItem.badgeValue. */
+  setProfileBadgeCount(options: { count: number }): Promise<void>;
   addListener(
     eventName: "selectTab" | "reselectTab" | "geometry",
     listener: (event: { tab?: string; t?: number } & Partial<NativeNavGeometry>) => void,
@@ -90,6 +92,17 @@ export async function setNativeProfileIconRole(
   if (!canUseNativeNavBridge()) return;
   try {
     await DubHubNativeNavigation.setProfileIconRole({ role });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** PROFILE-NAV-BADGE-1: sync Profile unread badge (≤0 clears). Presentation only. */
+export async function setNativeProfileBadgeCount(count: number): Promise<void> {
+  if (!canUseNativeNavBridge()) return;
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  try {
+    await DubHubNativeNavigation.setProfileBadgeCount({ count: safeCount });
   } catch {
     /* ignore */
   }

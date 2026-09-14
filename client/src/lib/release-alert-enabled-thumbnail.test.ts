@@ -25,7 +25,7 @@ describe("getReleaseAlertEnabledThumbnailPresentation", () => {
     const presentation = getReleaseAlertEnabledThumbnailPresentation();
     assert.doesNotMatch(presentation.listContainerClassName, /rounded-lg/);
     assert.doesNotMatch(presentation.bannerFrameClassName, /rounded-lg/);
-    // Contrast: post/release list tiles use `rounded` (not rounded-full).
+    // Contrast: post/release list tiles use rounded-lg (not rounded-full).
     assert.doesNotMatch(presentation.listContainerClassName, /(?:^|\s)rounded(?:\s|$)/);
   });
 });

@@ -21,6 +21,7 @@ import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ReleaseArtworkThumb } from "@/components/release-artwork-thumb";
 import { ReleaseStatusPill } from "@/components/release-status-pill";
+import { CollaborationStatusPill } from "@/components/collaboration-status-pill";
 import { CountdownStatusBadge } from "@/components/countdown-status-badge";
 import {
   buildReleaseFeedCardAccessibilityLabel,
@@ -870,6 +871,10 @@ export function ArtworkReleaseBrowser({
             releaseAt={selected.releaseAt}
             releaseTimezone={selected.releaseTimezone}
             upcoming={upcoming}
+          />
+          <CollaborationStatusPill
+            status={selected.collaboratorStatus}
+            data-testid={`artwork-collaboration-status-${selected.id}`}
           />
           {countdownSelected ? (
             <CountdownStatusBadge

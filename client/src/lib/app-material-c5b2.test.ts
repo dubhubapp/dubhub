@@ -44,12 +44,12 @@ describe("C5B.2 leaderboard current-user", () => {
     assert.match(LEADERBOARD_ROW_BASE_CLASS, /flex items-center gap-3 px-1 py-3/);
   });
 
-  it("preserves medals, gold, and prize themes", () => {
+  it("preserves medals, gold, and config-driven reward hero", () => {
     assert.match(leaderboardSrc, /text-yellow-500/);
     assert.match(leaderboardSrc, /text-amber-600/);
     assert.match(leaderboardSrc, /#FFD700/);
-    assert.match(leaderboardSrc, /border-amber-500\/30/);
-    assert.match(leaderboardSrc, /border-purple-500\/30/);
+    assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig/);
+    assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);
   });
 });
 
@@ -58,7 +58,10 @@ describe("C5B.2 profile primary tabs non-sticky", () => {
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_SHELL_CLASS, /sticky|backdrop-blur|releases-sticky/);
     assert.match(PROFILE_PRIMARY_NAV_LABEL_CLASS, /truncate/);
     assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_SHELL_CLASS/);
+    // Painted nav fade removed (PROFILE-TABS-2A-FIX-3); content mask lives on Notifications viewport.
     assert.doesNotMatch(userProfileSrc, /PROFILE_PRIMARY_NAV_STICKY_FADE_CLASS/);
+    assert.doesNotMatch(userProfileSrc, /PROFILE_PRIMARY_NAV_FADE_CLASS|profile-primary-nav-fade/);
+    assert.match(userProfileSrc, /PROFILE_NOTIFICATIONS_VIEWPORT_CLASS/);
   });
 
   it("preserves tab selection wiring", () => {

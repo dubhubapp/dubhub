@@ -5,12 +5,12 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 import { SEARCH_INPUT_KEYBOARD_PROPS } from "@/lib/form-search-input";
-import { getCollaborationStatusDisplay } from "@/lib/collaboration-status-display";
 import { filterCollaboratorSearchResults } from "@/lib/release-collaborator-search-results";
 import {
   COLLABORATOR_SEARCH_AUTOFOCUS_MS,
   shouldAutofocusCollaboratorSearch,
 } from "@/lib/release-collaborator-autofocus";
+import { CollaborationStatusPill } from "@/components/collaboration-status-pill";
 import { ReleaseFormDrawer } from "@/components/release-form-drawer";
 import { VerifiedArtistName } from "@/components/verified-artist-name";
 
@@ -123,25 +123,23 @@ export function ReleaseCollaboratorsSheet({
             {existingCollaborators.length > 0 ? (
               <ul className="divide-y divide-white/10">
                 {existingCollaborators.map((c) => {
-                  const collabDisplay = getCollaborationStatusDisplay(c.status);
                   const canRemove = canRemoveExisting?.(c) ?? false;
                   return (
                     <li
                       key={c.id}
                       className="flex items-center justify-between gap-3 py-3"
+                      data-testid={`release-collaborator-row-${c.id}`}
                     >
-                      <div className="min-w-0">
-                        <VerifiedArtistName username={c.username} />
-                        {collabDisplay ? (
-                          <p
-                            className={cn(
-                              "mt-0.5 text-xs",
-                              collabDisplay.className,
-                            )}
-                          >
-                            {collabDisplay.label}
-                          </p>
-                        ) : null}
+                      <div className="min-w-0 space-y-1.5">
+                        <VerifiedArtistName
+                          username={c.username}
+                          className="text-sm"
+                          data-testid={`release-collaborator-username-${c.id}`}
+                        />
+                        <CollaborationStatusPill
+                          status={c.status}
+                          data-testid={`release-collaborator-status-${c.id}`}
+                        />
                       </div>
                       {canRemove && onRemoveExisting ? (
                         <Button
@@ -171,8 +169,12 @@ export function ReleaseCollaboratorsSheet({
                     <li
                       key={c.id}
                       className="flex items-center justify-between gap-3 px-3 py-2.5"
+                      data-testid={`release-collaborator-staged-row-${c.id}`}
                     >
-                      <VerifiedArtistName username={c.username} />
+                      <VerifiedArtistName
+                        username={c.username}
+                        className="text-sm"
+                      />
                       <Button
                         type="button"
                         variant="ghost"

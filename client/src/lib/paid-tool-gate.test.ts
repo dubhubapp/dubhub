@@ -1,5 +1,6 @@
 /**
- * ARTIST-SUB-DISCOVERY-1 — paid-tool gate is for outbound delivery, not audience count.
+ * Paid-tool gate + ARTIST-SUB-INTRO-1: aggregate audience count is paid;
+ * release_alert_enabled in-app demand notification stays free.
  */
 
 import assert from "node:assert/strict";
@@ -8,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  RELEASE_ALERTS_AUDIENCE_LOCKED_COPY,
   RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY,
   resolvePaidToolGateMode,
   type PaidToolGateMode,
@@ -90,10 +92,13 @@ const FREE_ARTIST_IDENTITY_SURFACES = [
   "listener_release_alerts_toggle",
   "artist_impact_confirmed_count",
   "community_activity",
-  "release_alerts_audience_count",
+  "release_alert_enabled_in_app_notification",
 ] as const;
 
-const PAID_DELIVERY_SURFACE = "outbound_release_alert_delivery" as const;
+const PAID_SURFACES = [
+  "outbound_release_alert_delivery",
+  "release_alerts_audience_count",
+] as const;
 
 describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
   it("active paid access → available (delivery capability)", () => {
@@ -125,7 +130,7 @@ describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
     assert.equal(mode, "locked");
   });
 
-  it("never_subscribed → locked (delivery only; audience count is free)", () => {
+  it("never_subscribed → locked", () => {
     const mode = modeFor(
       statusResponse({
         sandbox: { state: "never_subscribed", hasPaidToolAccess: false },
@@ -246,11 +251,14 @@ describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
     assert.equal(mode, "locked");
   });
 
-  it("audience count is free; outbound delivery remains the paid surface", () => {
-    assert.ok(FREE_ARTIST_IDENTITY_SURFACES.includes("release_alerts_audience_count"));
-    assert.equal(PAID_DELIVERY_SURFACE, "outbound_release_alert_delivery");
+  it("audience aggregate is paid; demand notification stays free", () => {
+    assert.ok(
+      FREE_ARTIST_IDENTITY_SURFACES.includes("release_alert_enabled_in_app_notification"),
+    );
+    assert.ok(PAID_SURFACES.includes("release_alerts_audience_count"));
+    assert.ok(PAID_SURFACES.includes("outbound_release_alert_delivery"));
     for (const surface of FREE_ARTIST_IDENTITY_SURFACES) {
-      assert.notEqual(surface, PAID_DELIVERY_SURFACE);
+      assert.equal((PAID_SURFACES as readonly string[]).includes(surface), false);
     }
   });
 
@@ -277,24 +285,29 @@ describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
     );
   });
 
+  it("locked copy hides the aggregate without selling analytics or unlocking Alerts", () => {
+    assert.equal(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.title, "Release Alerts Audience");
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Verified Artist Tools/i);
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/i);
+    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /insight|analytics|credibility/i);
+    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Unlock Release Alerts/i);
+  });
+
   it("unavailable copy does not sell audience count as paid insight", () => {
     assert.match(RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY, /temporarily unavailable/i);
-    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY, /insight|Verified Artist Tools/i);
+    assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_UNAVAILABLE_COPY, /insight/i);
   });
 });
 
-describe("ARTIST-SUB-DISCOVERY-1 audience count ungated", () => {
-  it("owner row shows count without paid lock / subscription gate", () => {
-    assert.match(gateRowSrc, /data-testid="artist-release-alerts-audience"/);
-    assert.match(gateRowSrc, /Visible to all verified artists/);
-    assert.doesNotMatch(gateRowSrc, /RELEASE_ALERTS_AUDIENCE_LOCKED_COPY/);
-    assert.doesNotMatch(gateRowSrc, /artist-release-alerts-audience-locked/);
-    assert.doesNotMatch(gateRowSrc, /resolvePaidToolGateMode/);
-    assert.doesNotMatch(gateRowSrc, /requestVerifiedArtistToolsUpgrade/);
-    assert.doesNotMatch(gateRowSrc, /useAuthoritativeSubscriptionStatus/);
+describe("ARTIST-SUB-INTRO-1 audience count remains paid", () => {
+  it("owner row locks free artists and only fetches count when paid", () => {
+    assert.match(gateRowSrc, /artist-release-alerts-audience-locked/);
+    assert.match(gateRowSrc, /RELEASE_ALERTS_AUDIENCE_LOCKED_COPY/);
+    assert.match(gateRowSrc, /resolvePaidToolGateMode/);
+    assert.match(gateRowSrc, /requestVerifiedArtistToolsUpgrade/);
+    assert.match(gateRowSrc, /enabled:\s*queryEnabled/);
+    assert.match(gateRowSrc, /mode === "available"/);
     assert.doesNotMatch(gateRowSrc, /insight is part of Verified Artist Tools/i);
-    assert.match(gateRowSrc, /enabled=\{verifiedArtist\}|enabled,/);
-    assert.match(gateRowSrc, /queryFn:/);
   });
 
   it("profile only mounts audience row when verifiedArtist", () => {
@@ -305,15 +318,14 @@ describe("ARTIST-SUB-DISCOVERY-1 audience count ungated", () => {
     );
   });
 
-  it("server audience endpoint requires verified artist only — not paid tools", () => {
-    const routeBlock = routesSrc.match(
-      /app\.get\("\/api\/artists\/me\/release-alerts-audience"[\s\S]*?^\s*\}\);/m,
-    );
-    assert.ok(routeBlock, "audience route present");
-    const body = routeBlock[0];
+  it("server audience endpoint requires paid tools after verified-artist check", () => {
+    const start = routesSrc.indexOf('app.get("/api/artists/me/release-alerts-audience"');
+    const countIdx = routesSrc.indexOf("countArtistReleaseAlertsForArtist", start);
+    assert.ok(start >= 0 && countIdx > start);
+    const body = routesSrc.slice(start, countIdx + 80);
     assert.match(body, /Verified artist access only/);
-    assert.doesNotMatch(body, /canArtistUsePaidTools/);
-    assert.doesNotMatch(body, /PAID_ARTIST_TOOL_REQUIRED/);
+    assert.match(body, /canArtistUsePaidTools/);
+    assert.match(body, /PAID_ARTIST_TOOL_REQUIRED/);
     assert.match(body, /countArtistReleaseAlertsForArtist/);
   });
 });

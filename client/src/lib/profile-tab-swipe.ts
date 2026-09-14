@@ -97,6 +97,27 @@ export const PROFILE_TAB_PAGER_PANEL_CLASS =
 export const PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS =
   "!h-auto !min-h-0 !overflow-y-visible" as const;
 
+/** Individual class tokens from {@link PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS}. */
+export function profilePagerVertUnlockClassTokens(): string[] {
+  return PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS.split(/\s+/).filter(Boolean);
+}
+
+/** PROFILE-SWIPE-POLISH-4 — sync unlock on a live panel ref (no React). */
+export function applyProfilePagerPanelImperativeUnlock(el: HTMLElement | null | undefined): void {
+  if (!el) return;
+  for (const token of profilePagerVertUnlockClassTokens()) {
+    el.classList.add(token);
+  }
+}
+
+/** Remove temporary imperative unlock tokens after commit/cancel/idle. */
+export function clearProfilePagerPanelImperativeUnlock(el: HTMLElement | null | undefined): void {
+  if (!el) return;
+  for (const token of profilePagerVertUnlockClassTokens()) {
+    el.classList.remove(token);
+  }
+}
+
 /**
  * Posts/Likes grid thumbnail buttons — swipe-eligible carve-out from interactive exclusion
  * (PROFILE-TABS-GESTURE-4B). Nested real controls inside a card remain excluded.
@@ -239,6 +260,61 @@ export function resolveProfilePagerVertUnlockIndices(input: {
   if (input.adjacentIndex == null) return [input.currentIndex];
   if (input.adjacentIndex === input.currentIndex) return [input.currentIndex];
   return [input.currentIndex, input.adjacentIndex];
+}
+
+/**
+ * PROFILE-SWIPE-POLISH-2 — unlock current ±1 at gesture prepare (touchstart)
+ * so the first armed move does not need a React unlock render.
+ */
+export function resolveProfilePagerPrepareUnlockIndices(
+  currentIndex: number,
+  tabCount: number = PROFILE_SWIPE_TAB_IDS.length,
+): number[] {
+  const index = Math.max(0, Math.min(currentIndex, Math.max(0, tabCount - 1)));
+  const out: number[] = [index];
+  if (index > 0) out.unshift(index - 1);
+  if (index < tabCount - 1) out.push(index + 1);
+  return out;
+}
+
+/** True when every needed index is already present in the applied unlock set. */
+export function profilePagerUnlockCovers(
+  applied: number[] | null,
+  needed: number[] | null,
+): boolean {
+  if (needed == null) return applied == null;
+  if (applied == null) return false;
+  return needed.every((i) => applied.includes(i));
+}
+
+/**
+ * Visual label emphasis 0..1 for a Profile primary tab during pager progress.
+ * Semantic aria-selected stays on the committed tab; this is presentational only.
+ */
+export function resolveProfilePrimaryTabEmphasis(input: {
+  tabIndex: number;
+  currentIndex: number;
+  adjacentIndex: number | null;
+  progress: number;
+}): number {
+  const t = Math.min(1, Math.max(0, input.progress));
+  if (input.adjacentIndex == null || t <= 0) {
+    return input.tabIndex === input.currentIndex ? 1 : 0;
+  }
+  if (input.tabIndex === input.currentIndex) return 1 - t;
+  if (input.tabIndex === input.adjacentIndex) return t;
+  return 0;
+}
+
+/** Matches inactive `text-white/55` → active opaque white on the Profile canvas. */
+export const PROFILE_PRIMARY_TAB_INACTIVE_ALPHA = 0.55;
+
+export function profilePrimaryTabEmphasisColor(emphasis: number): string {
+  const t = Math.min(1, Math.max(0, emphasis));
+  const alpha =
+    PROFILE_PRIMARY_TAB_INACTIVE_ALPHA +
+    (1 - PROFILE_PRIMARY_TAB_INACTIVE_ALPHA) * t;
+  return `rgba(255, 255, 255, ${alpha})`;
 }
 
 /** Fixed flex-slot viewport X: (panelIndex - activeIndex) * pageWidth. */
@@ -513,6 +589,14 @@ type UseProfileTabPagerOptions = {
   onCommitTab: (next: ProfileSwipeTabId) => void;
   /** Optional PROFILE-TABS-3B underline consumer — same gesture as the track. */
   onPagerProgress?: (event: ProfilePagerProgressEvent) => void;
+  /**
+   * PROFILE-SWIPE-POLISH-2 — called when a single-finger gesture is seeded on
+   * touchstart (before arm). Warm unlock / geometry here so the first armed
+   * move stays free of React layout work.
+   */
+  onGesturePrepare?: () => void;
+  /** Clears prepare work when the gesture never arms (vertical cancel / end). */
+  onGestureAbort?: () => void;
 };
 
 function setTrackTransform(
@@ -541,11 +625,17 @@ export function useProfileTabPager({
   trackRef,
   onCommitTab,
   onPagerProgress,
+  onGesturePrepare,
+  onGestureAbort,
 }: UseProfileTabPagerOptions): void {
   const onCommitRef = useRef(onCommitTab);
   onCommitRef.current = onCommitTab;
   const onProgressRef = useRef(onPagerProgress);
   onProgressRef.current = onPagerProgress;
+  const onPrepareRef = useRef(onGesturePrepare);
+  onPrepareRef.current = onGesturePrepare;
+  const onAbortRef = useRef(onGestureAbort);
+  onAbortRef.current = onGestureAbort;
   const gestureRef = useRef<GestureState>(createIdleGesture());
 
   // Keep track aligned when activeTab changes via tap (or post-commit normalisation).
@@ -577,8 +667,15 @@ export function useProfileTabPager({
     const track = trackRef.current;
     if (!enabled || !viewport || !track || typeof window === "undefined") return;
 
+    /**
+     * PROFILE-SWIPE-POLISH-4 — armed drag uses cached width; no per-move rect read.
+     * Falls back to a live measure only if the cache was cleared (resize / idle).
+     */
+    let gestureWidthPx = 0;
+
     const reset = () => {
       gestureRef.current = createIdleGesture();
+      gestureWidthPx = 0;
       viewport.removeAttribute(PROFILE_TAB_PAGER_DRAGGING_ATTR);
     };
 
@@ -592,8 +689,19 @@ export function useProfileTabPager({
       setPagerDraggingVisual(true);
     };
 
-    const widthOf = () =>
+    /** Live measure — used to seed / refresh the per-gesture cache. */
+    const measureViewportWidthPx = () =>
       Math.max(1, viewport.getBoundingClientRect().width || window.innerWidth);
+
+    const widthOf = () => {
+      if (gestureWidthPx > 0) return gestureWidthPx;
+      gestureWidthPx = measureViewportWidthPx();
+      return gestureWidthPx;
+    };
+    const cacheGestureWidth = () => {
+      gestureWidthPx = measureViewportWidthPx();
+      return gestureWidthPx;
+    };
 
     const enterSnapping = () => {
       gestureRef.current.phase = "snapping";
@@ -700,7 +808,7 @@ export function useProfileTabPager({
         reset();
         return;
       }
-      const width = widthOf();
+      const width = cacheGestureWidth();
       const index = profileTabIndex(tabRef.current);
       const now = performance.now();
       gestureRef.current = {
@@ -717,6 +825,8 @@ export function useProfileTabPager({
         samples: [{ x: touch.clientX, t: now }],
         baseTranslate: profilePagerRestTranslatePx(index, width),
       };
+      // Warm unlock / geometry before the first armed transform frame.
+      onPrepareRef.current?.();
     };
 
     const onTouchMove = (event: TouchEvent) => {
@@ -746,6 +856,7 @@ export function useProfileTabPager({
           state.cancelled = true;
           state.active = false;
           state.phase = "idle";
+          onAbortRef.current?.();
           return;
         }
         if (
@@ -765,6 +876,7 @@ export function useProfileTabPager({
       event.preventDefault();
       const index = profileTabIndex(tabRef.current);
       const rubberDx = applyProfilePagerEdgeRubber(deltaX, index);
+      const viewportWidth = widthOf();
       setTrackTransform(track, state.baseTranslate + rubberDx, {
         animate: false,
         reducedMotion: true,
@@ -778,7 +890,7 @@ export function useProfileTabPager({
         progress: profilePagerDragProgress({
           deltaX,
           rubberDx,
-          viewportWidth: widthOf(),
+          viewportWidth,
           hasAdjacent: adjacentIndex != null,
         }),
         animate: false,
@@ -789,7 +901,10 @@ export function useProfileTabPager({
     const onTouchEnd = () => {
       const state = gestureRef.current;
       if (!state.active || state.cancelled || !state.armed || state.phase === "snapping") {
-        if (state.phase !== "snapping") reset();
+        if (state.phase !== "snapping") {
+          if (state.active && !state.armed) onAbortRef.current?.();
+          reset();
+        }
         return;
       }
 
@@ -832,19 +947,27 @@ export function useProfileTabPager({
         finishSnap(profilePagerRestTranslatePx(index, width), null);
         return;
       }
+      if (state.active) onAbortRef.current?.();
       reset();
+    };
+
+    const onGestureResize = () => {
+      // Invalidate so the next widthOf() remasures; mid-gesture uses refreshed value safely.
+      gestureWidthPx = 0;
     };
 
     viewport.addEventListener("touchstart", onTouchStart, { passive: true });
     viewport.addEventListener("touchmove", onTouchMove, { passive: false });
     viewport.addEventListener("touchend", onTouchEnd, { passive: true });
     viewport.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    window.addEventListener("resize", onGestureResize);
 
     return () => {
       viewport.removeEventListener("touchstart", onTouchStart);
       viewport.removeEventListener("touchmove", onTouchMove);
       viewport.removeEventListener("touchend", onTouchEnd);
       viewport.removeEventListener("touchcancel", onTouchCancel);
+      window.removeEventListener("resize", onGestureResize);
       reset();
     };
   }, [enabled, tabRef, trackRef, viewportRef]);

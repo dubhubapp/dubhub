@@ -102,6 +102,7 @@ describe("C5C no-banner atmosphere", () => {
     assert.match(PROFILE_BANNER_NO_BANNER_GRADIENT, /0,29,249/);
     assert.match(PROFILE_BANNER_NO_BANNER_GRADIENT, /#0f1324/);
     assert.doesNotMatch(PROFILE_BANNER_NO_BANNER_GRADIENT, /74,233,223/);
+    assert.doesNotMatch(bannerHelperSrc, /PROFILE_DEFAULT_BANNER_PALETTE|getProfileDefaultBannerIndex/);
   });
 });
 

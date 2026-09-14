@@ -162,7 +162,8 @@ describe("verified-artist-tools-paywall-lifecycle", () => {
     }
     assert.equal(new Set(PAYWALL_SUCCESS_CONFIRMATION_LINES).size, 4);
     assert.ok(PAYWALL_SHELL_CLASS.includes("rounded-t-[28px]"));
-    assert.ok(PAYWALL_SHELL_CLASS.includes("backdrop-blur"));
+    assert.ok(PAYWALL_SHELL_CLASS.includes("dubhub-app-sheet-surface"));
+    assert.ok(!PAYWALL_SHELL_CLASS.includes("bg-[#0f1324]"));
   });
 
   it("vinyl loading copy covers processing, restore, and verifying", () => {

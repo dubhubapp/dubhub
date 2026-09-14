@@ -107,13 +107,13 @@ export const ARTWORK_CROSSING_HAPTIC_MIN_INTERVAL_MS = 55 as const;
  */
 export const ARTWORK_INDEX_HYSTERESIS_RATIO = 0.18 as const;
 
-/** Collaborations stay List-only for this prototype. */
+/** Artwork layout is available for all secondary release views. */
 export function isArtworkViewSupported(view: ReleaseTrackerFeedView): boolean {
-  return view === "upcoming" || view === "past";
+  return view === "upcoming" || view === "collaborations" || view === "past";
 }
 
 /**
- * Resolve which layout to render. Collaborations always forces List without
+ * Resolve which layout to render. Unsupported views fall back to List without
  * changing scope/view URL state or the user's stored Artwork preference.
  */
 export function resolveArtworkEffectiveLayout(args: {

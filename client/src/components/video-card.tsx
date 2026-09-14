@@ -22,7 +22,7 @@ import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
 import { isOwnerCommunityMarkEligible } from "@/lib/mark-id-long-press";
-import { isArtistPendingActionEligible } from "@/lib/artist-id-comments-actions";
+import { isArtistPendingActionEligible, markViewerArtistDeniedOnPost } from "@/lib/artist-id-comments-actions";
 import { ReportModal } from "./report-modal";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { 
@@ -532,16 +532,31 @@ function VideoCardInner({
       (commentsPost as any).currentUserTaggedAsArtist ??
       (commentsPost as any).current_user_tagged_as_artist
     );
-    if (!liveTagged || frozenTagged) return;
-    setCommentsPost((prev) =>
-      prev && prev.id === post.id
-        ? {
-            ...prev,
-            currentUserTaggedAsArtist: true,
-            current_user_tagged_as_artist: true,
-          }
-        : prev,
+    const liveDenied = !!(
+      (post as any).currentUserDeniedAsArtist ?? (post as any).current_user_denied_as_artist
     );
+    const frozenDenied = !!(
+      (commentsPost as any).currentUserDeniedAsArtist ??
+      (commentsPost as any).current_user_denied_as_artist
+    );
+    const needsTagged = liveTagged && !frozenTagged;
+    const needsDenied = liveDenied && !frozenDenied;
+    if (!needsTagged && !needsDenied) return;
+    setCommentsPost((prev) => {
+      if (!prev || prev.id !== post.id) return prev;
+      let next = prev;
+      if (needsTagged) {
+        next = {
+          ...next,
+          currentUserTaggedAsArtist: true,
+          current_user_tagged_as_artist: true,
+        };
+      }
+      if (needsDenied) {
+        next = markViewerArtistDeniedOnPost(next);
+      }
+      return next;
+    });
   }, [showComments, commentsPost, post]);
 
   useEffect(() => {
@@ -2203,6 +2218,89 @@ function VideoCardInner({
     },
     onSuccess: () => {
       playSuccessNotification();
+      // Immediate mounted Comments refresh — do not wait for invalidate/refetch.
+      setCommentsPost((prev) =>
+        prev && prev.id === post.id ? markViewerArtistDeniedOnPost(prev) : prev,
+      );
+      const denyPostPatch = (p: PostWithUser) =>
+        p.id === post.id ? markViewerArtistDeniedOnPost(p) : p;
+      queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old: unknown) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return (old as PostWithUser[]).map(denyPostPatch);
+        }
+        if (old && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+          const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+          return {
+            ...paged,
+            pages: paged.pages.map((page) => ({
+              ...page,
+              items: Array.isArray(page.items) ? page.items.map(denyPostPatch) : page.items,
+            })),
+          };
+        }
+        if (
+          typeof old === "object" &&
+          typeof (old as PostWithUser).id === "string" &&
+          (old as PostWithUser).id === post.id
+        ) {
+          return markViewerArtistDeniedOnPost(old as PostWithUser);
+        }
+        return old;
+      });
+      if (contextUser?.id) {
+        queryClient.setQueriesData(
+          {
+            predicate: (query) => {
+              const key = query.queryKey;
+              return (
+                Array.isArray(key) &&
+                key[0] === "/api/user" &&
+                (key[2] === "posts" || key[2] === "liked-posts")
+              );
+            },
+          },
+          (old: unknown) => {
+            if (!old) return old;
+            if (Array.isArray(old)) {
+              return (old as PostWithUser[]).map(denyPostPatch);
+            }
+            if (old && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+              const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+              return {
+                ...paged,
+                pages: paged.pages.map((page) => ({
+                  ...page,
+                  items: Array.isArray(page.items) ? page.items.map(denyPostPatch) : page.items,
+                })),
+              };
+            }
+            return old;
+          },
+        );
+        queryClient.setQueryData(
+          ["/api/posts", post.id, "artist-tags"],
+          (
+            old: Array<{ artist_id?: string; artistId?: string; status?: string }> | undefined,
+          ) => {
+            const artistId = contextUser.id;
+            if (!Array.isArray(old)) {
+              return [{ artist_id: artistId, artistId, status: "denied" }];
+            }
+            let found = false;
+            const next = old.map((row) => {
+              const id = row.artist_id ?? row.artistId;
+              if (id === artistId) {
+                found = true;
+                return { ...row, status: "denied" };
+              }
+              return row;
+            });
+            if (!found) next.push({ artist_id: artistId, artistId, status: "denied" });
+            return next;
+          },
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       if (contextUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "posts"] });
