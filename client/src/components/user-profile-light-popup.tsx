@@ -18,6 +18,7 @@ import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
+import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { playInteractionLight } from "@/lib/haptic";
 import { prefetchArtistReleaseAlertStatus } from "@/components/artist-release-alerts-button";
@@ -134,6 +135,7 @@ type ProfilePopupUser = {
   correct_ids?: number;
   // Back-compat: same as `reputation` on some responses.
   karma?: number;
+  hasMonthlyTop100?: boolean;
   /** Set by `openByUsername` from tap context; not from API. */
   surfaceGenreHint?: string | null;
   /** True until `GET /api/user/profile/:username` returns for this open (instant shell + merge after). */
@@ -821,12 +823,18 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
                 {profileLoadPending ? (
                   <div className="mt-1 h-2 w-24 max-w-[85%] animate-pulse rounded bg-black/[0.1] dark:bg-white/[0.12]" aria-hidden />
                 ) : (
-                  <div
-                    className="mt-0.5 text-[9px] font-medium leading-none"
-                    style={{ color: secondaryTextColor }}
-                    title="Joined date"
-                  >
-                    {joinedDateLine}
+                  <div className="mt-0.5 flex flex-col items-start gap-1">
+                    <div
+                      className="text-[9px] font-medium leading-none"
+                      style={{ color: secondaryTextColor }}
+                      title="Joined date"
+                    >
+                      {joinedDateLine}
+                    </div>
+                    <MonthlyTop100Badge
+                      earned={user.hasMonthlyTop100 === true}
+                      context="popup"
+                    />
                   </div>
                 )}
                 {!profileLoadPending && isArtist && (

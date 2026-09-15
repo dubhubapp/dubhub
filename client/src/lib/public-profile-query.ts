@@ -18,6 +18,10 @@ export type PublicProfileResponse = {
   reputation?: number;
   correct_ids?: number;
   karma?: number;
+  bestMonthlyRank?: number | null;
+  bestMonthlyRankMonth?: string | null;
+  hasMonthlyTop100?: boolean;
+  monthlyTop100Finishes?: number;
   publicLight?: PublicLightProfileStats;
   publicReleases?: PublicReleasesResponse;
   publicCommunityOverview?: PublicCommunityOverviewStats;

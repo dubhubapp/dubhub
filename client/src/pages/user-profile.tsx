@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon, TrendingUp } from "lucide-react";
+import { Settings, Bell, ChevronRight, Camera, Upload, MessageCircle, Heart, User, CheckCircle, Check, BadgeCheck, Calendar, CalendarClock, Radio, Users, Headphones, X, Disc3, ImageOff, Target, BarChart3, Image as ImageIcon, TrendingUp, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import {
@@ -38,6 +38,11 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { ArtistProfileQuestionsPrompt } from "@/components/artist-profile-questions-prompt";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
+import {
+  formatBestMonthlyRankMonth,
+  formatBestMonthlyRankValue,
+} from "@/lib/monthly-top-100-presentation";
+import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
 import {
   PROFILE_SECONDARY_ROW_CLASS,
   PROFILE_SECONDARY_ROW_TOP_CLASS,
@@ -267,6 +272,8 @@ const PROFILE_HELP = {
   idsStat: "Lifetime tracks you've helped identify.",
   releasesSaved: "Releases saved to your collection.",
   artistIds: "Your uploads that an artist has identified and confirmed.",
+  bestMonthlyRank:
+    "Your best final place on a completed monthly leaderboard. The current month does not count until it finishes.",
   accuracy:
     "The percentage of your ID attempts that turned out to be correct.",
   likesOnPosts: "Total likes received across posts you uploaded.",
@@ -421,9 +428,9 @@ function ProfileCommunityActivitySection({
         </button>
       </div>
       <div className="divide-y divide-white/5">
-        {userOverviewItems.map(({ label, value, Icon, info }) => (
-          <div key={label} className="flex items-center justify-between py-2.5">
-            <div className="flex items-center gap-2.5">
+        {userOverviewItems.map(({ label, value, Icon, info, supportingValue }) => (
+          <div key={label} className="flex items-center justify-between gap-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2.5">
               <Icon className="w-4 h-4 shrink-0 text-gray-400" />
               <span className="text-sm text-gray-200">{label}</span>
               {info ? (
@@ -440,7 +447,26 @@ function ProfileCommunityActivitySection({
             {overviewStatsLoading ? (
               <DubHubSkeletonBar tone="mid" className="h-4 w-10 shrink-0" aria-hidden />
             ) : (
-              <span className="text-sm font-semibold tabular-nums">{value}</span>
+              <div className="flex shrink-0 flex-col items-end text-right">
+                <span
+                  className="text-sm font-semibold tabular-nums"
+                  data-testid={
+                    label === "Best Monthly Rank" ? "best-monthly-rank-value" : undefined
+                  }
+                >
+                  {value}
+                </span>
+                {supportingValue ? (
+                  <span
+                    className="text-[10px] font-medium leading-tight text-white/55"
+                    data-testid={
+                      label === "Best Monthly Rank" ? "best-monthly-rank-month" : undefined
+                    }
+                  >
+                    {supportingValue}
+                  </span>
+                ) : null}
+              </div>
             )}
           </div>
         ))}
@@ -1275,6 +1301,14 @@ export default function UserProfile() {
       Icon: ArtistIdsStatIcon,
       toneClassName: "border-amber-500/35 bg-amber-500/5 text-amber-300 [&_svg]:text-white [&_svg]:drop-shadow-none",
       info: PROFILE_HELP.artistIds,
+    },
+    {
+      label: "Best Monthly Rank",
+      value: formatBestMonthlyRankValue(userStats?.bestMonthlyRank ?? null),
+      supportingValue: formatBestMonthlyRankMonth(userStats?.bestMonthlyRankMonth ?? null),
+      Icon: Trophy,
+      toneClassName: "border-white/20 bg-white/5 text-gray-200 [&_svg]:text-gray-200",
+      info: PROFILE_HELP.bestMonthlyRank,
     },
   ];
 
@@ -3349,9 +3383,15 @@ export default function UserProfile() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
-                    {userData.joinedDateLine}
-                  </p>
+                  <div className="mt-2 flex flex-col items-start gap-1.5">
+                    <p className="inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
+                      {userData.joinedDateLine}
+                    </p>
+                    <MonthlyTop100Badge
+                      earned={userStats?.hasMonthlyTop100 === true}
+                      context="profile"
+                    />
+                  </div>
                 </div>
               </div>
 

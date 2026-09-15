@@ -412,7 +412,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     /// PROFILE-NAV-BADGE-1A: slightly smaller badge, nudged toward the icon top-right.
     /// Copies system appearance and edits badge metrics only — no custom bar background.
     private static func applyCompactBadgeAppearance(on tabBar: UITabBar) {
-        let appearance = tabBar.standardAppearance.copy() as! UITabBarAppearance
+        let appearance = tabBar.standardAppearance.copy()
         applyCompactBadgeMetrics(to: appearance.stackedLayoutAppearance)
         applyCompactBadgeMetrics(to: appearance.inlineLayoutAppearance)
         applyCompactBadgeMetrics(to: appearance.compactInlineLayoutAppearance)

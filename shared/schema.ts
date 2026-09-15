@@ -639,6 +639,14 @@ export type UserStats = {
   artistIds: number;
   /** Total comments written by the account. */
   commentsWritten: number;
+  /** Best completed-month leaderboard finish (null before first freeze). */
+  bestMonthlyRank?: number | null;
+  /** UTC month of best finish as YYYY-MM (null when no finish). */
+  bestMonthlyRankMonth?: string | null;
+  /** Permanent Monthly Top 100 achievement. */
+  hasMonthlyTop100?: boolean;
+  /** Count of Top 100 monthly finishes. */
+  monthlyTop100Finishes?: number;
 };
 
 /**

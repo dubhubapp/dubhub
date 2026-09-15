@@ -12,6 +12,9 @@ import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { formatJoinedDateLine } from "@/lib/joined-date";
+import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
+import { BestMonthlyRankHeaderChip } from "@/components/best-monthly-rank-row";
+import { formatBestMonthlyRankHeaderLabel } from "@/lib/monthly-top-100-presentation";
 import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
@@ -65,9 +68,16 @@ function publicProfilePageScrollClass(hasReadyUploadedBanner = false) {
   );
 }
 
-/** Shared compact pill footprint for fav genre value beneath avatar. */
+/** Matches own-profile fav-genre pill footprint (header actions row). */
 const PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS =
   "inline-flex min-h-[1.625rem] w-full max-w-[5.5rem] items-center justify-center rounded px-2 py-1 text-[10px] font-semibold leading-none ring-1 ring-white/15";
+
+/** Own / public key-stat chrome: white icons + values; muted labels. */
+const PUBLIC_KEY_STAT_ICON_CLASS =
+  "h-4 w-4 shrink-0 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]";
+const PUBLIC_KEY_STAT_VALUE_CLASS =
+  "text-base font-bold tabular-nums leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]";
+const PUBLIC_KEY_STAT_LABEL_CLASS = "text-[10px] leading-tight text-gray-300/90";
 
 /** Equal vertical rhythm: stats → rep → releases */
 const PUBLIC_PROFILE_SECTION_GAP_CLASS = "flex flex-col gap-5";
@@ -81,23 +91,17 @@ function PublicArtistIdsStatIcon({ className }: { className?: string }) {
 function PublicProfileKeyStat({
   label,
   icon: Icon,
-  tone,
   value,
 }: {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  tone: string;
   value: string;
 }) {
   return (
     <div className="flex min-w-0 flex-col items-center gap-1 text-center">
-      <Icon className={`h-4 w-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`} />
-      <span
-        className={`text-base font-bold tabular-nums leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${tone}`}
-      >
-        {value}
-      </span>
-      <span className="text-[10px] leading-tight text-gray-300/90">{label}</span>
+      <Icon className={PUBLIC_KEY_STAT_ICON_CLASS} />
+      <span className={PUBLIC_KEY_STAT_VALUE_CLASS}>{value}</span>
+      <span className={PUBLIC_KEY_STAT_LABEL_CLASS}>{label}</span>
     </div>
   );
 }
@@ -411,8 +415,15 @@ export default function PublicProfile() {
     currentUser?.id !== profileId;
 
   const canShareProfile = Boolean(profile.username?.trim());
+  const showFavGenrePill = Boolean(genreChip && genrePillStyle);
+  const bestMonthlyRankHeaderLabel = formatBestMonthlyRankHeaderLabel(profile.bestMonthlyRank);
+  const showBestMonthlyRankHeader = bestMonthlyRankHeaderLabel != null;
 
-  const showArtistProfileActions = canShareProfile || showArtistReleaseAlerts;
+  const showArtistProfileActions =
+    canShareProfile ||
+    showArtistReleaseAlerts ||
+    showFavGenrePill ||
+    showBestMonthlyRankHeader;
 
   return (
     <SwipeBackPage
@@ -483,46 +494,30 @@ export default function PublicProfile() {
 
               <div className={PUBLIC_PROFILE_HERO_BELOW_BACK_CLASS}>
                 <div className="mb-4 flex items-start gap-4">
-                  <div className="flex shrink-0 flex-col items-center gap-2">
-                    <div className="relative">
-                      {avatarSrc ? (
-                        canExpandAvatar ? (
-                          <button
-                            type="button"
-                            className="ios-press block overflow-hidden rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                            onClick={() => setAvatarLightboxOpen(true)}
-                            aria-label={`View ${avatarLightboxAlt}`}
-                            data-testid="button-public-profile-avatar"
-                          >
-                            <img src={avatarSrc} alt="" className={avatarImgClassName} draggable={false} />
-                          </button>
-                        ) : (
-                          <img src={avatarSrc} alt="" className={avatarImgClassName} />
-                        )
+                  <div className="relative shrink-0">
+                    {avatarSrc ? (
+                      canExpandAvatar ? (
+                        <button
+                          type="button"
+                          className="ios-press block overflow-hidden rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          onClick={() => setAvatarLightboxOpen(true)}
+                          aria-label={`View ${avatarLightboxAlt}`}
+                          data-testid="button-public-profile-avatar"
+                        >
+                          <img src={avatarSrc} alt="" className={avatarImgClassName} draggable={false} />
+                        </button>
                       ) : (
-                        <div
-                          className={`avatar-shell h-20 w-20 border-2 ${
-                            isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
-                          } bg-gray-700`}
-                        >
-                          <User className="avatar-icon h-10 w-10 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    {genreChip && genrePillStyle && !showArtistReleaseAlerts ? (
+                        <img src={avatarSrc} alt="" className={avatarImgClassName} />
+                      )
+                    ) : (
                       <div
-                        className="flex w-full max-w-[5.5rem] flex-col items-center gap-1 text-center"
-                        data-testid="public-profile-fav-genre"
+                        className={`avatar-shell h-20 w-20 border-2 ${
+                          isVerifiedArtist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary"
+                        } bg-gray-700`}
                       >
-                        <span className="text-[10px] font-medium leading-none text-white/60">Fav genre</span>
-                        <span
-                          className={PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS}
-                          style={genrePillStyle as CSSProperties}
-                        >
-                          <span className="truncate">{genreChip.label}</span>
-                        </span>
+                        <User className="avatar-icon h-10 w-10 text-gray-400" />
                       </div>
-                    ) : null}
+                    )}
                   </div>
 
                   <div className="min-w-0 flex-1 pt-1">
@@ -543,19 +538,31 @@ export default function PublicProfile() {
                       />
                     </div>
                     {joinedDateLine ? (
-                      <p className="mt-2 inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium leading-none text-white/80 backdrop-blur-md">
-                        {joinedDateLine}
-                      </p>
-                    ) : null}
+                      <div className="mt-2 flex flex-col items-start gap-1.5">
+                        <p className="inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium leading-none text-white/80 backdrop-blur-md">
+                          {joinedDateLine}
+                        </p>
+                        <MonthlyTop100Badge
+                          earned={profile.hasMonthlyTop100 === true}
+                          context="profile"
+                        />
+                      </div>
+                    ) : (
+                      <MonthlyTop100Badge
+                        earned={profile.hasMonthlyTop100 === true}
+                        context="profile"
+                        className="mt-2"
+                      />
+                    )}
                   </div>
                 </div>
 
                 {showArtistProfileActions ? (
                   <div
-                    className="mb-4 flex items-end gap-2"
+                    className="mb-4 flex flex-wrap items-end gap-2"
                     data-testid="artist-profile-actions"
                   >
-                    {genreChip && genrePillStyle && showArtistReleaseAlerts ? (
+                    {showFavGenrePill ? (
                       <div
                         className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
                         data-testid="public-profile-fav-genre"
@@ -565,12 +572,22 @@ export default function PublicProfile() {
                           className={PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS}
                           style={genrePillStyle as CSSProperties}
                         >
-                          <span className="truncate">{genreChip.label}</span>
+                          <span className="truncate">{genreChip?.label}</span>
                         </span>
                       </div>
                     ) : null}
                     {canShareProfile && profile.username ? (
-                      <ArtistProfileShareButton username={profile.username} variant="onDark" />
+                      <ArtistProfileShareButton
+                        username={profile.username}
+                        variant="onDark"
+                        className="self-end"
+                      />
+                    ) : null}
+                    {showBestMonthlyRankHeader ? (
+                      <BestMonthlyRankHeaderChip
+                        rank={profile.bestMonthlyRank}
+                        month={profile.bestMonthlyRankMonth}
+                      />
                     ) : null}
                     {showArtistReleaseAlerts && profileId ? (
                       <ArtistReleaseAlertsButton artistId={profileId} className="min-w-0 flex-1" />
@@ -583,21 +600,19 @@ export default function PublicProfile() {
                     className={cn("grid gap-1", isVerifiedArtist ? "grid-cols-4" : "grid-cols-5")}
                     data-testid="public-profile-key-stats"
                   >
-                    <PublicProfileKeyStat label="Posts" value={postsValue} icon={Upload} tone="text-gray-200" />
-                    <PublicProfileKeyStat label="IDs" value={idsValue} icon={Check} tone="text-green-300" />
-                    <PublicProfileKeyStat label="Likes" value={likesValue} icon={Heart} tone="text-pink-300" />
+                    <PublicProfileKeyStat label="Posts" value={postsValue} icon={Upload} />
+                    <PublicProfileKeyStat label="IDs" value={idsValue} icon={Check} />
+                    <PublicProfileKeyStat label="Likes" value={likesValue} icon={Heart} />
                     <PublicProfileKeyStat
                       label="Comments"
                       value={commentsValue}
                       icon={MessageCircle}
-                      tone="text-cyan-300"
                     />
                     {!isVerifiedArtist ? (
                       <PublicProfileKeyStat
                         label="Artist IDs"
                         value={artistIdsValue}
                         icon={PublicArtistIdsStatIcon}
-                        tone="text-amber-300"
                       />
                     ) : null}
                   </div>

@@ -9,6 +9,8 @@ export type StatsCardItem = {
   toneClassName: string;
   /** Optional short explanation for this stat (info icon next to the label). */
   info?: string;
+  /** Optional muted supporting line under the value (e.g. Best Monthly Rank month). */
+  supportingValue?: string | null;
 };
 
 interface StatsCardSectionProps {

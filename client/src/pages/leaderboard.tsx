@@ -15,6 +15,7 @@ import { Trophy, Medal, Award, Calendar } from "lucide-react";
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
+import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { apiUrl } from "@/lib/apiBase";
@@ -133,6 +134,7 @@ interface LeaderboardEntry {
   created_at: string;
   account_type: string;
   moderator: boolean;
+  hasMonthlyTop100?: boolean;
 }
 
 type LeaderboardRankResponse = {
@@ -294,10 +296,10 @@ export function LeaderboardEntryRow({
 
       {/* User Info */}
       <div className="flex-1 min-w-0">
-        <div className="relative z-[1] mb-1.5 flex min-w-0 items-center gap-x-2">
+        <div className="relative z-[1] mb-1.5 flex min-w-0 items-center gap-x-1.5">
           <button
             type="button"
-            className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+            className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
             data-testid={`username-${entry.user_id}`}
             onClick={handleOpenProfile}
           >
@@ -308,9 +310,15 @@ export function LeaderboardEntryRow({
               verifiedArtist={isVerifiedArtist}
               moderator={entry.moderator}
             />
+            {/* Identity cluster: after role icons (or username if none); before You */}
+            <MonthlyTop100Badge
+              earned={entry.hasMonthlyTop100 === true}
+              context="leaderboard"
+              className="shrink-0"
+            />
           </button>
           {highlightAsCurrent && (
-            <span className={LEADERBOARD_YOU_PILL_CLASS}>
+            <span className={cn(LEADERBOARD_YOU_PILL_CLASS, "shrink-0")}>
               You
             </span>
           )}
