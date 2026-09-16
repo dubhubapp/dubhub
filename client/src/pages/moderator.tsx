@@ -51,7 +51,7 @@ import {
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
 } from "@/lib/app-material";
 import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
-import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import {
@@ -627,8 +627,8 @@ export default function ModeratorPage() {
   };
 
   return (
-    <div className={`${APP_PAGE_SCROLL_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}>
-      <div className="app-page-top-pad mx-auto w-full max-w-4xl space-y-5 px-4 pb-6">
+    <div className={`${APP_PAGE_SCROLL_CLASS} bg-background`}>
+      <div className="app-page-top-pad mx-auto w-full max-w-4xl space-y-5 px-4">
         {/* Moderator Badge */}
         <div className="flex items-center justify-center">
           <Badge

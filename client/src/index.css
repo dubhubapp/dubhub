@@ -15,9 +15,13 @@
   );
   /* Interactive controls sit above this inset. React mode == opaque reservation. */
   --app-bottom-control-inset: var(--app-bottom-nav-block);
-  /* Extra list padding in native mode only (0 in React mode; shell already clears the web nav). */
+  /*
+   * Scroll list clearance above the physical nav chrome (0 in React mode; shell already
+   * clears the web nav). Native mode retargets to visual bar height — not Home exclusion.
+   */
   --app-scroll-nav-clearance: 0px;
-  --app-scroll-end-pad: 0px;
+  /* Shared content→nav breathing room (~28px). Do not stack page-level pb-* on top. */
+  --app-scroll-end-pad: 1.75rem;
   --app-native-nav-exclusion: 0px;
   /* Full-width sheets: React-nav stops above the web nav; native mode uses 0 so the sheet covers the bar. */
   --app-sheet-screen-bottom: var(--app-bottom-control-inset);
@@ -155,7 +159,6 @@ html[data-dubhub-native-nav="on"] {
   /* Fallback until native geometry arrives: compact bar + lift + home indicator. */
   --app-native-nav-exclusion: calc(49px + 8px + env(safe-area-inset-bottom, 0px));
   --app-bottom-control-inset: var(--app-native-nav-exclusion);
-  --app-scroll-nav-clearance: var(--app-bottom-control-inset);
   --app-sheet-screen-bottom: 0px;
   /* LG-NAV-5C8: scrub sits below logical exclusion (117 − 11 = 106 on current geometry). */
   --video-feed-scrub-offset: 11px;
@@ -164,15 +167,18 @@ html[data-dubhub-native-nav="on"] {
   /* LG-NAV-5C1: metadata content only. Fade + overlay box + rail stay on exclusion. */
   --video-card-metadata-shift: 11px;
   /**
-   * RELEASES-BOTTOM-2 — physical UITabBar frame, not Home exclusion.
+   * Physical UITabBar frame, not Home exclusion.
    * sizeThatFits on home-indicator phones is 83 = 49+34, so exclusion (117)
    * already contains safe-area. Subtracting `--app-safe-bottom` yields visible
    * bar height (~83). Do not change `--app-bottom-control-inset` (Home depends on it).
+   * Scroll pages + Releases CTA share this visual clearance; Home scrub stays on exclusion.
    */
   --releases-visual-nav-clearance: max(
     0px,
     calc(var(--app-bottom-control-inset) - var(--app-safe-bottom))
   );
+  /* Content lists clear the glass bar only; `--app-scroll-end-pad` adds the 24–32px gap. */
+  --app-scroll-nav-clearance: var(--releases-visual-nav-clearance);
   /* 8px + CTA `pb-0.5` (2px) ≈ 10px button-to-bar gap on the 956pt reference. */
   --releases-cta-gap-above-nav: 0.5rem;
   --releases-cta-anchor: var(--releases-visual-nav-clearance);

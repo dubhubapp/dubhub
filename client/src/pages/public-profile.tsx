@@ -27,7 +27,7 @@ import {
 import { type ReleaseFeedCardData } from "@/components/release-feed-card";
 import { prefetchReleaseDetail } from "@/lib/release-cache";
 import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-navigation";
-import { APP_PAGE_SCROLL_CLASS, APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
+import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import {
   APP_MATERIAL_BACK_BUTTON_CLASS,
   APP_MATERIAL_BACK_ICON_CLASS,
@@ -123,7 +123,7 @@ function PublicProfileKeyStatsSkeleton({ columns = 5 }: { columns?: 4 | 5 }) {
 function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
   return (
     <SwipeBackPage onBack={onBack} className={publicProfilePageScrollClass(false)}>
-      <div className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS)} aria-busy="true" aria-label="Loading profile">
+      <div className={cn("px-6")} aria-busy="true" aria-label="Loading profile">
         <div className="mx-auto max-w-md">
           <section className="relative -mx-6 overflow-hidden bg-transparent">
             <ProfileBannerDefaultGradient />
@@ -432,7 +432,7 @@ export default function PublicProfile() {
       className={publicProfilePageScrollClass(hasReadyUploadedBanner)}
     >
       <div
-        className={cn("px-6", APP_SCROLL_BOTTOM_INSET_CLASS, enterMotionClass)}
+        className={cn("px-6", enterMotionClass)}
         onAnimationEnd={() => setPlayEnterAnimation(false)}
       >
           <div className="mx-auto max-w-md">

@@ -213,7 +213,7 @@ describe("settings corrective slice — scroll + flat containers", () => {
     );
     assert.match(settingsSrc, /SETTINGS_PAGE_PAD_CLASS/);
     assert.doesNotMatch(settingsSrc, /app-page-top-pad/);
-    assert.match(SETTINGS_PAGE_PAD_CLASS, /pb-8/);
+    assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /pb-/);
     assert.match(SETTINGS_PAGE_PAD_CLASS, /pt-1/);
   });
 

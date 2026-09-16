@@ -91,13 +91,13 @@ describe("APP-SCROLL-2 Home PTR isolation", () => {
 
 describe("APP-SCROLL-2 Profile Notifications inner PTR", () => {
   it("outer Profile uses the shared page token; inner list keeps custom PTR with overscroll none", () => {
-    assert.match(profileSrc, /APP_PAGE_SCROLL_CLASS/);
+    assert.match(profileSrc, /PROFILE_PAGE_SCROLL_CLASS/);
     assert.match(profileSrc, /handleNotificationsTouchStart/);
     assert.match(profileSrc, /handleNotificationsTouchMove/);
     assert.match(profileSrc, /handleNotificationsTouchEnd/);
     assert.match(profileSrc, /handleNotificationsTouchCancel/);
     assert.match(profileSrc, /PROFILE_NOTIFICATIONS_PTR_THRESHOLD_PX/);
-    assert.match(profileSrc, /await refreshNewerNotifications\(\)/);
+    assert.match(profileSrc, /refreshNewerNotifications\(\)/);
     assert.match(profileSrc, /pullDistance/);
     assert.match(profileSrc, /profileNotificationsRubberBandPull/);
     assert.doesNotMatch(profileSrc, /Math\.min\(96,\s*delta \* 0\.45\)/);

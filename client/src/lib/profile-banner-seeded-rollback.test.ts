@@ -51,7 +51,7 @@ describe("DEFAULT-PROFILE-GRADIENT rollback", () => {
     // Scroll roots use canvas helper — not a solid page-level navy class.
     assert.match(
       userProfileSrc,
-      /className=\{cn\(\s*PROFILE_PAGE_SCROLL_CLASS,\s*"overflow-x-hidden",\s*profilePageCanvasClass\(hasReadyUploadedBanner\),\s*\)\}/,
+      /className=\{cn\(\s*PROFILE_PAGE_SCROLL_CLASS,\s*PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS,\s*"overflow-x-hidden",\s*profilePageCanvasClass\(hasReadyUploadedBanner\),\s*\)\}/,
     );
     assert.match(publicProfileSrc, /publicProfilePageScrollClass\(hasReadyUploadedBanner\)/);
     assert.doesNotMatch(publicProfileSrc, /function publicProfilePageScrollClass[\s\S]{0,200}bg-\[#0f1324\]/);

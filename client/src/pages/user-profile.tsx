@@ -44,9 +44,16 @@ import {
 } from "@/lib/monthly-top-100-presentation";
 import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
 import {
-  PROFILE_SECONDARY_ROW_CLASS,
   PROFILE_SECONDARY_ROW_TOP_CLASS,
 } from "@/lib/profile-posts-filter-presentation";
+import {
+  PROFILE_METRIC_SELECTOR_ACTIVE_CLASS,
+  PROFILE_METRIC_SELECTOR_INACTIVE_CLASS,
+  PROFILE_METRIC_SELECTOR_SEGMENT_CLASS,
+  PROFILE_METRIC_SELECTOR_TRACK_CLASS,
+  PROFILE_OVERVIEW_AFTER_SELECTOR_CLASS,
+  PROFILE_OVERVIEW_METRIC_HEADING_CLASS,
+} from "@/lib/profile-overview-metric-selector-presentation";
 import { ProfileGridStatusPill } from "@/components/profile-grid-status-pill";
 import { ProfileStatusFilterRow } from "@/components/profile-status-filter-row";
 import {
@@ -73,10 +80,16 @@ import {
 } from "@/lib/profile-primary-nav-presentation";
 import {
   PROFILE_SWIPE_TAB_IDS,
+  PROFILE_TAB_PAGER_BODY_FILL_CLASS,
+  PROFILE_TAB_PAGER_NAV_SHELL_SHRINK_CLASS,
+  PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS,
+  PROFILE_TAB_PAGER_PAGE_INSET_CLASS,
   PROFILE_TAB_PAGER_PANEL_CLASS,
   PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
+  PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS,
   PROFILE_TAB_PAGER_SNAP_EASING,
   PROFILE_TAB_PAGER_SNAP_MS,
+  PROFILE_TAB_PAGER_TABS_ROOT_CLASS,
   PROFILE_TAB_PAGER_TRACK_CLASS,
   PROFILE_TAB_PAGER_VIEWPORT_CLASS,
   applyProfilePagerPanelImperativeUnlock,
@@ -88,6 +101,7 @@ import {
   profilePagerUnlockCovers,
   profilePrimaryTabEmphasisColor,
   profileTabIndex,
+  resolveProfilePagerPrepareHostMinHeightPx,
   resolveProfilePagerPrepareUnlockIndices,
   resolveProfilePagerVertUnlockIndices,
   resolveProfilePrimaryTabEmphasis,
@@ -339,14 +353,6 @@ function ActivityGenreStatChip({
 const PROFILE_OVERVIEW_SECTIONS_CLASS =
   "divide-y divide-white/5 [&>section]:py-5 [&>section:first-child]:pt-0 [&>section:last-child]:pb-1";
 
-/** Lightweight Impact / Community mode tabs — text + accent underline (not segmented pills).
- * Underline is absolute on the button so labels share the secondary-row centreline with Posts/Likes. */
-const PROFILE_IMPACT_MODE_TAB_BASE =
-  "ios-press relative flex min-h-11 shrink-0 items-center justify-center px-0.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-const PROFILE_IMPACT_MODE_TAB_ACTIVE =
-  "font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:rounded-full after:bg-[#0a83ff]";
-const PROFILE_IMPACT_MODE_TAB_INACTIVE = "font-medium text-white/55 hover:text-white/80";
-
 /** Matches public profile fav-genre pill footprint. */
 const OWNER_PROFILE_GENRE_VALUE_PILL_CLASS =
   "inline-flex min-h-[1.625rem] w-full max-w-[5.5rem] items-center justify-center rounded px-2 py-1 text-[10px] font-semibold leading-none ring-1 ring-white/15";
@@ -400,7 +406,10 @@ function ProfileCommunityActivitySection({
 }: ProfileCommunityActivitySectionProps) {
   return (
     <>
-      <div className={cn(PROFILE_SECONDARY_ROW_CLASS, "justify-between gap-2")}>
+      <div
+        className={cn(PROFILE_OVERVIEW_METRIC_HEADING_CLASS, "justify-between gap-2")}
+        data-testid="profile-overview-metric-heading"
+      >
         <div className={PROFILE_SECTION_HEADING_ROW_CLASS}>
           <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
             <BarChart3 className="h-4 w-4 text-gray-300" />
@@ -3144,7 +3153,8 @@ export default function UserProfile() {
       heights,
     };
     if (viewport) {
-      viewport.style.minHeight = `${maxH}px`;
+      const floorPx = Math.ceil(viewport.getBoundingClientRect().height);
+      viewport.style.minHeight = `${resolveProfilePagerPrepareHostMinHeightPx(maxH, floorPx)}px`;
     }
 
     // 3) Warm nav metrics for underline/emphasis (0 rect reads on armed moves).
@@ -3224,15 +3234,16 @@ export default function UserProfile() {
       data-lg-nav-5a-dest="profile"
       className={cn(
         PROFILE_PAGE_SCROLL_CLASS,
+        PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS,
         "overflow-x-hidden",
         profilePageCanvasClass(hasReadyUploadedBanner),
       )}
     >
-      <div className="px-6 pb-8">
-        <div className="max-w-md mx-auto">
+      <div className={PROFILE_TAB_PAGER_PAGE_INSET_CLASS}>
+        <div className={PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS}>
           {/* Profile banner — uploaded image dominant; contained fade into navy (C5C) */}
           <section
-            className="relative -mx-6 mb-3 overflow-hidden bg-[#0f1324]"
+            className="relative -mx-6 mb-3 shrink-0 overflow-hidden bg-[#0f1324]"
             data-testid="profile-banner"
           >
             {showBannerLoadingPlaceholder ? <ProfileBannerLoadingPlaceholder /> : null}
@@ -3449,8 +3460,17 @@ export default function UserProfile() {
           </section>
 
           {/* Tabs — non-sticky document tabs below banner (C5B.2) */}
-          <Tabs value={tabsValue} onValueChange={handleProfileTabChange} className="w-full mb-5">
-            <div className={PROFILE_PRIMARY_NAV_SHELL_CLASS}>
+          <Tabs
+            value={tabsValue}
+            onValueChange={handleProfileTabChange}
+            className={PROFILE_TAB_PAGER_TABS_ROOT_CLASS}
+          >
+            <div
+              className={cn(
+                PROFILE_PRIMARY_NAV_SHELL_CLASS,
+                PROFILE_TAB_PAGER_NAV_SHELL_SHRINK_CLASS,
+              )}
+            >
               <TabsList
                 ref={profileTabsListRef}
                 className={PROFILE_PRIMARY_NAV_LIST_CLASS}
@@ -3542,7 +3562,10 @@ export default function UserProfile() {
 
             <div
               ref={profileTabPagerViewportRef}
-              className={PROFILE_TAB_PAGER_VIEWPORT_CLASS}
+              className={cn(
+                PROFILE_TAB_PAGER_VIEWPORT_CLASS,
+                PROFILE_TAB_PAGER_BODY_FILL_CLASS,
+              )}
               data-testid="profile-tab-swipe-region"
             >
             <div
@@ -3566,7 +3589,10 @@ export default function UserProfile() {
               {userType === "artist" ? (
                 <section data-testid="your-activity-list">
                   <div
-                    className={cn(PROFILE_SECONDARY_ROW_CLASS, "gap-5")}
+                    className={cn(
+                      PROFILE_METRIC_SELECTOR_TRACK_CLASS,
+                      PROFILE_OVERVIEW_AFTER_SELECTOR_CLASS,
+                    )}
                     role="tablist"
                     aria-label="Artist impact or community activity"
                     data-testid="profile-overview-secondary-row"
@@ -3577,10 +3603,10 @@ export default function UserProfile() {
                       aria-selected={artistStatsMode === "artist"}
                       onClick={() => setArtistStatsMode("artist")}
                       className={cn(
-                        PROFILE_IMPACT_MODE_TAB_BASE,
+                        PROFILE_METRIC_SELECTOR_SEGMENT_CLASS,
                         artistStatsMode === "artist"
-                          ? PROFILE_IMPACT_MODE_TAB_ACTIVE
-                          : PROFILE_IMPACT_MODE_TAB_INACTIVE,
+                          ? PROFILE_METRIC_SELECTOR_ACTIVE_CLASS
+                          : PROFILE_METRIC_SELECTOR_INACTIVE_CLASS,
                       )}
                       data-testid="stats-mode-artist"
                     >
@@ -3592,10 +3618,10 @@ export default function UserProfile() {
                       aria-selected={artistStatsMode === "user"}
                       onClick={() => setArtistStatsMode("user")}
                       className={cn(
-                        PROFILE_IMPACT_MODE_TAB_BASE,
+                        PROFILE_METRIC_SELECTOR_SEGMENT_CLASS,
                         artistStatsMode === "user"
-                          ? PROFILE_IMPACT_MODE_TAB_ACTIVE
-                          : PROFILE_IMPACT_MODE_TAB_INACTIVE,
+                          ? PROFILE_METRIC_SELECTOR_ACTIVE_CLASS
+                          : PROFILE_METRIC_SELECTOR_INACTIVE_CLASS,
                       )}
                       data-testid="stats-mode-user"
                     >
@@ -3605,18 +3631,23 @@ export default function UserProfile() {
 
                   {artistStatsMode === "artist" ? (
                     <>
-                      <div className={`mb-2 ${PROFILE_SECTION_HEADING_ROW_CLASS}`}>
-                        <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-                          <BarChart3 className="h-4 w-4 text-gray-300" />
-                        </span>
-                        <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Your Impact</h3>
-                        <StatInfoPopover
-                          label="Your Impact"
-                          content={PROFILE_HELP.sectionImpact}
-                          side="bottom"
-                          align="start"
-                          className="text-gray-400 hover:text-gray-200"
-                        />
+                      <div
+                        className={PROFILE_OVERVIEW_METRIC_HEADING_CLASS}
+                        data-testid="profile-overview-metric-heading"
+                      >
+                        <div className={PROFILE_SECTION_HEADING_ROW_CLASS}>
+                          <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
+                            <BarChart3 className="h-4 w-4 text-gray-300" />
+                          </span>
+                          <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Your Impact</h3>
+                          <StatInfoPopover
+                            label="Your Impact"
+                            content={PROFILE_HELP.sectionImpact}
+                            side="bottom"
+                            align="start"
+                            className="text-gray-400 hover:text-gray-200"
+                          />
+                        </div>
                       </div>
                       <div className="divide-y divide-white/5">
                         {artistImpactItems.map(({ label, value, Icon, info }) => (

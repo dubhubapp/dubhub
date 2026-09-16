@@ -42,8 +42,11 @@ export const SETTINGS_SHELL_ATMOSPHERE_CLASS =
 export const SETTINGS_PAGE_SCROLL_CLASS =
   `${APP_PAGE_SCROLL_CLASS} bg-transparent` as const;
 
-/** Compact inner pad after the shell inset (~4px). */
-export const SETTINGS_PAGE_PAD_CLASS = "pt-1 px-6 pb-8" as const;
+/**
+ * Compact inner pad after the shell inset (~4px).
+ * Bottom breathing room comes from `--app-scroll-end-pad` on the scroll root — no pb-*.
+ */
+export const SETTINGS_PAGE_PAD_CLASS = "pt-1 px-6" as const;
 
 /** Title row immediately under Back (~4px). */
 export const SETTINGS_TITLE_AFTER_BACK_CLASS = "mt-1 flex items-center gap-2" as const;

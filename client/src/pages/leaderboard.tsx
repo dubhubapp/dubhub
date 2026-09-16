@@ -22,7 +22,6 @@ import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUserProfileLightPopup } from "@/components/user-profile-light-popup";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
-import { APP_SCROLL_BOTTOM_INSET_CLASS } from "@/lib/app-shell-layout";
 import { APP_MATERIAL_AUTH_CANVAS_CLASS } from "@/lib/app-material";
 import { Capacitor } from "@capacitor/core";
 import { playInteractionLight } from "@/lib/haptic";
@@ -1334,9 +1333,9 @@ export default function Leaderboard() {
     <div
       ref={pageScrollRef}
       data-lg-nav-5a-dest="leaderboard"
-      className={`${LEADERBOARD_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background ${APP_SCROLL_BOTTOM_INSET_CLASS}`}
+      className={`${LEADERBOARD_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background`}
     >
-      <div className="mx-auto max-w-4xl px-4 pb-6">
+      <div className="mx-auto max-w-4xl px-4">
         <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange}>
           <div
             ref={stickyChromeRef}

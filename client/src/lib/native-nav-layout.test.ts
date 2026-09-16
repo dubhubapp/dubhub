@@ -100,7 +100,7 @@ describe("LG-NAV-4 native layout contract", () => {
     assert.match(cssSrc, /html\[data-dubhub-native-nav="on"\]/);
     assert.match(cssSrc, /--app-bottom-nav-block:\s*0px/);
     assert.match(cssSrc, /--app-bottom-control-inset:\s*var\(--app-native-nav-exclusion\)/);
-    assert.match(cssSrc, /--app-scroll-nav-clearance:\s*var\(--app-bottom-control-inset\)/);
+    assert.match(cssSrc, /--app-scroll-nav-clearance:\s*var\(--releases-visual-nav-clearance\)/);
     assert.match(cssSrc, /--app-bottom-control-inset:\s*var\(--app-bottom-nav-block\)/);
   });
 
@@ -319,9 +319,9 @@ describe("LG-NAV-6B destination scroll clearance", () => {
     assert.match(shellSrc, /--app-scroll-nav-clearance/);
     assert.match(
       shellSrc,
-      /pb-\[calc\(var\(--app-scroll-nav-clearance\)\+clamp\(0\.75rem,2\.5vw,1rem\)\)\]/,
+      /pb-\[calc\(var\(--app-scroll-nav-clearance\)\+var\(--app-scroll-end-pad\)\)\]/,
     );
-    assert.match(profileSrc, /APP_PAGE_SCROLL_CLASS/);
+    assert.match(profileSrc, /PROFILE_PAGE_SCROLL_CLASS/);
     assert.match(profileSrc, /data-testid="button-settings"/);
     assert.match(releaseDetailSrc, /APP_SCROLL_WITH_CLAMP_END_PAD_CLASS/);
     assert.match(releaseCreateSrc, /APP_SCROLL_WITH_CLAMP_END_PAD_CLASS/);
@@ -332,7 +332,7 @@ describe("LG-NAV-6B destination scroll clearance", () => {
     assert.match(cssSrc, /--app-scroll-nav-clearance:\s*0px/);
     assert.match(
       cssSrc,
-      /html\[data-dubhub-native-nav="on"\][\s\S]*--app-scroll-nav-clearance:\s*var\(--app-bottom-control-inset\)/,
+      /html\[data-dubhub-native-nav="on"\][\s\S]*--app-scroll-nav-clearance:\s*var\(--releases-visual-nav-clearance\)/,
     );
   });
 });

@@ -9,19 +9,25 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   PROFILE_SWIPE_TAB_IDS,
+  PROFILE_TAB_PAGER_BODY_FILL_CLASS,
   PROFILE_TAB_PAGER_CARD_ATTR,
   PROFILE_TAB_PAGER_COMMIT_PROGRESS,
   PROFILE_TAB_PAGER_DRAGGING_ATTR,
   PROFILE_TAB_PAGER_EDGE_RUBBER,
   PROFILE_TAB_PAGER_FLICK_MIN_DX_PX,
   PROFILE_TAB_PAGER_FLICK_PX_PER_MS,
+  PROFILE_TAB_PAGER_NAV_SHELL_SHRINK_CLASS,
+  PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS,
+  PROFILE_TAB_PAGER_PAGE_INSET_CLASS,
   PROFILE_TAB_PAGER_PANEL_CLASS,
   PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
   PROFILE_TAB_PAGER_PROJECTION_MS,
+  PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS,
   PROFILE_TAB_PAGER_SNAP_EASING,
   PROFILE_TAB_PAGER_SNAP_MS,
   PROFILE_TAB_PAGER_SNAP_MS_MIN,
   PROFILE_TAB_PAGER_SNAP_MS_SPAN,
+  PROFILE_TAB_PAGER_TABS_ROOT_CLASS,
   PROFILE_TAB_PAGER_TRACK_CLASS,
   PROFILE_TAB_PAGER_VELOCITY_WINDOW_MS,
   PROFILE_TAB_PAGER_VIEWPORT_CLASS,
@@ -50,12 +56,15 @@ import {
   profilePrimaryTabEmphasisColor,
   profileTabIndex,
   resolveProfilePagerHostHeightPx,
+  resolveProfilePagerPrepareHostMinHeightPx,
   resolveProfilePagerPrepareUnlockIndices,
   resolveProfilePagerVertUnlockIndices,
   resolveProfilePrimaryTabEmphasis,
   resolveProfileTabFromDelta,
   PROFILE_PRIMARY_TAB_INACTIVE_ALPHA,
 } from "./profile-tab-swipe";
+import { APP_PAGE_SCROLL_CLASS } from "./app-shell-layout";
+import { PROFILE_PAGE_SCROLL_CLASS } from "./profile-grid-window";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const userProfileSrc = readFileSync(join(here, "../pages/user-profile.tsx"), "utf8");
@@ -638,8 +647,9 @@ describe("user-profile pager wiring", () => {
   });
 
   it("pager viewport is full-bleed like banner/nav; padding stays on panels", () => {
-    assert.match(userProfileSrc, /className="px-6 pb-8"/);
-    assert.match(userProfileSrc, /max-w-md mx-auto/);
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_PAGE_INSET_CLASS/);
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS/);
+    assert.match(PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS, /max-w-md/);
     assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_SHELL_CLASS/);
     assert.match(PROFILE_TAB_PAGER_VIEWPORT_CLASS, /-mx-6/);
     assert.match(PROFILE_TAB_PAGER_PANEL_CLASS, /\bpx-6\b/);
@@ -842,7 +852,7 @@ describe("PROFILE-SWIPE-POLISH-4 — imperative prepare + stable drag geometry",
   it("D: host minHeight is written during prepare", () => {
     assert.match(
       userProfileSrc,
-      /viewport\.style\.minHeight = `\$\{maxH\}px`/,
+      /viewport\.style\.minHeight = `\$\{resolveProfilePagerPrepareHostMinHeightPx\(maxH, floorPx\)\}px`/,
     );
     assert.match(userProfileSrc, /profilePagerGestureGeometryLockedRef\.current = true/);
   });
@@ -1020,7 +1030,10 @@ describe("PROFILE-SWIPE-POLISH-2 — visual tab emphasis", () => {
   });
 
   it("H: aria-selected remains committed-only during drag", () => {
-    assert.match(userProfileSrc, /Tabs value=\{tabsValue\} onValueChange=\{handleProfileTabChange\}/);
+    assert.match(
+      userProfileSrc,
+      /Tabs\s*\n\s*value=\{tabsValue\}\s*\n\s*onValueChange=\{handleProfileTabChange\}/,
+    );
     assert.doesNotMatch(userProfileSrc, /aria-selected=\{[^}]*progress/);
     assert.match(userProfileSrc, /onCommitTab: handleProfileTabChange/);
     assert.doesNotMatch(swipeSrc, /onCommitRef\.current\(.*\)[\s\S]{0,40}phase: "dragging"/);
@@ -1029,5 +1042,109 @@ describe("PROFILE-SWIPE-POLISH-2 — visual tab emphasis", () => {
   it("does not add haptic in this slice", () => {
     assert.doesNotMatch(userProfileSrc, /playInteractionLight/);
     assert.doesNotMatch(swipeSrc, /playInteractionLight|Haptics\.impact/i);
+  });
+});
+
+describe("PROFILE swipe hit-area — short-content body fill", () => {
+  it("1: swipe region fills available Profile body height via flex chain", () => {
+    assert.equal(PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS, "flex flex-col");
+    assert.equal(PROFILE_TAB_PAGER_BODY_FILL_CLASS, "flex-1");
+    assert.match(PROFILE_TAB_PAGER_PAGE_INSET_CLASS, /flex-1/);
+    assert.match(PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS, /flex-1/);
+    assert.match(PROFILE_TAB_PAGER_TABS_ROOT_CLASS, /flex-1/);
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS/);
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_PAGE_INSET_CLASS/);
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS/);
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_TABS_ROOT_CLASS/);
+    assert.match(
+      userProfileSrc,
+      /PROFILE_TAB_PAGER_VIEWPORT_CLASS,\s*PROFILE_TAB_PAGER_BODY_FILL_CLASS/,
+    );
+    assert.match(userProfileSrc, /PROFILE_TAB_PAGER_NAV_SHELL_SHRINK_CLASS/);
+    assert.equal(PROFILE_TAB_PAGER_NAV_SHELL_SHRINK_CLASS, "shrink-0");
+  });
+
+  it("2/3: Posts and Likes short/empty remain inside the filled swipe host", () => {
+    const postsPanel = userProfileSrc.slice(
+      userProfileSrc.indexOf("data-profile-pager-index={1}"),
+      userProfileSrc.indexOf("data-profile-pager-index={2}"),
+    );
+    const likesPanel = userProfileSrc.slice(
+      userProfileSrc.indexOf("data-profile-pager-index={2}"),
+      userProfileSrc.indexOf("data-profile-pager-index={3}"),
+    );
+    assert.match(postsPanel, /No posts yet/);
+    assert.match(postsPanel, /filteredPosts\.length === 0/);
+    assert.match(likesPanel, /No liked videos yet/);
+    assert.match(likesPanel, /filteredLikedPosts\.length === 0/);
+    // Empty/short grids stay as TabsContent children of the same swipe region — no overlay.
+    const swipeIdx = userProfileSrc.indexOf('data-testid="profile-tab-swipe-region"');
+    const postsIdx = userProfileSrc.indexOf("data-profile-pager-index={1}", swipeIdx);
+    const likedIdx = userProfileSrc.indexOf("data-profile-pager-index={2}", swipeIdx);
+    assert.ok(swipeIdx >= 0 && postsIdx > swipeIdx && likedIdx > postsIdx);
+    assert.doesNotMatch(userProfileSrc, /pointer-events-none.*profile-tab-swipe|absolute inset-0.*swipe/);
+  });
+
+  it("4: gesture thresholds / settle / transform logic unchanged", () => {
+    assert.equal(PROFILE_TAB_PAGER_COMMIT_PROGRESS, 0.48);
+    assert.equal(PROFILE_TAB_PAGER_FLICK_PX_PER_MS, 0.4);
+    assert.equal(PROFILE_TAB_PAGER_FLICK_MIN_DX_PX, 28);
+    assert.equal(PROFILE_TAB_SWIPE_DRAG_START_PX, 12);
+    assert.equal(PROFILE_TAB_SWIPE_HORIZONTAL_INTENT_RATIO, 1.2);
+    assert.equal(PROFILE_TAB_SWIPE_MAX_VERTICAL_DRIFT_PX, 14);
+    assert.equal(PROFILE_TAB_SWIPE_EDGE_START_PX, 24);
+    assert.equal(PROFILE_TAB_PAGER_SNAP_MS_MIN, 220);
+    assert.equal(PROFILE_TAB_PAGER_SNAP_MS, 400);
+    assert.equal(PROFILE_TAB_PAGER_SNAP_EASING, "cubic-bezier(0.32, 0.45, 0.42, 1)");
+    assert.deepEqual([...PROFILE_SWIPE_TAB_IDS], ["profile", "posts", "liked", "notifications"]);
+    assert.match(swipeSrc, /translate3d/);
+    assert.match(userProfileSrc, /useProfileTabPager/);
+  });
+
+  it("5: interactive exclusions remain (buttons, tabs, cards carve-out)", () => {
+    assert.equal(typeof isProfileTabSwipeInteractiveTarget, "function");
+    assert.match(swipeSrc, /role='tab'/);
+    assert.match(swipeSrc, /INTERACTIVE_SELECTOR/);
+    assert.match(userProfileSrc, /data-profile-pager-card="true"/);
+    assert.match(swipeSrc, /isProfileTabSwipeInteractiveTarget/);
+  });
+
+  it("6: pager fill stops above native nav exclusion (page scroll padding)", () => {
+    assert.match(PROFILE_PAGE_SCROLL_CLASS, /APP_PAGE_SCROLL_CLASS|app-scroll-nav-clearance/);
+    assert.match(
+      APP_PAGE_SCROLL_CLASS,
+      /pb-\[calc\(var\(--app-scroll-nav-clearance\)\+var\(--app-scroll-end-pad\)\)\]/,
+    );
+    assert.match(userProfileSrc, /PROFILE_PAGE_SCROLL_CLASS/);
+    // No absolute fill overlay and no dvh arbitrary host height under the nav.
+    assert.doesNotMatch(userProfileSrc, /absolute inset-0.*profile-tab-swipe-region/);
+    assert.doesNotMatch(
+      userProfileSrc,
+      /h-\[min\(88dvh,calc\(100dvh-var\(--app-bottom-nav-block\)-10rem\)\)\]/,
+    );
+    assert.doesNotMatch(PROFILE_TAB_PAGER_VIEWPORT_CLASS, /fixed|absolute/);
+  });
+
+  it("7: Overview / Notifications stay on the same pager; no second swipe system", () => {
+    assert.match(userProfileSrc, /data-profile-pager-index=\{0\}/);
+    assert.match(userProfileSrc, /data-profile-pager-index=\{3\}/);
+    assert.match(userProfileSrc, /PROFILE_NOTIFICATIONS_TAB_CONTENT_CLASS|notifications/);
+    assert.doesNotMatch(userProfileSrc, /useProfileTabSwipe\(/);
+    assert.match(swipeSrc, /export function useProfileTabPager/);
+  });
+
+  it("8: vertical page scroll unchanged; viewport still not overflow-y clipped", () => {
+    assert.match(PROFILE_PAGE_SCROLL_CLASS, /overflow-y-auto|APP_PAGE_SCROLL/);
+    assert.match(APP_PAGE_SCROLL_CLASS, /overflow-y-auto/);
+    assert.doesNotMatch(PROFILE_TAB_PAGER_VIEWPORT_CLASS, /overflow-y-hidden/);
+    assert.match(userProfileSrc, /profilePageScrollRef/);
+    assert.match(userProfileSrc, /clampElementScrollTopIfNeeded/);
+  });
+
+  it("prepare minHeight never shrinks below idle body-fill floor", () => {
+    assert.equal(resolveProfilePagerPrepareHostMinHeightPx(300, 500), 500);
+    assert.equal(resolveProfilePagerPrepareHostMinHeightPx(1200, 500), 1200);
+    assert.equal(resolveProfilePagerPrepareHostMinHeightPx(0, 400), 400);
+    assert.match(userProfileSrc, /resolveProfilePagerPrepareHostMinHeightPx\(maxH, floorPx\)/);
   });
 });

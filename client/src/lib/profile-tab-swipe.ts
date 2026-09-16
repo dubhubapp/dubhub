@@ -70,9 +70,39 @@ export function profileTabIndex(tab: ProfileSwipeTabId): number {
  * No `overflow-y-hidden`: inactive panels collapse with `h-0` + `overflow-y-hidden`
  * so they cannot inflate page scrollHeight; the active panel must not be clipped
  * (PROFILE-GRID-VIEWER-2A-FIX).
+ *
+ * Short-content hit area: pair with {@link PROFILE_TAB_PAGER_BODY_FILL_CLASS} inside
+ * the flex column chain so blank space beneath Posts/Likes remains swipeable.
  */
 export const PROFILE_TAB_PAGER_VIEWPORT_CLASS =
   "relative z-0 -mx-6 overflow-x-hidden" as const;
+
+/**
+ * Profile scroll → column → Tabs → viewport flex chain.
+ * Fills the scrollport content box (above `--app-scroll-nav-clearance` +
+ * `--app-scroll-end-pad` padding on the Profile page scroller) so the
+ * existing pager host receives touches in empty body space. Not an overlay;
+ * does not extend under native nav.
+ */
+export const PROFILE_TAB_PAGER_SCROLL_FLEX_CLASS = "flex flex-col" as const;
+
+/** Inner px-6 column: grow with the scrollport; allow tall content to expand page scroll. */
+export const PROFILE_TAB_PAGER_PAGE_INSET_CLASS =
+  "flex flex-1 flex-col px-6" as const;
+
+/** max-w-md column + bottom rhythm formerly `mb-5` on Tabs (kept inside the fill box). */
+export const PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS =
+  "mx-auto flex w-full max-w-md flex-1 flex-col pb-5" as const;
+
+/** Radix Tabs root: consume remaining space under the banner. */
+export const PROFILE_TAB_PAGER_TABS_ROOT_CLASS =
+  "flex w-full flex-1 flex-col" as const;
+
+/** Primary nav row must not shrink when the pager flex-grows. */
+export const PROFILE_TAB_PAGER_NAV_SHELL_SHRINK_CLASS = "shrink-0" as const;
+
+/** Swipe region grows into remaining Profile body height (short Posts/Likes). */
+export const PROFILE_TAB_PAGER_BODY_FILL_CLASS = "flex-1" as const;
 
 /** Four fixed flex slots; track translate is the only horizontal positioning system. */
 export const PROFILE_TAB_PAGER_TRACK_CLASS = "flex" as const;
@@ -245,6 +275,21 @@ export function resolveProfilePagerHostHeightPx(input: {
     return Math.max(current, Math.max(0, input.adjacentHeight));
   }
   return current;
+}
+
+/**
+ * Gesture-prepare inline minHeight must never shrink the body-fill floor.
+ * Idle fill comes from flex (`PROFILE_TAB_PAGER_BODY_FILL_CLASS`); prepare only
+ * raises the host when an adjacent panel is taller.
+ */
+export function resolveProfilePagerPrepareHostMinHeightPx(
+  measuredMaxPanelHeight: number,
+  idleViewportHeight: number,
+): number {
+  return Math.max(
+    Math.max(0, measuredMaxPanelHeight),
+    Math.max(0, idleViewportHeight),
+  );
 }
 
 /**

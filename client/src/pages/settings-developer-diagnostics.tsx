@@ -172,7 +172,7 @@ export default function SettingsDeveloperDiagnosticsPage() {
 
   return (
     <SwipeBackPage onBack={handleBack} className={`${APP_PAGE_SCROLL_CLASS} bg-background`}>
-      <div className="app-page-top-pad px-6 pb-8">
+      <div className="app-page-top-pad px-6">
         <div className="max-w-md mx-auto space-y-6">
         <div>
           <Button

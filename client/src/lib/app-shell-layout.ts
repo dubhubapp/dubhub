@@ -15,17 +15,25 @@ export const APP_MAIN_SHELL_CLASS = `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP
 /**
  * Standard scroll root inside the shell: fills width/height and scrolls vertically.
  * `overscroll-y-none` stops top/bottom rubber-band on normal routed pages (not Home PTR).
+ *
+ * Bottom rhythm (shared):
+ * - `--app-scroll-nav-clearance` — physical nav chrome (0 React / visual bar native)
+ * - `--app-scroll-end-pad` — ~28px content→nav breathing room (`index.css`)
+ * Do not stack page-level `pb-*` on top of this pair.
  */
 export const APP_PAGE_SCROLL_CLASS =
-  "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overscroll-y-none pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad,0px))]";
-
-/** Small end pad so the last block isn’t flush against the inner edge above the nav chrome. */
-export const APP_SCROLL_BOTTOM_INSET_CLASS =
-  "[--app-scroll-end-pad:clamp(0.5rem,2.5vw,0.875rem)]";
+  "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overscroll-y-none pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad))]";
 
 /**
- * Scrollers that already had clamp end-pad: keep that pad and add native-nav clearance.
- * `--app-scroll-nav-clearance` is 0 in React-nav mode, so this does not double-pad.
+ * Opt-in alias that pins end-pad to the shared 24–32px band.
+ * Prefer inheriting the root `--app-scroll-end-pad` when possible.
+ */
+export const APP_SCROLL_BOTTOM_INSET_CLASS =
+  "[--app-scroll-end-pad:clamp(1.5rem,2.5vw,2rem)]";
+
+/**
+ * Scrollers that already used clamp end-pad: same shared clearance + breathing room.
+ * `--app-scroll-nav-clearance` is 0 in React-nav mode, so this does not double-pad the nav.
  */
 export const APP_SCROLL_WITH_CLAMP_END_PAD_CLASS =
-  "pb-[calc(var(--app-scroll-nav-clearance)+clamp(0.75rem,2.5vw,1rem))]";
+  "pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad))]";

@@ -152,13 +152,13 @@ describe("C5B public profile Back", () => {
 });
 
 describe("C5B profile tabs + sticky", () => {
-  it("migrates generic underlines to interactive blue", () => {
+  it("migrates generic underlines to interactive blue (primary nav; filters are glass)", () => {
     assert.match(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /bg-\[#0a83ff\]/);
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_GROUP_CLASS, /after:/);
-    assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-\[#0a83ff\]/);
+    assert.doesNotMatch(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:/);
+    assert.doesNotMatch(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /#0a83ff/);
     assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_INDICATOR_CLASS|bg-\[#0a83ff\]/);
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /bg-accent/);
-    assert.doesNotMatch(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:bg-accent/);
   });
 
   it("profile primary shell is non-sticky after C5B.2 (Releases/Leaderboard sticky untouched)", () => {

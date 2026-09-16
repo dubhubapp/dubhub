@@ -66,7 +66,7 @@ describe("profile-primary-nav-presentation", () => {
     assert.match(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /bg-\[#0a83ff\]/);
     assert.match(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /pointer-events-none/);
     assert.match(PROFILE_PRIMARY_NAV_INDICATOR_CLASS, /rounded-full/);
-    assert.match(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:h-0\.5/);
+    assert.doesNotMatch(PROFILE_POSTS_FILTER_TAB_ACTIVE_CLASS, /after:/);
     assert.match(PROFILE_PRIMARY_NAV_ICON_CLASS, /h-3\.5 w-3\.5/);
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_LABEL_CLASS, /after:/);
   });
@@ -191,7 +191,7 @@ describe("user-profile primary nav wiring", () => {
   });
 
   it("uses shared page-scroll clearance so Settings can sit above native nav", () => {
-    assert.match(userProfileSrc, /APP_PAGE_SCROLL_CLASS/);
+    assert.match(userProfileSrc, /PROFILE_PAGE_SCROLL_CLASS/);
     assert.match(userProfileSrc, /data-testid="button-settings"/);
   });
 
