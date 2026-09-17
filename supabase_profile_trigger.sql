@@ -1,4 +1,18 @@
 -- ========================================
+-- REPO REFERENCE ONLY — NOT THE LIVE PRODUCTION CONTRACT
+-- ========================================
+-- Production-confirmed (2026-09-17):
+--   ACTIVE trigger:  on_auth_user_confirmed
+--                    AFTER UPDATE ON auth.users → handle_user_confirmed()
+--   Timing:          email confirmation (email_confirmed_at NULL → NOT NULL)
+--   DORMANT:         handle_new_user() may exist in production with NO trigger
+--
+-- This file defines handle_new_user + on_auth_user_created (AFTER INSERT).
+-- Do NOT apply this file to production as a replacement for handle_user_confirmed.
+-- See supabase-schema.md → "Auth → profiles ingestion".
+-- ========================================
+
+-- ========================================
 -- PRODUCTION-SAFE TRIGGER (NO EXCEPTIONS)
 -- ========================================
 

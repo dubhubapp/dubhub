@@ -12,6 +12,7 @@ import { reconcileArtistFutureReleaseSuspensions } from "./reconcile-artist-futu
 import { isFutureReleaseSuspensionEnforcementEnabled } from "./future-release-suspension";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { runLeaderboardMonthFreezeEnsureSafe } from "./leaderboard-monthly-freeze";
+import { formatApiAccessLogResponseSuffix } from "./api-access-log";
 
 const app = express();
 
@@ -83,10 +84,9 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
+      // Request bodies are never logged. Age-gate (and listed paths) omit response JSON.
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+      logLine += formatApiAccessLogResponseSuffix(path, capturedJsonResponse);
 
       if (logLine.length > 80) {
         logLine = logLine.slice(0, 79) + "…";

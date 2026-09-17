@@ -1,11 +1,33 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 24-06-2026
+Last updated: 17-09-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
 Cursor must NOT infer, rename, or “standardise” columns without explicitly asking me and updating this file when granted permission first.
+
+---
+
+## Auth → profiles ingestion (production-confirmed)
+
+Production has **exactly one** non-internal trigger on `auth.users`:
+
+| Object | Production status |
+|--------|-------------------|
+| Trigger `on_auth_user_confirmed` | **ACTIVE** — `AFTER UPDATE ON auth.users` → `handle_user_confirmed()` |
+| Function `handle_user_confirmed()` | **ACTIVE** — creates `public.profiles` |
+| Function `handle_new_user()` | **DORMANT** — function body may exist; **no** production trigger points to it |
+| Repo file `supabase_profile_trigger.sql` | Defines dormant `handle_new_user` / `on_auth_user_created` pattern — **not** the live contract |
+
+### Active contract (`handle_user_confirmed`)
+
+- Fires only when `OLD.email_confirmed_at IS NULL` **and** `NEW.email_confirmed_at IS NOT NULL` (email confirmation UPDATE).
+- Reads signup metadata: `raw_user_meta_data.username`, `raw_user_meta_data.account_type` (fallback `role`).
+- Inserts `profiles` (`id`, `email`, `username`, `account_type`) with `ON CONFLICT (id) DO NOTHING`.
+- Therefore: **Auth user exists before verification**; **`profiles` row is created only at email confirmation**.
+
+Do **not** assume INSERT-time profile creation. Do not modify these production functions without an explicit migration plan. Repo migrations currently do **not** recreate this trigger (source-of-truth gap vs live DB — documented here after production inspection).
 
 ---
 

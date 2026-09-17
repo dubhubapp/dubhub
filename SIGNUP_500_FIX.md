@@ -1,5 +1,10 @@
 # Fix: Supabase Signup 500 Error
 
+> **Historical note (2026-09-17):** This document describes an older INSERT-time
+> `handle_new_user` / `on_auth_user_created` approach. **Production now uses**
+> `on_auth_user_confirmed` → `handle_user_confirmed()` on email confirmation UPDATE.
+> `handle_new_user` is dormant (no trigger). See `supabase-schema.md`.
+
 ## Problem
 Getting **500 Internal Server Error** from Supabase's `/auth/v1/signup` endpoint when signing up with any new email and username.
 
