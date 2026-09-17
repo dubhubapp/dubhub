@@ -2902,6 +2902,7 @@ export class DatabaseStorage implements IStorage {
           p.account_type,
           p.moderator,
           p.verified_artist,
+          p.country_code,
           COALESCE(uk.score, 0) AS reputation,
           CASE
             WHEN ${applyPeriod} = true THEN COALESCE(pc.correct_ids, 0)
@@ -2963,6 +2964,7 @@ export class DatabaseStorage implements IStorage {
 
       return ((result as any).rows || []).map((row: any) => ({
         ...row,
+        country_code: row.country_code ?? null,
         hasMonthlyTop100: Boolean(row.has_monthly_top_100),
       }));
     } catch (error) {
@@ -3026,6 +3028,7 @@ export class DatabaseStorage implements IStorage {
             p.account_type,
             p.moderator,
             p.verified_artist,
+            p.country_code,
             COALESCE(uk.score, 0) AS reputation,
             CASE
               WHEN ${applyPeriod} = true THEN COALESCE(pc.correct_ids, 0)
@@ -3092,6 +3095,7 @@ export class DatabaseStorage implements IStorage {
           account_type,
           moderator,
           verified_artist,
+          country_code,
           reputation,
           correct_ids,
           created_at,
@@ -3114,6 +3118,7 @@ export class DatabaseStorage implements IStorage {
           : null;
       const entry = {
         ...row,
+        country_code: row.country_code ?? null,
         hasMonthlyTop100: Boolean(row.has_monthly_top_100),
       };
       return { rank, entry, communityTotal, communityTopPercent };

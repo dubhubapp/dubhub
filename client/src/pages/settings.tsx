@@ -12,6 +12,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  Globe2,
   KeyRound,
   LogOut,
   MessageSquare,
@@ -29,6 +30,11 @@ import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-p
 import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
 import { playThemeToggleHaptic } from "@/lib/haptic";
 import { useUser } from "@/lib/user-context";
+import { getCountryDisplayName } from "@shared/country-codes";
+import {
+  CountryFlag,
+  COUNTRY_FLAG_SETTINGS_ROW_CLASS,
+} from "@/components/country-flag";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { revenueCatIdentityDiagnosticsEnabled } from "@/lib/revenuecat-identity";
 import {
@@ -72,9 +78,10 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
   const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
-  const { verifiedArtist } = useUser();
+  const { verifiedArtist, countryCode } = useUser();
   /** Dev / forced-diagnostics builds only — never shown by account role. */
   const showDeveloperDiagnosticsEntry = revenueCatIdentityDiagnosticsEnabled();
+  const countryLabel = getCountryDisplayName(countryCode);
 
   const runThemeTransition = () => {
     if (typeof document === "undefined") return;
@@ -157,6 +164,37 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 <Bell className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
                 <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
                   Notifications
+                </span>
+                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
+              </button>
+
+              <button
+                type="button"
+                className={SETTINGS_NAV_ROW_CLASS}
+                onClick={() => navigate("/settings/country")}
+                data-testid="button-settings-country"
+                aria-label="Country"
+              >
+                <Globe2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
+                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Country</span>
+                  <span
+                    className={`${SETTINGS_ROW_SUBTITLE_CLASS} flex items-center gap-2`}
+                  >
+                    {countryLabel && countryCode ? (
+                      <>
+                        <CountryFlag
+                          countryCode={countryCode}
+                          countryName={countryLabel}
+                          className={COUNTRY_FLAG_SETTINGS_ROW_CLASS}
+                          data-testid="settings-country-row-flag"
+                        />
+                        <span className="truncate">{countryLabel}</span>
+                      </>
+                    ) : (
+                      "Shown on Leaderboard"
+                    )}
+                  </span>
                 </span>
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
               </button>

@@ -92,9 +92,9 @@ describe("C5B.1 profile banner dissolve", () => {
 });
 
 describe("C5B.1 semantic safety", () => {
-  it("preserves medals, gold, config-driven rewards, and Release Alerts colours", () => {
-    assert.match(leaderboardSrc, /text-yellow-500/);
-    assert.match(leaderboardSrc, /text-amber-600/);
+  it("preserves top-3 medallions, gold username, config-driven rewards, and Release Alerts colours", () => {
+    assert.match(leaderboardSrc, /LeaderboardTopRankMark/);
+    assert.doesNotMatch(leaderboardSrc, /text-yellow-500|text-amber-600|text-gray-400/);
     assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig|rewards-banner/);
     assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);
     assert.match(leaderboardSrc, /#FFD700/);

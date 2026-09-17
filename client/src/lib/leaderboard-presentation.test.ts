@@ -138,13 +138,21 @@ describe("Leaderboard presentation — rows + identity", () => {
     assert.doesNotMatch(leaderboardSrc, /bg-black\/25 backdrop-blur-md border-white\/10/);
   });
 
-  it("preserves top-three medal icons", () => {
-    assert.match(leaderboardSrc, /rank === 1.*Trophy|Trophy.*rank === 1/s);
-    assert.match(leaderboardSrc, /rank === 2.*Medal|Medal.*rank === 2/s);
-    assert.match(leaderboardSrc, /rank === 3.*Award|Award.*rank === 3/s);
-    assert.match(leaderboardSrc, /text-yellow-500/);
-    assert.match(leaderboardSrc, /text-gray-400/);
-    assert.match(leaderboardSrc, /text-amber-600/);
+  it("uses custom top-3 medallion marks; rank 4+ stays mono #N", () => {
+    assert.match(leaderboardSrc, /LeaderboardTopRankMark/);
+    assert.match(leaderboardSrc, /isLeaderboardTopRank/);
+    assert.match(leaderboardSrc, /from "@\/components\/leaderboard-top-rank-mark"/);
+    assert.match(leaderboardSrc, /aria-label=\{isLeaderboardTopRank\(rank\) \? `Rank \$\{rank\}` : undefined\}/);
+    assert.match(leaderboardSrc, /className="w-10 flex items-center justify-center"/);
+    assert.match(leaderboardSrc, /data-testid=\{`rank-\$\{rank\}`\}/);
+    assert.match(leaderboardSrc, /font-mono text-base font-semibold text-muted-foreground/);
+    assert.match(leaderboardSrc, /formatRank\(rank\)/);
+    // Old Lucide medal path removed from row ranks.
+    assert.doesNotMatch(leaderboardSrc, /getRankIcon|Medal|Award/);
+    assert.doesNotMatch(leaderboardSrc, /text-yellow-500|text-gray-400|text-amber-600/);
+    // Reward hero Trophy chip remains (unrelated to row ranks).
+    assert.match(leaderboardSrc, /Trophy className="h-3 w-3 shrink-0 opacity-90"/);
+    assert.match(leaderboardSrc, /rewards-banner-prize-label/);
   });
 
   it("preserves You chip + restrained current-user tint", () => {

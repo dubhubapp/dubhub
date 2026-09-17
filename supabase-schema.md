@@ -247,6 +247,8 @@ NOT `user_id` or `from_user_id`.
 | banned | boolean | YES | false | Permanent ban flag |
 | warning_count | integer | YES | 0 | Moderation warnings |
 | banner_url | text | YES | – | Profile cover/banner image URL/path |
+| country_code | text | YES | – | Optional ISO 3166-1 alpha-2 (uppercase). User-selected residence; CHECK `^[A-Z]{2}$` or NULL. Not emoji. |
+| country_prompt_pending | boolean | NO | false | One-time existing-user Country completion prompt. Default false for new accounts. |
 
 ---
 

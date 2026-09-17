@@ -11,6 +11,7 @@ import { SubmitClipProvider } from "@/lib/submit-clip-context";
 import { SubmitClipDrawer } from "@/components/submit-clip-drawer";
 import { VerifiedArtistToolsPaywallHost } from "@/components/verified-artist-tools-paywall-host";
 import { LifetimeGiftAnnouncementHost } from "@/components/lifetime-gift-announcement-host";
+import { CountryPromptHost } from "@/components/country-prompt-host";
 import { HomeWidgetRefreshHost } from "@/components/home-widget-refresh-host";
 import { HomeWidgetSetupGuideHost } from "@/components/home-widget-setup-guide-host";
 import { ConditionalBottomNavigation } from "@/components/conditional-bottom-navigation";
@@ -38,6 +39,7 @@ import ModeratorPage from "@/pages/moderator";
 import LeaderboardPage from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
 import SettingsNotificationsPage from "@/pages/settings-notifications";
+import SettingsCountryPage from "@/pages/settings-country";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
@@ -930,6 +932,16 @@ function App() {
             setPostOnboardingPushPrompt({ open: false, userId: null });
           }}
         />
+        <CountryPromptHost
+          blockingSurfaceActive={
+            firstLoginOnboarding.open ||
+            postOnboardingPushPrompt.open ||
+            artistToolsIntro.open ||
+            artistToolsIntro.pending ||
+            introSurfaceBlocked ||
+            startupOverlayActive
+          }
+        />
         <Toaster />
         <div
           data-app-root="true"
@@ -951,6 +963,7 @@ function App() {
             <Route path="/profile/:username" component={PublicProfile} />
             <Route path="/profile" component={UserProfile} />
             <Route path="/settings/notifications" component={SettingsNotificationsPage} />
+            <Route path="/settings/country" component={SettingsCountryPage} />
             <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
             <Route
               path="/settings/developer-diagnostics"

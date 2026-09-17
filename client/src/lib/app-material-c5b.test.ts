@@ -208,11 +208,11 @@ describe("C5B leaderboard", () => {
     assert.doesNotMatch(LEADERBOARD_SECONDARY_ACTIVE_CLASS, /after:bg-accent/);
   });
 
-  it("keeps flat rows, medals, config-driven rewards, and quiet current-user wash", () => {
+  it("keeps flat rows, top-3 medallions, config-driven rewards, and quiet current-user wash", () => {
     assert.match(LEADERBOARD_LIST_CLASS, /divide-white\/\[0\.08\]/);
     assert.doesNotMatch(LEADERBOARD_LIST_CLASS, /backdrop-blur/);
-    assert.match(leaderboardSrc, /text-yellow-500/);
-    assert.match(leaderboardSrc, /text-amber-600/);
+    assert.match(leaderboardSrc, /LeaderboardTopRankMark/);
+    assert.doesNotMatch(leaderboardSrc, /text-yellow-500|text-amber-600|text-gray-400/);
     assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig/);
     assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);
     assert.equal(LEADERBOARD_ROW_CURRENT_CLASS, "");

@@ -50,6 +50,7 @@ import {
 } from "@shared/notification-messages";
 import { insertCommentSchema, patchUserNotificationPreferencesSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
+import { parseCountryCodeInput } from "@shared/country-codes";
 import { db, pool } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -1451,6 +1452,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Profile image update error:', error);
       res.status(500).json({ 
         error: error instanceof Error ? error.message : 'Failed to update profile image' 
+      });
+    }
+  });
+
+  /**
+   * Optional country (ISO 3166-1 alpha-2). Body: { country_code: string | null }.
+   * null / empty clears. Rejects unknown or malformed codes. Never stores emoji.
+   */
+  app.patch("/api/user/country", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, "country_code")) {
+        return res.status(400).json({ error: "country_code is required (use null to clear)" });
+      }
+      const parsed = parseCountryCodeInput(req.body?.country_code);
+      if (!parsed.ok) {
+        return res.status(400).json({ error: "invalid_country_code" });
+      }
+
+      const updatedUser = await storage.updateUser(req.dbUser.id, {
+        country_code: parsed.countryCode,
+        // Successful country save (or clear) ends the one-time migration prompt.
+        country_prompt_pending: false,
+      });
+
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({
+        success: true,
+        country_code: updatedUser.country_code ?? null,
+        country_prompt_pending: updatedUser.country_prompt_pending === true,
+      });
+    } catch (error) {
+      console.error("[/api/user/country] Error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to update country",
+      });
+    }
+  });
+
+  /**
+   * One-time Country prompt dismiss ("Not now").
+   * Sets country_prompt_pending = false; leaves country_code unchanged.
+   * Never repeats after dismiss (server-side; survives reinstall / device change).
+   */
+  app.post("/api/user/country-prompt/dismiss", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const updatedUser = await storage.updateUser(req.dbUser.id, {
+        country_prompt_pending: false,
+      });
+
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({
+        success: true,
+        country_prompt_pending: false,
+        country_code: updatedUser.country_code ?? null,
+      });
+    } catch (error) {
+      console.error("[/api/user/country-prompt/dismiss] Error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to dismiss country prompt",
       });
     }
   });

@@ -44,9 +44,9 @@ describe("C5B.2 leaderboard current-user", () => {
     assert.match(LEADERBOARD_ROW_BASE_CLASS, /flex items-center gap-3 px-1 py-3/);
   });
 
-  it("preserves medals, gold, and config-driven reward hero", () => {
-    assert.match(leaderboardSrc, /text-yellow-500/);
-    assert.match(leaderboardSrc, /text-amber-600/);
+  it("preserves top-3 medallions, gold username, and config-driven reward hero", () => {
+    assert.match(leaderboardSrc, /LeaderboardTopRankMark/);
+    assert.doesNotMatch(leaderboardSrc, /text-yellow-500|text-amber-600|text-gray-400/);
     assert.match(leaderboardSrc, /#FFD700/);
     assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig/);
     assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);

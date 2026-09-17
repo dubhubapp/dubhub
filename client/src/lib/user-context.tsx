@@ -22,6 +22,10 @@ interface SupabaseProfile {
   moderator: boolean;
   /** Account creation time from `profiles.created_at` */
   created_at: string;
+  /** Optional ISO 3166-1 alpha-2 */
+  country_code: string | null;
+  /** One-time existing-user Country prompt (server allowlist). */
+  country_prompt_pending: boolean;
 }
 
 interface UserContextType {
@@ -30,6 +34,8 @@ interface UserContextType {
   profileImage: string | null;
   bannerUrl: string | null;
   username: string | null;
+  countryCode: string | null;
+  countryPromptPending: boolean;
   verifiedArtist: boolean; // Whether current user is a verified artist
   /** True when the profile has moderator privileges (independent of artist verification). */
   isModerator: boolean;
@@ -37,6 +43,8 @@ interface UserContextType {
   isAuthenticated: boolean;
   updateProfileImage: (url: string) => void;
   updateProfileBanner: (url: string | null) => void;
+  updateCountryCode: (code: string | null) => void;
+  updateCountryPromptPending: (pending: boolean) => void;
 }
 
 const UserContext = createContext<UserContextType | null>(null);
@@ -46,6 +54,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
+  const [countryCode, setCountryCode] = useState<string | null>(null);
+  const [countryPromptPending, setCountryPromptPending] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [verifiedArtist, setVerifiedArtist] = useState<boolean>(false);
   const [isModerator, setIsModerator] = useState<boolean>(false);
@@ -72,6 +82,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setProfileImage(null);
           setBannerUrl(null);
           setUsername(null);
+          setCountryCode(null);
+          setCountryPromptPending(false);
           setUserType("user");
           setCurrentUser(null);
           setVerifiedArtist(false);
@@ -85,7 +97,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select(
-            'id, email, username, avatar_url, banner_url, account_type, verified_artist, moderator, created_at'
+            'id, email, username, avatar_url, banner_url, account_type, verified_artist, moderator, created_at, country_code, country_prompt_pending'
           )
           .eq('id', session.user.id)
           .single();
@@ -100,6 +112,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
         // Use ONLY real data from Supabase; correct default avatar if type/default mismatch
         setUsername(profileData.username || null);
+        setCountryCode(profileData.country_code ?? null);
+        setCountryPromptPending(profileData.country_prompt_pending === true);
         const resolvedAvatar = resolveAvatarUrlForProfile(
           profileData.avatar_url,
           profileData.account_type
@@ -217,6 +231,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setBannerUrl(url);
   };
 
+  const updateCountryCode = (code: string | null) => {
+    setCountryCode(code);
+  };
+
+  const updateCountryPromptPending = (pending: boolean) => {
+    setCountryPromptPending(pending);
+  };
+
   return (
     <UserContext.Provider value={{ 
       currentUser: currentUser || null, 
@@ -224,12 +246,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       profileImage,
       bannerUrl,
       username,
+      countryCode,
+      countryPromptPending,
       verifiedArtist,
       isModerator,
       isLoading,
       isAuthenticated,
       updateProfileImage,
       updateProfileBanner,
+      updateCountryCode,
+      updateCountryPromptPending,
     }}>
       {children}
     </UserContext.Provider>

@@ -15,6 +15,10 @@ export const profiles = pgTable("profiles", {
   avatar_url: text("avatar_url"),
   banner_url: text("banner_url"),
   verified_artist: boolean("verified_artist").notNull().default(false),
+  /** Optional ISO 3166-1 alpha-2 (uppercase). User-selected; never emoji. */
+  country_code: text("country_code"),
+  /** One-time existing-user Country prompt eligibility (allowlist migration). */
+  country_prompt_pending: boolean("country_prompt_pending").notNull().default(false),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 

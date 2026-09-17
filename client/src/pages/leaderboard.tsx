@@ -11,11 +11,19 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Trophy, Medal, Award, Calendar } from "lucide-react";
+import { Trophy, Calendar } from "lucide-react";
 import { useUser } from "@/lib/user-context";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
+import {
+  LeaderboardTopRankMark,
+  isLeaderboardTopRank,
+} from "@/components/leaderboard-top-rank-mark";
+import {
+  getCountryDisplayName,
+} from "@shared/country-codes";
+import { CountryFlag } from "@/components/country-flag";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { getGenreChipStyle } from "@/lib/genre-styles";
 import { apiUrl } from "@/lib/apiBase";
@@ -134,6 +142,8 @@ interface LeaderboardEntry {
   account_type: string;
   moderator: boolean;
   hasMonthlyTop100?: boolean;
+  /** Optional ISO 3166-1 alpha-2 from profiles.country_code */
+  country_code?: string | null;
 }
 
 type LeaderboardRankResponse = {
@@ -157,13 +167,6 @@ function formatDaysRemaining(days: number): string {
 
 function formatRank(rank: number) {
   return `#${rank}`;
-}
-
-function getRankIcon(rank: number) {
-  if (rank === 1) return <Trophy className="w-6 h-6 text-yellow-500" />;
-  if (rank === 2) return <Medal className="w-6 h-6 text-gray-400" />;
-  if (rank === 3) return <Award className="w-6 h-6 text-amber-600" />;
-  return null;
 }
 
 function rewardHeroAccentRgba(accent: string, alpha: number): string {
@@ -243,6 +246,7 @@ export function LeaderboardEntryRow({
     ? repProgressPremiumGradientFromGenreBg(genreHex)
     : whiteRepProgressGradient();
   const progressAriaText = leaderboardRepProgressAriaValueText(trustLevel);
+  const countryName = getCountryDisplayName(entry.country_code);
 
   const profileImageUrl =
     resolveAvatarUrlForProfile(entry.avatar_url, entry.account_type) ?? "";
@@ -274,8 +278,14 @@ export function LeaderboardEntryRow({
       {...{ [LEADERBOARD_SCOPE_PAGER_ROW_ATTR]: "true" }}
     >
       {/* Rank */}
-      <div className="w-10 flex items-center justify-center" data-testid={`rank-${rank}`}>
-        {getRankIcon(rank) || (
+      <div
+        className="w-10 flex items-center justify-center"
+        data-testid={`rank-${rank}`}
+        aria-label={isLeaderboardTopRank(rank) ? `Rank ${rank}` : undefined}
+      >
+        {isLeaderboardTopRank(rank) ? (
+          <LeaderboardTopRankMark rank={rank} />
+        ) : (
           <span className="font-mono text-base font-semibold text-muted-foreground">
             {formatRank(rank)}
           </span>
@@ -337,10 +347,18 @@ export function LeaderboardEntryRow({
           )}
         </div>
 
-        <div className="relative z-0 flex items-center gap-2">
-          <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
-            {trustLevel.displayName}
-          </span>
+        <div className="relative z-0 flex min-w-0 items-center gap-2">
+          {/* Flag + trust: tighter gap; null flag collapses with no empty slot */}
+          <div className="flex shrink-0 items-center gap-1">
+            <CountryFlag
+              countryCode={entry.country_code}
+              countryName={countryName}
+              data-testid={`country-flag-${entry.user_id}`}
+            />
+            <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
+              {trustLevel.displayName}
+            </span>
+          </div>
           <div className={LEADERBOARD_REP_TRACK_CLASS}>
             <div
               className={LEADERBOARD_REP_FILL_CLASS}

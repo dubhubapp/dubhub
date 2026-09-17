@@ -18,6 +18,8 @@ export interface AuthenticatedRequest extends Request {
     suspended_until?: string | null;
     banned?: boolean | null;
     warning_count?: number | null;
+    country_code?: string | null;
+    country_prompt_pending?: boolean;
   };
 }
 
@@ -46,7 +48,7 @@ export async function withSupabaseUser(
     // Fetch full profile from Supabase profiles table (username, account_type, avatar_url, verified_artist, moderator)
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count')
+      .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count, country_code, country_prompt_pending')
       .eq('id', user.id)
       .single();
     const suspendedUntil = profileData?.suspended_until ? new Date(profileData.suspended_until) : null;
@@ -95,6 +97,8 @@ export async function withSupabaseUser(
       suspended_until: profileData.suspended_until ?? null,
       banned: profileData.banned ?? false,
       warning_count: profileData.warning_count ?? 0,
+      country_code: profileData.country_code ?? null,
+      country_prompt_pending: profileData.country_prompt_pending === true,
     };
     next();
   } catch (error) {
@@ -130,7 +134,7 @@ export async function optionalSupabaseUser(
     // Fetch full profile from Supabase profiles table
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count')
+      .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count, country_code, country_prompt_pending')
       .eq('id', user.id)
       .single();
 
@@ -162,6 +166,8 @@ export async function optionalSupabaseUser(
         suspended_until: profileData.suspended_until ?? null,
         banned: profileData.banned ?? false,
         warning_count: profileData.warning_count ?? 0,
+        country_code: profileData.country_code ?? null,
+        country_prompt_pending: profileData.country_prompt_pending === true,
       };
       // For optional auth routes, hide user context when blocked.
       if (isBanned || isSuspended) {
