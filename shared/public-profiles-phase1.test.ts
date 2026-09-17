@@ -120,10 +120,9 @@ describe("public_profiles migration allowlist", () => {
     );
   });
 
-  it("documents Phase 1 vs Phase 2 in schema docs", () => {
+  it("documents Phase 1 additive path and Phase 2 hardening in schema docs", () => {
     assert.match(schemaDocSrc, /## public_profiles/);
-    assert.match(schemaDocSrc, /Phase 1 — incomplete hardening/);
-    assert.match(schemaDocSrc, /Phase 2 \(not applied yet\)/);
+    assert.match(schemaDocSrc, /Phase 2 — applied/i);
     assert.match(schemaDocSrc, /email/);
     assert.match(schemaDocSrc, /security_invoker = false/);
   });

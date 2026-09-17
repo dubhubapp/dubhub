@@ -250,11 +250,36 @@ NOT `user_id` or `from_user_id`.
 | country_code | text | YES | – | Optional ISO 3166-1 alpha-2 (uppercase). User-selected residence; CHECK `^[A-Z]{2}$` or NULL. Not emoji. |
 | country_prompt_pending | boolean | NO | false | One-time existing-user Country completion prompt. Default false for new accounts. |
 
-**RLS / public access (Phase 1 — incomplete hardening):**
+**RLS / public access (Phase 2 — applied):**
 
-- Base table `public.profiles` still has historical public SELECT policies (`USING (true)`) and `anon` SELECT grant in production. Email and all columns remain anonymously readable until Phase 2.
-- Additive replacement path: view `public.public_profiles` (migration `20260917180000_public_profiles_view.sql`). Signup username availability reads this view.
-- Phase 2 (not applied yet): revoke broad base-table public SELECT / drop duplicate public SELECT-true policies after QA. Do not treat Phase 1 as closed exposure.
+- Base table `public.profiles`: **no** anonymous SELECT. Authenticated users may SELECT **only** their own row (`Users can select their own profile`, `auth.uid() = id`).
+- Broad public SELECT-true policies removed: `Profiles are viewable by everyone`, `Users can view all profiles`.
+- Public identity path: view `public.public_profiles` (migration `20260917180000_public_profiles_view.sql`). Signup username availability reads this view.
+- Phase 1 was additive only; Phase 2 (`20260917190000_profiles_self_only_select.sql`) revokes anon/PUBLIC SELECT on the base table.
+
+### Phase 2 rollback (emergency restore of pre-Phase-2 base reads)
+
+Prefer **one** broad public SELECT policy (not both historical duplicates):
+
+```sql
+-- Emergency rollback: restore anonymous base-table reads (pre-Phase-2 contract).
+GRANT SELECT ON TABLE public.profiles TO anon;
+
+DROP POLICY IF EXISTS "Users can select their own profile" ON public.profiles;
+
+DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view all profiles" ON public.profiles;
+
+CREATE POLICY "Users can view all profiles"
+  ON public.profiles
+  FOR SELECT
+  TO public
+  USING (true);
+
+NOTIFY pgrst, 'reload schema';
+```
+
+Git rollback point for Phase 2 code/docs: `bbd0582` (`security: add allowlisted public profiles view`).
 
 ---
 
@@ -278,9 +303,9 @@ Allowlisted public identity projection of `profiles`. Omits private/moderation c
 
 **Security / grants:**
 
-- Created with `security_invoker = false` (security-definer semantics) so callers need SELECT on the **view only**; column allowlist is the privacy boundary once Phase 2 revokes base-table public SELECT.
+- Created with `security_invoker = false` (security-definer semantics) so callers need SELECT on the **view only**; column allowlist is the privacy boundary after Phase 2 revoked base-table public SELECT.
 - `GRANT SELECT` to `anon` and `authenticated` only (no write grants on the view).
-- Phase 1 does **not** revoke `profiles` SELECT or drop existing public SELECT policies.
+- Phase 2 re-affirms these grants; view columns are unchanged.
 
 ---
 

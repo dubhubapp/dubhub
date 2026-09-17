@@ -19,6 +19,8 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 -- Drop existing policies if they exist (to avoid conflicts)
 DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can view all profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Users can select their own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can delete their own profile" ON public.profiles;
 
@@ -29,12 +31,13 @@ CREATE POLICY "Users can insert their own profile"
   TO authenticated
   WITH CHECK (auth.uid() = id);
 
--- Policy: Allow public read access to all profiles (for displaying usernames)
-CREATE POLICY "Users can view all profiles"
+-- Policy: Authenticated users can SELECT only their own base profile row.
+-- Public identity reads use public.public_profiles (see Phase 1/2 migrations).
+CREATE POLICY "Users can select their own profile"
   ON public.profiles
   FOR SELECT
-  TO public
-  USING (true);
+  TO authenticated
+  USING (auth.uid() = id);
 
 -- Policy: Allow users to update their own profile
 CREATE POLICY "Users can update their own profile"
@@ -55,13 +58,15 @@ CREATE POLICY "Users can delete their own profile"
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
 
 -- Grant permissions
+-- authenticated: table privileges; RLS limits SELECT/UPDATE/DELETE to own row.
+-- anon: NO direct SELECT on base profiles (public identity via public.public_profiles).
 GRANT ALL ON public.profiles TO authenticated;
-GRANT SELECT ON public.profiles TO anon;
+REVOKE SELECT ON TABLE public.profiles FROM anon;
+REVOKE SELECT ON TABLE public.profiles FROM PUBLIC;
 
--- NOTE (profiles security Phase 1): Additive view `public.public_profiles` is the
--- allowlisted public identity path (see migration 20260917180000_public_profiles_view.sql).
--- The public SELECT policies + anon GRANT above remain active until Phase 2 QA + revoke.
--- Do not treat this setup file alone as “hardening complete”.
+-- NOTE (profiles security Phase 2): Base-table public SELECT removed.
+-- Allowlisted view `public.public_profiles` is the public identity path
+-- (migrations 20260917180000_public_profiles_view.sql + 20260917190000_profiles_self_only_select.sql).
 
 -- ========================================
 -- STORAGE BUCKET SETUP FOR PROFILE AVATARS
