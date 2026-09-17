@@ -113,13 +113,16 @@ describe("FULLSCREEN-POST-VIEWER-2A — VideoCard viewer overlay", () => {
       /isFullScreenPostViewer && releasePreview && !overlayDensityControl/,
     );
     const avatarIdx = overlayRegion.indexOf('data-testid="post-author-avatar"');
-    const statusRowIdx = overlayRegion.indexOf("shrink-0 overflow-visible px-0.5 py-3");
+    const statusRowIdx = overlayRegion.indexOf("shrink-0 overflow-visible px-0.5");
     const releaseIdx = overlayRegion.indexOf("data-video-card-release-slot");
     assert.ok(avatarIdx >= 0);
     assert.ok(statusRowIdx > avatarIdx);
     assert.ok(releaseIdx > statusRowIdx);
     assert.match(overlayRegion, /isFullScreenPostViewer \? "pt-0\.5" : "pb-3"/);
     assert.match(overlayRegion, /isFullScreenPostViewer \? "pt-0\.5" : undefined/);
+    /* Non-Home density + non-density pills still carry py-3 / sm:py-3.5 */
+    assert.match(overlayRegion, /homeFeedLeftMetaCompact \? "py-0" : "py-3 sm:py-3\.5"/);
+    assert.match(overlayRegion, /shrink-0 overflow-visible px-0\.5 py-3 pl-0\.5 pr-1 sm:py-3\.5/);
   });
 
   it("viewer action rail uses independent clamp; Home keeps overlay-bottom rail", () => {

@@ -536,7 +536,40 @@ export function CommentsModal({
 
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     verifiedArtistsEnabled: isOpen,
+    presentation: "sheet",
+    sheetStack: "above-comments",
   });
+
+  const openCommentAuthorPreview = useCallback(
+    (
+      e: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void },
+      author: {
+        id?: string;
+        username?: string | null;
+        avatar_url?: string | null;
+        account_type?: string;
+        verified_artist?: boolean;
+        moderator?: boolean;
+      },
+    ) => {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+      const username = author.username?.trim();
+      if (!username) return;
+      openByUsername(username, {
+        anchor: { x: e.clientX, y: e.clientY },
+        reopenCommentsPostId: post.id,
+        seed: {
+          id: author.id,
+          avatar_url: author.avatar_url,
+          account_type: author.account_type,
+          verified_artist: author.verified_artist,
+          moderator: author.moderator,
+        },
+      });
+    },
+    [openByUsername, post.id],
+  );
 
   const restoreDrawerTouchAction = useCallback(() => {
     const drawer = drawerContentRef.current;
@@ -1266,9 +1299,13 @@ export function CommentsModal({
       renderCommentMentionNodes(text, isVerifiedArtistUsername, {
         tagStatus,
         onMentionClick: (username, e) => {
+          const verified = isVerifiedArtistUsername(username);
           openByUsername(username, {
             anchor: { x: e.clientX, y: e.clientY },
             reopenCommentsPostId: post.id,
+            seed: verified
+              ? { verified_artist: true, account_type: "artist" }
+              : null,
           });
         },
       }),
@@ -2123,12 +2160,7 @@ export function CommentsModal({
                           : "View profile"
                       }
                       onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openByUsername(pinnedVerifiedReply.user.username, {
-                          anchor: { x: e.clientX, y: e.clientY },
-                          reopenCommentsPostId: post.id,
-                        });
+                        openCommentAuthorPreview(e, pinnedVerifiedReply.user);
                       }}
                     >
                       <img
@@ -2156,10 +2188,7 @@ export function CommentsModal({
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openByUsername(pinnedVerifiedReply.user.username, {
-                                anchor: { x: e.clientX, y: e.clientY },
-                                reopenCommentsPostId: post.id,
-                              });
+                              openCommentAuthorPreview(e, pinnedVerifiedReply.user);
                             }}
                           >
                             {formatUsernameDisplay(pinnedVerifiedReply.user.username)}
@@ -2275,10 +2304,7 @@ export function CommentsModal({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      openByUsername(comment.user.username, {
-                        anchor: { x: e.clientX, y: e.clientY },
-                        reopenCommentsPostId: post.id,
-                      });
+                      openCommentAuthorPreview(e, comment.user);
                     }}
                   >
                     <img
@@ -2314,10 +2340,7 @@ export function CommentsModal({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        openByUsername(comment.user.username, {
-                          anchor: { x: e.clientX, y: e.clientY },
-                          reopenCommentsPostId: post.id,
-                        });
+                        openCommentAuthorPreview(e, comment.user);
                       }}
                     >
                       {formatUsernameDisplay(comment.user.username)}
@@ -2578,10 +2601,7 @@ export function CommentsModal({
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openByUsername(reply.user.username, {
-                                anchor: { x: e.clientX, y: e.clientY },
-                                reopenCommentsPostId: post.id,
-                              });
+                              openCommentAuthorPreview(e, reply.user);
                             }}
                           >
                             <img
@@ -2610,10 +2630,7 @@ export function CommentsModal({
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  openByUsername(reply.user.username, {
-                                    anchor: { x: e.clientX, y: e.clientY },
-                                    reopenCommentsPostId: post.id,
-                                  });
+                                  openCommentAuthorPreview(e, reply.user);
                                 }}
                               >
                                 {formatUsernameDisplay(reply.user.username)}
@@ -3098,9 +3115,9 @@ export function CommentsModal({
           </div>
         </div>
 
-        {userProfilePopup}
       </DrawerContent>
     </Drawer>
+        {userProfilePopup}
     </>
   );
 }

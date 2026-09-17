@@ -1122,6 +1122,33 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   }
 }
 
+/*
+ * Profile Preview Sheet only (Home + Leaderboard).
+ * Keep in sync with PROFILE_PREVIEW_OPEN_MS / CLOSE_MS in user-profile-light-preview.ts.
+ * Do NOT force `transition: transform !important` — that overrides Vaul's inline
+ * `transition: none` during live drag (finger lag + harsh reset whip).
+ * Do not change default Vaul timing for Comments / Submit / Paywall.
+ */
+[data-vaul-drawer][data-home-profile-preview="true"][data-state="open"] {
+  animation-duration: 180ms !important;
+  animation-timing-function: cubic-bezier(0.33, 0, 0.2, 1) !important;
+}
+
+[data-vaul-drawer][data-home-profile-preview="true"][data-state="closed"] {
+  animation-duration: 160ms !important;
+  animation-timing-function: cubic-bezier(0.4, 0, 1, 1) !important;
+}
+
+[data-vaul-overlay].home-profile-preview-overlay[data-state="open"] {
+  animation-duration: 180ms !important;
+  animation-timing-function: cubic-bezier(0.33, 0, 0.2, 1) !important;
+}
+
+[data-vaul-overlay].home-profile-preview-overlay[data-state="closed"] {
+  animation-duration: 160ms !important;
+  animation-timing-function: cubic-bezier(0.4, 0, 1, 1) !important;
+}
+
 /* Light: coherent raised surface — not stranded dark indigo. */
 :root:not(.dark) .dubhub-app-overlay-surface,
 .light .dubhub-app-overlay-surface {

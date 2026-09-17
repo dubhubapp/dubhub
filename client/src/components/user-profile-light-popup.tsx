@@ -19,13 +19,48 @@ import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { Check, TrendingUp, Upload, X } from "lucide-react";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import { MonthlyTop100Badge } from "@/components/monthly-top-100-badge";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { formatUsernameDisplay, cn } from "@/lib/utils";
 import { playInteractionLight } from "@/lib/haptic";
 import { prefetchArtistReleaseAlertStatus } from "@/components/artist-release-alerts-button";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
+import {
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_SHEET_BACKDROP_CLASS,
+  APP_MATERIAL_SHEET_SURFACE_CLASS,
+} from "@/lib/app-material";
+import {
+  repProgressBarBaseColor,
+  repProgressGradientFromGenreBg,
+  whiteRepProgressGradient,
+} from "@/lib/profile-rep-styles";
+import type { TrustLevelInfo } from "@shared/trust-level";
+import {
+  nativeNavSheetCoversBar,
+  nativeNavSheetPhaseOnAnimationEnd,
+  nativeNavSheetPhaseOnOpenChange,
+  type NativeNavSheetPhase,
+} from "@/lib/native-nav-sheet-cover";
+import { setHomeProfilePreviewCoveringNativeNav } from "@/lib/home-profile-preview-native-cover";
+import {
+  buildHomeProfilePreviewGenreAmbientStyle,
+  HOME_PROFILE_PREVIEW_CTA_GAP_CLASS,
+  HOME_PROFILE_PREVIEW_REP_HINT,
+  HOME_PROFILE_PREVIEW_SHEET_HEIGHT_CLASS,
+  isPublicProfileCacheCompleteForPreview,
+  logProfilePreviewTiming,
+  mergeProfilePreviewOpenState,
+  PROFILE_PREVIEW_ABOVE_COMMENTS_Z_CLASS,
+  PROFILE_PREVIEW_CLOSE_MS,
+  PROFILE_PREVIEW_FLOATING_OPEN_MS,
+  type ProfilePreviewOpenUser,
+  type ProfilePreviewPresentation,
+  type ProfilePreviewSeed,
+  type ProfilePreviewSheetStack,
+} from "@/lib/user-profile-light-preview";
 
 /** Slightly snappier than before so the shell reads as instant after tap. */
-const POPUP_OPEN_MS = 110;
-const POPUP_CLOSE_MS = 160;
+const POPUP_OPEN_MS = PROFILE_PREVIEW_FLOATING_OPEN_MS;
+const POPUP_CLOSE_MS = PROFILE_PREVIEW_CLOSE_MS;
 const POPUP_OPEN_EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
 const POPUP_CLOSE_EASE = "cubic-bezier(0.4, 0, 1, 1)";
 const POPUP_ENTER_Y_PX = 4;
@@ -43,6 +78,16 @@ const POPUP_GENRE_PILL_CLASS =
 /** Fixed slot so skeleton, pill, and — share one layout footprint. */
 const POPUP_GENRE_SLOT_CLASS = `${POPUP_GENRE_PILL_CLASS} min-w-[3.625rem] justify-center`;
 
+const HOME_PROFILE_SHEET_SURFACE_CLASS = cn(
+  APP_MATERIAL_SHEET_SURFACE_CLASS,
+  // Do NOT add `relative` here — twMerge would strip DrawerContent's `fixed`.
+  "z-[70] mx-auto mt-0 flex w-full max-w-lg flex-col gap-0 overflow-hidden rounded-t-[1.25rem] border-0 p-0",
+  HOME_PROFILE_PREVIEW_SHEET_HEIGHT_CLASS,
+  "pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
+  // Hide shared DrawerContent grabber — Home sheet draws its own handle under the genre wash.
+  "[&>div:first-child]:hidden",
+);
+
 /** Leaderboard SQL uses `other` when no genre rows exist — not a profile fav genre. */
 function surfaceGenreHintWhileLoading(
   hint: string | null | undefined,
@@ -58,6 +103,16 @@ function surfaceGenreHintWhileLoading(
 type LightPopupOptions = {
   /** When false, skips the verified-artists query (e.g. comments drawer closed). */
   verifiedArtistsEnabled?: boolean;
+  /**
+   * Home + Leaderboard + Comments use bottom sheet; floating PPC remains for rollback.
+   * Default: floating.
+   */
+  presentation?: ProfilePreviewPresentation;
+  /**
+   * Sheet stacking only. `above-comments` raises z-index above Comments (incl. elevated).
+   * Default: default (Home / Leaderboard z-[70]).
+   */
+  sheetStack?: ProfilePreviewSheetStack;
 };
 
 type OpenByUsernameOptions = {
@@ -73,6 +128,8 @@ type OpenByUsernameOptions = {
   surfaceGenreHint?: string | null;
   /** When set, Home reopens the comments drawer after returning from a public profile. */
   reopenCommentsPostId?: string | null;
+  /** Tap-context identity (Home `post.user`) for first paint without waiting on network. */
+  seed?: ProfilePreviewSeed | null;
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -120,26 +177,8 @@ function buildGenreGlassSurfaceStyle(accent: { r: number; g: number; b: number }
   };
 }
 
-type ProfilePopupUser = {
-  id?: string;
-  username?: string;
-  avatar_url?: string | null;
-  profileImage?: string | null;
-  verified_artist?: boolean;
-  moderator?: boolean;
-  account_type?: string;
+type ProfilePopupUser = ProfilePreviewOpenUser & {
   publicLight?: PublicLightProfileStats;
-  /** Hardened trust score (`user_karma.score`). */
-  reputation?: number;
-  /** Successful IDs on others’ posts (`user_karma.correct_ids`). */
-  correct_ids?: number;
-  // Back-compat: same as `reputation` on some responses.
-  karma?: number;
-  hasMonthlyTop100?: boolean;
-  /** Set by `openByUsername` from tap context; not from API. */
-  surfaceGenreHint?: string | null;
-  /** True until `GET /api/user/profile/:username` returns for this open (instant shell + merge after). */
-  profileLoadPending?: boolean;
 };
 
 export function useUserProfileLightPopup(options?: LightPopupOptions) {
@@ -152,6 +191,8 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
   /** Increments on each `openByUsername` call so stale fetches never overwrite the active popup. */
   const profileOpenSeqRef = useRef(0);
   const lastOpenOptionsRef = useRef<OpenByUsernameOptions | undefined>(undefined);
+  const presentation: ProfilePreviewPresentation = options?.presentation ?? "floating";
+  const sheetStack: ProfilePreviewSheetStack = options?.sheetStack ?? "default";
 
   const { data: verifiedArtists = [] } = useQuery<any[]>({
     queryKey: ["/api/artists/verified"],
@@ -163,16 +204,60 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
       if (!username?.trim()) return;
       const seq = ++profileOpenSeqRef.current;
       playInteractionLight();
+      logProfilePreviewTiming("tap", { username: username.trim(), presentation });
+
+      // Comments-stacked sheet: blur composer so keyboard layout doesn't fight the top sheet.
+      if (presentation === "sheet" && sheetStack === "above-comments") {
+        const active = typeof document !== "undefined" ? document.activeElement : null;
+        if (active instanceof HTMLElement) active.blur();
+      }
 
       const trimmed = username.trim();
       lastOpenOptionsRef.current = openOptions;
       setPopupAnchor(openOptions?.anchor ?? null);
-      setSelectedUser({
+
+      const cachedRaw = queryClient.getQueryData<PublicProfileResponse>(publicProfileQueryKey(trimmed));
+      const cachedNorm = cachedRaw ? normalizePublicProfileResponse(cachedRaw) : null;
+      const cacheComplete = isPublicProfileCacheCompleteForPreview(cachedNorm);
+
+      const initial = mergeProfilePreviewOpenState({
         username: trimmed,
-        profileLoadPending: true,
+        seed: openOptions?.seed,
+        cached: cachedNorm,
+        cacheComplete,
         surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
       });
+
+      setSelectedUser(initial);
       setShowUserPopup(true);
+      logProfilePreviewTiming("shell-open", {
+        username: trimmed,
+        cacheComplete,
+        seededAvatar: Boolean(initial.avatar_url || initial.profileImage),
+        profileLoadPending: initial.profileLoadPending === true,
+      });
+
+      const maybePrefetchReleaseAlerts = (userData: {
+        id?: string;
+        verified_artist?: boolean;
+      }) => {
+        const artistId = userData.id?.trim();
+        if (
+          isAuthenticated &&
+          currentUser?.id &&
+          artistId &&
+          userData.verified_artist === true &&
+          currentUser.id !== artistId
+        ) {
+          prefetchArtistReleaseAlertStatus(queryClient, artistId);
+        }
+      };
+
+      if (cacheComplete && cachedNorm) {
+        maybePrefetchReleaseAlerts(cachedNorm);
+        logProfilePreviewTiming("cache-hit-skip-fetch", { username: trimmed });
+        return;
+      }
 
       try {
         const response = await apiRequest("GET", `/api/user/profile/${trimmed}`);
@@ -183,6 +268,13 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
         const merged: ProfilePopupUser = {
           ...userData,
           username: userData.username ?? trimmed,
+          // Keep tap-context avatar if response omits it.
+          avatar_url: userData.avatar_url ?? openOptions?.seed?.avatar_url ?? null,
+          profileImage:
+            userData.profileImage ??
+            openOptions?.seed?.profileImage ??
+            openOptions?.seed?.avatar_url ??
+            null,
           surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
           profileLoadPending: false,
         };
@@ -197,18 +289,9 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
           normalizePublicProfileResponse(userData as PublicProfileResponse),
         );
 
-        const artistId = userData.id?.trim();
-        if (
-          isAuthenticated &&
-          currentUser?.id &&
-          artistId &&
-          userData.verified_artist === true &&
-          currentUser.id !== artistId
-        ) {
-          prefetchArtistReleaseAlertStatus(queryClient, artistId);
-        }
-
+        maybePrefetchReleaseAlerts(userData);
         setSelectedUser(merged);
+        logProfilePreviewTiming("profile-hydrated", { username: cacheUsername });
       } catch (error) {
         console.error("Failed to fetch user:", error);
         if (seq !== profileOpenSeqRef.current) return;
@@ -219,21 +302,25 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
                 username: trimmed,
                 account_type: "artist",
                 verified_artist: true,
-                avatar_url: artist.avatar_url ?? null,
-                profileImage: artist.profileImage ?? artist.avatar_url ?? null,
+                avatar_url: artist.avatar_url ?? openOptions?.seed?.avatar_url ?? null,
+                profileImage: artist.profileImage ?? artist.avatar_url ?? openOptions?.seed?.avatar_url ?? null,
                 surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
                 profileLoadPending: false,
               }
             : {
                 username: trimmed,
-                account_type: "user",
+                account_type: openOptions?.seed?.account_type ?? "user",
+                avatar_url: openOptions?.seed?.avatar_url ?? null,
+                profileImage: openOptions?.seed?.profileImage ?? null,
+                verified_artist: openOptions?.seed?.verified_artist,
+                moderator: openOptions?.seed?.moderator,
                 surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
                 profileLoadPending: false,
               },
         );
       }
     },
-    [queryClient, verifiedArtists, isAuthenticated, currentUser?.id],
+    [queryClient, verifiedArtists, isAuthenticated, currentUser?.id, presentation, sheetStack],
   );
 
   const closePopup = useCallback(() => setShowUserPopup(false), []);
@@ -267,15 +354,24 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
     [navigate, viewerUsername],
   );
 
-  const popup = (
-    <UserProfileLightPopup
-      user={selectedUser}
-      open={showUserPopup}
-      onClose={closePopup}
-      onOpenFullProfile={openFullProfile}
-      anchor={popupAnchor}
-    />
-  );
+  const popup =
+    presentation === "sheet" ? (
+      <UserProfilePreviewSheet
+        user={selectedUser}
+        open={showUserPopup}
+        onClose={closePopup}
+        onOpenFullProfile={openFullProfile}
+        sheetStack={sheetStack}
+      />
+    ) : (
+      <UserProfileLightPopup
+        user={selectedUser}
+        open={showUserPopup}
+        onClose={closePopup}
+        onOpenFullProfile={openFullProfile}
+        anchor={popupAnchor}
+      />
+    );
 
   return { openByUsername, closePopup, popup };
 }
@@ -330,33 +426,48 @@ function StatLine({
   );
 }
 
-export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, anchor }: UserProfileLightPopupProps) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const prevOpenRef = useRef(false);
-  const exitFinishFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [exiting, setExiting] = useState(false);
-  const [exitCommitted, setExitCommitted] = useState(false);
-  const [entered, setEntered] = useState(false);
-  const [cardPosStyle, setCardPosStyle] = useState<CSSProperties>({
-    position: "fixed",
-    left: "50%",
-    top: "50%",
-    transform: "translate(-50%, -50%)",
-  });
+type PreviewModel = {
+  user: ProfilePopupUser;
+  isArtist: boolean;
+  isVerifiedArtist: boolean;
+  avatarSrc: string | null;
+  avatarIsDefault: boolean;
+  avatarBorderClass: string;
+  profileLoadPending: boolean;
+  showSeededIdentityChrome: boolean;
+  joinedDateLine: string;
+  primaryTextColor: string;
+  secondaryTextColor: string;
+  tileLabelColor: string;
+  hasTopGenreDisplay: boolean;
+  genreResolutionPending: boolean;
+  pillStyle: CSSProperties | null;
+  pillLabelChip: ReturnType<typeof getGenreChipStyle> | null;
+  genreAccentRgb: { r: number; g: number; b: number } | null;
+  genreBarColorHex: string | null;
+  postsValue: string;
+  idsValue: string;
+  reputationDisplayValue: string;
+  reputationTrust: TrustLevelInfo | null;
+  showPostsStatPulse: boolean;
+  showIdsStatPulse: boolean;
+  showRepStatPulse: boolean;
+  isLightSurface: boolean;
+  cardSurfaceStyle: CSSProperties;
+};
 
-  const justClosedLatch = Boolean(user && prevOpenRef.current && !open);
-  const holdPopupSubscriptions = open || exiting || justClosedLatch;
-
+function useProfilePreviewModel(
+  user: ProfilePopupUser | null,
+  holdSubscriptions: boolean,
+): PreviewModel | null {
   const isArtist = user?.account_type === "artist";
   const isVerifiedArtist = user?.verified_artist === true;
   const light = user?.publicLight;
-
   const userId = user?.id;
-  // Community-side trust + genre signal, derived from hardened backend fields.
-  // (Used as a robust fallback if `publicLight` is missing/incomplete for any account type.)
+
   const { data: karmaData, isFetching: isFetchingKarma } = useQuery<any>({
     queryKey: ["/api/user", userId, "karma"],
-    enabled: holdPopupSubscriptions && !!user && !!userId,
+    enabled: holdSubscriptions && !!user && !!userId,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/karma`);
@@ -366,7 +477,7 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
 
   const { data: statsData, isFetching: isFetchingStats } = useQuery<any>({
     queryKey: ["/api/user", userId, "stats"],
-    enabled: holdPopupSubscriptions && !!user && !!userId,
+    enabled: holdSubscriptions && !!user && !!userId,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/stats`);
@@ -379,7 +490,7 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
   );
 
   const identifiedGenresEnabled =
-    holdPopupSubscriptions &&
+    holdSubscriptions &&
     !!user &&
     !!userId &&
     !user.profileLoadPending &&
@@ -391,7 +502,6 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
     isPending: isPendingIdentifiedGenres,
   } = useQuery<any>({
     queryKey: ["/api/user", userId, "identified-posts-genres"],
-    // Only when profile payload did not include a top genre (e.g. stale cache / partial user).
     enabled: identifiedGenresEnabled,
     retry: false,
     queryFn: async () => {
@@ -408,22 +518,15 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
     identifiedGenresData?.genres?.[0]?.genreKey?.toString?.() ??
     null;
 
-  // Backend/publicLight has evolved; accept both the new and legacy field names
-  // so the popup never renders `undefined`/blank when a response is still in-flight
-  // or when older endpoints are cached.
   const anyLight = light as any;
-
   const profileLoadPending = user?.profileLoadPending === true;
 
   const legacyTopGenreKey = anyLight?.topGenreKey ?? anyLight?.accentGenreKey ?? null;
   const surfaceGenreHintForResolve = surfaceGenreHintWhileLoading(user?.surfaceGenreHint, profileLoadPending);
-  /** Profile + identified-posts are authoritative; hint only while profile fetch is pending. */
   const topGenreKeyResolved =
     legacyTopGenreKey ?? derivedTopGenreKey ?? surfaceGenreHintForResolve ?? null;
   const hasTopGenreDisplay = topGenreKeyResolved !== null;
-  /** Card chrome only when fav genre is genuinely resolved (including explicit Other). */
   const useGenreChrome = hasTopGenreDisplay;
-  /** Pill skeleton while profile or secondary genre lookup is still in flight. */
   const genreResolutionPending =
     !hasTopGenreDisplay &&
     (!!user?.profileLoadPending ||
@@ -455,9 +558,7 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
     return getGenreGlowPillStyle(pillLabelChip.bgColor, pillLabelChip.textClass);
   }, [pillLabelChip]);
 
-  /** Genre and neutral popup shells both use dark glass — always light text. */
   const isLightSurface = false;
-
   const primaryTextColor = isLightSurface ? "#0F172A" : "#F8FAFC";
   const secondaryTextColor = isLightSurface ? "#334155" : "#E2E8F0";
   const tileLabelColor = isLightSurface ? "#475569" : "#CBD5E1";
@@ -491,16 +592,14 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
 
   const postsValue =
     safeNumToString(anyLight?.posts ?? anyLight?.uploads ?? derivedPosts) ?? "—";
-  // IDs = hardened successful IDs on other users’ posts only (user_karma.correct_ids).
   const idsValue =
-    safeNumToString(
-      anyLight?.correct_ids ?? user?.correct_ids ?? derivedCorrectIds,
-    ) ?? "—";
+    safeNumToString(anyLight?.correct_ids ?? user?.correct_ids ?? derivedCorrectIds) ?? "—";
   const reputationNum = Number(resolvedReputationRaw);
-  const reputationDisplayValue =
+  const reputationTrust =
     resolvedReputationRaw != null && Number.isFinite(reputationNum)
-      ? deriveTrustLevel(reputationNum).displayName
-      : "—";
+      ? deriveTrustLevel(reputationNum)
+      : null;
+  const reputationDisplayValue = reputationTrust?.displayName ?? "—";
 
   const showPostsStatPulse =
     profileLoadPending || (postsValue === "—" && !!userId && isFetchingStats);
@@ -509,6 +608,630 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
   const showRepStatPulse =
     profileLoadPending ||
     (reputationDisplayValue === "—" && !!userId && isFetchingKarma);
+
+  const showSeededIdentityChrome =
+    !profileLoadPending ||
+    user?.verified_artist != null ||
+    user?.moderator != null ||
+    user?.account_type != null;
+
+  if (!user) return null;
+
+  return {
+    user,
+    isArtist: isArtist === true,
+    isVerifiedArtist,
+    avatarSrc,
+    avatarIsDefault,
+    avatarBorderClass,
+    profileLoadPending,
+    showSeededIdentityChrome,
+    joinedDateLine,
+    primaryTextColor,
+    secondaryTextColor,
+    tileLabelColor,
+    hasTopGenreDisplay,
+    genreResolutionPending,
+    pillStyle: pillStyle as CSSProperties | null,
+    pillLabelChip,
+    genreAccentRgb: accentRgb,
+    genreBarColorHex: resolvedAccentChip?.bgColor ?? pillLabelChip?.bgColor ?? null,
+    postsValue,
+    idsValue,
+    reputationDisplayValue,
+    reputationTrust,
+    showPostsStatPulse,
+    showIdsStatPulse,
+    showRepStatPulse,
+    isLightSurface,
+    cardSurfaceStyle,
+  };
+}
+
+/** Shared preview body for floating PPC + Home sheet (stats / identity). */
+function UserProfilePreviewContent({
+  model,
+  onClose,
+  onOpenFullProfile,
+  mode,
+}: {
+  model: PreviewModel;
+  onClose: () => void;
+  onOpenFullProfile: (username: string) => void;
+  mode: ProfilePreviewPresentation;
+}) {
+  const { user, primaryTextColor, isLightSurface, cardSurfaceStyle } = model;
+
+  if (mode === "floating") {
+    return (
+      <div
+        className="relative cursor-pointer overflow-hidden rounded-xl border px-3 py-2.5 transition-[background,box-shadow,border-color] duration-300 ease-out"
+        style={cardSurfaceStyle}
+        role="button"
+        tabIndex={0}
+        data-testid="open-full-profile-from-popup"
+        aria-label={
+          user.username
+            ? `Open full profile for ${formatUsernameDisplay(user.username)}`
+            : "Open full profile"
+        }
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const name = user.username?.trim();
+          if (!name) return;
+          onOpenFullProfile(name);
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const name = user.username?.trim();
+          if (!name) return;
+          onOpenFullProfile(name);
+        }}
+      >
+        <button
+          type="button"
+          className="absolute right-1.5 top-1.5 z-[1] inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+          style={{
+            color: primaryTextColor,
+            backgroundColor: isLightSurface ? "rgba(15,23,42,0.1)" : "rgba(248,250,252,0.16)",
+          }}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          aria-label="Close profile card"
+          data-testid="close-profile-popup"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+        <UserProfileLightPreviewInner model={model} showCloseSpacer />
+      </div>
+    );
+  }
+
+  return (
+    <HomeProfilePreviewSheetBody model={model} onOpenFullProfile={onOpenFullProfile} />
+  );
+}
+
+function HomeProfilePreviewSheetBody({
+  model,
+  onOpenFullProfile,
+}: {
+  model: PreviewModel;
+  onOpenFullProfile: (username: string) => void;
+}) {
+  const {
+    user,
+    isVerifiedArtist,
+    avatarSrc,
+    avatarIsDefault,
+    avatarBorderClass,
+    profileLoadPending,
+    showSeededIdentityChrome,
+    joinedDateLine,
+    hasTopGenreDisplay,
+    genreResolutionPending,
+    pillStyle,
+    pillLabelChip,
+    genreAccentRgb,
+    genreBarColorHex,
+    postsValue,
+    idsValue,
+    reputationDisplayValue,
+    reputationTrust,
+    showPostsStatPulse,
+    showIdsStatPulse,
+    showRepStatPulse,
+  } = model;
+
+  const ambientStyle = useMemo(
+    () => buildHomeProfilePreviewGenreAmbientStyle(genreAccentRgb),
+    [genreAccentRgb?.r, genreAccentRgb?.g, genreAccentRgb?.b],
+  );
+
+  const repBarWidth = reputationTrust
+    ? reputationTrust.isTopTier
+      ? 100
+      : Math.min(100, Math.max(0, reputationTrust.progressPct))
+    : 0;
+  const repFill =
+    genreBarColorHex != null && String(genreBarColorHex).trim()
+      ? repProgressGradientFromGenreBg(genreBarColorHex)
+      : whiteRepProgressGradient();
+  const repBase = repProgressBarBaseColor(genreBarColorHex);
+
+  return (
+    <div
+      className="relative flex min-h-0 w-full flex-col"
+      data-testid="home-profile-preview-sheet-body"
+    >
+      {/* Full-sheet wash (grabber + header + body) — continuous, no top seam. */}
+      <div
+        className="pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
+        style={ambientStyle}
+        aria-hidden
+        data-testid="home-profile-preview-genre-ambient"
+        data-has-genre-tint={genreAccentRgb ? "true" : "false"}
+        data-covers-header="true"
+      />
+
+      <div className="relative z-[1] flex min-h-0 flex-col px-5 pb-1">
+        {/* Grabber lives under the ambient layer so the top tint is continuous. */}
+        <div
+          className="mx-auto mt-2.5 mb-3 h-1 w-10 shrink-0 rounded-full bg-white/25"
+          data-testid="home-profile-preview-grabber"
+          aria-hidden
+        />
+
+        {/* Identity — direct on sheet (no inset card, no X close) */}
+        <div className="relative flex items-start gap-3.5">
+          {profileLoadPending && !avatarSrc ? (
+            <div
+              className="h-16 w-16 shrink-0 animate-pulse rounded-full bg-white/[0.14]"
+              aria-hidden
+            />
+          ) : (
+            <img
+              src={avatarSrc ?? undefined}
+              alt={user.username ? formatUsernameDisplay(user.username) : "Profile"}
+              className={`avatar-media h-16 w-16 shrink-0 rounded-full border-2 ${
+                avatarIsDefault ? "avatar-default-media" : ""
+              } ${avatarBorderClass}`}
+              data-testid="profile-preview-avatar"
+            />
+          )}
+
+          <div className="min-w-0 flex-1 pt-0.5">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <h3
+                    id="user-profile-light-popup-title"
+                    className="min-w-0 break-words text-lg font-semibold leading-tight text-white"
+                    data-testid="profile-preview-username"
+                  >
+                    {user.username ? formatUsernameDisplay(user.username) : "…"}
+                  </h3>
+                  {showSeededIdentityChrome && (
+                    <UserRoleInlineIcons
+                      verifiedArtist={isVerifiedArtist}
+                      moderator={user.moderator === true}
+                    />
+                  )}
+                  <MonthlyTop100Badge earned={user.hasMonthlyTop100 === true} context="popup" />
+                </div>
+
+                <div className="mt-1.5 min-h-[1.125rem]">
+                  {!profileLoadPending ? (
+                    <div className="text-[11px] font-medium leading-none text-white/70" title="Joined date">
+                      {joinedDateLine}
+                    </div>
+                  ) : (
+                    <div className="h-2.5 w-24" aria-hidden />
+                  )}
+                </div>
+              </div>
+
+              <div className="flex shrink-0 flex-col items-end text-right">
+                <div className="text-[9px] font-semibold uppercase tracking-wide text-white/55">
+                  Fav Genre
+                </div>
+                <div className="mt-1 flex min-h-[1.625rem] items-center justify-end">
+                  {hasTopGenreDisplay && pillStyle ? (
+                    <span
+                      className={POPUP_GENRE_SLOT_CLASS}
+                      style={pillStyle as any}
+                      title={pillLabelChip?.label ?? ""}
+                    >
+                      <span className="truncate">{pillLabelChip?.label}</span>
+                    </span>
+                  ) : genreResolutionPending ? (
+                    <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`} aria-hidden>
+                      <span className="h-2.5 w-14 max-w-full animate-pulse rounded-sm bg-white/[0.14]" />
+                    </span>
+                  ) : (
+                    <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`}>
+                      <span className="text-[11px] font-semibold leading-none text-white/80">—</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Posts / IDs / Rep — single unboxed row */}
+        <div
+          className="mt-5 flex min-w-0 items-stretch gap-2 border-y border-white/[0.12] py-3.5"
+          data-testid="home-profile-preview-stats-row"
+        >
+          <StatLine
+            Icon={Upload}
+            label="Posts"
+            value={postsValue}
+            labelStyle={{ color: "rgba(203,213,225,0.92)" }}
+            valueStyle={{ color: "#F8FAFC" }}
+            pulse={showPostsStatPulse}
+          />
+          <div className="mt-0.5 h-9 w-px shrink-0 self-center bg-white/20" />
+          <StatLine
+            Icon={Check}
+            label="IDs"
+            value={idsValue}
+            labelStyle={{ color: "rgba(203,213,225,0.92)" }}
+            valueStyle={{ color: "#F8FAFC" }}
+            pulse={showIdsStatPulse}
+          />
+          <div className="mt-0.5 h-9 w-px shrink-0 self-center bg-white/20" />
+          <StatLine
+            Icon={TrendingUp}
+            label="Rep"
+            value={reputationDisplayValue}
+            labelStyle={{ color: "rgba(203,213,225,0.92)" }}
+            valueStyle={{ color: "#F8FAFC" }}
+            valueTabular={false}
+            pulse={showRepStatPulse}
+          />
+        </div>
+
+        {/* Rep progress — unboxed, uses existing trust fields only */}
+        <div className="mt-5" data-testid="home-profile-preview-rep-progress">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-white/55">
+              Rep Progress
+            </div>
+            <div className="min-h-[1rem] text-xs font-semibold text-white/90" data-testid="reputation-level">
+              {showRepStatPulse ? (
+                <span className="inline-block h-3 w-16 animate-pulse rounded bg-white/[0.14]" aria-hidden />
+              ) : (
+                reputationTrust?.displayName ?? "—"
+              )}
+            </div>
+          </div>
+          <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-black/55">
+            <div
+              className="h-2 rounded-full transition-[width] duration-500 ease-out"
+              style={{
+                width: `${showRepStatPulse ? 0 : repBarWidth}%`,
+                minWidth: !showRepStatPulse && repBarWidth > 0 ? 3 : 0,
+                backgroundImage: repFill,
+                backgroundColor: repBase,
+              }}
+              data-testid="reputation-bar"
+            />
+          </div>
+          <p className="mt-2 text-[11px] leading-snug text-white/55">{HOME_PROFILE_PREVIEW_REP_HINT}</p>
+        </div>
+
+        <button
+          type="button"
+          className={cn(
+            APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+            HOME_PROFILE_PREVIEW_CTA_GAP_CLASS,
+            "mb-1 inline-flex h-12 w-full shrink-0 items-center justify-center rounded-[15px] text-sm",
+          )}
+          data-testid="home-profile-preview-view-profile"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const name = user.username?.trim();
+            if (!name) return;
+            onOpenFullProfile(name);
+          }}
+        >
+          View Profile
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UserProfileLightPreviewInner({
+  model,
+  showCloseSpacer,
+}: {
+  model: PreviewModel;
+  showCloseSpacer: boolean;
+}) {
+  const {
+    user,
+    isVerifiedArtist,
+    avatarSrc,
+    avatarIsDefault,
+    avatarBorderClass,
+    profileLoadPending,
+    showSeededIdentityChrome,
+    joinedDateLine,
+    primaryTextColor,
+    secondaryTextColor,
+    tileLabelColor,
+    hasTopGenreDisplay,
+    genreResolutionPending,
+    pillStyle,
+    pillLabelChip,
+    postsValue,
+    idsValue,
+    reputationDisplayValue,
+    showPostsStatPulse,
+    showIdsStatPulse,
+    showRepStatPulse,
+    isLightSurface,
+  } = model;
+
+  return (
+    <div className={cn("flex min-w-0 items-start gap-2", showCloseSpacer ? "pr-7" : "pr-0")}>
+      {profileLoadPending && !avatarSrc ? (
+        <div
+          className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-black/[0.12] dark:bg-white/[0.14]"
+          aria-hidden
+        />
+      ) : (
+        <img
+          src={avatarSrc ?? undefined}
+          alt={user.username ? formatUsernameDisplay(user.username) : "Profile"}
+          className={`avatar-media h-9 w-9 shrink-0 rounded-full border-2 ${
+            avatarIsDefault ? "avatar-default-media" : ""
+          } ${avatarBorderClass}`}
+          data-testid="profile-preview-avatar"
+        />
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1">
+              <h3
+                id="user-profile-light-popup-title"
+                className="min-w-0 max-w-[10rem] break-words text-sm font-semibold leading-tight sm:max-w-[11rem]"
+                style={{ color: primaryTextColor }}
+                data-testid="profile-preview-username"
+              >
+                {user.username ? formatUsernameDisplay(user.username) : "…"}
+              </h3>
+              {showSeededIdentityChrome && (
+                <UserRoleInlineIcons
+                  verifiedArtist={isVerifiedArtist}
+                  moderator={user.moderator === true}
+                />
+              )}
+            </div>
+            {profileLoadPending && !showSeededIdentityChrome ? (
+              <div
+                className="mt-1 h-2 w-24 max-w-[85%] animate-pulse rounded bg-black/[0.1] dark:bg-white/[0.12]"
+                aria-hidden
+              />
+            ) : (
+              <div className="mt-0.5 flex min-h-[1.125rem] flex-col items-start gap-1">
+                {!profileLoadPending ? (
+                  <div
+                    className="text-[9px] font-medium leading-none"
+                    style={{ color: secondaryTextColor }}
+                    title="Joined date"
+                  >
+                    {joinedDateLine}
+                  </div>
+                ) : (
+                  <div className="h-2.5 w-20" aria-hidden />
+                )}
+                <MonthlyTop100Badge earned={user.hasMonthlyTop100 === true} context="popup" />
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 max-w-[42%] shrink-0 text-center">
+            <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: tileLabelColor }}>
+              Fav Genre
+            </div>
+            <div className="mt-0.5 flex w-full min-w-[3.625rem] items-center justify-center">
+              {hasTopGenreDisplay && pillStyle ? (
+                <span
+                  className={POPUP_GENRE_SLOT_CLASS}
+                  style={pillStyle as any}
+                  title={pillLabelChip?.label ?? ""}
+                >
+                  <span className="truncate">{pillLabelChip?.label}</span>
+                </span>
+              ) : genreResolutionPending ? (
+                <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`} aria-hidden>
+                  <span className="h-2.5 w-14 max-w-full animate-pulse rounded-sm bg-white/[0.14]" />
+                </span>
+              ) : (
+                <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`}>
+                  <span className="text-[11px] font-semibold leading-none" style={{ color: primaryTextColor }}>
+                    —
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="mt-2 flex min-w-0 items-stretch gap-2 border-t pt-2"
+          style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}
+        >
+          <StatLine
+            Icon={Upload}
+            label="Posts"
+            value={postsValue}
+            labelStyle={{ color: tileLabelColor }}
+            valueStyle={{ color: primaryTextColor }}
+            pulse={showPostsStatPulse}
+          />
+          <div
+            className="mt-0.5 h-9 w-px shrink-0 self-center"
+            style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
+          />
+          <StatLine
+            Icon={Check}
+            label="IDs"
+            value={idsValue}
+            labelStyle={{ color: tileLabelColor }}
+            valueStyle={{ color: primaryTextColor }}
+            pulse={showIdsStatPulse}
+          />
+          <div
+            className="mt-0.5 h-9 w-px shrink-0 self-center"
+            style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
+          />
+          <StatLine
+            Icon={TrendingUp}
+            label="Rep"
+            value={reputationDisplayValue}
+            labelStyle={{ color: tileLabelColor }}
+            valueStyle={{ color: primaryTextColor }}
+            valueTabular={false}
+            pulse={showRepStatPulse}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserProfilePreviewSheet({
+  user,
+  open,
+  onClose,
+  onOpenFullProfile,
+  sheetStack = "default",
+}: {
+  user: ProfilePopupUser | null;
+  open: boolean;
+  onClose: () => void;
+  onOpenFullProfile: (username: string) => void;
+  sheetStack?: ProfilePreviewSheetStack;
+}) {
+  const [sheetPhase, setSheetPhase] = useState<NativeNavSheetPhase>("closed");
+  const holdSubscriptions = open || sheetPhase === "closing" || (Boolean(user) && open);
+  const model = useProfilePreviewModel(user, holdSubscriptions || open);
+  const aboveComments = sheetStack === "above-comments";
+  const stackZClass = aboveComments ? PROFILE_PREVIEW_ABOVE_COMMENTS_Z_CLASS : "z-[70]";
+
+  useEffect(() => {
+    if (open) setSheetPhase("open");
+  }, [open]);
+
+  useEffect(() => {
+    setHomeProfilePreviewCoveringNativeNav(nativeNavSheetCoversBar(sheetPhase));
+    return () => setHomeProfilePreviewCoveringNativeNav(false);
+  }, [sheetPhase]);
+
+  // Vaul still uses a 500ms internal close timer; uncover on our fast close budget.
+  useEffect(() => {
+    if (open) return;
+    if (sheetPhase === "closed") return;
+    const t = window.setTimeout(() => {
+      setSheetPhase("closed");
+    }, POPUP_CLOSE_MS + 20);
+    return () => window.clearTimeout(t);
+  }, [open, sheetPhase]);
+
+  useEffect(() => {
+    if (open && user) {
+      logProfilePreviewTiming("sheet-first-paint", {
+        username: user.username,
+        seededAvatar: Boolean(user.avatar_url || user.profileImage),
+      });
+    }
+  }, [open, user?.username]);
+
+  if (!user && !open && sheetPhase === "closed") return null;
+
+  return (
+    <Drawer
+      open={open}
+      onOpenChange={(next) => {
+        setSheetPhase(nativeNavSheetPhaseOnOpenChange(next));
+        if (!next) onClose();
+      }}
+      onAnimationEnd={(animationOpen) => {
+        setSheetPhase(nativeNavSheetPhaseOnAnimationEnd(animationOpen));
+      }}
+      shouldScaleBackground={false}
+      // Profile Preview (Home + Leaderboard + Comments): deliberate slow-drag dismiss (Vaul default 0.25).
+      closeThreshold={0.09}
+      repositionInputs={false}
+      noBodyStyles
+    >
+      <DrawerContent
+        data-home-profile-preview="true"
+        data-comments-profile-preview={aboveComments ? "true" : undefined}
+        data-testid={aboveComments ? "comments-profile-preview-sheet" : "home-profile-preview-sheet"}
+        overlayClassName={cn(
+          stackZClass,
+          "home-profile-preview-overlay",
+          APP_MATERIAL_SHEET_BACKDROP_CLASS,
+        )}
+        className={cn(HOME_PROFILE_SHEET_SURFACE_CLASS, aboveComments && stackZClass)}
+      >
+        <DrawerTitle className="sr-only">
+          {user?.username
+            ? `Profile preview for ${formatUsernameDisplay(user.username)}`
+            : "Profile preview"}
+        </DrawerTitle>
+        <DrawerDescription className="sr-only">
+          Lightweight profile preview. Open the full profile for more details.
+        </DrawerDescription>
+        {model ? (
+          <UserProfilePreviewContent
+            model={model}
+            onClose={onClose}
+            onOpenFullProfile={onOpenFullProfile}
+            mode="sheet"
+          />
+        ) : null}
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, anchor }: UserProfileLightPopupProps) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const prevOpenRef = useRef(false);
+  const exitFinishFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [exiting, setExiting] = useState(false);
+  const [exitCommitted, setExitCommitted] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const [cardPosStyle, setCardPosStyle] = useState<CSSProperties>({
+    position: "fixed",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+  });
+
+  const justClosedLatch = Boolean(user && prevOpenRef.current && !open);
+  const holdPopupSubscriptions = open || exiting || justClosedLatch;
+  const model = useProfilePreviewModel(user, holdPopupSubscriptions);
 
   useLayoutEffect(() => {
     if (open && user) {
@@ -576,7 +1299,6 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
     const minCy = margin + cardH / 2;
     const maxCy = vh - margin - cardH / 2;
 
-    // Default: center (keeps post-trigger behaviour).
     let cx = vw / 2;
     let cy = vh / 2;
 
@@ -584,17 +1306,14 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
       const x = anchor.x;
       const y = anchor.y;
 
-      // Prefer above (reduces covering comment content); otherwise try side; otherwise below.
       const aboveCy = y - cardH / 2 - 10;
       const aboveFits = aboveCy >= minCy && aboveCy <= maxCy;
       if (aboveFits) {
         cx = x;
         cy = aboveCy;
       } else {
-        // Right side
         const rightCx = x + 10 + cardW / 2;
         const rightFits = rightCx >= minCx && rightCx <= maxCx;
-        // Left side
         const leftCx = x - 10 - cardW / 2;
         const leftFits = leftCx >= minCx && leftCx <= maxCx;
 
@@ -605,14 +1324,12 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
           cx = leftCx;
           cy = y;
         } else {
-          // Fallback: below click
           cx = x;
           cy = y + 10 + cardH / 2;
         }
       }
     }
 
-    // Clamp center point to keep card fully inside viewport.
     cx = Math.max(minCx, Math.min(maxCx, cx));
     cy = Math.max(minCy, Math.min(maxCy, cy));
 
@@ -643,7 +1360,7 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
   }, [open]);
 
   const portalActive = !!user && (open || exiting || justClosedLatch);
-  if (!portalActive) return null;
+  if (!portalActive || !model) return null;
 
   if (typeof document === "undefined") return null;
 
@@ -714,7 +1431,6 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
 
   return createPortal(
     <>
-      {/* Full-screen shield: capture phase closes before drawer/comment handlers run. */}
       <div
         className="fixed inset-0 z-[2147483645] bg-transparent"
         style={{ pointerEvents: "auto", touchAction: "none" }}
@@ -732,187 +1448,18 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
         role="dialog"
         aria-modal="false"
         aria-labelledby="user-profile-light-popup-title"
+        data-testid="user-profile-light-popup-floating"
         onPointerDownCapture={(e) => {
           e.stopPropagation();
         }}
         onTransitionEnd={handleMotionTransitionEnd}
       >
-        <div
-          className="relative cursor-pointer overflow-hidden rounded-xl border px-3 py-2.5 transition-[background,box-shadow,border-color] duration-300 ease-out"
-          style={cardSurfaceStyle}
-          role="button"
-          tabIndex={0}
-          data-testid="open-full-profile-from-popup"
-          aria-label={
-            user.username
-              ? `Open full profile for ${formatUsernameDisplay(user.username)}`
-              : "Open full profile"
-          }
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const name = user.username?.trim();
-            if (!name) return;
-            onOpenFullProfile(name);
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            e.stopPropagation();
-            const name = user.username?.trim();
-            if (!name) return;
-            onOpenFullProfile(name);
-          }}
-        >
-        <button
-          type="button"
-          className="absolute right-1.5 top-1.5 z-[1] inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-          style={{
-            color: primaryTextColor,
-            backgroundColor: isLightSurface ? "rgba(15,23,42,0.1)" : "rgba(248,250,252,0.16)",
-          }}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onClose();
-          }}
-          aria-label="Close profile card"
-          data-testid="close-profile-popup"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-
-        <div className="flex min-w-0 items-start gap-2 pr-7">
-          {profileLoadPending && !avatarSrc ? (
-            <div
-              className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-black/[0.12] dark:bg-white/[0.14]"
-              aria-hidden
-            />
-          ) : (
-            <img
-              src={avatarSrc ?? undefined}
-              alt={user.username ? formatUsernameDisplay(user.username) : "Profile"}
-              className={`avatar-media h-9 w-9 shrink-0 rounded-full border-2 ${
-                avatarIsDefault ? "avatar-default-media" : ""
-              } ${avatarBorderClass}`}
-            />
-          )}
-
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-1">
-                  <h3
-                    id="user-profile-light-popup-title"
-                    className="min-w-0 max-w-[10rem] break-words text-sm font-semibold leading-tight sm:max-w-[11rem]"
-                    style={{ color: primaryTextColor }}
-                  >
-                    {user.username ? formatUsernameDisplay(user.username) : "…"}
-                  </h3>
-                  {!profileLoadPending && (
-                    <UserRoleInlineIcons
-                      verifiedArtist={isVerifiedArtist}
-                      moderator={user.moderator === true}
-                    />
-                  )}
-                </div>
-                {profileLoadPending ? (
-                  <div className="mt-1 h-2 w-24 max-w-[85%] animate-pulse rounded bg-black/[0.1] dark:bg-white/[0.12]" aria-hidden />
-                ) : (
-                  <div className="mt-0.5 flex flex-col items-start gap-1">
-                    <div
-                      className="text-[9px] font-medium leading-none"
-                      style={{ color: secondaryTextColor }}
-                      title="Joined date"
-                    >
-                      {joinedDateLine}
-                    </div>
-                    <MonthlyTop100Badge
-                      earned={user.hasMonthlyTop100 === true}
-                      context="popup"
-                    />
-                  </div>
-                )}
-                {!profileLoadPending && isArtist && (
-                  <div className="text-[10px] font-medium leading-none" style={{ color: secondaryTextColor }}>
-                    {isVerifiedArtist ? "Verified Artist" : "Artist"}
-                  </div>
-                )}
-              </div>
-
-              <div className="min-w-0 max-w-[42%] shrink-0 text-center">
-                <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: tileLabelColor }}>
-                  Fav Genre
-                </div>
-                <div className="mt-0.5 flex w-full min-w-[3.625rem] items-center justify-center">
-                  {hasTopGenreDisplay && pillStyle ? (
-                    <span
-                      className={POPUP_GENRE_SLOT_CLASS}
-                      style={pillStyle as any}
-                      title={pillLabelChip?.label ?? ""}
-                    >
-                      <span className="truncate">{pillLabelChip?.label}</span>
-                    </span>
-                  ) : genreResolutionPending ? (
-                    <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`} aria-hidden>
-                      <span className="h-2.5 w-14 max-w-full animate-pulse rounded-sm bg-white/[0.14]" />
-                    </span>
-                  ) : (
-                    <span className={`${POPUP_GENRE_SLOT_CLASS} ring-white/10`}>
-                      <span className="text-[11px] font-semibold leading-none" style={{ color: primaryTextColor }}>
-                        —
-                      </span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="mt-2 flex min-w-0 items-stretch gap-2 border-t pt-2"
-              style={{ borderColor: isLightSurface ? "rgba(15,23,42,0.12)" : "rgba(248,250,252,0.14)" }}
-            >
-              <StatLine
-                Icon={Upload}
-                label="Posts"
-                value={postsValue}
-                labelStyle={{ color: tileLabelColor }}
-                valueStyle={{ color: primaryTextColor }}
-                pulse={showPostsStatPulse}
-              />
-              <div
-                className="mt-0.5 h-9 w-px shrink-0 self-center"
-                style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
-              />
-              <StatLine
-                Icon={Check}
-                label="IDs"
-                value={idsValue}
-                labelStyle={{ color: tileLabelColor }}
-                valueStyle={{ color: primaryTextColor }}
-                pulse={showIdsStatPulse}
-              />
-              <div
-                className="mt-0.5 h-9 w-px shrink-0 self-center"
-                style={{ backgroundColor: isLightSurface ? "rgba(15,23,42,0.14)" : "rgba(248,250,252,0.2)" }}
-              />
-              <StatLine
-                Icon={TrendingUp}
-                label="Rep"
-                value={reputationDisplayValue}
-                labelStyle={{ color: tileLabelColor }}
-                valueStyle={{ color: primaryTextColor }}
-                valueTabular={false}
-                pulse={showRepStatPulse}
-              />
-            </div>
-          </div>
-        </div>
-        </div>
+        <UserProfilePreviewContent
+          model={model}
+          onClose={onClose}
+          onOpenFullProfile={onOpenFullProfile}
+          mode="floating"
+        />
       </div>
     </>,
     document.body,

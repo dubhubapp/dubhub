@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
 import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -6,15 +6,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, Clock3, User } from "lucide-react";
+import { Clock3, User } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { UserRoleInlineIcons } from "./moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { useUser } from "@/lib/user-context";
+import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
 import {
   ID_MARKING_DIALOG_CONTENT_CLASS,
   ID_MARKING_DIALOG_OVERLAY_CLASS,
@@ -46,7 +48,7 @@ export function CommunityVerificationDialog({
 }: CommunityVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { currentUser } = useUser();
+  const { currentUser, verifiedArtist } = useUser();
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const initialFocusRef = useRef<HTMLDivElement | null>(null);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
@@ -73,8 +75,45 @@ export function CommunityVerificationDialog({
     enabled: isOpen,
   });
 
+  const { data: verifiedArtists = [] } = useQuery<{ username?: string }[]>({
+    queryKey: ["/api/artists/verified"],
+    enabled: isOpen,
+  });
+
   const commentsList = Array.isArray(comments) ? comments : [];
   const flatComments = flattenCommentsForIdSelection(commentsList);
+
+  const selfVerifiedArtistUsername = useMemo(() => {
+    if (!verifiedArtist) return null;
+    const normalized = currentUser?.username?.trim().toLowerCase();
+    return normalized || null;
+  }, [verifiedArtist, currentUser?.username]);
+
+  const verifiedArtistUsernameSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const artist of verifiedArtists) {
+      const normalized = artist.username?.trim().toLowerCase();
+      if (normalized) set.add(normalized);
+    }
+    if (selfVerifiedArtistUsername) {
+      set.add(selfVerifiedArtistUsername);
+    }
+    for (const comment of flatComments) {
+      if (comment.user?.verified_artist && comment.user.username?.trim()) {
+        set.add(comment.user.username.trim().toLowerCase());
+      }
+    }
+    return set;
+  }, [verifiedArtists, selfVerifiedArtistUsername, flatComments]);
+
+  const isVerifiedArtistUsername = useCallback(
+    (username: string) => {
+      const normalized = username.trim().toLowerCase();
+      if (!normalized) return false;
+      return verifiedArtistUsernameSet.has(normalized);
+    },
+    [verifiedArtistUsernameSet],
+  );
 
   const sortedComments = [...flatComments].sort((a, b) => {
     const toTime = (value: unknown) => {
@@ -226,9 +265,10 @@ export function CommunityVerificationDialog({
                               >
                                 {formatUsernameDisplay(comment.user.username)}
                               </span>
-                              {comment.user.verified_artist && (
-                                <CheckCircle className="h-4 w-4 shrink-0 text-[#FFD700]" />
-                              )}
+                              <UserRoleInlineIcons
+                                verifiedArtist={comment.user.verified_artist === true}
+                                moderator={!!comment.user.moderator}
+                              />
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-1">
                               {isReply && (
@@ -257,7 +297,9 @@ export function CommunityVerificationDialog({
                         </div>
                       </div>
 
-                      <p className="break-words text-sm text-white/92">{comment.body}</p>
+                      <p className="break-words text-sm text-white/92">
+                        {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
+                      </p>
                       {comment.taggedArtist && (
                         <p className="mt-1 break-words text-xs text-white/65">
                           Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}

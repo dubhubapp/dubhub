@@ -73,7 +73,7 @@ export function HomeFeedInitialSkeleton() {
 
         {/*
           Bottom metadata — padding/structure aligned with Home `VideoCard` overlay
-          (`py-5 pt-12 sm:py-6 sm:pt-14`, flex-col gap-2, pills row).
+          (`py-5 pt-12 sm:py-6 sm:pt-14`, flex-col gap-2, compact avatar/pills).
           LG-NAV-5C: sibling continues the solid from-background band to the
           screen bottom so cold load matches the loaded card's lower fade.
         */}
@@ -94,18 +94,20 @@ export function HomeFeedInitialSkeleton() {
             className="flex translate-y-[var(--video-card-metadata-shift,0px)] flex-col gap-2 overflow-visible"
           >
             <div className="overflow-x-visible py-0.5 pl-0.5 pr-1">
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
                 <DubHubSkeletonBar tone="faint" className="h-10 w-10 shrink-0 rounded-full" />
                 <DubHubSkeletonBar tone="mid" className="h-3.5 w-28 max-w-[42%] opacity-90" />
               </div>
+            </div>
 
-              <div className="mt-2 space-y-2">
+            <div className="overflow-x-visible px-0.5 pl-0.5 pr-1">
+              <div className="space-y-2">
                 <DubHubSkeletonBar tone="mid" className="h-3.5 w-full max-w-[14rem] opacity-90" />
                 <DubHubSkeletonBar tone="faint" className="h-3 w-full max-w-[11rem]" />
               </div>
             </div>
 
-            <div className="shrink-0 overflow-visible px-0.5 py-3 pl-0.5 pr-1 sm:py-3.5">
+            <div className="shrink-0 overflow-visible px-0.5 py-0 pl-0.5 pr-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                 <DubHubSkeletonBar tone="teal" className={cn(metaPillClass, "w-[4.25rem] opacity-80")} />
                 <DubHubSkeletonBar tone="faint" className="h-1 w-1 shrink-0 rounded-full opacity-50" aria-hidden />

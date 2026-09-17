@@ -182,6 +182,21 @@ describe("COMMENTS-CHROME-2 composer", () => {
     assert.doesNotMatch(composerFormBlock, /<Send\b/);
     assert.match(videoCardSrc, /aria-label="Share video"/);
     assert.match(videoCardSrc, /<Send className="h-7 w-7 text-white"/);
+    // Mark ID rail: plain Check + visible ID; descriptive aria (not ShieldCheck).
+    assert.match(videoCardSrc, /<Check className="h-6 w-6 text-blue-400"/);
+    assert.match(
+      videoCardSrc,
+      /aria-label=\{isOwner \? "Mark as identified" : "Confirm or deny track"\}/,
+    );
+    assert.match(
+      videoCardSrc,
+      /text-blue-400 drop-shadow-\[0_1px_2px_rgba\(0,0,0,0\.75\)\]">\s*ID\s*</,
+    );
+    assert.doesNotMatch(videoCardSrc, /isOwner \? "Mark" : "ID"/);
+    assert.doesNotMatch(
+      videoCardSrc,
+      /ShieldCheck className="h-6 w-6 text-blue-400"/,
+    );
   });
 
   it("COMMENTS-CHROME-2E: matched left/right outer pad and equal input side gaps", () => {

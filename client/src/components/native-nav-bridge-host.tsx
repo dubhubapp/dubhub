@@ -45,6 +45,10 @@ import {
   subscribeFullScreenPostSequenceNativeNavCover,
 } from "@/lib/full-screen-post-sequence-native-cover";
 import {
+  isHomeProfilePreviewCoveringNativeNav,
+  subscribeHomeProfilePreviewNativeNavCover,
+} from "@/lib/home-profile-preview-native-cover";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -84,6 +88,11 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const postSequenceViewerCovering = useSyncExternalStore(
     subscribeFullScreenPostSequenceNativeNavCover,
     isFullScreenPostSequenceCoveringNativeNav,
+    () => false,
+  );
+  const profilePreviewCovering = useSyncExternalStore(
+    subscribeHomeProfilePreviewNativeNavCover,
+    isHomeProfilePreviewCoveringNativeNav,
     () => false,
   );
   const [nativeEnabled, setNativeEnabled] = useState(false);
@@ -143,6 +152,7 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     submitOpen: isSubmitClipCovering,
     paywallOpen: paywallCovering,
     postSequenceViewerOpen: postSequenceViewerCovering,
+    profilePreviewOpen: profilePreviewCovering,
   });
 
   useEffect(() => {

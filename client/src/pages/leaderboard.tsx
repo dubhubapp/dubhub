@@ -201,6 +201,13 @@ type LeaderboardOpenProfileFn = (
   options: {
     anchor: { x: number; y: number };
     surfaceGenreHint?: string | null;
+    seed?: {
+      id?: string;
+      avatar_url?: string | null;
+      account_type?: string;
+      verified_artist?: boolean;
+      moderator?: boolean;
+    } | null;
   },
 ) => void;
 
@@ -247,6 +254,13 @@ export function LeaderboardEntryRow({
     onOpenProfile(entry.username, {
       anchor: { x: e.clientX, y: e.clientY },
       surfaceGenreHint: entry.favorite_genre,
+      seed: {
+        id: entry.user_id,
+        avatar_url: entry.avatar_url,
+        account_type: entry.account_type,
+        verified_artist: entry.verified_artist,
+        moderator: entry.moderator,
+      },
     });
   };
 
@@ -599,7 +613,9 @@ export function LeaderboardList({
 export default function Leaderboard() {
   useLgNav5aDestinationProbe("leaderboard");
   const { currentUser } = useUser();
-  const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
+  const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
+    presentation: "sheet",
+  });
   const [activeTab, setActiveTab] = useState<LeaderboardScope>("users");
   const [timeFilter, setTimeFilter] = useState<LeaderboardTimeFilter>("month");
   const pageScrollRef = useRef<HTMLDivElement | null>(null);

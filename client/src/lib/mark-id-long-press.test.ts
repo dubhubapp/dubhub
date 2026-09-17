@@ -262,5 +262,8 @@ describe("MARK-ID-UX-1 VideoCard / Comments wiring", () => {
     assert.match(idMarkingStylesSrc, /data-\[state=open\]:animate-in/);
     assert.match(idMarkingStylesSrc, /data-\[state=open\]:zoom-in-95/);
     assert.match(idMarkingStylesSrc, /motion-reduce:animate-none/);
+    assert.match(idMarkingStylesSrc, /APP_MATERIAL_OVERLAY_SURFACE_CLASS/);
+    assert.match(idMarkingStylesSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
+    assert.doesNotMatch(idMarkingStylesSrc, /bg-\[#0f1324\]/);
   });
 });

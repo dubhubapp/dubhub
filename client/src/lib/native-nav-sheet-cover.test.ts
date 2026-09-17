@@ -56,5 +56,7 @@ describe("LG-NAV-5B3 sheet-close native cover", () => {
   it("covers native nav while Verified Artist Tools paywall is open or closing", () => {
     assert.match(hostSrc, /paywallOpen:\s*paywallCovering/);
     assert.match(hostSrc, /subscribeVerifiedArtistToolsPaywallNativeNavCover/);
+    assert.match(hostSrc, /profilePreviewOpen:\s*profilePreviewCovering/);
+    assert.match(hostSrc, /subscribeHomeProfilePreviewNativeNavCover/);
   });
 });

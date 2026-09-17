@@ -114,12 +114,15 @@ export function nativeNavIsCoveredBySheet(input: {
   submitOpen: boolean;
   paywallOpen?: boolean;
   postSequenceViewerOpen?: boolean;
+  /** Home profile-preview bottom sheet (not Comments floating PPC). */
+  profilePreviewOpen?: boolean;
 }): boolean {
   return (
     input.commentsOpen ||
     input.submitOpen ||
     input.paywallOpen === true ||
-    input.postSequenceViewerOpen === true
+    input.postSequenceViewerOpen === true ||
+    input.profilePreviewOpen === true
   );
 }
 
@@ -152,6 +155,7 @@ export function nativeNavShouldBeVisible(input: {
   submitOpen?: boolean;
   paywallOpen?: boolean;
   postSequenceViewerOpen?: boolean;
+  profilePreviewOpen?: boolean;
 }): boolean {
   return nativeNavChromeState({
     available: nativeNavIsAvailable(input),
@@ -160,6 +164,7 @@ export function nativeNavShouldBeVisible(input: {
       submitOpen: input.submitOpen === true,
       paywallOpen: input.paywallOpen === true,
       postSequenceViewerOpen: input.postSequenceViewerOpen === true,
+      profilePreviewOpen: input.profilePreviewOpen === true,
     }),
   }).visuallyShown;
 }

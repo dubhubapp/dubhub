@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { useUser } from "@/lib/user-context";
@@ -35,9 +35,10 @@ import { normalizePostForPreview } from "@/lib/normalize-post-for-preview";
 import { ModerationActionsDialog } from "@/components/moderation-actions-dialog";
 import { CorrectGenreDialog } from "@/components/correct-genre-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
-import { ModeratorShieldIcon } from "@/components/moderator-shield";
+import { ModeratorShieldIcon, UserRoleInlineIcons } from "@/components/moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
+import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
 import {
   ID_MARKING_DIALOG_CONTENT_CLASS,
   ID_MARKING_DIALOG_OVERLAY_CLASS,
@@ -210,7 +211,7 @@ export default function ModeratorPage() {
   }, [activeTab, queueClaimFilter, selectedGenres]);
 
   // Get current user for authenticated requests
-  const { currentUser } = useUser();
+  const { currentUser, verifiedArtist } = useUser();
   
   // Mark moderator notifications as read when relevant tab is opened
   useEffect(() => {
@@ -325,9 +326,46 @@ export default function ModeratorPage() {
     queryKey: ["/api/posts", selectedPost?.id, "comments"],
     enabled: !!selectedPost,
   });
+  const { data: verifiedArtists = [] } = useQuery<{ username?: string }[]>({
+    queryKey: ["/api/artists/verified"],
+    enabled: !!selectedPost,
+  });
   const flatPostComments = flattenCommentsForIdSelection(
     Array.isArray(postComments) ? postComments : [],
   );
+
+  const selfVerifiedArtistUsername = useMemo(() => {
+    if (!verifiedArtist) return null;
+    const normalized = currentUser?.username?.trim().toLowerCase();
+    return normalized || null;
+  }, [verifiedArtist, currentUser?.username]);
+
+  const verifiedArtistUsernameSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const artist of verifiedArtists) {
+      const normalized = artist.username?.trim().toLowerCase();
+      if (normalized) set.add(normalized);
+    }
+    if (selfVerifiedArtistUsername) {
+      set.add(selfVerifiedArtistUsername);
+    }
+    for (const comment of flatPostComments) {
+      if (comment.user?.verified_artist && comment.user.username?.trim()) {
+        set.add(comment.user.username.trim().toLowerCase());
+      }
+    }
+    return set;
+  }, [verifiedArtists, selfVerifiedArtistUsername, flatPostComments]);
+
+  const isVerifiedArtistUsername = useCallback(
+    (username: string) => {
+      const normalized = username.trim().toLowerCase();
+      if (!normalized) return false;
+      return verifiedArtistUsernameSet.has(normalized);
+    },
+    [verifiedArtistUsernameSet],
+  );
+
   const toCommentTime = (value: unknown) => {
     if (!value) return 0;
     if (value instanceof Date) return value.getTime();
@@ -1507,9 +1545,10 @@ export default function ModeratorPage() {
                                   >
                                     {formatUsernameDisplay(comment.user.username)}
                                   </span>
-                                  {comment.user.verified_artist && (
-                                    <CheckCircle className="h-4 w-4 shrink-0 text-[#FFD700]" />
-                                  )}
+                                  <UserRoleInlineIcons
+                                    verifiedArtist={comment.user.verified_artist === true}
+                                    moderator={!!comment.user.moderator}
+                                  />
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-1">
                                   {isReply && (
@@ -1532,7 +1571,9 @@ export default function ModeratorPage() {
                               <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                             </div>
                           </div>
-                          <p className="break-words text-sm text-white/92">{comment.body}</p>
+                          <p className="break-words text-sm text-white/92">
+                            {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
+                          </p>
                           {(comment.id === selectedPost.verifiedCommentId || comment.id === (selectedPost as any).verified_comment_id) && (
                             <Badge
                               variant="secondary"

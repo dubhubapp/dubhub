@@ -402,14 +402,26 @@ function VideoCardInner({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage: userProfileImage, currentUser: contextUser, userType, verifiedArtist } = useUser();
-  const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup();
+  const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
+    presentation: "sheet",
+  });
   const handleOpenPostAuthorProfile = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (post.user?.username) openByUsername(post.user.username);
+      const author = post.user;
+      if (!author?.username) return;
+      openByUsername(author.username, {
+        seed: {
+          id: author.id,
+          avatar_url: author.avatar_url,
+          verified_artist: author.verified_artist,
+          moderator: author.moderator,
+          account_type: author.account_type,
+        },
+      });
     },
-    [openByUsername, post.user?.username],
+    [openByUsername, post.user],
   );
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
@@ -2559,6 +2571,8 @@ function VideoCardInner({
     embeddedFeed,
     clipViewerOverlay,
   });
+  /** Home density overlay only — compact left metadata; not fullscreen viewer/gallery. */
+  const homeFeedLeftMetaCompact = overlayDensityControl && !isFullScreenPostViewer;
 
   const scrubHitRef = useRef<HTMLDivElement>(null);
   const scrubTrackRef = useRef<HTMLDivElement>(null);
@@ -3125,13 +3139,14 @@ function VideoCardInner({
                     }
                   }}
                   data-testid={isOwner ? "button-community-verify" : "button-artist-verify"}
+                  aria-label={isOwner ? "Mark as identified" : "Confirm or deny track"}
                   title={isOwner ? "Mark comment as correct" : "Confirm or deny track"}
                 >
                   <div className={railIconWrap}>
-                    <ShieldCheck className="h-6 w-6 text-blue-400" />
+                    <Check className="h-6 w-6 text-blue-400" />
                   </div>
                   <span className="max-w-[3.25rem] text-center text-[10px] font-medium leading-tight text-blue-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
-                    {isOwner ? "Mark" : "ID"}
+                    ID
                   </span>
                 </button>
               ) : null}
@@ -3231,7 +3246,12 @@ function VideoCardInner({
           )}
         >
           <div className="overflow-x-visible py-0.5 pl-0.5 pr-1">
-            <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={cn(
+                "flex min-w-0",
+                homeFeedLeftMetaCompact ? "items-center gap-2" : "items-center gap-3",
+              )}
+            >
               <button
                 type="button"
                 className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60"
@@ -3254,7 +3274,12 @@ function VideoCardInner({
               </button>
               <button
                 type="button"
-                className="pointer-events-auto inline-flex min-h-11 min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 text-left outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60"
+                className={cn(
+                  "pointer-events-auto inline-flex min-h-11 min-w-0 max-w-full gap-1 rounded-md text-left outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-white/60",
+                  homeFeedLeftMetaCompact
+                    ? "items-center pl-0 pr-1.5"
+                    : "items-center px-1.5",
+                )}
                 onClick={handleOpenPostAuthorProfile}
                 aria-label={
                   post.user.username ? `View profile ${formatUsernameDisplay(post.user.username)}` : "View profile"
@@ -3316,7 +3341,13 @@ function VideoCardInner({
                     aria-hidden={overlayCollapsed}
                   >
                     {(post.title || post.description) ? (
-                      <div className="mt-2 space-y-2">
+                      <div
+                        className={cn(
+                          "space-y-2",
+                          /* Home: parent gap-2 owns username→title; keep mt-2 on gallery/viewer density. */
+                          !homeFeedLeftMetaCompact && "mt-2",
+                        )}
+                      >
                         {post.title && (
                           <p className="line-clamp-2 text-sm font-semibold text-white break-words" title={post.title}>
                             {post.title}
@@ -3337,7 +3368,13 @@ function VideoCardInner({
               </div>
 
               {/* Status + genre + inline toggle (+ extended meta when expanded). Not inside collapse grid — box-shadow glow stays visible. */}
-              <div className="shrink-0 overflow-visible px-0.5 py-3 pl-0.5 pr-1 sm:py-3.5">
+              <div
+                className={cn(
+                  "shrink-0 overflow-visible px-0.5 pl-0.5 pr-1",
+                  /* Home: py-0 so parent gap-2 ≈ 8px desc→pills; glow is box-shadow + overflow-visible. */
+                  homeFeedLeftMetaCompact ? "py-0" : "py-3 sm:py-3.5",
+                )}
+              >
                 <div className="pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-2 text-xs leading-relaxed text-gray-300">
                   {statusBadgeEl}
                   {genrePillEl}
