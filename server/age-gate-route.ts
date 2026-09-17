@@ -8,15 +8,18 @@ import {
   ageGateClientIp,
   ageGateRateLimiter,
 } from "./age-gate-rate-limit";
+import {
+  sealAgeGateTicket,
+  tryResolveAgeGateTicketKey,
+} from "./age-gate-ticket";
 
-const bodySchema = z.object({
+const ageGateBodySchema = z.object({
   dateOfBirth: z.string().min(1).max(32),
 });
 
 /**
- * POST /api/auth/age-gate — authoritative 13+ check.
- * Does not persist DOB. Does not return age or echo DOB.
- * Sealed claim ticket: not implemented in this phase (see module comment in tests).
+ * POST /api/auth/age-gate — authoritative 13+ check + sealed ticket.
+ * Kept free of DB/Supabase imports so unit tests can load this module alone.
  */
 export function registerAgeGateRoutes(app: Express): void {
   app.post("/api/auth/age-gate", (req: Request, res: Response) => {
@@ -30,7 +33,7 @@ export function registerAgeGateRoutes(app: Express): void {
       });
     }
 
-    const parsed = bodySchema.safeParse(req.body);
+    const parsed = ageGateBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
         eligible: false,
@@ -54,9 +57,30 @@ export function registerAgeGateRoutes(app: Express): void {
       });
     }
 
-    // Future phase: sealed claim ticket (server-authenticated, DOB not in clear).
+    const keyResolved = tryResolveAgeGateTicketKey();
+    if (!keyResolved.ok) {
+      console.error("[age-gate] AGE_GATE_TICKET_SECRET missing or invalid");
+      return res.status(503).json({
+        eligible: false,
+        code: "unavailable",
+      });
+    }
+
+    const sealed = sealAgeGateTicket({
+      dateOfBirth: result.normalizedDob,
+      key: keyResolved.key,
+    });
+    if (!sealed.ok) {
+      console.error("[age-gate] ticket seal failed");
+      return res.status(503).json({
+        eligible: false,
+        code: "unavailable",
+      });
+    }
+
     return res.status(200).json({
       eligible: true,
+      ticket: sealed.ticket,
     });
   });
 }

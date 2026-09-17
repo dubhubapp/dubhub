@@ -5,6 +5,8 @@
 /** Paths whose response JSON must never appear in the access log. */
 export const API_LOG_OMIT_RESPONSE_BODY_PATHS = new Set<string>([
   "/api/auth/age-gate",
+  "/api/auth/pending-demographics",
+  "/api/auth/ensure-demographics",
 ]);
 
 /**

@@ -13,6 +13,7 @@ import { isFutureReleaseSuspensionEnforcementEnabled } from "./future-release-su
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { runLeaderboardMonthFreezeEnsureSafe } from "./leaderboard-monthly-freeze";
 import { formatApiAccessLogResponseSuffix } from "./api-access-log";
+import { runPendingDemographicsCleanupJob } from "./pending-demographics-route";
 
 const app = express();
 
@@ -242,6 +243,12 @@ async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
     void runLeaderboardMonthFreezeEnsureSafe({
       logPrefix: "[Cron][LeaderboardMonthlyFreeze]",
     });
+  });
+
+  // Abandoned pending DOB cleanup (48h expires_at). Railway node-cron — pg_cron not required.
+  const pendingDemographicsCleanupExpr = isDev ? "*/15 * * * *" : "0 * * * *";
+  cron.schedule(pendingDemographicsCleanupExpr, () => {
+    void runPendingDemographicsCleanupJob();
   });
 
   // Non-blocking startup ensure — never delays listen on freeze failure.

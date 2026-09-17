@@ -18,6 +18,7 @@ Production has **exactly one** non-internal trigger on `auth.users`:
 | Trigger `on_auth_user_confirmed` | **ACTIVE** — `AFTER UPDATE ON auth.users` → `handle_user_confirmed()` |
 | Function `handle_user_confirmed()` | **ACTIVE** — creates `public.profiles` |
 | Function `handle_new_user()` | **DORMANT** — function body may exist; **no** production trigger points to it |
+| Trigger `on_auth_user_confirmed_demographics` | **Phase 2** — `AFTER UPDATE` → `migrate_pending_signup_demographics()` (pending DOB → `user_demographics`). Isolated from profile creation. |
 | Repo file `supabase_profile_trigger.sql` | Defines dormant `handle_new_user` / `on_auth_user_created` pattern — **not** the live contract |
 
 ### Active contract (`handle_user_confirmed`)
@@ -28,6 +29,63 @@ Production has **exactly one** non-internal trigger on `auth.users`:
 - Therefore: **Auth user exists before verification**; **`profiles` row is created only at email confirmation**.
 
 Do **not** assume INSERT-time profile creation. Do not modify these production functions without an explicit migration plan. Repo migrations currently do **not** recreate this trigger (source-of-truth gap vs live DB — documented here after production inspection).
+
+---
+
+## age_gate_consumed_tickets
+
+One-time sealed age-gate ticket IDs (replay protection across Railway instances).
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| ticket_id | uuid | NO | – | Primary key = ticket `jti` |
+| user_id | uuid | NO | – | FK → auth.users.id ON DELETE CASCADE |
+| consumed_at | timestamptz | NO | now() | When claimed |
+
+**Access:** RLS on; **no** anon/authenticated grants. service_role only. Survives pending→final so the same ticket cannot bind a second Auth user.
+
+---
+
+## pending_signup_demographics
+
+Temporary private DOB staging after age-gate claim, before email confirmation. Exists while Auth user is unconfirmed (profiles row may not exist yet).
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| user_id | uuid | NO | – | PK, FK → auth.users.id ON DELETE CASCADE |
+| date_of_birth | date | NO | – | Civil date only |
+| ticket_id | uuid | NO | – | UNIQUE; matches sealed ticket `jti` |
+| created_at | timestamptz | NO | now() | Claim time |
+| expires_at | timestamptz | NO | – | Abandoned cleanup (48h retention) |
+
+**Access:** RLS on; **no** anon/authenticated access. service_role / SECURITY DEFINER only.  
+**Cleanup:** Railway node-cron deletes `expires_at < now()` (pg_cron not required).  
+**Migration:** `on_auth_user_confirmed_demographics` → `migrate_pending_signup_demographics()` moves row into `user_demographics` then deletes pending. Independent of `handle_user_confirmed` / profiles ordering.
+
+**Claim persistence:** server calls `public.claim_pending_signup_demographics(user_id, ticket_id, date_of_birth, expires_at)` (SECURITY DEFINER, `service_role` EXECUTE only). Consumed-ticket + pending row are written in one function without an exception handler between inserts (atomic). Returns status text only — never DOB.
+
+**Legacy:** Existing confirmed accounts have no pending row → confirmation demographics trigger is a no-op. **No DOB/gender backfill.**
+
+---
+
+## user_demographics
+
+Private final demographics for **new accounts only** (after email confirmation). Not on `profiles` / `public_profiles`.
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| user_id | uuid | NO | – | PK, FK → auth.users.id ON DELETE CASCADE |
+| date_of_birth | date | NO | – | Civil date; age bands derived at query time |
+| gender | text | YES | NULL | NULL until About You; CHECK male/female/other/prefer_not_to_say |
+| age_requirement_confirmed_at | timestamptz | NO | – | Set at confirmation migration |
+| demographics_completed_at | timestamptz | YES | NULL | Future Country+Gender completion |
+| created_at | timestamptz | NO | now() | Created |
+| updated_at | timestamptz | NO | now() | Updated |
+
+**Access (Phase 2):** RLS on; **no** anon grants; **no** authenticated policies yet (Settings read later). service_role for server/analytics.  
+**Sign-In safety net:** `POST /api/auth/ensure-demographics` (authenticated) + SQL `ensure_user_demographics_from_pending(uuid)` — Phase 3 SignIn should call the HTTP endpoint after profile load.
+
+**Not stored:** derived age, birth_year, age_band.
 
 ---
 
@@ -321,7 +379,7 @@ Allowlisted public identity projection of `profiles`. Omits private/moderation c
 | country_code | text | Optional ISO 3166-1 alpha-2 |
 | created_at | timestamptz | Account created |
 
-**Not included:** `email`, `banned`, `suspended_until`, `warning_count`, `country_prompt_pending`, billing/subscription, notification prefs, demographics.
+**Not included:** `email`, `banned`, `suspended_until`, `warning_count`, `country_prompt_pending`, billing/subscription, notification prefs, demographics (`date_of_birth`, `gender`).
 
 **Security / grants:**
 

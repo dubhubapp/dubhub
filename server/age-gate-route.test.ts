@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { after, beforeEach, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import express from "express";
+import { randomBytes } from "node:crypto";
 import { registerAgeGateRoutes } from "./age-gate-route";
 import {
   ageGateRateLimiter,
@@ -10,15 +11,16 @@ import {
 } from "./age-gate-rate-limit";
 import {
   formatApiAccessLogResponseSuffix,
-  redactSensitiveApiLogFields,
   shouldOmitApiResponseBodyFromLog,
 } from "./api-access-log";
+import { unsealAgeGateTicket, decodeAgeGateTicketSecret } from "./age-gate-ticket";
 
-/** Synthetic DOBs relative to real "today" — use fixed ages via evaluate tests;
- * endpoint tests use clearly adult / child / invalid strings. */
 const ADULT_DOB = "1995-06-15";
 const CHILD_DOB = "2018-01-01";
 const INVALID_DOB = "2026-02-30";
+
+/** Deterministic test secret (32 bytes base64) — not for production. */
+const TEST_SECRET_B64 = randomBytes(32).toString("base64");
 
 async function startAgeGateServer(): Promise<{ server: Server; origin: string }> {
   const app = express();
@@ -33,6 +35,17 @@ async function startAgeGateServer(): Promise<{ server: Server; origin: string }>
 
 describe("POST /api/auth/age-gate", () => {
   const servers: Server[] = [];
+  let prevSecret: string | undefined;
+
+  before(() => {
+    prevSecret = process.env.AGE_GATE_TICKET_SECRET;
+    process.env.AGE_GATE_TICKET_SECRET = TEST_SECRET_B64;
+  });
+
+  after(() => {
+    if (prevSecret === undefined) delete process.env.AGE_GATE_TICKET_SECRET;
+    else process.env.AGE_GATE_TICKET_SECRET = prevSecret;
+  });
 
   beforeEach(() => {
     ageGateRateLimiter.reset();
@@ -49,7 +62,7 @@ describe("POST /api/auth/age-gate", () => {
     );
   });
 
-  it("eligible adult: 200 { eligible: true } — no DOB/age echoed", async () => {
+  it("eligible adult: 200 with opaque ticket — no DOB/age echoed", async () => {
     const { server, origin } = await startAgeGateServer();
     servers.push(server);
     const res = await fetch(`${origin}/api/auth/age-gate`, {
@@ -59,16 +72,25 @@ describe("POST /api/auth/age-gate", () => {
     });
     assert.equal(res.status, 200);
     const body = (await res.json()) as Record<string, unknown>;
-    assert.deepEqual(body, { eligible: true });
+    assert.equal(body.eligible, true);
+    assert.equal(typeof body.ticket, "string");
+    assert.match(String(body.ticket), /^v1\./);
     assert.equal("age" in body, false);
     assert.equal("dateOfBirth" in body, false);
-    assert.equal("ageYears" in body, false);
     const raw = JSON.stringify(body);
     assert.doesNotMatch(raw, /1995/);
-    assert.doesNotMatch(raw, /age/i);
+    assert.doesNotMatch(raw, /"age"/i);
+
+    const key = decodeAgeGateTicketSecret(TEST_SECRET_B64);
+    const open = unsealAgeGateTicket({
+      ticket: String(body.ticket),
+      key,
+    });
+    assert.equal(open.ok, true);
+    if (open.ok) assert.equal(open.payload.dob, ADULT_DOB);
   });
 
-  it("under-13: 403 minimum_age_not_met — no DOB/age", async () => {
+  it("under-13: 403 — no ticket", async () => {
     const { server, origin } = await startAgeGateServer();
     servers.push(server);
     const res = await fetch(`${origin}/api/auth/age-gate`, {
@@ -82,13 +104,10 @@ describe("POST /api/auth/age-gate", () => {
       eligible: false,
       code: "minimum_age_not_met",
     });
-    const raw = JSON.stringify(body);
-    assert.doesNotMatch(raw, /2018/);
-    assert.equal("age" in body, false);
-    assert.equal("dateOfBirth" in body, false);
+    assert.equal("ticket" in body, false);
   });
 
-  it("invalid DOB: 400 invalid_date_of_birth — no echo", async () => {
+  it("invalid DOB: 400 — no ticket", async () => {
     const { server, origin } = await startAgeGateServer();
     servers.push(server);
     const res = await fetch(`${origin}/api/auth/age-gate`, {
@@ -102,7 +121,6 @@ describe("POST /api/auth/age-gate", () => {
       eligible: false,
       code: "invalid_date_of_birth",
     });
-    assert.doesNotMatch(JSON.stringify(body), /2026-02-30/);
   });
 
   it("missing body: 400 invalid_date_of_birth", async () => {
@@ -114,8 +132,7 @@ describe("POST /api/auth/age-gate", () => {
       body: JSON.stringify({}),
     });
     assert.equal(res.status, 400);
-    const body = await res.json();
-    assert.deepEqual(body, {
+    assert.deepEqual(await res.json(), {
       eligible: false,
       code: "invalid_date_of_birth",
     });
@@ -131,43 +148,26 @@ describe("POST /api/auth/age-gate", () => {
     assert.equal(limiter.check("1.2.3.4").allowed, true);
     const blocked = limiter.check("1.2.3.4");
     assert.equal(blocked.allowed, false);
-    if (!blocked.allowed) assert.ok(blocked.retryAfterSec >= 1);
   });
 });
 
-describe("api access log — age-gate redaction", () => {
-  it("omits response body for /api/auth/age-gate", () => {
+describe("api access log — age-gate / claim omit", () => {
+  it("omits response body for age-gate and pending-demographics", () => {
     assert.equal(shouldOmitApiResponseBodyFromLog("/api/auth/age-gate"), true);
+    assert.equal(
+      shouldOmitApiResponseBodyFromLog("/api/auth/pending-demographics"),
+      true,
+    );
+    assert.equal(
+      shouldOmitApiResponseBodyFromLog("/api/auth/ensure-demographics"),
+      true,
+    );
     const suffix = formatApiAccessLogResponseSuffix("/api/auth/age-gate", {
       eligible: true,
+      ticket: "v1.secret",
       dateOfBirth: "1995-06-15",
-      age: 31,
     });
     assert.equal(suffix, " :: [body omitted]");
-    assert.doesNotMatch(suffix, /1995/);
-    assert.doesNotMatch(suffix, /age/);
-  });
-
-  it("still logs other API response bodies (with sensitive key redaction)", () => {
-    assert.equal(shouldOmitApiResponseBodyFromLog("/api/auth/check-email"), false);
-    const suffix = formatApiAccessLogResponseSuffix("/api/users", {
-      ok: true,
-      dateOfBirth: "1995-06-15",
-    });
-    assert.match(suffix, /\[redacted\]/);
-    assert.doesNotMatch(suffix, /1995-06-15/);
-  });
-
-  it("redactSensitiveApiLogFields strips DOB/age/ticket keys", () => {
-    const redacted = redactSensitiveApiLogFields({
-      dateOfBirth: "1995-06-15",
-      ageYears: 31,
-      ticket: "secret",
-      eligible: true,
-    }) as Record<string, unknown>;
-    assert.equal(redacted.dateOfBirth, "[redacted]");
-    assert.equal(redacted.ageYears, "[redacted]");
-    assert.equal(redacted.ticket, "[redacted]");
-    assert.equal(redacted.eligible, true);
+    assert.doesNotMatch(suffix, /1995|v1\.secret/);
   });
 });

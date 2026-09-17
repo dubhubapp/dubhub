@@ -64,6 +64,7 @@ import { sendPushToUser } from "./push/pushSend";
 import { registerSubscriptionStatusRoutes } from "./subscription-status-routes";
 import { registerHomeWidgetRoutes } from "./home-widget-routes";
 import { registerAgeGateRoutes } from "./age-gate-route";
+import { registerPendingDemographicsRoutes } from "./pending-demographics-route";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { canArtistDeliverReleaseAlerts } from "./artist-release-alert-delivery";
 import { canArtistUsePaidTools } from "./artist-paid-tool-access";
@@ -757,6 +758,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerSubscriptionStatusRoutes(app);
   registerHomeWidgetRoutes(app);
   registerAgeGateRoutes(app);
+  registerPendingDemographicsRoutes(app);
   // Serve video files from processed directory
   app.use('/videos', express.static(path.join(process.cwd(), 'processed')));
   app.use('/images', express.static(path.join(process.cwd(), 'processed')));
