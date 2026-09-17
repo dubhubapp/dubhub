@@ -58,6 +58,11 @@ CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
 GRANT ALL ON public.profiles TO authenticated;
 GRANT SELECT ON public.profiles TO anon;
 
+-- NOTE (profiles security Phase 1): Additive view `public.public_profiles` is the
+-- allowlisted public identity path (see migration 20260917180000_public_profiles_view.sql).
+-- The public SELECT policies + anon GRANT above remain active until Phase 2 QA + revoke.
+-- Do not treat this setup file alone as “hardening complete”.
+
 -- ========================================
 -- STORAGE BUCKET SETUP FOR PROFILE AVATARS
 -- ========================================

@@ -13,7 +13,6 @@ import { ensureRevenueCatIdentified } from "@/lib/revenuecat-identity";
 
 interface SupabaseProfile {
   id: string;
-  email: string;
   username: string;
   avatar_url: string | null;
   banner_url: string | null;
@@ -97,7 +96,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select(
-            'id, email, username, avatar_url, banner_url, account_type, verified_artist, moderator, created_at, country_code, country_prompt_pending'
+            'id, username, avatar_url, banner_url, account_type, verified_artist, moderator, created_at, country_code, country_prompt_pending'
           )
           .eq('id', session.user.id)
           .single();

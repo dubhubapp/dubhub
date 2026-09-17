@@ -425,7 +425,7 @@ function App() {
           // Fetch user profile to get role and check artist verification
           const { data: profileData, error: profileError } = await supabase
             .from('profiles')
-            .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
+            .select('id, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
             .eq('id', sessionUserId)
             .single();
 
@@ -486,7 +486,7 @@ function App() {
               setUserRole(userRole);
               maybeQueueFirstLoginOnboarding({
                 userId: profileData.id,
-                email: profileData.email ?? session.user.email,
+                email: session.user.email,
                 accountType: profileData.account_type,
                 verifiedArtist: profileData.verified_artist,
                 emailConfirmed: !!session.user.email_confirmed_at,
@@ -545,7 +545,7 @@ function App() {
         // Fetch role and check artist verification before allowing app entry.
         supabase
           .from('profiles')
-          .select('id, email, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
+          .select('id, username, avatar_url, account_type, moderator, verified_artist, suspended_until, banned')
           .eq('id', signedInUserId)
           .single()
           .then(async ({ data: profileData }) => {
@@ -598,7 +598,7 @@ function App() {
                 setUserRole(userRole);
                 maybeQueueFirstLoginOnboarding({
                   userId: profileData.id,
-                  email: profileData.email ?? session.user.email,
+                  email: session.user.email,
                   accountType: profileData.account_type,
                   verifiedArtist: profileData.verified_artist,
                   emailConfirmed: !!session.user.email_confirmed_at,

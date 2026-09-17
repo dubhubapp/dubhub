@@ -101,19 +101,20 @@ export async function checkUsernameAvailability(
     };
   }
 
-  // Check if username exists in profiles (case-insensitive)
+  // Check if username exists via public_profiles (case-insensitive).
+  // Allowlisted view — same uniqueness semantics as profiles.username; no private columns.
   try {
     const { data: existingProfiles, error: profileError } = await supabaseClient
-      .from('profiles')
+      .from('public_profiles')
       .select('username')
       .ilike('username', normalized);
 
     if (profileError && profileError.code !== 'PGRST116') {
       // PGRST116 is "no rows found" - that's fine
-      console.error('[checkUsernameAvailability] Error checking profiles:', profileError);
+      console.error('[checkUsernameAvailability] Error checking public_profiles:', profileError);
       // Continue check - database will enforce uniqueness
     } else if (existingProfiles && existingProfiles.length > 0) {
-      console.warn('[checkUsernameAvailability] Username already taken in profiles:', {
+      console.warn('[checkUsernameAvailability] Username already taken in public_profiles:', {
         username: trimmed,
         normalized,
         accountType,
@@ -126,7 +127,7 @@ export async function checkUsernameAvailability(
       };
     }
   } catch (err) {
-    console.error('[checkUsernameAvailability] Error checking profiles:', err);
+    console.error('[checkUsernameAvailability] Error checking public_profiles:', err);
     // Continue check - database will enforce uniqueness
   }
 

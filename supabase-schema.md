@@ -250,6 +250,38 @@ NOT `user_id` or `from_user_id`.
 | country_code | text | YES | – | Optional ISO 3166-1 alpha-2 (uppercase). User-selected residence; CHECK `^[A-Z]{2}$` or NULL. Not emoji. |
 | country_prompt_pending | boolean | NO | false | One-time existing-user Country completion prompt. Default false for new accounts. |
 
+**RLS / public access (Phase 1 — incomplete hardening):**
+
+- Base table `public.profiles` still has historical public SELECT policies (`USING (true)`) and `anon` SELECT grant in production. Email and all columns remain anonymously readable until Phase 2.
+- Additive replacement path: view `public.public_profiles` (migration `20260917180000_public_profiles_view.sql`). Signup username availability reads this view.
+- Phase 2 (not applied yet): revoke broad base-table public SELECT / drop duplicate public SELECT-true policies after QA. Do not treat Phase 1 as closed exposure.
+
+---
+
+## public_profiles
+
+Allowlisted public identity projection of `profiles`. Omits private/moderation columns.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | Matches profiles.id |
+| username | text | Public handle |
+| avatar_url | text | Avatar |
+| banner_url | text | Banner |
+| account_type | text | user / artist |
+| verified_artist | boolean | Verified artist flag |
+| moderator | boolean | Moderator badge |
+| country_code | text | Optional ISO 3166-1 alpha-2 |
+| created_at | timestamptz | Account created |
+
+**Not included:** `email`, `banned`, `suspended_until`, `warning_count`, `country_prompt_pending`, billing/subscription, notification prefs, demographics.
+
+**Security / grants:**
+
+- Created with `security_invoker = false` (security-definer semantics) so callers need SELECT on the **view only**; column allowlist is the privacy boundary once Phase 2 revokes base-table public SELECT.
+- `GRANT SELECT` to `anon` and `authenticated` only (no write grants on the view).
+- Phase 1 does **not** revoke `profiles` SELECT or drop existing public SELECT policies.
+
 ---
 
 ## reports
