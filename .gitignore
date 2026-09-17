@@ -28,3 +28,4 @@ attached_assets/
 
 # Vite temp files
 vite.config.ts.*
+.tmp-releases-audit/
