@@ -88,6 +88,19 @@ describe("getNotificationTapRoute", () => {
     );
   });
 
+  it("user_mention_comment opens comments for the post", () => {
+    assert.equal(
+      getNotificationTapRoute(
+        notif({
+          notificationType: "user_mention_comment",
+          postId: "post-mention",
+          message: "@alice mentioned you in a comment",
+        }),
+      ),
+      "/?post=post-mention&openComments=1",
+    );
+  });
+
   it("release notifications still open release detail", () => {
     assert.equal(
       getNotificationTapRoute(

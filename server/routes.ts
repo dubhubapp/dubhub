@@ -23,6 +23,7 @@ import {
   validateArtistProfileQuestionSlug,
 } from "./artistProfileQuestions";
 import { extractMentionUsernames } from "@shared/mentionParsing";
+import { selectUserMentionNotifyRecipients } from "@shared/comment-user-mention-notify";
 import {
   MAX_CLIP_DURATION_SECONDS,
   MAX_VIDEO_UPLOAD_BYTES,
@@ -708,18 +709,25 @@ async function processArtistTags(
   return tagged;
 }
 
-/** Persist regular @user mentions (Phase C1). Does not notify; skips artist_video_tags recipients. */
+/** Persist regular @user mentions (Phase C1). Returns resolved recipient ids (excludes self + artist-tag recipients). */
 async function persistCommentUserMentions(
   commentId: string,
   postId: string,
   mentionedByUserId: string,
   content: string,
   taggedArtistIds: ReadonlySet<string>,
-): Promise<void> {
+): Promise<string[]> {
+  const mentionedUserIds: string[] = [];
   try {
     const mentionUsernames = extractMentionUsernames(content);
     const seenUsernames = new Set<string>();
     const seenUserIds = new Set<string>();
+
+    console.log("[push][user_mention_comment] mention usernames extracted", {
+      mentionCount: mentionUsernames.length,
+      commentId,
+      postId,
+    });
 
     for (const rawUsername of mentionUsernames) {
       const normalizedUsername = rawUsername.trim().toLowerCase();
@@ -728,7 +736,12 @@ async function persistCommentUserMentions(
 
       const user = await storage.getUserByUsername(rawUsername);
       if (!user?.id) continue;
-      if (user.id === mentionedByUserId) continue;
+      if (user.id === mentionedByUserId) {
+        console.log("[push][user_mention_comment] skipped self mention", {
+          recipientUserId: user.id,
+        });
+        continue;
+      }
       if (seenUserIds.has(user.id)) continue;
       if (taggedArtistIds.has(user.id)) continue;
 
@@ -745,10 +758,15 @@ async function persistCommentUserMentions(
         mentionedUserId: user.id,
         mentionedByUserId,
       });
+      mentionedUserIds.push(user.id);
+      console.log("[push][user_mention_comment] recipient resolved", {
+        recipientUserId: user.id,
+      });
     }
   } catch (err) {
     console.error("[persistCommentUserMentions] Error:", err);
   }
+  return mentionedUserIds;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -2587,7 +2605,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const taggedArtistIds = new Set(taggedArtists.map(({ artistId }) => artistId));
-      await persistCommentUserMentions(comment.id, postId, userId, commentText, taggedArtistIds);
+      const mentionedUserIds = await persistCommentUserMentions(
+        comment.id,
+        postId,
+        userId,
+        commentText,
+        taggedArtistIds,
+      );
+
+      // USER-MENTION-1: generic @mention in-app + push; dedupe via `notified` (artist/reply/owner win).
+      const mentionSelection = selectUserMentionNotifyRecipients({
+        mentionedUserIds,
+        alreadyNotified: notified,
+        commenterUserId: userId,
+      });
+      for (const skippedId of mentionSelection.skippedDedupedIds) {
+        console.log("[push][user_mention_comment] skipped (already notified)", {
+          recipientUserId: skippedId,
+        });
+      }
+      for (const mentionedUserId of mentionSelection.notifyIds) {
+        try {
+          const notif = await storage.createNotification({
+            artistId: mentionedUserId,
+            triggeredBy: userId,
+            postId: postId,
+            message: `@${commenterUsername} mentioned you in a comment`,
+            notificationType: "user_mention_comment",
+          });
+          notified.add(mentionedUserId);
+          console.log("[push][user_mention_comment] in-app notification created", {
+            recipientUserId: mentionedUserId,
+            notificationId: notif.id,
+            postId,
+            invokingSendPushToUser: true,
+          });
+          void sendPushToUser(mentionedUserId, {
+            type: "user_mention_comment",
+            notificationId: notif.id,
+            postId: postId,
+            actorUserId: userId,
+            actorUsername: commenterUsername,
+          });
+        } catch (mentionNotifErr) {
+          console.error(
+            "[Comment] Failed to create user mention notification for",
+            mentionedUserId,
+            mentionNotifErr,
+          );
+        }
+      }
 
       res.status(201).json(comment);
     } catch (error) {

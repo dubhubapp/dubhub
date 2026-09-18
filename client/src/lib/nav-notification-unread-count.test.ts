@@ -70,6 +70,30 @@ describe("PROFILE-NAV-BADGE-1 countVisibleUnreadNotifications", () => {
     );
   });
 
+  it("USER-MENTION-1: unread user_mention_comment increments badge via comment prefs", () => {
+    const prefsCommentsOff: NotificationPreferences = {
+      releaseNotifications: true,
+      commentNotifications: false,
+      likeNotifications: true,
+    };
+    assert.equal(
+      countVisibleUnreadNotifications(
+        [{ id: "1", read: false, notificationType: "user_mention_comment" }],
+        prefsAllOn,
+        { isModerator: false },
+      ),
+      1,
+    );
+    assert.equal(
+      countVisibleUnreadNotifications(
+        [{ id: "1", read: false, notificationType: "user_mention_comment" }],
+        prefsCommentsOff,
+        { isModerator: false },
+      ),
+      0,
+    );
+  });
+
   it("returns 0 for empty / non-array", () => {
     assert.equal(countVisibleUnreadNotifications([], prefsAllOn, { isModerator: false }), 0);
     assert.equal(countVisibleUnreadNotifications(null, prefsAllOn, { isModerator: false }), 0);

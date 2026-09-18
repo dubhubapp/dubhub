@@ -18,6 +18,7 @@ export type InAppNotificationBadgeKind =
   | "comment_on_post"
   | "reply_to_comment"
   | "artist_tag_comment"
+  | "user_mention_comment"
   | "artist_identified_post"
   | "community_identified_post"
   | "track_identified"
@@ -33,6 +34,7 @@ const TOASTABLE_BADGE_KINDS = new Set<InAppNotificationBadgeKind>([
   "comment_on_post",
   "reply_to_comment",
   "artist_tag_comment",
+  "user_mention_comment",
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
@@ -59,6 +61,7 @@ const BADGE_ICON_BY_KIND: Record<InAppNotificationBadgeKind, BadgeIconConfig> = 
   comment_on_post: { Icon: MessageCircle, color: DUBHUB_TEAL },
   reply_to_comment: { Icon: Reply, color: DUBHUB_TEAL },
   artist_tag_comment: { Icon: AtSign, color: DUBHUB_TEAL },
+  user_mention_comment: { Icon: AtSign, color: DUBHUB_TEAL },
   artist_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
   community_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
   track_identified: { Icon: CheckCircle, color: VERIFIED_GOLD },

@@ -20,7 +20,8 @@ export function shouldOpenCommentsForNotificationType(type: NotificationType): b
   return (
     type === "reply_to_comment" ||
     type === "comment_on_post" ||
-    type === "artist_tag_comment"
+    type === "artist_tag_comment" ||
+    type === "user_mention_comment"
   );
 }
 

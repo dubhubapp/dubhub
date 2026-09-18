@@ -111,8 +111,6 @@ import {
   type ProfileSwipeTabId,
 } from "@/lib/profile-tab-swipe";
 import {
-  PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS,
-  PROFILE_BANNER_BOTTOM_FADE_STYLE,
   PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS,
   PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE,
   PROFILE_BANNER_UPLOADED_SCRIM_STYLE,
@@ -172,6 +170,7 @@ import {
   type NotificationGroupKind,
 } from "@shared/notification-types";
 import { buildNotificationListGroupKey } from "@/lib/notification-grouping";
+import { shouldOpenCommentsForNotificationType } from "@/lib/notification-routing";
 import { getReleaseEventGroupSummaryMessage } from "@/lib/release-event-group-copy";
 import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
@@ -1680,14 +1679,10 @@ export default function UserProfile() {
   const getNotificationKind = (n: NotificationWithUser): NotificationGroupKind =>
     getNotificationGroupKind(notificationRowFields(n));
 
-  const shouldOpenCommentsForNotification = (notification: NotificationWithUser) => {
-    const kind = getNotificationKind(notification);
-    return (
-      kind === "post_comment_reply" ||
-      kind === "post_owner_comment" ||
-      kind === "artist_tag_comment"
+  const shouldOpenCommentsForNotification = (notification: NotificationWithUser) =>
+    shouldOpenCommentsForNotificationType(
+      getEffectiveNotificationType(notificationRowFields(notification)),
     );
-  };
 
   const getNotificationGroupKey = (n: NotificationWithUser) => {
     const kind = getNotificationKind(n);
@@ -3241,9 +3236,13 @@ export default function UserProfile() {
     >
       <div className={PROFILE_TAB_PAGER_PAGE_INSET_CLASS}>
         <div className={PROFILE_TAB_PAGER_PAGE_COLUMN_CLASS}>
-          {/* Profile banner — uploaded image dominant; contained fade into navy (C5C) */}
+          {/* Profile banner — no-banner hero stays transparent so page canvas wash paints (C5C.1 parity) */}
           <section
-            className="relative -mx-6 mb-3 shrink-0 overflow-hidden bg-[#0f1324]"
+            className={`relative -mx-6 mb-3 shrink-0 overflow-hidden ${
+              showUploadedBannerImage || showBannerLoadingPlaceholder
+                ? "bg-[#0f1324]"
+                : "bg-transparent"
+            }`}
             data-testid="profile-banner"
           >
             {showBannerLoadingPlaceholder ? <ProfileBannerLoadingPlaceholder /> : null}
@@ -3258,21 +3257,13 @@ export default function UserProfile() {
                 data-testid="profile-banner-image"
               />
             ) : null}
-            <div
-              className={`pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] ${
-                showUploadedBannerImage && bannerImageReady
-                  ? ""
-                  : showBannerLoadingPlaceholder
-                    ? "bg-transparent"
-                    : "bg-gradient-to-b from-slate-950/35 via-slate-900/22 to-slate-950/28"
-              }`}
-              style={
-                showUploadedBannerImage && bannerImageReady
-                  ? PROFILE_BANNER_UPLOADED_SCRIM_STYLE
-                  : undefined
-              }
-              aria-hidden
-            />
+            {showUploadedBannerImage && bannerImageReady ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)]"
+                style={PROFILE_BANNER_UPLOADED_SCRIM_STYLE}
+                aria-hidden
+              />
+            ) : null}
             {showUploadedBannerImage && bannerImageReady ? (
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] bg-gradient-to-b from-slate-950/35 via-transparent to-transparent"
@@ -3285,13 +3276,7 @@ export default function UserProfile() {
                 style={PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE}
                 aria-hidden
               />
-            ) : (
-              <div
-                className={`pointer-events-none absolute inset-x-0 bottom-0 ${PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS}`}
-                style={PROFILE_BANNER_BOTTOM_FADE_STYLE}
-                aria-hidden
-              />
-            )}
+            ) : null}
 
             <div className="relative z-10 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
               <div className="mb-4 flex items-start gap-4">

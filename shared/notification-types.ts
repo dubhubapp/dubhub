@@ -8,6 +8,7 @@ export const NOTIFICATION_TYPES = [
   "comment_on_post",
   "reply_to_comment",
   "artist_tag_comment",
+  "user_mention_comment",
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
@@ -38,6 +39,7 @@ const PREFERENCE_BUCKET_BY_TYPE: Partial<Record<NotificationType, NotificationPr
   comment_on_post: "comments",
   reply_to_comment: "comments",
   artist_tag_comment: "artist_tags",
+  user_mention_comment: "comments",
   release_attached: "releases",
   artist_release_alert: "releases",
   release_alert_enabled: "releases",
@@ -103,6 +105,7 @@ export function classifyLegacyNotification(fields: LegacyNotificationFields): No
   // --- Social / engagement ---
   if (lowerMessage.includes("liked your post")) return "post_like";
   if (lowerMessage.includes("tagged you in a comment")) return "artist_tag_comment";
+  if (lowerMessage.includes("mentioned you in a comment")) return "user_mention_comment";
   if (lowerMessage.includes("replied to your comment")) return "reply_to_comment";
   if (lowerMessage.includes("commented on your post")) return "comment_on_post";
 
@@ -234,6 +237,9 @@ export function notificationTypeToGroupKind(type: NotificationType): Notificatio
       return "post_comment_reply";
     case "artist_tag_comment":
       return "artist_tag_comment";
+    case "user_mention_comment":
+      // Keep distinct from artist_tag_comment; single rows use message copy.
+      return "single";
     case "release_attached":
     case "artist_release_alert":
     case "release_day":
@@ -273,6 +279,7 @@ export function notificationTypeToToggleableKind(type: NotificationType): Toggle
     case "comment_on_post":
     case "reply_to_comment":
     case "artist_tag_comment":
+    case "user_mention_comment":
       return "comment";
     case "release_attached":
     case "artist_release_alert":

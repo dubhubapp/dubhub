@@ -35,6 +35,7 @@ export function evaluatePushPreferenceGate(
   switch (eventType) {
     case "comment_on_post":
     case "reply_to_comment":
+    case "user_mention_comment":
       if (!prefs.commentsAndRepliesPush) {
         return {
           allowed: false,

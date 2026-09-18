@@ -18,6 +18,7 @@ type PushEventName =
   | "comment_on_post"
   | "reply_to_comment"
   | "artist_tag_comment"
+  | "user_mention_comment"
   | "artist_identified_post"
   | "community_identified_post"
   | "track_identified"
@@ -53,6 +54,14 @@ interface ReplyToCommentPayload extends BaseEventPayload {
 
 interface ArtistTagCommentPayload extends BaseEventPayload {
   type: "artist_tag_comment";
+  notificationId: string;
+  postId: string;
+  actorUserId: string;
+  actorUsername: string;
+}
+
+interface UserMentionCommentPayload extends BaseEventPayload {
+  type: "user_mention_comment";
   notificationId: string;
   postId: string;
   actorUserId: string;
@@ -148,6 +157,7 @@ type EventPayload =
   | CommentOnPostPayload
   | ReplyToCommentPayload
   | ArtistTagCommentPayload
+  | UserMentionCommentPayload
   | ArtistIdentifiedPayload
   | CommunityIdentifiedPayload
   | TrackIdentifiedPayload
@@ -175,6 +185,11 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       return {
         title: "Artist tag 🎵",
         body: `@${payload.actorUsername} tagged you in a comment.`,
+      };
+    case "user_mention_comment":
+      return {
+        title: "Mention 💬",
+        body: `@${payload.actorUsername} mentioned you in a comment.`,
       };
     case "artist_identified_post":
       return {

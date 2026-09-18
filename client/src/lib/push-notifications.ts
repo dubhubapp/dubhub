@@ -207,7 +207,8 @@ function resolvePushTapRoute(payload: Record<string, unknown>): string {
   if (
     (type === "comment_on_post" ||
       type === "reply_to_comment" ||
-      type === "artist_tag_comment") &&
+      type === "artist_tag_comment" ||
+      type === "user_mention_comment") &&
     postId &&
     postId.length > 0
   ) {

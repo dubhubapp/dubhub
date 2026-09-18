@@ -47,6 +47,7 @@ const TOASTABLE_TYPES = new Set<NotificationType>([
   "reply_to_comment",
   "comment_on_post",
   "artist_tag_comment",
+  "user_mention_comment",
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
@@ -61,6 +62,7 @@ const TYPE_PRIORITY: Partial<Record<NotificationType, number>> = {
   reply_to_comment: 1,
   artist_tag_comment: 2,
   comment_on_post: 3,
+  user_mention_comment: 3,
   artist_identified_post: 4,
   community_identified_post: 4,
   track_identified: 4,
@@ -98,7 +100,12 @@ function isUploadFlowPath(location: string): boolean {
 }
 
 function isConversationType(type: NotificationType): boolean {
-  return type === "reply_to_comment" || type === "comment_on_post" || type === "artist_tag_comment";
+  return (
+    type === "reply_to_comment" ||
+    type === "comment_on_post" ||
+    type === "artist_tag_comment" ||
+    type === "user_mention_comment"
+  );
 }
 
 function isReleaseEventType(type: NotificationType): boolean {
@@ -185,6 +192,11 @@ function getBannerCopy(
       return {
         title: "Artist tag",
         description: displayUser ? `${displayUser} tagged you in a comment` : n.message,
+      };
+    case "user_mention_comment":
+      return {
+        title: "Mention",
+        description: displayUser ? `${displayUser} mentioned you in a comment` : n.message,
       };
     case "comment_on_post":
       return {
