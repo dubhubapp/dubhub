@@ -4,7 +4,14 @@ import UIKit
 /// can wait for commit (touch end) while drag-across only updates system highlight.
 final class DubHubNativeTabBar: UITabBar {
     var onInteractionEnded: (() -> Void)?
+    /// PROFILE-NAV-BADGE-2A: re-anchor custom Profile unread badge after UIKit rebuilds tab buttons.
+    var onDidLayoutSubviews: (() -> Void)?
     private(set) var isInteractionActive = false
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onDidLayoutSubviews?()
+    }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // NATIVE-NAV-LEADERBOARD-6L / RELEASES-2 / PROFILE-NAV-5: surrender image ownership

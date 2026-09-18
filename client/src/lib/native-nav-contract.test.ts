@@ -265,8 +265,8 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.doesNotMatch(overlaySrc, /red:\s*10\.0\s*\/\s*255\.0/);
     assert.doesNotMatch(overlaySrc, /green:\s*131\.0\s*\/\s*255\.0/);
     assert.doesNotMatch(overlaySrc, /blue:\s*255\.0\s*\/\s*255\.0/);
-    // PROFILE-NAV-BADGE-1A may copy system standardAppearance for badge metrics only —
-    // never construct a custom UITabBarAppearance or opaque/glass background.
+    // PROFILE-NAV-BADGE-2A: custom overlay only — never construct a custom UITabBarAppearance
+    // or opaque/glass background (preserves system liquid glass / platter).
     assert.doesNotMatch(overlaySrc, /UITabBarAppearance\s*\(/);
     assert.doesNotMatch(overlaySrc, /configureWithOpaqueBackground|configureWithTransparentBackground/);
     assert.doesNotMatch(overlaySrc, /barTintColor\s*=/);
@@ -422,14 +422,14 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.match(bottomNavSrc, /countVisibleUnreadNotifications/);
     assert.match(profileSrc, /countVisibleUnreadNotifications/);
 
-    // Native: method, store, badgeValue, reapply after rebuild; role swap preserves badge.
+    // Native: store count; clear system badgeValue; custom overlay after rebuild.
     assert.match(overlaySrc, /CAPPluginMethod\(name: "setProfileBadgeCount"/);
     assert.match(overlaySrc, /@objc func setProfileBadgeCount\(/);
     assert.match(overlaySrc, /private var profileBadgeCount: Int = 0/);
     assert.match(overlaySrc, /func setProfileBadgeCount\(_ count: Int/);
     assert.match(overlaySrc, /applyProfileItemBadgeOnly/);
     assert.match(overlaySrc, /formattedProfileBadgeValue/);
-    assert.match(overlaySrc, /badgeValue = Self\.formattedProfileBadgeValue\(profileBadgeCount\)/);
+    assert.match(overlaySrc, /item\.badgeValue = nil/);
     assert.match(
       overlaySrc,
       /private static func formattedProfileBadgeValue\(_ count: Int\) -> String\? \{[\s\S]*?count > 99[\s\S]*?"99\+"/,
@@ -443,7 +443,7 @@ describe("LG-NAV-3 native nav contract", () => {
         /func setProfileIconRole\(_ raw: String\?, completion: \(\(\) -> Void\)\? = nil\) \{[\s\S]*?\n    \}/,
       )?.[0] ?? "";
     assert.match(setRoleFn, /applyProfileItemImageOnly\(\)/);
-    assert.doesNotMatch(setRoleFn, /badgeValue\s*=\s*nil/);
+    assert.match(setRoleFn, /applyProfileItemBadgeOnly\(\)/);
     assert.doesNotMatch(setRoleFn, /profileBadgeCount\s*=\s*0/);
     const imageOnlyFn =
       overlaySrc.match(/private func applyProfileItemImageOnly\(\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
@@ -455,28 +455,56 @@ describe("LG-NAV-3 native nav contract", () => {
     );
   });
 
-  it("PROFILE-NAV-BADGE-1A: compact badge font/position on system appearance only", () => {
-    assert.match(overlaySrc, /applyCompactBadgeAppearance/);
-    assert.match(overlaySrc, /applyCompactBadgeMetrics/);
-    assert.match(overlaySrc, /badgePositionAdjustment/);
-    assert.match(overlaySrc, /badgeTextAttributes/);
-    assert.match(overlaySrc, /systemFont\(ofSize:\s*10,\s*weight:\s*\.bold\)/);
+  it("PROFILE-NAV-BADGE-2A: custom icon-anchored Profile unread badge", () => {
+    assert.match(overlaySrc, /DubHubNativeProfileUnreadBadgeView/);
+    assert.match(overlaySrc, /syncCustomProfileUnreadBadge/);
+    assert.match(overlaySrc, /repositionCustomProfileUnreadBadge/);
+    assert.match(overlaySrc, /repositionExistingCustomProfileBadgeIfNeeded/);
+    assert.match(overlaySrc, /clearSystemProfileBadgeValue/);
+    assert.match(overlaySrc, /item\.badgeValue = nil/);
+    assert.match(overlaySrc, /accessibilityValue = "\\\(text\) unread"/);
+    assert.match(overlaySrc, /isAccessibilityElement = false/);
+    assert.match(overlaySrc, /isUserInteractionEnabled = false/);
+    // Compact system-like size (1C's 20pt was too large).
+    assert.match(overlaySrc, /badgeHeight:\s*CGFloat\s*=\s*16/);
+    assert.match(overlaySrc, /horizontalPadding:\s*CGFloat\s*=\s*5/);
+    assert.match(overlaySrc, /UIColor\.systemRed/);
+    assert.match(overlaySrc, /monospacedDigitSystemFont\(ofSize:\s*11,\s*weight:\s*\.semibold\)/);
+    assert.match(overlaySrc, /baselineAdjustment\s*=\s*\.alignCenters/);
+    assert.match(overlaySrc, /horizontalOverlap:\s*CGFloat\s*=\s*0\.58/);
+    assert.match(overlaySrc, /heightAboveIcon:\s*CGFloat\s*=\s*0\.35/);
+    assert.match(overlaySrc, /iconInBar\.maxX - size\.width \* horizontalOverlap/);
+    assert.match(overlaySrc, /iconInBar\.minY - size\.height \* heightAboveIcon/);
+    assert.match(overlaySrc, /count > 99[\s\S]*?"99\+"/);
+    // Anchors to live Profile icon via existing animator resolver.
     assert.match(
       overlaySrc,
-      /UIOffset\(horizontal:\s*-3,\s*vertical:\s*2\)/,
+      /DubHubNativeTabBarIconAnimator\.resolveIconImageView/,
     );
-    assert.match(overlaySrc, /badgeBackgroundColor\s*=\s*\.systemRed/);
-    // Copy system appearance — do not construct a new empty appearance object.
-    assert.match(overlaySrc, /tabBar\.standardAppearance\.copy\(\)/);
-    assert.doesNotMatch(overlaySrc, /UITabBarAppearance\s*\(/);
-    assert.doesNotMatch(overlaySrc, /configureWithOpaqueBackground|configureWithTransparentBackground/);
-    assert.doesNotMatch(overlaySrc, /backgroundEffect|barTintColor\s*=/);
-    // Visual polish only — badgeValue / bridge semantics unchanged.
-    assert.match(overlaySrc, /badgeValue = Self\.formattedProfileBadgeValue\(profileBadgeCount\)/);
-    assert.match(overlaySrc, /"99\+"/);
-    // 1C custom overlay must remain rolled back.
-    assert.doesNotMatch(overlaySrc, /DubHubNativeProfileUnreadBadgeView/);
-    assert.doesNotMatch(animatorSrc, /onDidLayoutSubviews/);
+    // Survives rebuild / role / layout.
+    assert.match(
+      overlaySrc,
+      /func setProfileIconRole[\s\S]*?applyProfileItemBadgeOnly\(\)/,
+    );
+    assert.match(
+      overlaySrc,
+      /private func applyPendingItems\(reason: String\) \{[\s\S]*?applyProfileItemBadgeOnly\(\)/,
+    );
+    assert.match(animatorSrc, /onDidLayoutSubviews/);
+    assert.match(overlaySrc, /onDidLayoutSubviews\s*=/);
+    // Single reusable view; orphans removed.
+    assert.match(overlaySrc, /profileUnreadBadgeTag/);
+    assert.match(overlaySrc, /subview !== profileUnreadBadgeView/);
+    assert.match(overlaySrc, /profileUnreadBadgeView\?\.removeFromSuperview\(\)/);
+    // System badgeValue chrome + 1B offset are not the visual mechanism.
+    assert.doesNotMatch(
+      overlaySrc,
+      /badgeValue = Self\.formattedProfileBadgeValue\(profileBadgeCount\)/,
+    );
+    assert.doesNotMatch(overlaySrc, /UIOffset\(horizontal:\s*-10,\s*vertical:\s*-2\)/);
+    assert.doesNotMatch(overlaySrc, /applyCompactBadgeAppearance|badgePositionAdjustment/);
+    // No new private badge-view class coupling beyond existing icon resolver.
+    assert.doesNotMatch(overlaySrc, /_UIBadgeView/);
   });
 
   it("PROFILE-NAV-5: Artist headphone bass expansion; Community branched separately", () => {

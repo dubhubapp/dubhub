@@ -137,8 +137,11 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     private var tabIds: [String] = ["home", "leaderboard", "submit", "releases", "profile"]
     /// PROFILE-NAV-2: account_type-driven Profile glyph. Defaults to community until JS syncs.
     private var profileIconRole: String = "community"
-    /// PROFILE-NAV-BADGE-1: stored so setTabs / applyPendingItems can reapply badgeValue.
+    /// PROFILE-NAV-BADGE-1: React-driven unread count (custom overlay chrome in 2A).
     private var profileBadgeCount: Int = 0
+    /// PROFILE-NAV-BADGE-2A: single reusable custom badge; never accumulate duplicates.
+    private weak var profileUnreadBadgeView: DubHubNativeProfileUnreadBadgeView?
+    private static let profileUnreadBadgeTag = 0x4E424447
 
     /// PROFILE-NAV-5: read by icon animator / touch cancel without exposing mutation.
     var isArtistProfileIconRole: Bool { profileIconRole == "artist" }
@@ -280,6 +283,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
             )
             self.profileIconRole = next
             self.applyProfileItemImageOnly()
+            // PROFILE-NAV-BADGE-2A: role swap must not drop custom badge.
+            self.applyProfileItemBadgeOnly()
             completion?()
         }
     }
@@ -316,7 +321,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         return String(count)
     }
 
-    /// Swap only the Profile UITabBarItem image; preserve selection, tint, labels, routing, badge.
+    /// Swap only the Profile UITabBarItem image; preserve selection, tint, labels, routing.
     private func applyProfileItemImageOnly() {
         assertMain("applyProfileItemImageOnly")
         guard let tabBar, let items = tabBar.items else { return }
@@ -331,16 +336,111 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         item.selectedImage = nil
     }
 
-    /// PROFILE-NAV-BADGE-1: apply stored unread count to Profile item only.
+    /// PROFILE-NAV-BADGE-2A: clear system badgeValue; draw icon-anchored custom overlay.
     private func applyProfileItemBadgeOnly() {
         assertMain("applyProfileItemBadgeOnly")
-        guard let tabBar, let items = tabBar.items else { return }
-        guard let profileIndex = tabIds.firstIndex(of: "profile"),
+        guard let tabBar else { return }
+        clearSystemProfileBadgeValue(on: tabBar)
+        syncCustomProfileUnreadBadge(in: tabBar)
+    }
+
+    private func clearSystemProfileBadgeValue(on tabBar: UITabBar) {
+        guard let items = tabBar.items,
+              let profileIndex = tabIds.firstIndex(of: "profile"),
               profileIndex < items.count
         else {
             return
         }
-        items[profileIndex].badgeValue = Self.formattedProfileBadgeValue(profileBadgeCount)
+        let item = items[profileIndex]
+        item.badgeValue = nil
+        if let text = Self.formattedProfileBadgeValue(profileBadgeCount) {
+            item.accessibilityValue = "\(text) unread"
+        } else {
+            item.accessibilityValue = nil
+        }
+    }
+
+    private func syncCustomProfileUnreadBadge(in tabBar: UITabBar) {
+        for subview in tabBar.subviews where subview.tag == Self.profileUnreadBadgeTag {
+            if subview !== profileUnreadBadgeView {
+                subview.removeFromSuperview()
+            }
+        }
+
+        guard let text = Self.formattedProfileBadgeValue(profileBadgeCount) else {
+            profileUnreadBadgeView?.removeFromSuperview()
+            profileUnreadBadgeView = nil
+            return
+        }
+
+        let badge: DubHubNativeProfileUnreadBadgeView
+        if let existing = profileUnreadBadgeView, existing.superview === tabBar {
+            badge = existing
+        } else {
+            profileUnreadBadgeView?.removeFromSuperview()
+            badge = DubHubNativeProfileUnreadBadgeView()
+            badge.tag = Self.profileUnreadBadgeTag
+            badge.isAccessibilityElement = false
+            badge.isUserInteractionEnabled = false
+            tabBar.addSubview(badge)
+            profileUnreadBadgeView = badge
+        }
+
+        badge.setCountText(text)
+        badge.isHidden = false
+        repositionCustomProfileUnreadBadge(badge, in: tabBar)
+    }
+
+    private func repositionCustomProfileUnreadBadge(
+        _ badge: DubHubNativeProfileUnreadBadgeView,
+        in tabBar: UITabBar
+    ) {
+        guard profileBadgeCount > 0 else {
+            badge.isHidden = true
+            return
+        }
+        guard let items = tabBar.items,
+              let profileIndex = tabIds.firstIndex(of: "profile"),
+              profileIndex < items.count,
+              let iconView = DubHubNativeTabBarIconAnimator.resolveIconImageView(
+                for: items[profileIndex],
+                in: tabBar
+              )
+        else {
+            // Icon host not ready yet; layoutSubviews will retry. Do not fall back to system badge.
+            badge.isHidden = true
+            return
+        }
+
+        let size = badge.preferredBadgeSize()
+        let iconInBar = iconView.convert(iconView.bounds, to: tabBar)
+        // PROFILE-NAV-BADGE-2B: ~58% horizontal overlap; ~35% of height above icon top.
+        // (2A's 1/3 / 2/3 sat too far right and too high.)
+        let horizontalOverlap: CGFloat = 0.58
+        let heightAboveIcon: CGFloat = 0.35
+        let origin = CGPoint(
+            x: iconInBar.maxX - size.width * horizontalOverlap,
+            y: iconInBar.minY - size.height * heightAboveIcon
+        )
+        let nextFrame = CGRect(origin: origin, size: size)
+        if !badge.frame.equalTo(nextFrame) {
+            badge.frame = nextFrame
+        }
+        badge.isHidden = false
+        tabBar.bringSubviewToFront(badge)
+    }
+
+    /// Layout-safe rebind without recreating the view when count is unchanged.
+    private func repositionExistingCustomProfileBadgeIfNeeded() {
+        guard let tabBar,
+              let badge = profileUnreadBadgeView,
+              badge.superview === tabBar,
+              profileBadgeCount > 0
+        else {
+            return
+        }
+        clearSystemProfileBadgeValue(on: tabBar)
+        repositionCustomProfileUnreadBadge(badge, in: tabBar)
     }
 
     private var isLayoutPresent: Bool {
@@ -403,43 +503,12 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         // Do not construct a custom tab-bar appearance object (preserves system glass/platter).
         tabBar.tintColor = UIColor.white.withAlphaComponent(0.96)
         tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.50)
-        // PROFILE-NAV-BADGE-1A: compact badge metrics on system appearance only.
-        Self.applyCompactBadgeAppearance(on: tabBar)
+        // PROFILE-NAV-BADGE-2A: custom icon-anchored badge; keep system badgeValue cleared.
+        tabBar.onDidLayoutSubviews = { [weak self] in
+            self?.repositionExistingCustomProfileBadgeIfNeeded()
+        }
         bindIconAnimationInteraction(on: tabBar)
         return tabBar
-    }
-
-    /// PROFILE-NAV-BADGE-1A: slightly smaller badge, nudged toward the icon top-right.
-    /// Copies system appearance and edits badge metrics only — no custom bar background.
-    private static func applyCompactBadgeAppearance(on tabBar: UITabBar) {
-        let appearance = tabBar.standardAppearance.copy()
-        applyCompactBadgeMetrics(to: appearance.stackedLayoutAppearance)
-        applyCompactBadgeMetrics(to: appearance.inlineLayoutAppearance)
-        applyCompactBadgeMetrics(to: appearance.compactInlineLayoutAppearance)
-        tabBar.standardAppearance = appearance
-        tabBar.scrollEdgeAppearance = appearance
-    }
-
-    private static func applyCompactBadgeMetrics(to itemAppearance: UITabBarItemAppearance) {
-        // Default UITabBar badge reads large/loose; ~10pt + mild inset feels attached.
-        let font = UIFont.systemFont(ofSize: 10, weight: .bold)
-        let textAttrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: UIColor.white,
-        ]
-        // Positive = down/right; negative = up/left. Pull left + slightly down toward icon.
-        let position = UIOffset(horizontal: -3, vertical: 2)
-        let states = [
-            itemAppearance.normal,
-            itemAppearance.selected,
-            itemAppearance.disabled,
-            itemAppearance.focused,
-        ]
-        for state in states {
-            state.badgeTextAttributes = textAttrs
-            state.badgeBackgroundColor = .systemRed
-            state.badgePositionAdjustment = position
-        }
     }
 
     private func bindIconAnimationInteraction(on tabBar: DubHubNativeTabBar) {
@@ -750,6 +819,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         )
         #endif
         emitGeometry(host: host, tabBar: tabBar, layoutPresent: true)
+        // PROFILE-NAV-BADGE-2A: floating frame may move icon hosts — re-anchor.
+        repositionExistingCustomProfileBadgeIfNeeded()
     }
 
     func geometry(completion: @escaping ([String: Any]) -> Void) {
@@ -929,5 +1000,69 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
                 NSLog("[DubHub][LG-NAV-3] ERROR geometry changed after native tab-bar presentation; do not compensate in Home/CSS")
             }
         }
+    }
+}
+
+/// PROFILE-NAV-BADGE-2A/2B: compact icon-anchored unread chip for the native Profile tab.
+/// 16pt height; vertically centered digits; ~58% glyph overlap (2B position polish).
+private final class DubHubNativeProfileUnreadBadgeView: UIView {
+    /// One-digit diameter / multi-digit height (system-like; 1C's 20pt was too large).
+    private static let badgeHeight: CGFloat = 16
+    private static let horizontalPadding: CGFloat = 5
+    private static let fillColor = UIColor.systemRed
+    /// Cap width so "99+" stays compact.
+    private static let maxWidth: CGFloat = 28
+
+    private let label = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        clipsToBounds = true
+        backgroundColor = Self.fillColor
+
+        label.font = UIFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.numberOfLines = 1
+        label.baselineAdjustment = .alignCenters
+        label.lineBreakMode = .byClipping
+        // Fixed-height chip: center the glyph box so ascenders/descenders never clip.
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 2),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func setCountText(_ text: String) {
+        label.text = text
+        let size = preferredBadgeSize()
+        bounds = CGRect(origin: .zero, size: size)
+        layer.cornerRadius = size.height * 0.5
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    func preferredBadgeSize() -> CGSize {
+        let text = label.text ?? ""
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: label.font as Any,
+        ]
+        let textWidth = (text as NSString).size(withAttributes: attributes).width
+        let width = min(
+            Self.maxWidth,
+            max(Self.badgeHeight, ceil(textWidth) + Self.horizontalPadding * 2)
+        )
+        return CGSize(width: width, height: Self.badgeHeight)
     }
 }
