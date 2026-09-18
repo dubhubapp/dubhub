@@ -22,7 +22,7 @@ import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
 import { isOwnerCommunityMarkEligible } from "@/lib/mark-id-long-press";
-import { isArtistPendingActionEligible, markViewerArtistDeniedOnPost } from "@/lib/artist-id-comments-actions";
+import { isArtistPendingActionEligible, markViewerArtistDeniedOnPost, markViewerArtistAnonymouslyIdentifiedOnPost, ANONYMOUS_IDENTIFY_CREATED_VIA, readAnonymousIdentifyErrorCode, resolveAnonymousIdentifyErrorCopy } from "@/lib/artist-id-comments-actions";
 import { ReportModal } from "./report-modal";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { 
@@ -2352,6 +2352,103 @@ function VideoCardInner({
     },
   });
 
+  /** Comments decline flow — POST /artist-identify-anonymous (VAT paid path). */
+  const artistIdentifyAnonymouslyMutation = useMutation({
+    mutationFn: async (commentId: string) => {
+      return apiRequest("POST", `/api/posts/${post.id}/artist-identify-anonymous`, {
+        commentId,
+        sourceCommentId: commentId,
+        createdVia: ANONYMOUS_IDENTIFY_CREATED_VIA,
+      });
+    },
+    onSuccess: () => {
+      playSuccessNotification();
+      setCommentsPost((prev) =>
+        prev && prev.id === post.id
+          ? markViewerArtistAnonymouslyIdentifiedOnPost(prev)
+          : prev,
+      );
+      const anonPostPatch = (p: PostWithUser) =>
+        p.id === post.id ? markViewerArtistAnonymouslyIdentifiedOnPost(p) : p;
+      queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old: unknown) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return (old as PostWithUser[]).map(anonPostPatch);
+        }
+        if (old && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+          const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+          return {
+            ...paged,
+            pages: paged.pages.map((page) => ({
+              ...page,
+              items: Array.isArray(page.items) ? page.items.map(anonPostPatch) : page.items,
+            })),
+          };
+        }
+        if (
+          typeof old === "object" &&
+          typeof (old as PostWithUser).id === "string" &&
+          (old as PostWithUser).id === post.id
+        ) {
+          return markViewerArtistAnonymouslyIdentifiedOnPost(old as PostWithUser);
+        }
+        return old;
+      });
+      if (contextUser?.id) {
+        queryClient.setQueriesData(
+          {
+            predicate: (query) => {
+              const key = query.queryKey;
+              return (
+                Array.isArray(key) &&
+                key[0] === "/api/user" &&
+                (key[2] === "posts" || key[2] === "liked-posts")
+              );
+            },
+          },
+          (old: unknown) => {
+            if (!old) return old;
+            if (Array.isArray(old)) {
+              return (old as PostWithUser[]).map(anonPostPatch);
+            }
+            if (old && Array.isArray((old as InfiniteData<{ items?: PostWithUser[] }>).pages)) {
+              const paged = old as InfiniteData<{ items?: PostWithUser[] }>;
+              return {
+                ...paged,
+                pages: paged.pages.map((page) => ({
+                  ...page,
+                  items: Array.isArray(page.items) ? page.items.map(anonPostPatch) : page.items,
+                })),
+              };
+            }
+            return old;
+          },
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (contextUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", contextUser.id, "liked-posts"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "comments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "artist-tags"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });
+      toast({
+        title: "Identified anonymously",
+      });
+    },
+    onError: (error: unknown) => {
+      const { code, message } = readAnonymousIdentifyErrorCode(error);
+      const copy = resolveAnonymousIdentifyErrorCopy(code, message);
+      toast({
+        title: copy.title,
+        description: copy.description,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleShare = async () => {
     if (clipViewerOverlay) {
       suppressVideoToggleUntilRef.current = Date.now() + 500;
@@ -3728,9 +3825,16 @@ function VideoCardInner({
           }}
           onRequestArtistNotMyTrack={(commentId) => {
             if (artistDenyFromCommentsMutation.isPending) return;
+            if (artistIdentifyAnonymouslyMutation.isPending) return;
             artistDenyFromCommentsMutation.mutate(commentId);
           }}
           artistNotMyTrackPending={artistDenyFromCommentsMutation.isPending}
+          onRequestArtistIdentifyAnonymously={(commentId) => {
+            if (artistIdentifyAnonymouslyMutation.isPending) return;
+            if (artistDenyFromCommentsMutation.isPending) return;
+            artistIdentifyAnonymouslyMutation.mutate(commentId);
+          }}
+          artistIdentifyAnonymouslyPending={artistIdentifyAnonymouslyMutation.isPending}
           onCommentCountDelta={(delta) => setCommentCountBump((n) => n + delta)}
           onClose={() => {
             if (debugComments) {

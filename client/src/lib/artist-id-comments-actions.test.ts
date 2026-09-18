@@ -295,10 +295,12 @@ describe("ARTIST-ID-UX-1B card polish + Not my track", () => {
   });
 
   it("denial confirmation promises per-artist re-tag block (not all notifications)", () => {
-    assert.match(commentsSrc, /Not your track\?/);
+    assert.match(commentsSrc, /Is this your track\?/);
+    assert.match(commentsSrc, /If it isn&apos;t yours, decline the tag as normal/);
+    // Success toast (video-card) still explains per-artist re-tag block after deny.
     assert.match(
-      commentsSrc,
-      /People won&apos;t be able to tag you as the\s+artist on this post again/,
+      videoCardSrc,
+      /People won't be able to tag you as the artist on this post again/,
     );
     assert.doesNotMatch(commentsSrc, /won&apos;t receive any more artist ID/);
     assert.doesNotMatch(commentsSrc, /Confirm that this track isn&apos;t yours\./);

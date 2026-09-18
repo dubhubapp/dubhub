@@ -15,6 +15,9 @@ export type ArtistPendingActionPostFields = {
   verified_by_moderator?: boolean | null;
   isVerifiedArtist?: boolean | null;
   is_verified_artist?: boolean | null;
+  /** Public anonymous artist attestation (identity hidden). */
+  isArtistVerifiedAnonymous?: boolean | null;
+  is_artist_verified_anonymous?: boolean | null;
   artistVerifiedBy?: string | null;
   artist_verified_by?: string | null;
   deniedByArtist?: boolean | null;
@@ -25,6 +28,9 @@ export type ArtistPendingActionPostFields = {
   currentUserTaggedAsArtist?: boolean | null;
   current_user_tagged_as_artist?: boolean | null;
 };
+
+/** Server-allowed createdVia for comments decline-flow anonymous identify. */
+export const ANONYMOUS_IDENTIFY_CREATED_VIA = "tag_decline" as const;
 
 /**
  * Mirrors VideoCard tagged-artist rail ID eligibility (pending actions only).
@@ -70,6 +76,9 @@ export function isArtistPendingPostStateEligible(
   const isVerifiedCommunity = !!(post.isVerifiedCommunity ?? post.is_verified_community);
   const isModeratorVerified = !!(post.verifiedByModerator ?? post.verified_by_moderator);
   const isArtistVerified = !!(post.isVerifiedArtist ?? post.is_verified_artist);
+  const isArtistVerifiedAnonymous = !!(
+    post.isArtistVerifiedAnonymous ?? post.is_artist_verified_anonymous
+  );
   const artistVerifiedBy = post.artistVerifiedBy ?? post.artist_verified_by ?? null;
 
   const isAnyIdentifiedState =
@@ -80,6 +89,7 @@ export function isArtistPendingPostStateEligible(
     status === "community" ||
     isModeratorVerified ||
     isArtistVerified ||
+    isArtistVerifiedAnonymous ||
     !!artistVerifiedBy;
 
   if (isAnyIdentifiedState) return false;
@@ -97,6 +107,130 @@ export function markViewerArtistDeniedOnPost<T extends ArtistPendingActionPostFi
     ...post,
     currentUserDeniedAsArtist: true,
     current_user_denied_as_artist: true,
+  };
+}
+
+/**
+ * Optimistic public projection after POST /artist-identify-anonymous.
+ * Matches server public scrub: anonymous flag on, no public artist id.
+ */
+export function markViewerArtistAnonymouslyIdentifiedOnPost<
+  T extends ArtistPendingActionPostFields,
+>(post: T): T {
+  return {
+    ...post,
+    isArtistVerifiedAnonymous: true,
+    is_artist_verified_anonymous: true,
+    isVerifiedArtist: false,
+    is_verified_artist: false,
+    artistVerifiedBy: null,
+    artist_verified_by: null,
+    verificationStatus: "identified",
+    verification_status: "identified",
+  };
+}
+
+export type AnonymousIdentifyErrorCopy = {
+  title: string;
+  description: string;
+};
+
+/** Map anonymous-identify API error codes to user-facing copy (no raw codes). */
+export function resolveAnonymousIdentifyErrorCopy(
+  code: string | null | undefined,
+  fallbackMessage?: string | null,
+): AnonymousIdentifyErrorCopy {
+  switch (code) {
+    case "PAID_ARTIST_TOOL_REQUIRED":
+      return {
+        title: "Verified Artist Tools required",
+        description:
+          "Identify anonymously is included with Verified Artist Tools. Artist verification remains free.",
+      };
+    case "FEATURE_DISABLED":
+      return {
+        title: "Unavailable",
+        description: "Anonymous identification is temporarily unavailable.",
+      };
+    case "ARTIST_ALREADY_VERIFIED":
+      return {
+        title: "Already identified",
+        description:
+          fallbackMessage?.trim() ||
+          "This post has already been identified by an artist.",
+      };
+    case "ANONYMOUS_CLAIM_EXISTS":
+      return {
+        title: "Already identified anonymously",
+        description:
+          fallbackMessage?.trim() ||
+          "An anonymous identification already exists for this post.",
+      };
+    case "VERIFIED_ARTIST_REQUIRED":
+      return {
+        title: "Verified Artist required",
+        description: "Verified artist profile required to identify tracks.",
+      };
+    case "TAG_REQUIRED":
+    case "COMMENT_INVALID":
+    case "COMMENT_NOT_FOUND":
+      return {
+        title: "Couldn't identify",
+        description:
+          fallbackMessage?.trim() ||
+          "Open the tagged comment again, then try identifying anonymously.",
+      };
+    case "POST_NOT_FOUND":
+      return {
+        title: "Couldn't identify",
+        description: "This post is no longer available.",
+      };
+    default:
+      return {
+        title: "Couldn't identify anonymously",
+        description:
+          fallbackMessage?.trim() ||
+          "Something went wrong. Try again in a moment.",
+      };
+  }
+}
+
+/** Parse ApiRequestError / legacy body shapes for anonymous-identify errors. */
+export function readAnonymousIdentifyErrorCode(error: unknown): {
+  code: string | null;
+  message: string | null;
+} {
+  if (!error || typeof error !== "object") {
+    return { code: null, message: null };
+  }
+  const record = error as {
+    body?: { code?: unknown; message?: unknown };
+    responseBody?: unknown;
+    message?: unknown;
+  };
+  if (record.body && typeof record.body === "object") {
+    return {
+      code: typeof record.body.code === "string" ? record.body.code : null,
+      message: typeof record.body.message === "string" ? record.body.message : null,
+    };
+  }
+  if (typeof record.responseBody === "string" && record.responseBody.trim()) {
+    try {
+      const parsed = JSON.parse(record.responseBody) as {
+        code?: unknown;
+        message?: unknown;
+      };
+      return {
+        code: typeof parsed.code === "string" ? parsed.code : null,
+        message: typeof parsed.message === "string" ? parsed.message : null,
+      };
+    } catch {
+      /* fall through */
+    }
+  }
+  return {
+    code: null,
+    message: typeof record.message === "string" ? record.message : null,
   };
 }
 

@@ -77,6 +77,9 @@ import {
   isCommentEligibleForArtistConfirmId,
   resolveArtistPendingActionsVisible,
 } from "@/lib/artist-id-comments-actions";
+import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
+import { resolvePaidToolGateMode } from "@/lib/paid-tool-gate";
+import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
 import { commentsKeyboardDebugEnabled, logCommentsKeyboardSnapshot } from "@/lib/comments-keyboard-debug";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import {
@@ -128,6 +131,12 @@ interface CommentsModalProps {
   /** Existing artist-deny mutation with a tagging commentId (Not my track). */
   onRequestArtistNotMyTrack?: (commentId: string) => void;
   artistNotMyTrackPending?: boolean;
+  /**
+   * Paid path: POST /artist-identify-anonymous for the tagged comment.
+   * Free / unresolved subscription opens VAT paywall inside the modal instead.
+   */
+  onRequestArtistIdentifyAnonymously?: (commentId: string) => void;
+  artistIdentifyAnonymouslyPending?: boolean;
 }
 
 function applyPostPatch(old: unknown, postId: string, patch: (p: PostWithUser) => PostWithUser): unknown {
@@ -351,6 +360,8 @@ export function CommentsModal({
   onRequestArtistConfirmId,
   onRequestArtistNotMyTrack,
   artistNotMyTrackPending = false,
+  onRequestArtistIdentifyAnonymously,
+  artistIdentifyAnonymouslyPending = false,
 }: CommentsModalProps) {
   const drawerStackZ = elevatedStack ? "z-[110]" : "z-[60]";
   const reportDialogStackZ = elevatedStack ? "z-[120]" : "z-[70]";
@@ -1174,6 +1185,16 @@ export function CommentsModal({
     if (!reviewingArtistForIdActions) return null;
     return findEarliestCommentIdTaggingArtist(comments, reviewingArtistForIdActions);
   }, [comments, reviewingArtistForIdActions]);
+  const subscription = useAuthoritativeSubscriptionStatus({
+    enabled: isOpen && artistTagActionsVisible,
+  });
+  const anonymousIdentifyGateMode = resolvePaidToolGateMode({
+    enabled: artistTagActionsVisible,
+    loading: subscription.loading,
+    hasError: subscription.error != null,
+    selection: subscription.selection,
+  });
+  const anonymousIdentifyEntitled = anonymousIdentifyGateMode === "available";
   const verifiedCommentId =
     post.verifiedCommentId ??
     (post as { verified_comment_id?: string | null }).verified_comment_id ??
@@ -1873,23 +1894,49 @@ export function CommentsModal({
         >
           <AlertDialogHeader>
             <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
-              Not your track?
+              Is this your track?
             </AlertDialogTitle>
             <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
-              Confirm this track isn&apos;t yours. People won&apos;t be able to tag you as the
-              artist on this post again.
+              If it isn&apos;t yours, decline the tag as normal.
+              <span className="mt-2 block">
+                If it is yours but you&apos;re not ready to reveal yourself, Verified Artist Tools
+                lets you identify it anonymously and reveal later.
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
-              data-testid="not-my-track-cancel"
-            >
-              Cancel
-            </AlertDialogCancel>
+          <div className="flex flex-col gap-2">
             <AlertDialogAction
-              className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
-              disabled={artistNotMyTrackPending || !notMyTrackCommentId}
+              className={cn(APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS, "w-full")}
+              disabled={
+                !notMyTrackCommentId ||
+                artistIdentifyAnonymouslyPending ||
+                artistNotMyTrackPending ||
+                (anonymousIdentifyEntitled && !onRequestArtistIdentifyAnonymously)
+              }
+              data-testid="identify-anonymously-confirm"
+              onClick={(event) => {
+                event.preventDefault();
+                if (!notMyTrackCommentId) return;
+                setShowNotMyTrackConfirm(false);
+                if (anonymousIdentifyEntitled) {
+                  onRequestArtistIdentifyAnonymously?.(notMyTrackCommentId);
+                  return;
+                }
+                requestVerifiedArtistToolsUpgrade(toast, {
+                  source: "anonymous_identify",
+                });
+              }}
+            >
+              {artistIdentifyAnonymouslyPending ? "Saving…" : "Identify anonymously"}
+            </AlertDialogAction>
+            <AlertDialogAction
+              className={cn(APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS, "w-full")}
+              disabled={
+                artistNotMyTrackPending ||
+                artistIdentifyAnonymouslyPending ||
+                !notMyTrackCommentId ||
+                !onRequestArtistNotMyTrack
+              }
               data-testid="not-my-track-confirm"
               onClick={() => {
                 if (!notMyTrackCommentId || !onRequestArtistNotMyTrack) return;
@@ -1897,9 +1944,15 @@ export function CommentsModal({
                 onRequestArtistNotMyTrack(notMyTrackCommentId);
               }}
             >
-              Not my track
+              {artistNotMyTrackPending ? "Saving…" : "Not my track"}
             </AlertDialogAction>
-          </AlertDialogFooter>
+            <AlertDialogCancel
+              className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "mt-0 w-full")}
+              data-testid="not-my-track-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
       <ReportModal

@@ -52,6 +52,7 @@ describe("verified-artist-tools-paywall-copy", () => {
     "release_alerts",
     "settings",
     "onboarding_intro",
+    "anonymous_identify",
   ];
 
   it("returns contextual title/body for every source", () => {

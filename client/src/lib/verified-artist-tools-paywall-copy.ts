@@ -11,7 +11,8 @@ export type VerifiedArtistToolsPaywallSource =
   | "future_release_paused"
   | "release_alerts"
   | "settings"
-  | "onboarding_intro";
+  | "onboarding_intro"
+  | "anonymous_identify";
 
 export type VerifiedArtistToolsPaywallContextCopy = {
   title: string;
@@ -83,6 +84,11 @@ const CONTEXT_COPY: Record<
     title: "Take your releases further",
     body:
       "Verified Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
+  },
+  anonymous_identify: {
+    title: "Keep your ID under wraps",
+    body:
+      "Identify your track without revealing yourself, then reveal it when you're ready.",
   },
 };
 
