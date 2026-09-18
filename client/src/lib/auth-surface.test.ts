@@ -62,12 +62,12 @@ describe("login auth-surface dark control consistency", () => {
     assert.equal(THEME_STORAGE_KEY, "dubhub-theme");
   });
 
-  it("leaves authenticated Light Mode persistence untouched", () => {
+  it("leaves dark-only theme persistence intact across logout/login", () => {
     assert.match(themeSrc, /export function getStoredTheme/);
     assert.match(themeSrc, /export function applyTheme/);
-    assert.match(themeSrc, /localStorage\.setItem\(THEME_STORAGE_KEY, mode\)/);
-    assert.match(settingsSrc, /applyTheme\(next\)/);
-    assert.match(settingsSrc, /data-testid="switch-light-mode"/);
+    assert.match(themeSrc, /localStorage\.setItem\(THEME_STORAGE_KEY, "dark"\)/);
+    assert.doesNotMatch(settingsSrc, /applyTheme\(/);
+    assert.doesNotMatch(settingsSrc, /data-testid="switch-light-mode"/);
     assert.match(appSrc, /Keep device-level preferences \(e\.g\. theme\) intact across logout\/login\./);
     assert.doesNotMatch(appSrc, /localStorage\.removeItem\(['"]dubhub-theme['"]\)/);
   });

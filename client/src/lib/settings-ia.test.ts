@@ -81,10 +81,11 @@ describe("settings root IA slice 1", () => {
     assert.doesNotMatch(settingsSrc, /fetchPushNotificationPreferences/);
   });
 
-  it("keeps Light mode and Start feed with sound inline on root", () => {
-    assert.match(settingsSrc, /data-testid="switch-light-mode"/);
+  it("keeps Start feed with sound inline on root; Light mode removed for launch", () => {
+    assert.doesNotMatch(settingsSrc, /data-testid="switch-light-mode"/);
+    assert.doesNotMatch(settingsSrc, /Light mode/);
+    assert.doesNotMatch(settingsSrc, /getStoredTheme/);
     assert.match(settingsSrc, /data-testid="switch-feed-start-with-sound"/);
-    assert.match(settingsSrc, /getStoredTheme/);
     assert.match(settingsSrc, /getFeedStartWithSound/);
   });
 
@@ -149,13 +150,13 @@ describe("settings root chrome slice 3", () => {
     assert.match(settingsSrc, /CountryFlag/);
   });
 
-  it("preserves Notifications, VAT, Artist Questions, Feedback, switches, password, logout", () => {
+  it("preserves Notifications, VAT, Artist Questions, Feedback, feed sound, password, logout", () => {
     assert.match(settingsSrc, /button-settings-notifications/);
     assert.match(settingsSrc, /VerifiedArtistToolsSettingsRow/);
     assert.match(settingsSrc, /surface="inset"/);
     assert.match(settingsSrc, /button-artist-questions-settings/);
     assert.match(settingsSrc, /button-settings-feedback/);
-    assert.match(settingsSrc, /switch-light-mode/);
+    assert.doesNotMatch(settingsSrc, /switch-light-mode/);
     assert.match(settingsSrc, /switch-feed-start-with-sound/);
     assert.match(settingsSrc, /button-change-password/);
     assert.match(settingsSrc, /button-logout/);

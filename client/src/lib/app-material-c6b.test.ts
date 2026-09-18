@@ -217,8 +217,8 @@ describe("C6B.1 Settings switches", () => {
     assert.equal(APP_MATERIAL_INTERACTIVE_BLUE, "#0a83ff");
     assert.doesNotMatch(settingsSrc, /SETTINGS_SWITCH_CHECKED_CLASS/);
     assert.doesNotMatch(settingsSrc, /data-\[state=checked\]:bg-\[#0a83ff\]/);
-    assert.match(settingsSrc, /switch-light-mode/);
     assert.match(settingsSrc, /switch-feed-start-with-sound/);
+    assert.doesNotMatch(settingsSrc, /switch-light-mode/);
     assert.doesNotMatch(switchSrc, /#0a83ff/);
   });
 });

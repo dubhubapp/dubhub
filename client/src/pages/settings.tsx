@@ -16,7 +16,6 @@ import {
   KeyRound,
   LogOut,
   MessageSquare,
-  Moon,
   Settings as SettingsIcon,
   Volume2,
   MessageCircleQuestion,
@@ -27,8 +26,6 @@ import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
 import { VerifiedArtistToolsSettingsRow } from "@/components/verified-artist-tools-settings-row";
 import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
-import { applyTheme, getStoredTheme, type ThemeMode } from "@/lib/theme";
-import { playThemeToggleHaptic } from "@/lib/haptic";
 import { useUser } from "@/lib/user-context";
 import { getCountryDisplayName } from "@shared/country-codes";
 import {
@@ -65,9 +62,6 @@ import {
   SETTINGS_ROWS_STACK_CLASS,
 } from "@/lib/settings-presentation";
 
-const THEME_TRANSITION_CLASS = "theme-transitioning";
-const THEME_TRANSITION_MS = 180;
-
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
 }
@@ -76,29 +70,11 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [, navigate] = useLocation();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
   const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
   const { verifiedArtist, countryCode } = useUser();
   /** Dev / forced-diagnostics builds only — never shown by account role. */
   const showDeveloperDiagnosticsEntry = revenueCatIdentityDiagnosticsEnabled();
   const countryLabel = getCountryDisplayName(countryCode);
-
-  const runThemeTransition = () => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    root.classList.add(THEME_TRANSITION_CLASS);
-    window.setTimeout(() => {
-      root.classList.remove(THEME_TRANSITION_CLASS);
-    }, THEME_TRANSITION_MS);
-  };
-
-  const handleThemeToggle = (enabled: boolean) => {
-    const next: ThemeMode = enabled ? "light" : "dark";
-    playThemeToggleHaptic();
-    runThemeTransition();
-    applyTheme(next);
-    setThemeMode(next);
-  };
 
   const handleFeedStartWithSoundToggle = (enabled: boolean) => {
     setFeedStartWithSound(enabled);
@@ -167,22 +143,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 </span>
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
               </button>
-
-              <div className={SETTINGS_SWITCH_ROW_CLASS}>
-                <Moon className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <div className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
-                  <p className={SETTINGS_ROW_TITLE_CLASS}>Light mode</p>
-                  <p className={SETTINGS_ROW_SUBTITLE_CLASS}>
-                    Switch to a brighter dub hub experience.
-                  </p>
-                </div>
-                <Switch
-                  checked={themeMode === "light"}
-                  onCheckedChange={handleThemeToggle}
-                  aria-label="Light mode"
-                  data-testid="switch-light-mode"
-                />
-              </div>
 
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <Volume2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
