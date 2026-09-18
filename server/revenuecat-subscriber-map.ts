@@ -306,6 +306,13 @@ function mapEnvProductToSnapshot(args: {
   entitlementExpiresAt: Date | null;
   entitlementPurchaseAt: Date | null;
   entitlementPresent: boolean;
+  /**
+   * Entitlement exists on the subscriber but its product_identifier belongs to
+   * the other environment. Never copy foreign entitlement dates; may still
+   * activate from this environment's own subscription access window.
+   * Must stay false when the entitlement is absent entirely (fail closed).
+   */
+  deriveActiveFromLocalSubscriptionWindow: boolean;
   lifetimeNullExpiry: boolean;
   entitlementExpiryPresent: boolean;
   facts: EnvProductFacts;
@@ -355,14 +362,25 @@ function mapEnvProductToSnapshot(args: {
   }
 
   let isEntitlementActive = false;
-  if (args.entitlementPresent && !isRefunded) {
-    if (args.lifetimeNullExpiry && args.entitlementExpiryPresent) {
-      // Require authoritative store for lifetime candidacy at map time.
-      if (typeof store === "string" && store.trim().length > 0) {
-        isEntitlementActive = true;
+  if (!isRefunded) {
+    if (args.entitlementPresent) {
+      if (args.lifetimeNullExpiry && args.entitlementExpiryPresent) {
+        // Require authoritative store for lifetime candidacy at map time.
+        if (typeof store === "string" && store.trim().length > 0) {
+          isEntitlementActive = true;
+        }
+      } else if (args.entitlementExpiryPresent && expiresAt) {
+        isEntitlementActive = isFutureOrSkew(expiresAt, args.now) || isInGracePeriod;
       }
-    } else if (args.entitlementExpiryPresent && expiresAt) {
-      isEntitlementActive = isFutureOrSkew(expiresAt, args.now) || isInGracePeriod;
+    } else if (
+      args.deriveActiveFromLocalSubscriptionWindow &&
+      expiresAt &&
+      (isFutureOrSkew(expiresAt, args.now) || isInGracePeriod)
+    ) {
+      // Same entitlement id exists on the subscriber, but RC's single
+      // product_identifier points at the other environment (e.g. promo lifetime
+      // + Test Store monthly). Activate from this env's own window only.
+      isEntitlementActive = true;
     }
   }
 
@@ -448,6 +466,7 @@ function mapLinkedEntitlement(args: {
     entitlementExpiresAt: expiry.entitlementExpiresAt,
     entitlementPurchaseAt: parseDate(args.entitlement.purchase_date),
     entitlementPresent: true,
+    deriveActiveFromLocalSubscriptionWindow: false,
     lifetimeNullExpiry: expiry.lifetimeNullExpiry,
     entitlementExpiryPresent: expiry.entitlementExpiryPresent,
     facts: args.facts,
@@ -487,8 +506,10 @@ function mapOneEnvironment(args: {
     }
 
     // Entitlement exists but product lives only in the other environment.
-    // Do not copy facts across environments. If this env has other history,
-    // use historical mapping without treating the foreign entitlement as active.
+    // Do not copy foreign entitlement dates. If this env has its own commerce
+    // history, map from local products and (when still within window) activate
+    // from the local subscription — RC exposes one product_identifier per
+    // entitlement, which may point at the other environment.
     if (envProducts.size === 0) {
       return buildEmptyEnvironmentSnapshot({
         userId: args.userId,
@@ -508,8 +529,8 @@ function mapOneEnvironment(args: {
     });
   }
 
-  // Historical path: entitlement absent (or not linked in this env) but env has
-  // purchase history. Prefer entitlement product if present in map; else latest.
+  // Historical / cross-env path: entitlement absent, or present but product not
+  // in this env. Prefer entitlement product if present in map; else latest.
   let historical: EnvProductFacts | null = null;
   if (entitlement?.product_identifier && envProducts.has(entitlement.product_identifier)) {
     historical = envProducts.get(entitlement.product_identifier) ?? null;
@@ -534,6 +555,10 @@ function mapOneEnvironment(args: {
     });
   }
 
+  // Only when the entitlement object exists but is linked to the other env.
+  // Orphan subscriptions (no entitlement id) stay fail-closed inactive.
+  const deriveActiveFromLocalSubscriptionWindow = entitlement != null;
+
   return mapEnvProductToSnapshot({
     userId: args.userId,
     environment: args.environment,
@@ -544,6 +569,7 @@ function mapOneEnvironment(args: {
       parseDate(historical.subscription?.purchase_date) ??
       parseDate(historical.nonSubscription?.purchase_date),
     entitlementPresent: false,
+    deriveActiveFromLocalSubscriptionWindow,
     lifetimeNullExpiry: false,
     entitlementExpiryPresent: historical.subscription?.expires_date != null,
     facts: historical,

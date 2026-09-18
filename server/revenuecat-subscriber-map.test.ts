@@ -882,4 +882,273 @@ describe("mapRevenueCatSubscriberToSnapshots", () => {
     assert.notEqual(mapped.production.store, "test_store");
     assert.equal(mapped.production.isEntitlementActive, false);
   });
+
+  it("maps fresh Test Store monthly active when entitlement product is production promo", () => {
+    // Live failing shape (2026-09-18): RC keeps one entitlement.product_identifier
+    // on the promo lifetime while Test Store monthly exists under subscriptions.monthly.
+    const promoProduct = "rc_promo_verified_artist_tools_lifetime";
+    const verifiedAt = new Date("2026-09-18T16:28:36.987Z");
+    const mapped = mapRevenueCatSubscriberToSnapshots({
+      response: subscriberResponse({
+        entitlements: {
+          verified_artist_tools: {
+            expires_date: "2226-06-18T20:27:58Z",
+            grace_period_expires_date: null,
+            product_identifier: promoProduct,
+            purchase_date: "2026-08-05T20:27:58Z",
+          },
+        },
+        subscriptions: {
+          monthly: {
+            auto_resume_date: null,
+            billing_issues_detected_at: null,
+            expires_date: "2026-09-18T16:33:22Z",
+            grace_period_expires_date: null,
+            is_sandbox: true,
+            original_purchase_date: "2026-09-18T16:28:22Z",
+            // Test Store omits ownership_type.
+            period_type: "normal",
+            purchase_date: "2026-09-18T16:28:22Z",
+            refunded_at: null,
+            store: "test_store",
+            store_transaction_id: "test_txn_monthly_1",
+            unsubscribe_detected_at: null,
+          },
+          [promoProduct]: {
+            auto_resume_date: null,
+            billing_issues_detected_at: null,
+            expires_date: "2226-06-18T20:27:58Z",
+            grace_period_expires_date: null,
+            is_sandbox: false,
+            original_purchase_date: "2026-08-05T20:27:58Z",
+            period_type: "normal",
+            purchase_date: "2026-08-05T20:27:58Z",
+            refunded_at: null,
+            store: "promotional",
+            store_transaction_id: "promo_txn_live_1",
+            unsubscribe_detected_at: null,
+          },
+        },
+      }),
+      userId: USER_ID,
+      now: verifiedAt,
+    });
+
+    assert.equal(mapped.sandbox.isEntitlementActive, true);
+    assert.equal(mapped.sandbox.productIdentifier, "monthly");
+    assert.equal(mapped.sandbox.store, "test_store");
+    assert.equal(mapped.sandbox.willRenew, true);
+    assert.equal(mapped.sandbox.ownershipType, null);
+    assert.equal(
+      mapped.sandbox.expiresAt?.toISOString(),
+      "2026-09-18T16:33:22.000Z",
+    );
+
+    const sandboxView = buildSubscriptionStatusView(
+      asDomainSnapshot(mapped.sandbox),
+      verifiedAt,
+    );
+    assert.equal(sandboxView.state, "active");
+    assert.equal(sandboxView.freshness, "fresh");
+    assert.equal(sandboxView.hasPaidToolAccess, true);
+    assert.equal(sandboxView.irreversibleActionsAllowed, true);
+
+    assert.equal(mapped.production.isEntitlementActive, true);
+    assert.equal(mapped.production.productIdentifier, promoProduct);
+    assert.equal(mapped.production.store, "promotional");
+    const productionView = buildSubscriptionStatusView(
+      asDomainSnapshot(mapped.production),
+      verifiedAt,
+    );
+    assert.equal(productionView.state, "active");
+    assert.equal(productionView.hasPaidToolAccess, true);
+  });
+
+  it("maps expired Test Store monthly to expired when entitlement product is production promo", () => {
+    const promoProduct = "rc_promo_verified_artist_tools_lifetime";
+    const mapped = mapRevenueCatSubscriberToSnapshots({
+      response: subscriberResponse({
+        entitlements: {
+          verified_artist_tools: {
+            expires_date: "2226-06-18T20:27:58Z",
+            product_identifier: promoProduct,
+            purchase_date: "2026-08-05T20:27:58Z",
+          },
+        },
+        subscriptions: {
+          monthly: baseSubscription({
+            is_sandbox: true,
+            store: "test_store",
+            expires_date: "2026-07-10T12:00:00Z",
+            purchase_date: "2026-07-10T11:55:00Z",
+            original_purchase_date: "2026-07-10T11:55:00Z",
+            ownership_type: null,
+            store_transaction_id: "test_txn_expired_1",
+          }),
+          [promoProduct]: {
+            billing_issues_detected_at: null,
+            expires_date: "2226-06-18T20:27:58Z",
+            grace_period_expires_date: null,
+            is_sandbox: false,
+            original_purchase_date: "2026-08-05T20:27:58Z",
+            purchase_date: "2026-08-05T20:27:58Z",
+            refunded_at: null,
+            store: "promotional",
+            store_transaction_id: "promo_txn_1",
+            unsubscribe_detected_at: null,
+          },
+        },
+      }),
+      userId: USER_ID,
+      now: NOW,
+    });
+
+    assert.equal(mapped.sandbox.isEntitlementActive, false);
+    assert.equal(mapped.sandbox.willRenew, false);
+    assert.equal(
+      mapProviderSnapshotToLifecycle(asDomainSnapshot(mapped.sandbox), NOW),
+      "expired",
+    );
+    assert.equal(
+      buildSubscriptionStatusView(asDomainSnapshot(mapped.sandbox), NOW)
+        .hasPaidToolAccess,
+      false,
+    );
+    assert.equal(mapped.production.isEntitlementActive, true);
+  });
+
+  it("maps refunded Test Store monthly to refunded when entitlement product is production promo", () => {
+    const promoProduct = "rc_promo_verified_artist_tools_lifetime";
+    const mapped = mapRevenueCatSubscriberToSnapshots({
+      response: subscriberResponse({
+        entitlements: {
+          verified_artist_tools: {
+            expires_date: "2226-06-18T20:27:58Z",
+            product_identifier: promoProduct,
+            purchase_date: "2026-08-05T20:27:58Z",
+          },
+        },
+        subscriptions: {
+          monthly: baseSubscription({
+            is_sandbox: true,
+            store: "test_store",
+            expires_date: "2026-07-31T12:00:00Z",
+            refunded_at: "2026-07-19T12:00:00Z",
+            ownership_type: null,
+          }),
+          [promoProduct]: {
+            billing_issues_detected_at: null,
+            expires_date: "2226-06-18T20:27:58Z",
+            grace_period_expires_date: null,
+            is_sandbox: false,
+            original_purchase_date: "2026-08-05T20:27:58Z",
+            purchase_date: "2026-08-05T20:27:58Z",
+            refunded_at: null,
+            store: "promotional",
+            store_transaction_id: "promo_txn_1",
+            unsubscribe_detected_at: null,
+          },
+        },
+      }),
+      userId: USER_ID,
+      now: NOW,
+    });
+
+    assert.equal(mapped.sandbox.isRefunded, true);
+    assert.equal(mapped.sandbox.isEntitlementActive, false);
+    assert.equal(
+      mapProviderSnapshotToLifecycle(asDomainSnapshot(mapped.sandbox), NOW),
+      "refunded",
+    );
+    assert.equal(
+      buildSubscriptionStatusView(asDomainSnapshot(mapped.sandbox), NOW)
+        .hasPaidToolAccess,
+      false,
+    );
+  });
+
+  it("does not activate orphan sandbox subscription when entitlement is absent", () => {
+    const mapped = mapRevenueCatSubscriberToSnapshots({
+      response: subscriberResponse({
+        subscriptions: {
+          monthly: baseSubscription({
+            is_sandbox: true,
+            store: "test_store",
+            expires_date: "2026-07-31T12:00:00Z",
+            ownership_type: null,
+          }),
+        },
+      }),
+      userId: USER_ID,
+      now: NOW,
+    });
+
+    assert.equal(mapped.sandbox.isEntitlementActive, false);
+    assert.equal(mapped.sandbox.productIdentifier, "monthly");
+    assert.equal(mapped.sandbox.willRenew, true);
+    assert.equal(
+      mapProviderSnapshotToLifecycle(asDomainSnapshot(mapped.sandbox), NOW),
+      "unknown",
+    );
+    assert.equal(
+      buildSubscriptionStatusView(asDomainSnapshot(mapped.sandbox), NOW)
+        .hasPaidToolAccess,
+      false,
+    );
+  });
+
+  it("stale freshness fails closed for cross-env Test Store monthly", () => {
+    const promoProduct = "rc_promo_verified_artist_tools_lifetime";
+    const verifiedAt = new Date("2026-09-18T16:28:36.987Z");
+    const mapped = mapRevenueCatSubscriberToSnapshots({
+      response: subscriberResponse({
+        entitlements: {
+          verified_artist_tools: {
+            expires_date: "2226-06-18T20:27:58Z",
+            product_identifier: promoProduct,
+            purchase_date: "2026-08-05T20:27:58Z",
+          },
+        },
+        subscriptions: {
+          monthly: {
+            billing_issues_detected_at: null,
+            expires_date: "2026-09-20T16:33:22Z",
+            grace_period_expires_date: null,
+            is_sandbox: true,
+            original_purchase_date: "2026-09-18T16:28:22Z",
+            period_type: "normal",
+            purchase_date: "2026-09-18T16:28:22Z",
+            refunded_at: null,
+            store: "test_store",
+            store_transaction_id: "test_txn_stale_1",
+            unsubscribe_detected_at: null,
+          },
+          [promoProduct]: {
+            billing_issues_detected_at: null,
+            expires_date: "2226-06-18T20:27:58Z",
+            grace_period_expires_date: null,
+            is_sandbox: false,
+            original_purchase_date: "2026-08-05T20:27:58Z",
+            purchase_date: "2026-08-05T20:27:58Z",
+            refunded_at: null,
+            store: "promotional",
+            store_transaction_id: "promo_txn_1",
+            unsubscribe_detected_at: null,
+          },
+        },
+      }),
+      userId: USER_ID,
+      now: verifiedAt,
+    });
+
+    const staleNow = new Date(mapped.sandbox.staleAfterAt.getTime() + 1);
+    const view = buildSubscriptionStatusView(
+      asDomainSnapshot(mapped.sandbox),
+      staleNow,
+    );
+    assert.equal(view.state, "stale");
+    assert.equal(view.freshness, "stale");
+    assert.equal(view.hasPaidToolAccess, false);
+    assert.equal(view.irreversibleActionsAllowed, false);
+  });
 });
