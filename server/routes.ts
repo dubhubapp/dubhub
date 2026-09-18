@@ -13,6 +13,7 @@ import {
   parseFreezeScopes,
 } from "./leaderboard-monthly-freeze";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { normalizeSignupEmail } from "@shared/signup-email";
 import { parseReleaseCalendarDate, requestBodyAttemptsReleaseTimingMutation, RELEASE_TIMING_LOCKED_CODE, RELEASE_TIMING_LOCKED_MESSAGE, RELEASE_TITLE_LOCKED_CODE, RELEASE_TITLE_LOCKED_MESSAGE } from "@shared/release-timing";
 import { toPublicArtistProfileQuestionAnswers } from "@shared/artist-profile-questions";
 import {
@@ -1542,8 +1543,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return res.status(400).json({ error: "invalid_request" });
       }
-      const normalized = parsed.data.email.trim().toLowerCase();
-      if (normalized.length < 3 || !normalized.includes("@")) {
+      const normalized = normalizeSignupEmail(parsed.data.email);
+      if (!normalized) {
         return res.status(400).json({ error: "invalid_request" });
       }
 

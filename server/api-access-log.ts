@@ -7,6 +7,7 @@ export const API_LOG_OMIT_RESPONSE_BODY_PATHS = new Set<string>([
   "/api/auth/age-gate",
   "/api/auth/pending-demographics",
   "/api/auth/ensure-demographics",
+  "/api/auth/abandon-unconfirmed-signup",
 ]);
 
 /**
@@ -53,7 +54,10 @@ export function redactSensitiveApiLogFields(value: unknown): unknown {
       key === "ageyears" ||
       key === "age_years" ||
       key === "ticket" ||
-      key === "sealedticket"
+      key === "sealedticket" ||
+      key === "email" ||
+      key === "emailbinding" ||
+      key === "email_binding"
     ) {
       out[k] = "[redacted]";
       continue;

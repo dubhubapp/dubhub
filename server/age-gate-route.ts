@@ -1,3 +1,11 @@
+/**
+ * POST /api/auth/age-gate — authoritative 13+ check + sealed ticket.
+ * Kept free of DB/Supabase imports so unit tests can load this module alone.
+ *
+ * Body: { dateOfBirth, email } — email is bound into the ticket as SHA-256
+ * (never echoed). Request bodies are never written to the access log.
+ */
+
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import {
@@ -15,12 +23,9 @@ import {
 
 const ageGateBodySchema = z.object({
   dateOfBirth: z.string().min(1).max(32),
+  email: z.string().min(1).max(320),
 });
 
-/**
- * POST /api/auth/age-gate — authoritative 13+ check + sealed ticket.
- * Kept free of DB/Supabase imports so unit tests can load this module alone.
- */
 export function registerAgeGateRoutes(app: Express): void {
   app.post("/api/auth/age-gate", (req: Request, res: Response) => {
     const ip = ageGateClientIp(req);
@@ -68,9 +73,16 @@ export function registerAgeGateRoutes(app: Express): void {
 
     const sealed = sealAgeGateTicket({
       dateOfBirth: result.normalizedDob,
+      email: parsed.data.email,
       key: keyResolved.key,
     });
     if (!sealed.ok) {
+      if (sealed.code === "invalid_email") {
+        return res.status(400).json({
+          eligible: false,
+          code: "invalid_request",
+        });
+      }
       console.error("[age-gate] ticket seal failed");
       return res.status(503).json({
         eligible: false,

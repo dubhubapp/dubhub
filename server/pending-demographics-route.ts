@@ -11,6 +11,7 @@ import {
   cleanupExpiredPendingDemographics,
   migratePendingDemographicsForUser,
 } from "./pending-demographics";
+import { abandonUnconfirmedSignup } from "./abandon-unconfirmed-signup";
 import {
   withSupabaseUser,
   type AuthenticatedRequest,
@@ -23,6 +24,8 @@ const claimBodySchema = z.object({
   ticket: z.string().min(16).max(2048),
 });
 
+const abandonBodySchema = claimBodySchema;
+
 function ticketKeyOrNull(): Buffer | null {
   const resolved = tryResolveAgeGateTicketKey();
   return resolved.ok ? resolved.key : null;
@@ -32,6 +35,7 @@ async function fetchAuthUserByIdAdmin(userId: string): Promise<{
   id: string;
   created_at: string;
   email_confirmed_at: string | null;
+  email: string | null;
 } | null> {
   if (!supabaseAdminEnabled) return null;
   const { data, error } = await supabase.auth.admin.getUserById(userId);
@@ -41,6 +45,7 @@ async function fetchAuthUserByIdAdmin(userId: string): Promise<{
     id: u.id,
     created_at: u.created_at,
     email_confirmed_at: u.email_confirmed_at ?? null,
+    email: u.email ?? null,
   };
 }
 
@@ -88,6 +93,62 @@ export function registerPendingDemographicsRoutes(
 
     return res.status(200).json({ ok: true });
   });
+
+  /**
+   * Compensate: Auth signUp succeeded but pending-demographics claim failed.
+   * Deletes only a fresh unconfirmed Auth user bound to ticket timing.
+   */
+  app.post(
+    "/api/auth/abandon-unconfirmed-signup",
+    async (req: Request, res: Response) => {
+      const ip = ageGateClientIp(req);
+      const limit = ageGateRateLimiter.check(`abandon:${ip}`);
+      if (!limit.allowed) {
+        res.setHeader("Retry-After", String(limit.retryAfterSec));
+        return res.status(429).json({ ok: false, code: "rate_limited" });
+      }
+
+      if (!supabaseAdminEnabled) {
+        return res.status(503).json({ ok: false, code: "unavailable" });
+      }
+
+      const parsed = abandonBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ ok: false, code: "invalid_request" });
+      }
+
+      const outcome = await abandonUnconfirmedSignup(
+        {
+          pool: dbPool,
+          getTicketKey: ticketKeyOrNull,
+          getAuthUserById: async (id) => {
+            const { data, error } = await supabase.auth.admin.getUserById(id);
+            if (error || !data?.user) return null;
+            return {
+              id: data.user.id,
+              created_at: data.user.created_at,
+              email_confirmed_at: data.user.email_confirmed_at ?? null,
+              email: data.user.email ?? null,
+            };
+          },
+          deleteAuthUser: async (id) => {
+            const { error } = await supabase.auth.admin.deleteUser(id);
+            return { ok: !error };
+          },
+        },
+        parsed.data,
+      );
+
+      if (!outcome.ok) {
+        return res.status(outcome.httpStatus).json({
+          ok: false,
+          code: outcome.code,
+        });
+      }
+
+      return res.status(200).json({ ok: true });
+    },
+  );
 
   /**
    * Authenticated safety net: pending → user_demographics for the session user.

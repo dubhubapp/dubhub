@@ -13,11 +13,17 @@ import {
   formatApiAccessLogResponseSuffix,
   shouldOmitApiResponseBodyFromLog,
 } from "./api-access-log";
-import { unsealAgeGateTicket, decodeAgeGateTicketSecret } from "./age-gate-ticket";
+import {
+  decodeAgeGateTicketSecret,
+  hashSignupEmailBinding,
+  unsealAgeGateTicket,
+} from "./age-gate-ticket";
+import { normalizeSignupEmail } from "@shared/signup-email";
 
 const ADULT_DOB = "1995-06-15";
 const CHILD_DOB = "2018-01-01";
 const INVALID_DOB = "2026-02-30";
+const EMAIL = "alice@example.com";
 
 /** Deterministic test secret (32 bytes base64) — not for production. */
 const TEST_SECRET_B64 = randomBytes(32).toString("base64");
@@ -62,23 +68,26 @@ describe("POST /api/auth/age-gate", () => {
     );
   });
 
-  it("eligible adult: 200 with opaque ticket — no DOB/age echoed", async () => {
+  it("eligible adult: 200 with opaque ticket — no DOB/email/age echoed", async () => {
     const { server, origin } = await startAgeGateServer();
     servers.push(server);
     const res = await fetch(`${origin}/api/auth/age-gate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dateOfBirth: ADULT_DOB }),
+      body: JSON.stringify({ dateOfBirth: ADULT_DOB, email: EMAIL }),
     });
     assert.equal(res.status, 200);
     const body = (await res.json()) as Record<string, unknown>;
     assert.equal(body.eligible, true);
     assert.equal(typeof body.ticket, "string");
-    assert.match(String(body.ticket), /^v1\./);
+    assert.match(String(body.ticket), /^v2\./);
     assert.equal("age" in body, false);
     assert.equal("dateOfBirth" in body, false);
+    assert.equal("email" in body, false);
+    assert.equal("emailBinding" in body, false);
     const raw = JSON.stringify(body);
     assert.doesNotMatch(raw, /1995/);
+    assert.doesNotMatch(raw, /alice/i);
     assert.doesNotMatch(raw, /"age"/i);
 
     const key = decodeAgeGateTicketSecret(TEST_SECRET_B64);
@@ -87,7 +96,13 @@ describe("POST /api/auth/age-gate", () => {
       key,
     });
     assert.equal(open.ok, true);
-    if (open.ok) assert.equal(open.payload.dob, ADULT_DOB);
+    if (open.ok) {
+      assert.equal(open.payload.dob, ADULT_DOB);
+      assert.equal(
+        open.payload.emailBinding,
+        hashSignupEmailBinding(normalizeSignupEmail(EMAIL)!),
+      );
+    }
   });
 
   it("under-13: 403 — no ticket", async () => {
@@ -96,7 +111,7 @@ describe("POST /api/auth/age-gate", () => {
     const res = await fetch(`${origin}/api/auth/age-gate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dateOfBirth: CHILD_DOB }),
+      body: JSON.stringify({ dateOfBirth: CHILD_DOB, email: EMAIL }),
     });
     assert.equal(res.status, 403);
     const body = (await res.json()) as Record<string, unknown>;
@@ -113,11 +128,26 @@ describe("POST /api/auth/age-gate", () => {
     const res = await fetch(`${origin}/api/auth/age-gate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dateOfBirth: INVALID_DOB }),
+      body: JSON.stringify({ dateOfBirth: INVALID_DOB, email: EMAIL }),
     });
     assert.equal(res.status, 400);
     const body = (await res.json()) as Record<string, unknown>;
     assert.deepEqual(body, {
+      eligible: false,
+      code: "invalid_date_of_birth",
+    });
+  });
+
+  it("missing email: 400", async () => {
+    const { server, origin } = await startAgeGateServer();
+    servers.push(server);
+    const res = await fetch(`${origin}/api/auth/age-gate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dateOfBirth: ADULT_DOB }),
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), {
       eligible: false,
       code: "invalid_date_of_birth",
     });
@@ -164,10 +194,11 @@ describe("api access log — age-gate / claim omit", () => {
     );
     const suffix = formatApiAccessLogResponseSuffix("/api/auth/age-gate", {
       eligible: true,
-      ticket: "v1.secret",
+      ticket: "v2.secret",
       dateOfBirth: "1995-06-15",
+      email: "alice@example.com",
     });
     assert.equal(suffix, " :: [body omitted]");
-    assert.doesNotMatch(suffix, /1995|v1\.secret/);
+    assert.doesNotMatch(suffix, /1995|v2\.secret|alice/);
   });
 });

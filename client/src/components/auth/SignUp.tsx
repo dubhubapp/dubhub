@@ -24,6 +24,12 @@ import { getAuthCallbackUrl } from '@/lib/auth-callback-url';
 import { markOnboardingPendingForEmail } from '@/lib/onboarding';
 import { setPendingVerificationEmail } from '@/lib/auth-resend';
 import {
+  isClaimHttpRetryable,
+  runSignupWithDob,
+  SIGNUP_INVALID_DOB_MESSAGE,
+} from '@/lib/signup-dob-flow';
+import { ApiRequestError } from '@/lib/apiDiagnostics';
+import {
   isSignupAccountType,
   isUsernameReadyForCreateAccount,
   mapAvailabilityFailureToUsernameError,
@@ -133,6 +139,8 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
   const [accountType, setAccountType] = useState(
     initialAccountType === "user" || initialAccountType === "artist" ? initialAccountType : "",
   );
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [dobError, setDobError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [hasSignupSucceeded, setHasSignupSucceeded] = useState(false);
@@ -289,10 +297,17 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
 
     try {
       // Validate form inputs
-      if (!email || !username || !password || !confirmPassword || !accountType) {
+      if (!email || !username || !password || !confirmPassword || !accountType || !dateOfBirth) {
         setErrorMessage('Please fill in all fields');
         return;
       }
+
+      if (!dateOfBirth.trim()) {
+        setDobError(SIGNUP_INVALID_DOB_MESSAGE);
+        setErrorMessage(SIGNUP_INVALID_DOB_MESSAGE);
+        return;
+      }
+      setDobError('');
 
       if (password !== confirmPassword) {
         setErrorMessage('Passwords do not match. Please try again');
@@ -315,7 +330,6 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
       const validation = validateUsername(trimmedUsername);
 
       if (!validation.valid) {
-        // Log blocked attempt
         console.warn('[SignUp] Username format validation failed:', {
           attempted_username: trimmedUsername,
           reason: validation.reason || 'format',
@@ -326,11 +340,9 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
       }
 
       // Check username availability (matches backend rules exactly)
-      // Always re-check on submit to prevent stale results
       const availability = await checkUsernameAvailability(supabase, trimmedUsername, accountType as 'user' | 'artist');
 
       if (!availability.available) {
-        // Log blocked attempt
         console.warn('[SignUp] Username availability check failed:', {
           attempted_username: trimmedUsername,
           reason: availability.reason || 'unavailable',
@@ -362,89 +374,175 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
         return;
       }
 
-      // Create Supabase auth user with ORIGINAL username (preserve casing)
       const emailRedirectTo = getAuthCallbackUrl();
-      const { data, error } = await supabase.auth.signUp({
+      let mailerLiteAttempted = false;
+
+      const flow = await runSignupWithDob({
+        dateOfBirth,
         email: trimmedEmail,
-        password: password,
-        options: {
-          emailRedirectTo,
-          data: {
-            username: trimmedUsername, // Send original username with casing preserved
-            account_type: accountType,
+        ageGate: async (dob, email) => {
+          try {
+            const res = await apiRequest('POST', '/api/auth/age-gate', {
+              dateOfBirth: dob,
+              email,
+            });
+            const body = (await res.json()) as {
+              eligible?: boolean;
+              ticket?: string;
+              code?: string;
+            };
+            if (body.eligible === true && typeof body.ticket === 'string') {
+              return { ok: true, ticket: body.ticket };
+            }
+            return { ok: false, kind: 'unavailable' };
+          } catch (err) {
+            if (err instanceof ApiRequestError) {
+              if (err.status === 403) {
+                return { ok: false, kind: 'under_13' };
+              }
+              if (err.status === 400) {
+                return { ok: false, kind: 'invalid' };
+              }
+            }
+            return { ok: false, kind: 'unavailable' };
           }
-        }
+        },
+        signUp: async (email) => {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password: password,
+            options: {
+              emailRedirectTo,
+              data: {
+                username: trimmedUsername,
+                account_type: accountType,
+              },
+            },
+          });
+
+          if (error && isExistingAccountSignupBlockError(error)) {
+            return { ok: false, kind: 'duplicate' };
+          }
+          if (error && isAuthEmailRateLimitError(error)) {
+            return {
+              ok: false,
+              kind: 'rate_limit',
+              message: AUTH_EMAIL_RATE_LIMIT_MESSAGE,
+            };
+          }
+          if (error) {
+            const errorMessage = error.message || '';
+            const errorCode = error.code || '';
+            const em = errorMessage.toLowerCase();
+            const isUsernameConflict =
+              errorCode === '23505' ||
+              em.includes('profiles_username') ||
+              em.includes("name's taken") ||
+              (em.includes('duplicate') &&
+                (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
+              (em.includes('username') && em.includes('taken'));
+            if (isUsernameConflict) {
+              return {
+                ok: false,
+                kind: 'username',
+                message: 'Username already taken, please choose another.',
+              };
+            }
+            if (
+              errorMessage.includes('Password should be') ||
+              errorMessage.toLowerCase().includes('password')
+            ) {
+              return {
+                ok: false,
+                kind: 'other',
+                message: errorMessage || 'Password was rejected. Please use a different password.',
+              };
+            }
+            return {
+              ok: false,
+              kind: 'other',
+              message: errorMessage || 'Failed to create account. Please try again.',
+            };
+          }
+          if (!data?.user?.id) {
+            return { ok: false, kind: 'duplicate' };
+          }
+          return { ok: true, userId: data.user.id };
+        },
+        claim: async (userId, ticket) => {
+          try {
+            const res = await apiRequest('POST', '/api/auth/pending-demographics', {
+              userId,
+              ticket,
+            });
+            const body = (await res.json()) as { ok?: boolean; code?: string };
+            if (body.ok === true) return { ok: true };
+            return {
+              ok: false,
+              retryable: isClaimHttpRetryable(res.status, body.code),
+              code: body.code,
+            };
+          } catch (err) {
+            if (err instanceof ApiRequestError) {
+              let code: string | undefined;
+              try {
+                const parsed = JSON.parse(err.responseBody || '{}') as { code?: string };
+                code = parsed.code;
+              } catch {
+                /* ignore */
+              }
+              return {
+                ok: false,
+                retryable: isClaimHttpRetryable(err.status ?? 0, code),
+                code,
+              };
+            }
+            return { ok: false, retryable: true };
+          }
+        },
+        abandon: async (userId, ticket) => {
+          try {
+            const res = await apiRequest('POST', '/api/auth/abandon-unconfirmed-signup', {
+              userId,
+              ticket,
+            });
+            const body = (await res.json()) as { ok?: boolean };
+            return { ok: body.ok === true };
+          } catch {
+            return { ok: false };
+          }
+        },
+        afterClaimSuccess: async () => {
+          setSignupCooldownRemaining(SIGNUP_EMAIL_COOLDOWN_SECONDS);
+          if (!mailerLiteAttempted) {
+            mailerLiteAttempted = true;
+            try {
+              await apiRequest('POST', '/api/addToMailerLite', {
+                email: trimmedEmail,
+                role: accountType,
+                username: trimmedUsername,
+              });
+            } catch {
+              // Non-blocking — do not fail signup after claim
+            }
+          }
+          markOnboardingPendingForEmail(trimmedEmail);
+          setPendingVerificationEmail(trimmedEmail);
+          openVerificationModal();
+        },
       });
 
-      if (error && isExistingAccountSignupBlockError(error)) {
-        setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
+      if (!flow.ok) {
+        if (
+          flow.message === SIGNUP_INVALID_DOB_MESSAGE ||
+          flow.message.toLowerCase().includes('date of birth')
+        ) {
+          setDobError(flow.message);
+        }
+        setErrorMessage(flow.message);
         return;
       }
-
-      // New account: Supabase creates auth.users only; `public.profiles` is inserted after email
-      // confirmation via handle_user_confirmed—not during this success path (no profile API here).
-      if (data?.user && !error) {
-        setSignupCooldownRemaining(SIGNUP_EMAIL_COOLDOWN_SECONDS);
-        console.log('[SignUp] Auth user created; awaiting email verification before profile row:', data.user.id);
-
-        // Add user to MailerLite (non-blocking - don't fail sign-up if this fails)
-        try {
-          await apiRequest('POST', '/api/addToMailerLite', {
-            email: trimmedEmail,
-            role: accountType,
-            username: trimmedUsername, // Use original username
-          });
-          console.log('User added to MailerLite successfully');
-        } catch (mailerLiteError) {
-          // Log error but don't block sign-up
-          console.error('MailerLite integration error:', mailerLiteError);
-        }
-
-        // Dedicated verification Dialog is the account-created confirmation (no duplicate toast).
-        markOnboardingPendingForEmail(trimmedEmail);
-        setPendingVerificationEmail(trimmedEmail);
-
-        // Show verification modal
-        openVerificationModal();
-        return; // Success - exit early
-      }
-
-      // If we reach here, user was not created
-      // Handle error only if user doesn't exist
-      if (error) {
-        const errorMessage = error.message || '';
-        const errorCode = error.code || '';
-
-        if (isAuthEmailRateLimitError(error)) {
-          setErrorMessage(AUTH_EMAIL_RATE_LIMIT_MESSAGE);
-        } else {
-          const em = errorMessage.toLowerCase();
-          // Prefer duplicate-email detection before username heuristics ("already exists" can mean email).
-          const isUsernameConflict =
-            errorCode === '23505' ||
-            em.includes('profiles_username') ||
-            em.includes("name's taken") ||
-            (em.includes('duplicate') &&
-              (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
-            (em.includes('username') && em.includes('taken'));
-
-          if (isExistingAccountSignupBlockError(error)) {
-            setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
-          } else if (isUsernameConflict) {
-            setErrorMessage('Username already taken, please choose another.');
-          } else if (
-            errorMessage.includes('Password should be') ||
-            errorMessage.toLowerCase().includes('password')
-          ) {
-            setErrorMessage(errorMessage || 'Password was rejected. Please use a different password.');
-          } else {
-            setErrorMessage(errorMessage || 'Failed to create account. Please try again.');
-          }
-        }
-      } else {
-        // Supabase duplicate signup often returns 200 with no error and no user (no verification email sent).
-        setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
-      }
+      return;
     } catch (error: unknown) {
       console.error('[SignUp] Unexpected signup error:', error);
 
@@ -453,23 +551,7 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
       } else {
         const errorMessage =
           error instanceof Error ? error.message : String((error as { message?: string })?.message ?? '');
-        const em = errorMessage.toLowerCase();
-        const code = String((error as { code?: string }).code ?? '');
-        const isUsernameConflict =
-          code === '23505' ||
-          em.includes('profiles_username') ||
-          em.includes("name's taken") ||
-          (em.includes('duplicate') &&
-            (em.includes('username') || em.includes('profiles') || em.includes('unique'))) ||
-          (em.includes('username') && em.includes('taken'));
-
-        if (isExistingAccountSignupBlockError(error)) {
-          setErrorMessage(DUPLICATE_EMAIL_SIGNUP_MESSAGE);
-        } else if (isUsernameConflict) {
-          setErrorMessage('Username already taken, please choose another.');
-        } else {
-          setErrorMessage(errorMessage || 'An unexpected error occurred. Please try again.');
-        }
+        setErrorMessage(errorMessage || 'An unexpected error occurred. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -538,6 +620,53 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
               disabled={hasSignupSucceeded}
               data-testid="input-email"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="dateOfBirth" className="text-foreground">
+              Date of birth
+            </Label>
+            {/*
+              Same closed-field geometry pattern as Submit Metadata played-date:
+              overflow-contain wrapper + proven `dubhub-date-input` WebKit rules.
+              Prelogin glass token kept so the field matches Email/Username chrome.
+            */}
+            <div className="dubhub-prelogin-dob-wrap relative isolate flex h-[2.8125rem] min-w-0 w-full max-w-full overflow-hidden rounded-[15px] [contain:inline-size]">
+              <Input
+                id="dateOfBirth"
+                type="date"
+                name="bday"
+                value={dateOfBirth}
+                onChange={(e) => {
+                  setDateOfBirth(e.target.value);
+                  setDobError('');
+                }}
+                className={cn(
+                  PRELOGIN_FIELD_CLASS,
+                  "dubhub-date-input h-full min-h-0 max-h-full min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-start px-3 py-0 pr-12 text-left [color-scheme:dark] md:text-sm",
+                  "focus-visible:ring-offset-0",
+                  dobError ? PRELOGIN_FIELD_INVALID_CLASS : "",
+                )}
+                autoComplete="bday"
+                required
+                disabled={hasSignupSucceeded}
+                data-testid="input-date-of-birth"
+                aria-invalid={!!dobError}
+                aria-describedby={dobError ? "dob-status" : undefined}
+              />
+            </div>
+            {dobError ? (
+              <div
+                id="dob-status"
+                className={PRELOGIN_CONFIRM_STATUS_CLASS}
+                data-testid="dob-status"
+                aria-live="polite"
+              >
+                <p className="text-xs text-red-600" data-testid="text-dob-error">
+                  {dobError}
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className={cn("space-y-2", PRELOGIN_FEEDBACK_GROUP_CLASS)}>
@@ -718,6 +847,7 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
               className={PRELOGIN_PRIMARY_CTA_CLASS}
               disabled={
                 isLoading ||
+                !dateOfBirth ||
                 !isUsernameReadyForCreateAccount(usernameStatus) ||
                 isPasswordWeak ||
                 confirmPasswordMismatch ||

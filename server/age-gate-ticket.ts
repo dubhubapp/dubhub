@@ -11,9 +11,10 @@
  *   openssl rand -base64 32
  *
  * Envelope (opaque to clients):
- *   v1.<base64url(iv 12)>.<base64url(ciphertext)>.<base64url(tag 16)>
+ *   v2.<base64url(iv 12)>.<base64url(ciphertext)>.<base64url(tag 16)>
  *
- * Plaintext JSON (never logged): { v, dob, iat, exp, jti }
+ * Plaintext JSON (never logged): { v:2, dob, emailBinding, iat, exp, jti }
+ * emailBinding = SHA-256 hex of normalizeSignupEmail(email)
  * TTL: 20 minutes — covers age-gate → signup form → signUp → claim.
  * Rotation of AGE_GATE_TICKET_SECRET invalidates all outstanding tickets.
  */
@@ -21,11 +22,14 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   randomBytes,
   randomUUID,
 } from "node:crypto";
+import { normalizeSignupEmail } from "@shared/signup-email";
 
-export const AGE_GATE_TICKET_VERSION = 1 as const;
+export const AGE_GATE_TICKET_VERSION = 2 as const;
+export const AGE_GATE_TICKET_ENVELOPE_PREFIX = "v2" as const;
 export const AGE_GATE_TICKET_TTL_MS = 20 * 60 * 1000;
 /** Auth user must have been created within this window to accept a claim. */
 export const PENDING_CLAIM_AUTH_MAX_AGE_MS = 30 * 60 * 1000;
@@ -35,10 +39,13 @@ export const PENDING_DEMOGRAPHICS_RETENTION_MS = 48 * 60 * 60 * 1000;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
+const EMAIL_BINDING_HEX_RE = /^[0-9a-f]{64}$/;
 
 export type AgeGateTicketPayload = {
   v: typeof AGE_GATE_TICKET_VERSION;
   dob: string;
+  /** SHA-256 hex of normalizeSignupEmail(email). Never plaintext email. */
+  emailBinding: string;
   iat: number;
   exp: number;
   jti: string;
@@ -46,7 +53,7 @@ export type AgeGateTicketPayload = {
 
 export type SealTicketResult =
   | { ok: true; ticket: string; payload: AgeGateTicketPayload }
-  | { ok: false; code: "secret_unavailable" | "seal_failed" };
+  | { ok: false; code: "secret_unavailable" | "seal_failed" | "invalid_email" };
 
 export type UnsealTicketResult =
   | { ok: true; payload: AgeGateTicketPayload }
@@ -67,6 +74,29 @@ export class AgeGateTicketSecretError extends Error {
   }
 }
 
+/** SHA-256 hex binding for a normalized signup email. */
+export function hashSignupEmailBinding(normalizedEmail: string): string {
+  return createHash("sha256").update(normalizedEmail, "utf8").digest("hex");
+}
+
+/**
+ * Normalize + hash. Returns null if email fails normalizeSignupEmail.
+ */
+export function emailBindingFromRawEmail(email: unknown): string | null {
+  const normalized = normalizeSignupEmail(email);
+  if (!normalized) return null;
+  return hashSignupEmailBinding(normalized);
+}
+
+export function emailBindingsMatch(
+  ticketBinding: string,
+  authEmail: unknown,
+): boolean {
+  const expected = emailBindingFromRawEmail(authEmail);
+  if (!expected || !EMAIL_BINDING_HEX_RE.test(ticketBinding)) return false;
+  return ticketBinding === expected;
+}
+
 /** Decode env secret to 32-byte key. Throws AgeGateTicketSecretError if invalid. */
 export function decodeAgeGateTicketSecret(secret: string): Buffer {
   const trimmed = secret.trim();
@@ -76,8 +106,6 @@ export function decodeAgeGateTicketSecret(secret: string): Buffer {
 
   const asB64 = Buffer.from(trimmed, "base64");
   if (asB64.length === KEY_BYTES) {
-    // Reject ambiguous non-base64 that happens to decode to wrong length only;
-    // require round-trip for base64-looking secrets when length matches.
     return asB64;
   }
 
@@ -136,6 +164,8 @@ function fromB64url(s: string): Buffer | null {
 
 export function sealAgeGateTicket(args: {
   dateOfBirth: string;
+  /** Raw signup email — normalized + hashed inside; never stored plaintext in ticket. */
+  email: string;
   key: Buffer;
   nowMs?: number;
   ttlMs?: number;
@@ -145,11 +175,16 @@ export function sealAgeGateTicket(args: {
     if (args.key.length !== KEY_BYTES) {
       return { ok: false, code: "seal_failed" };
     }
+    const emailBinding = emailBindingFromRawEmail(args.email);
+    if (!emailBinding) {
+      return { ok: false, code: "invalid_email" };
+    }
     const nowMs = args.nowMs ?? Date.now();
     const ttlMs = args.ttlMs ?? AGE_GATE_TICKET_TTL_MS;
     const payload: AgeGateTicketPayload = {
       v: AGE_GATE_TICKET_VERSION,
       dob: args.dateOfBirth,
+      emailBinding,
       iat: nowMs,
       exp: nowMs + ttlMs,
       jti: args.jti ?? randomUUID(),
@@ -165,7 +200,7 @@ export function sealAgeGateTicket(args: {
     if (tag.length !== TAG_BYTES) {
       return { ok: false, code: "seal_failed" };
     }
-    const ticket = `v1.${b64url(iv)}.${b64url(ciphertext)}.${b64url(tag)}`;
+    const ticket = `${AGE_GATE_TICKET_ENVELOPE_PREFIX}.${b64url(iv)}.${b64url(ciphertext)}.${b64url(tag)}`;
     return { ok: true, ticket, payload };
   } catch {
     return { ok: false, code: "seal_failed" };
@@ -176,6 +211,8 @@ export function unsealAgeGateTicket(args: {
   ticket: string;
   key: Buffer;
   nowMs?: number;
+  /** When true, authenticate payload even if exp has passed (abandon cleanup only). */
+  allowExpired?: boolean;
 }): UnsealTicketResult {
   try {
     if (args.key.length !== KEY_BYTES) {
@@ -185,7 +222,7 @@ export function unsealAgeGateTicket(args: {
       return { ok: false, code: "malformed" };
     }
     const parts = args.ticket.split(".");
-    if (parts.length !== 4 || parts[0] !== "v1") {
+    if (parts.length !== 4 || parts[0] !== AGE_GATE_TICKET_ENVELOPE_PREFIX) {
       return { ok: false, code: "malformed" };
     }
     const iv = fromB64url(parts[1]!);
@@ -224,7 +261,14 @@ export function unsealAgeGateTicket(args: {
     if (obj.v !== AGE_GATE_TICKET_VERSION) {
       return { ok: false, code: "invalid_payload" };
     }
-    if (typeof obj.dob !== "string" || typeof obj.jti !== "string") {
+    if (
+      typeof obj.dob !== "string" ||
+      typeof obj.jti !== "string" ||
+      typeof obj.emailBinding !== "string"
+    ) {
+      return { ok: false, code: "invalid_payload" };
+    }
+    if (!EMAIL_BINDING_HEX_RE.test(obj.emailBinding)) {
       return { ok: false, code: "invalid_payload" };
     }
     if (typeof obj.iat !== "number" || typeof obj.exp !== "number") {
@@ -239,7 +283,7 @@ export function unsealAgeGateTicket(args: {
     }
 
     const nowMs = args.nowMs ?? Date.now();
-    if (nowMs > obj.exp) {
+    if (!args.allowExpired && nowMs > obj.exp) {
       return { ok: false, code: "expired" };
     }
 
@@ -248,6 +292,7 @@ export function unsealAgeGateTicket(args: {
       payload: {
         v: AGE_GATE_TICKET_VERSION,
         dob: obj.dob,
+        emailBinding: obj.emailBinding,
         iat: obj.iat,
         exp: obj.exp,
         jti: obj.jti,

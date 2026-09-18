@@ -9,6 +9,7 @@
 import type { Pool } from "pg";
 import { evaluateDateOfBirth } from "@shared/age-gate";
 import {
+  emailBindingsMatch,
   PENDING_CLAIM_AUTH_MAX_AGE_MS,
   PENDING_DEMOGRAPHICS_RETENTION_MS,
   unsealAgeGateTicket,
@@ -48,6 +49,8 @@ type AuthUserSnapshot = {
   id: string;
   created_at: string;
   email_confirmed_at: string | null;
+  /** Auth user's email — used only to verify ticket emailBinding. Never logged. */
+  email: string | null;
 };
 
 export type PendingDemographicsDeps = {
@@ -139,6 +142,11 @@ export async function claimPendingDemographics(
   const authUser = await deps.getAuthUserById(userId);
   if (!authUser) {
     return clientError("auth_user_not_found", 404);
+  }
+
+  // Ticket must be bound to this Auth user's actual signup email.
+  if (!emailBindingsMatch(payload.emailBinding, authUser.email)) {
+    return clientError("auth_user_not_eligible", 403);
   }
 
   const createdAtMs = Date.parse(authUser.created_at);

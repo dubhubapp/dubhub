@@ -167,17 +167,19 @@ function mockPool(state: State): Pool {
   } as unknown as Pool;
 }
 
-function recentAuth(userId: string) {
+function recentAuth(userId: string, email = "alice@example.com") {
   return {
     id: userId,
     created_at: new Date(NOW - 60_000).toISOString(),
     email_confirmed_at: null as string | null,
+    email,
   };
 }
 
-async function sealTicket(jti = JTI) {
+async function sealTicket(jti = JTI, email = "alice@example.com") {
   const sealed = sealAgeGateTicket({
     dateOfBirth: DOB,
+    email,
     key: TEST_KEY,
     nowMs: NOW,
     jti,
@@ -226,6 +228,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
           id: USER_A,
           created_at: new Date(NOW - 2 * 60 * 60 * 1000).toISOString(),
           email_confirmed_at: null,
+          email: "alice@example.com",
         }),
         nowMs: () => NOW,
       },
@@ -234,6 +237,71 @@ describe("claimPendingDemographics (atomic RPC)", () => {
     assert.equal(result.ok, false);
     assert.equal(result.code, "auth_user_not_eligible");
     assert.equal(state.rpcCalls, 0);
+  });
+
+  it("ticket email A + Auth email A → claim succeeds", async () => {
+    const state: State = {
+      consumed: new Map(),
+      pending: new Map(),
+      final: new Set(),
+      rpcCalls: 0,
+    };
+    const ticket = await sealTicket(JTI, "alice@example.com");
+    const result = await claimPendingDemographics(
+      {
+        pool: mockPool(state),
+        getTicketKey: () => TEST_KEY,
+        getAuthUserById: async () => recentAuth(USER_A, "alice@example.com"),
+        nowMs: () => NOW,
+      },
+      { userId: USER_A, ticket },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(state.rpcCalls, 1);
+  });
+
+  it("ticket email A + Auth email B → claim rejected (no RPC / no consume)", async () => {
+    const state: State = {
+      consumed: new Map(),
+      pending: new Map(),
+      final: new Set(),
+      rpcCalls: 0,
+    };
+    const ticket = await sealTicket(JTI, "alice@example.com");
+    const result = await claimPendingDemographics(
+      {
+        pool: mockPool(state),
+        getTicketKey: () => TEST_KEY,
+        getAuthUserById: async () => recentAuth(USER_A, "bob@example.com"),
+        nowMs: () => NOW,
+      },
+      { userId: USER_A, ticket },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "auth_user_not_eligible");
+    assert.equal(state.rpcCalls, 0);
+    assert.equal(state.consumed.size, 0);
+    assert.equal(state.pending.size, 0);
+  });
+
+  it("case/trim: ticket for Alice@ matches alice@ Auth email", async () => {
+    const state: State = {
+      consumed: new Map(),
+      pending: new Map(),
+      final: new Set(),
+      rpcCalls: 0,
+    };
+    const ticket = await sealTicket(JTI, "  Alice@Example.COM ");
+    const result = await claimPendingDemographics(
+      {
+        pool: mockPool(state),
+        getTicketKey: () => TEST_KEY,
+        getAuthUserById: async () => recentAuth(USER_A, "alice@example.com"),
+        nowMs: () => NOW,
+      },
+      { userId: USER_A, ticket },
+    );
+    assert.equal(result.ok, true);
   });
 
   it("normal claim creates consumed + pending together", async () => {

@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { normalizeSignupEmail } from "@shared/signup-email";
 import {
   AGE_GATE_TICKET_TTL_MS,
+  AGE_GATE_TICKET_VERSION,
   decodeAgeGateTicketSecret,
+  emailBindingFromRawEmail,
+  emailBindingsMatch,
+  hashSignupEmailBinding,
   sealAgeGateTicket,
   unsealAgeGateTicket,
 } from "./age-gate-ticket";
@@ -12,6 +17,7 @@ import {
 const TEST_KEY = Buffer.alloc(32, 7);
 const OTHER_KEY = Buffer.alloc(32, 9);
 const DOB = "1995-06-15";
+const EMAIL = "alice@example.com";
 
 describe("age-gate ticket AES-256-GCM", () => {
   it("decodes base64 / hex / utf8 32-byte secrets", () => {
@@ -25,25 +31,35 @@ describe("age-gate ticket AES-256-GCM", () => {
     assert.throws(() => decodeAgeGateTicketSecret("too-short"));
   });
 
-  it("seals eligible ticket that does not contain plaintext DOB", () => {
+  it("seals eligible ticket opaque — no plaintext DOB/email/binding in envelope", () => {
     const sealed = sealAgeGateTicket({
       dateOfBirth: DOB,
+      email: EMAIL,
       key: TEST_KEY,
       nowMs: 1_700_000_000_000,
       jti: "11111111-1111-4111-8111-111111111111",
     });
     assert.equal(sealed.ok, true);
     if (!sealed.ok) return;
-    assert.match(sealed.ticket, /^v1\./);
+    assert.match(sealed.ticket, /^v2\./);
     assert.doesNotMatch(sealed.ticket, /1995/);
     assert.doesNotMatch(sealed.ticket, /06-15/);
     assert.doesNotMatch(sealed.ticket, /dob/i);
+    assert.doesNotMatch(sealed.ticket, /alice/i);
+    assert.doesNotMatch(sealed.ticket, /example\.com/i);
+    assert.equal(sealed.ticket.includes(sealed.payload.emailBinding), false);
     assert.equal(sealed.payload.jti, "11111111-1111-4111-8111-111111111111");
+    assert.equal(sealed.payload.v, AGE_GATE_TICKET_VERSION);
+    assert.equal(
+      sealed.payload.emailBinding,
+      hashSignupEmailBinding(normalizeSignupEmail(EMAIL)!),
+    );
   });
 
-  it("round-trips unseal", () => {
+  it("round-trips unseal with emailBinding", () => {
     const sealed = sealAgeGateTicket({
       dateOfBirth: DOB,
+      email: EMAIL,
       key: TEST_KEY,
       nowMs: 1_700_000_000_000,
     });
@@ -57,19 +73,22 @@ describe("age-gate ticket AES-256-GCM", () => {
     assert.equal(open.ok, true);
     if (!open.ok) return;
     assert.equal(open.payload.dob, DOB);
-    assert.equal(open.payload.v, 1);
+    assert.equal(open.payload.v, 2);
+    assert.equal(
+      open.payload.emailBinding,
+      createHash("sha256").update("alice@example.com", "utf8").digest("hex"),
+    );
   });
 
   it("rejects one-byte tamper", () => {
     const sealed = sealAgeGateTicket({
       dateOfBirth: DOB,
+      email: EMAIL,
       key: TEST_KEY,
       nowMs: 1_700_000_000_000,
     });
     assert.equal(sealed.ok, true);
     if (!sealed.ok) return;
-    const chars = sealed.ticket.split("");
-    // Flip a character in the ciphertext segment
     const parts = sealed.ticket.split(".");
     const ct = parts[2]!;
     const flipped =
@@ -82,12 +101,12 @@ describe("age-gate ticket AES-256-GCM", () => {
     });
     assert.equal(open.ok, false);
     if (!open.ok) assert.equal(open.code, "tampered");
-    void chars;
   });
 
   it("rejects expired ticket", () => {
     const sealed = sealAgeGateTicket({
       dateOfBirth: DOB,
+      email: EMAIL,
       key: TEST_KEY,
       nowMs: 1_700_000_000_000,
       ttlMs: AGE_GATE_TICKET_TTL_MS,
@@ -103,8 +122,15 @@ describe("age-gate ticket AES-256-GCM", () => {
     if (!open.ok) assert.equal(open.code, "expired");
   });
 
-  it("rejects malformed envelopes", () => {
-    for (const ticket of ["", "v1", "v2.a.b.c", "not-a-ticket", "v1..."]) {
+  it("rejects malformed / legacy v1 envelopes", () => {
+    for (const ticket of [
+      "",
+      "v1",
+      "v1.a.b.c",
+      "v2.a.b.c",
+      "not-a-ticket",
+      "v2...",
+    ]) {
       const open = unsealAgeGateTicket({
         ticket,
         key: TEST_KEY,
@@ -117,6 +143,7 @@ describe("age-gate ticket AES-256-GCM", () => {
   it("rejects wrong secret", () => {
     const sealed = sealAgeGateTicket({
       dateOfBirth: DOB,
+      email: EMAIL,
       key: TEST_KEY,
       nowMs: 1_700_000_000_000,
     });
@@ -132,10 +159,37 @@ describe("age-gate ticket AES-256-GCM", () => {
   });
 
   it("issues unique ticket ids by default", () => {
-    const a = sealAgeGateTicket({ dateOfBirth: DOB, key: TEST_KEY });
-    const b = sealAgeGateTicket({ dateOfBirth: DOB, key: TEST_KEY });
+    const a = sealAgeGateTicket({
+      dateOfBirth: DOB,
+      email: EMAIL,
+      key: TEST_KEY,
+    });
+    const b = sealAgeGateTicket({
+      dateOfBirth: DOB,
+      email: EMAIL,
+      key: TEST_KEY,
+    });
     assert.equal(a.ok && b.ok, true);
     if (!a.ok || !b.ok) return;
     assert.notEqual(a.payload.jti, b.payload.jti);
+  });
+
+  it("case/trim normalization binds identically", () => {
+    const a = emailBindingFromRawEmail("  Alice@Example.COM ");
+    const b = emailBindingFromRawEmail("alice@example.com");
+    assert.ok(a && b);
+    assert.equal(a, b);
+    assert.equal(emailBindingsMatch(a!, "ALICE@EXAMPLE.COM"), true);
+    assert.equal(emailBindingsMatch(a!, "bob@example.com"), false);
+  });
+
+  it("rejects seal without valid email", () => {
+    const sealed = sealAgeGateTicket({
+      dateOfBirth: DOB,
+      email: "not-an-email",
+      key: TEST_KEY,
+    });
+    assert.equal(sealed.ok, false);
+    if (!sealed.ok) assert.equal(sealed.code, "invalid_email");
   });
 });

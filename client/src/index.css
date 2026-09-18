@@ -419,6 +419,108 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   transition: background-color 99999s ease-out;
 }
 
+/**
+ * SignUp DOB chrome + geometry.
+ *
+ * Email paints metallic edge / inset highlight / outer glow on `.dubhub-prelogin-field`.
+ * DOB keeps an overflow-contain wrapper for native date sizing; that wrapper clipped
+ * the input's outer box-shadow, so the closed field looked matte. Paint the same
+ * prelogin chrome on the wrapper; keep the inner date input visually flat.
+ * Geometry/typography rules below are unchanged in intent.
+ */
+.dubhub-prelogin-auth .dubhub-prelogin-dob-wrap {
+  height: 2.8125rem;
+  border-radius: 15px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.06);
+  background-color: rgba(44, 54, 92, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 2px 10px rgba(0, 0, 0, 0.28);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dubhub-prelogin-auth .dubhub-prelogin-dob-wrap {
+    background-color: rgba(48, 58, 102, 0.54);
+    -webkit-backdrop-filter: blur(20px) saturate(1.45);
+    backdrop-filter: blur(20px) saturate(1.45);
+  }
+}
+
+.dubhub-prelogin-auth .dubhub-prelogin-dob-wrap:focus-within {
+  outline: none;
+  border-color: rgba(10, 131, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+    0 0 0 1px rgba(10, 131, 255, 0.3),
+    0 0 20px rgba(0, 29, 249, 0.17);
+}
+
+.dubhub-prelogin-auth
+  .dubhub-prelogin-dob-wrap:has(.dubhub-prelogin-field-invalid),
+.dubhub-prelogin-auth
+  .dubhub-prelogin-dob-wrap:has([aria-invalid="true"]) {
+  border-color: rgba(239, 68, 68, 0.65);
+}
+
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"] {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  /* Chrome lives on the wrapper — neutralize duplicate field chrome on the input. */
+  border-color: transparent;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  /* Match Email Input text-base — do not use font:inherit (overrides text-base). */
+  font-size: 16px;
+  font-weight: 400;
+  line-height: normal;
+}
+
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]:focus,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-datetime-edit,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-datetime-edit-text,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-datetime-edit-month-field,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-datetime-edit-day-field,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-datetime-edit-year-field,
+.dubhub-prelogin-auth
+  input.dubhub-prelogin-field.dubhub-date-input[type="date"]::-webkit-date-and-time-value {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: normal;
+  color: hsl(210, 25%, 96%);
+  -webkit-text-fill-color: hsl(210, 25%, 96%);
+  padding-top: 0;
+  padding-bottom: 0;
+  margin: 0;
+}
+
 /* Portaled Account Type menu — Sign Up; same indigo glass family. */
 .dubhub-prelogin-select-content {
   border-radius: 15px;
