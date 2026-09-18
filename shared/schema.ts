@@ -50,6 +50,8 @@ export const posts = pgTable("posts", {
   verificationStatus: text("verification_status").default("unverified"), // "unverified" | "community" | "community_approved" | "identified" | …
   isVerifiedCommunity: boolean("is_verified_community").default(false),
   isVerifiedArtist: boolean("is_verified_artist").default(false),
+  /** Artist privately claimed; identity hidden. Never pair with artistVerifiedBy while anonymous. */
+  isArtistVerifiedAnonymous: boolean("is_artist_verified_anonymous").default(false),
   verifiedByModerator: boolean("verified_by_moderator").default(false),
   verifiedCommentId: varchar("verified_comment_id"), // References comments.id (no FK to avoid circular ref)
   verifiedBy: varchar("verified_by").references(() => profiles.id), // Moderator verification: commenter who provided the ID
@@ -110,6 +112,31 @@ export const artistVideoTags = pgTable("artist_video_tags", {
   status: text("status").notNull().default("pending"), // "pending" | "confirmed" | "denied"
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+/** Private VAT anonymous artist identification claims (service-role only; no public RLS). */
+export const artistPrivateIdentifications = pgTable(
+  "artist_private_identifications",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    postId: varchar("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    artistId: varchar("artist_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    sourceCommentId: varchar("source_comment_id").references(() => comments.id, {
+      onDelete: "set null",
+    }),
+    state: text("state").notNull(), // "anonymous" | "revealed"
+    claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
+    revealedAt: timestamp("revealed_at", { withTimezone: true }),
+    entitledAtClaim: boolean("entitled_at_claim").notNull(),
+    createdVia: text("created_via"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("artist_private_identifications_artist_id_idx").on(t.artistId)],
+);
 
 // Releases (post-based; no tracks table) - defined before notifications for FK
 export const releases = pgTable("releases", {

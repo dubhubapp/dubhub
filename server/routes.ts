@@ -70,6 +70,13 @@ import { registerPendingDemographicsRoutes } from "./pending-demographics-route"
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { canArtistDeliverReleaseAlerts } from "./artist-release-alert-delivery";
 import { canArtistUsePaidTools } from "./artist-paid-tool-access";
+import {
+  AnonymousClaimError,
+  createAnonymousArtistIdentification,
+  getAnonymousClaimForModerator,
+  getAnonymousClaimForOwner,
+  listAnonymousClaimsForOwner,
+} from "./artist-private-identification";
 import { handlePostArtistReleaseAlert } from "./post-artist-release-alert";
 import { isFreeReleaseLimitReachedError } from "./release-creation-limit";
 import {
@@ -3356,6 +3363,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "This post has already been verified by an artist.",
         });
       }
+      if ((post as any).isArtistVerifiedAnonymous || (post as any).is_artist_verified_anonymous) {
+        return res.status(400).json({
+          code: "ARTIST_ALREADY_VERIFIED",
+          message: "This post has already been claimed by an artist.",
+        });
+      }
 
       const commentResult = await db.execute(sql`
         SELECT id, post_id, artist_tag FROM comments WHERE id = ${commentId} LIMIT 1
@@ -3561,6 +3574,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "This post has already been verified by an artist.",
         });
       }
+      if ((post as any).isArtistVerifiedAnonymous || (post as any).is_artist_verified_anonymous) {
+        return res.status(400).json({
+          code: "ARTIST_ALREADY_VERIFIED",
+          message: "This post has already been claimed by an artist.",
+        });
+      }
 
       const commentResult = await db.execute(sql`
         SELECT id, post_id, artist_tag FROM comments WHERE id = ${commentId} LIMIT 1
@@ -3600,6 +3619,151 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to deny post" });
     }
   });
+
+  // VAT-ANON-1: anonymous private artist identification (no UI in this phase)
+  app.post(
+    "/api/posts/:id/artist-identify-anonymous",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.dbUser) {
+          return res.status(401).json({ message: "Not authenticated" });
+        }
+        const postId = req.params.id;
+        const artistId = req.dbUser.id;
+        const body = req.body && typeof req.body === "object" ? req.body : {};
+        const sourceCommentId =
+          typeof (body as any).commentId === "string"
+            ? (body as any).commentId
+            : typeof (body as any).sourceCommentId === "string"
+              ? (body as any).sourceCommentId
+              : null;
+        const createdVia =
+          typeof (body as any).createdVia === "string" ? (body as any).createdVia : null;
+
+        const claim = await createAnonymousArtistIdentification(
+          {
+            postId,
+            artistId,
+            sourceCommentId,
+            createdVia,
+            // Spoof attempts are ignored inside the service.
+            bodyArtistId: (body as any).artistId ?? (body as any).artist_id,
+          },
+          {
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+          },
+        );
+
+        return res.status(201).json({
+          message: "Track identified anonymously",
+          claim: {
+            id: claim.id,
+            postId: claim.postId,
+            state: claim.state,
+            claimedAt: claim.claimedAt,
+            sourceCommentId: claim.sourceCommentId,
+            entitledAtClaim: claim.entitledAtClaim,
+            createdVia: claim.createdVia,
+          },
+          // Owner-only echo; never returned from public post serializers.
+          artistId: claim.artistId,
+        });
+      } catch (error) {
+        if (error instanceof AnonymousClaimError) {
+          return res.status(error.httpStatus).json({
+            code: error.code,
+            message: error.message,
+          });
+        }
+        console.error("[artist-identify-anonymous] Error:", error);
+        return res.status(500).json({ message: "Failed to create anonymous identification" });
+      }
+    },
+  );
+
+  // Owner private claim read (foundation for VAT-ANON-4; no UI yet)
+  app.get(
+    "/api/posts/:id/artist-private-identification",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.dbUser) {
+          return res.status(401).json({ message: "Not authenticated" });
+        }
+        const claim = await getAnonymousClaimForOwner(req.params.id, req.dbUser.id);
+        if (!claim) {
+          return res.status(404).json({ message: "No private identification found" });
+        }
+        return res.json({ claim });
+      } catch (error) {
+        console.error("[artist-private-identification] owner read error:", error);
+        return res.status(500).json({ message: "Failed to load private identification" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/artists/me/anonymous-identifications",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.dbUser) {
+          return res.status(401).json({ message: "Not authenticated" });
+        }
+        const profile = await storage.getUser(req.dbUser.id);
+        if (
+          !profile ||
+          profile.account_type !== "artist" ||
+          !profile.verified_artist
+        ) {
+          return res.status(403).json({
+            code: "VERIFIED_ARTIST_REQUIRED",
+            message: "Verified artist profile required.",
+          });
+        }
+        const claims = await listAnonymousClaimsForOwner(req.dbUser.id);
+        return res.json({ claims });
+      } catch (error) {
+        console.error("[anonymous-identifications] list error:", error);
+        return res.status(500).json({ message: "Failed to list anonymous identifications" });
+      }
+    },
+  );
+
+  // Moderator private claim audit (no UI redesign in this phase)
+  app.get(
+    "/api/moderator/posts/:postId/artist-private-identification",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.dbUser || !req.dbUser.moderator) {
+          return res.status(403).json({ message: "Moderator access required" });
+        }
+        const claim = await getAnonymousClaimForModerator(req.params.postId);
+        if (!claim) {
+          return res.status(404).json({ message: "No private identification found" });
+        }
+        return res.json({
+          claim: {
+            id: claim.id,
+            postId: claim.postId,
+            artistId: claim.artistId,
+            artistUsername: claim.artistUsername,
+            state: claim.state,
+            claimedAt: claim.claimedAt,
+            revealedAt: claim.revealedAt,
+            sourceCommentId: claim.sourceCommentId,
+            entitledAtClaim: claim.entitledAtClaim,
+            createdVia: claim.createdVia,
+          },
+        });
+      } catch (error) {
+        console.error("[moderator artist-private-identification] Error:", error);
+        return res.status(500).json({ message: "Failed to load private identification" });
+      }
+    },
+  );
 
   // Moderator: Get pending verifications
   app.get("/api/moderator/pending-verifications", withSupabaseUser, async (req: AuthenticatedRequest, res) => {

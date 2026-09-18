@@ -68,6 +68,7 @@ type SharePreviewPost = {
   description?: string | null;
   verificationStatus?: string | null;
   isVerifiedArtist?: boolean | null;
+  isArtistVerifiedAnonymous?: boolean | null;
   verifiedByModerator?: boolean | null;
   likes?: number | null;
   comments?: number | null;
@@ -76,7 +77,11 @@ type SharePreviewPost = {
 
 /** Share-preview only — two labels; in-app badges use separate logic. */
 function resolveShareStatusLabel(post: SharePreviewPost): string {
-  if (post.isVerifiedArtist === true || post.verifiedByModerator === true) {
+  if (
+    post.isVerifiedArtist === true ||
+    post.isArtistVerifiedAnonymous === true ||
+    post.verifiedByModerator === true
+  ) {
     return "Identified";
   }
 

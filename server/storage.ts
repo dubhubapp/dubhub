@@ -48,6 +48,20 @@ import { createReleaseWithLimit } from "./create-release-with-limit";
 import { mapReleaseTimingFields } from "@shared/release-timing";
 import { shouldSetReleaseAnnouncedAt } from "@shared/release-announced";
 import { resolveAttachedClipUploaderIsVerifiedArtist } from "@shared/attached-clip-uploader-verified";
+import { projectPublicArtistVerificationFields } from "@shared/artist-private-identification";
+
+/** Map raw post verification columns → public-safe artist verification fields. */
+function mapPublicArtistVerification(row: {
+  is_artist_verified_anonymous?: boolean | null;
+  is_verified_artist?: boolean | null;
+  artist_verified_by?: string | null;
+}) {
+  return projectPublicArtistVerificationFields({
+    is_artist_verified_anonymous: row.is_artist_verified_anonymous,
+    is_verified_artist: row.is_verified_artist,
+    artist_verified_by: row.artist_verified_by,
+  });
+}
 import { attachPostsWithLimit } from "./attach-posts-with-limit";
 import {
   FreeReleaseSubscriptionSuspendedError,
@@ -578,6 +592,7 @@ export class DatabaseStorage implements IStorage {
       const identifiedWhere = sql`(
         p.verification_status IN ('identified', 'community', 'community_approved')
         OR COALESCE(p.is_verified_artist, false) = true
+        OR COALESCE(p.is_artist_verified_anonymous, false) = true
         OR COALESCE(p.is_verified_community, false) = true
         OR COALESCE(p.verified_by_moderator, false) = true
       )`;
@@ -585,6 +600,7 @@ export class DatabaseStorage implements IStorage {
       const unidentifiedWhere = sql`(
         COALESCE(p.verification_status, 'unverified') = 'unverified'
         AND COALESCE(p.is_verified_artist, false) = false
+        AND COALESCE(p.is_artist_verified_anonymous, false) = false
         AND COALESCE(p.is_verified_community, false) = false
         AND COALESCE(p.verified_by_moderator, false) = false
       )`;
@@ -649,6 +665,7 @@ export class DatabaseStorage implements IStorage {
           p.verification_status,
           p.is_verified_community,
           p.is_verified_artist,
+          p.is_artist_verified_anonymous,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
@@ -777,7 +794,9 @@ export class DatabaseStorage implements IStorage {
           console.log("[getPosts] releasePreview attached for post ids:", withPreview.map((r: any) => r.id));
         }
       }
-      const mappedItems = pageRows.map((row: any) => ({
+      const mappedItems = pageRows.map((row: any) => {
+        const artistVerification = mapPublicArtistVerification(row);
+        return {
         id: row.id,
         userId: row.user_id,
         title: row.title,
@@ -791,11 +810,12 @@ export class DatabaseStorage implements IStorage {
         playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
-        isVerifiedArtist: row.is_verified_artist,
+        isVerifiedArtist: artistVerification.isVerifiedArtist,
+        isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
-        artistVerifiedBy: row.artist_verified_by,
+        artistVerifiedBy: artistVerification.artistVerifiedBy,
         deniedByArtist: row.denied_by_artist,
         deniedAt: row.denied_at,
         createdAt: row.created_at,
@@ -829,7 +849,8 @@ export class DatabaseStorage implements IStorage {
                 .map((c: any) => ({ username: c.username, status: c.status || "ACCEPTED" })),
             }
           : null,
-      }));
+      };
+      });
       const lastRow = pageRows[pageRows.length - 1];
       const nextCursor =
         hasMore && lastRow
@@ -908,6 +929,7 @@ export class DatabaseStorage implements IStorage {
           p.verification_status,
           p.is_verified_community,
           p.is_verified_artist,
+          p.is_artist_verified_anonymous,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
@@ -1017,6 +1039,7 @@ export class DatabaseStorage implements IStorage {
       if (rows.length === 0) return undefined;
 
       const row = rows[0];
+      const artistVerification = mapPublicArtistVerification(row);
       return {
         id: row.id,
         userId: row.user_id,
@@ -1031,11 +1054,12 @@ export class DatabaseStorage implements IStorage {
         playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
-        isVerifiedArtist: row.is_verified_artist,
+        isVerifiedArtist: artistVerification.isVerifiedArtist,
+        isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
-        artistVerifiedBy: row.artist_verified_by,
+        artistVerifiedBy: artistVerification.artistVerifiedBy,
         deniedByArtist: row.denied_by_artist,
         deniedAt: row.denied_at,
         createdAt: row.created_at,
@@ -1174,6 +1198,7 @@ export class DatabaseStorage implements IStorage {
           p.verification_status,
           p.is_verified_community,
           p.is_verified_artist,
+          p.is_artist_verified_anonymous,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
@@ -1255,7 +1280,9 @@ export class DatabaseStorage implements IStorage {
 
       const rows = (result as any).rows || [];
 
-      return rows.map((row: any) => ({
+      return rows.map((row: any) => {
+        const artistVerification = mapPublicArtistVerification(row);
+        return {
         id: row.id,
         userId: row.user_id,
         title: row.title,
@@ -1269,11 +1296,12 @@ export class DatabaseStorage implements IStorage {
         playedDate: row.played_date,
         verificationStatus: row.verification_status,
         isVerifiedCommunity: row.is_verified_community,
-        isVerifiedArtist: row.is_verified_artist === true,
+        isVerifiedArtist: artistVerification.isVerifiedArtist,
+        isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
-        artistVerifiedBy: row.artist_verified_by ?? null,
+        artistVerifiedBy: artistVerification.artistVerifiedBy,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
@@ -1303,7 +1331,8 @@ export class DatabaseStorage implements IStorage {
           verified_artist: row.profile_verified_artist,
           moderator: row.profile_moderator,
         },
-      }));
+      };
+      });
     } catch (error) {
       console.error("[getUserLikedPosts] Error:", error);
       return [];
@@ -1739,6 +1768,7 @@ export class DatabaseStorage implements IStorage {
           p.verified_comment_id,
           p.verified_by,
           p.is_verified_artist,
+          p.is_artist_verified_anonymous,
           p.artist_verified_by,
           p.created_at,
           pr.id         AS profile_id,
@@ -1817,6 +1847,7 @@ export class DatabaseStorage implements IStorage {
           const arr = Array.isArray(row.rel_collaborators) ? row.rel_collaborators : [];
           collaborators = arr.filter((c: any) => c && c.username).map((c: any) => ({ username: c.username, status: c.status || "ACCEPTED" }));
         }
+        const artistVerification = mapPublicArtistVerification(row);
         return {
         id: row.id,
         userId: row.user_id,
@@ -1834,8 +1865,9 @@ export class DatabaseStorage implements IStorage {
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
-        isVerifiedArtist: row.is_verified_artist === true,
-        artistVerifiedBy: row.artist_verified_by ?? null,
+        isVerifiedArtist: artistVerification.isVerifiedArtist,
+        isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
+        artistVerifiedBy: artistVerification.artistVerifiedBy,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
         comments: Number(row.comments_count ?? 0),
