@@ -10,12 +10,24 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/user-context";
 import { AlertTriangle, Ban, Clock, Shield, Trash2 } from "lucide-react";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { cn, formatUsernameDisplay } from "@/lib/utils";
 import {
   MODERATION_REPORT_REASONS,
   buildModerationReasonForSubmit,
   defaultModerationReasonSelection,
 } from "@shared/moderation-reasons";
+import {
+  APP_MATERIAL_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_FIELD_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+  APP_MATERIAL_SELECT_CONTENT_CLASS,
+  APP_MATERIAL_SELECT_ITEM_CLASS,
+  APP_MATERIAL_SELECT_TRIGGER_CLASS,
+} from "@/lib/app-material";
 
 const MIN_SUSPEND_DAYS = 1;
 const MAX_SUSPEND_DAYS = 31;
@@ -282,10 +294,13 @@ export function ModerationActionsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        className={cn(APP_MATERIAL_DIALOG_CONTENT_CLASS, "max-h-[90vh] overflow-y-auto")}
+      >
         <DialogHeader>
-          <DialogTitle>Moderation Actions</DialogTitle>
-          <DialogDescription className="text-left space-y-1">
+          <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>Moderation Actions</DialogTitle>
+          <DialogDescription className={cn(APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS, "text-left space-y-1")}>
             <span className="block">Take action against {formatUsernameDisplay(reportedUsername)}</span>
             <span className="block text-xs text-muted-foreground">
               Reported {targetLabel}. Choose a reason above, then use an action below. Removing content is included with
@@ -294,9 +309,9 @@ export function ModerationActionsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
+          <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.04] p-3">
             <h3 className="text-sm font-semibold inline-flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary" />
+              <Shield className="w-4 h-4 text-[#0a83ff]" />
               Enforcement history
             </h3>
             <div className="text-xs text-muted-foreground space-y-1">
@@ -327,7 +342,7 @@ export function ModerationActionsDialog({
                       return (
                         <div
                           key={w.reportId ?? `warn-${w.at ?? ""}-${i}`}
-                          className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5"
+                          className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5"
                         >
                           <p className="font-medium text-foreground">Warning</p>
                           {r ? (
@@ -355,7 +370,7 @@ export function ModerationActionsDialog({
                       return (
                         <div
                           key={s.reportId ?? `sus-${s.at ?? ""}-${i}`}
-                          className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5"
+                          className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5"
                         >
                           <p className="font-medium text-foreground">Suspension</p>
                           {typeof s.days === "number" && Number.isFinite(s.days) ? (
@@ -388,7 +403,7 @@ export function ModerationActionsDialog({
                       return (
                         <div
                           key={b.reportId ?? `ban-${b.at ?? ""}-${i}`}
-                          className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5"
+                          className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5"
                         >
                           <p className="font-medium text-foreground">Permanent ban</p>
                           {r ? (
@@ -411,12 +426,15 @@ export function ModerationActionsDialog({
           <div className="space-y-2">
             <Label htmlFor="mod-reason">Reason (shown to user)</Label>
             <Select value={reasonCategory} onValueChange={setReasonCategory}>
-              <SelectTrigger id="mod-reason" className="w-full">
+              <SelectTrigger id="mod-reason" className={cn(APP_MATERIAL_SELECT_TRIGGER_CLASS, "w-full")}>
                 <SelectValue placeholder="Select reason" />
               </SelectTrigger>
-              <SelectContent position="popper" className="max-h-[min(70vh,320px)]">
+              <SelectContent
+                position="popper"
+                className={cn(APP_MATERIAL_SELECT_CONTENT_CLASS, "max-h-[min(70vh,320px)]")}
+              >
                 {MODERATION_REPORT_REASONS.map((r) => (
-                  <SelectItem key={r} value={r}>
+                  <SelectItem key={r} value={r} className={APP_MATERIAL_SELECT_ITEM_CLASS}>
                     {r}
                   </SelectItem>
                 ))}
@@ -436,7 +454,7 @@ export function ModerationActionsDialog({
                   }}
                   placeholder="Short explanation for the affected user…"
                   rows={3}
-                  className="resize-none text-sm"
+                  className={cn(APP_MATERIAL_FIELD_CLASS, "resize-none text-sm")}
                 />
                 <p className="text-xs text-muted-foreground text-right">
                   {otherNotes.length}/{OTHER_NOTES_MAX}
@@ -446,7 +464,7 @@ export function ModerationActionsDialog({
           </div>
 
           {/* Remove content only */}
-          <div className="border rounded-lg p-4 space-y-2">
+          <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center gap-2">
               <Trash2 className="w-5 h-5 text-muted-foreground" />
               <h3 className="font-semibold">Remove content only</h3>
@@ -457,7 +475,7 @@ export function ModerationActionsDialog({
             </p>
             <Button
               variant="outline"
-              className="w-full"
+              className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "w-full")}
               onClick={handleRemoveOnly}
               disabled={pending || !reasonCategory}
             >
@@ -470,7 +488,7 @@ export function ModerationActionsDialog({
           </div>
 
           {/* Warn */}
-          <div className="border rounded-lg p-4 space-y-2">
+          <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-yellow-500" />
               <h3 className="font-semibold">Warning</h3>
@@ -479,13 +497,18 @@ export function ModerationActionsDialog({
               Removes the reported post or comment, increments their warning count, and notifies them. Does not suspend
               or ban the account.
             </p>
-            <Button variant="outline" className="w-full" onClick={handleWarn} disabled={pending || !reasonCategory}>
+            <Button
+              variant="outline"
+              className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "w-full")}
+              onClick={handleWarn}
+              disabled={pending || !reasonCategory}
+            >
               {pending && pendingAct === "warn" ? "Warning..." : "Warn Community Member"}
             </Button>
           </div>
 
           {/* Suspend */}
-          <div className="border rounded-lg p-4 space-y-2">
+          <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-orange-500" />
               <h3 className="font-semibold">Suspend</h3>
@@ -504,7 +527,7 @@ export function ModerationActionsDialog({
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="shrink-0 h-9 w-9"
+                    className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "shrink-0 h-9 w-9")}
                     aria-label="Decrease days"
                     onClick={() => adjustSuspendDays(-1)}
                     disabled={pending || (parseInt(suspendDays, 10) || 0) <= MIN_SUSPEND_DAYS}
@@ -518,7 +541,10 @@ export function ModerationActionsDialog({
                     max={MAX_SUSPEND_DAYS}
                     step={1}
                     inputMode="numeric"
-                    className="text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    className={cn(
+                      APP_MATERIAL_FIELD_CLASS,
+                      "text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+                    )}
                     value={suspendDays}
                     onChange={(e) => setSuspendDays(clampSuspendDaysInput(e.target.value))}
                     onBlur={() => {
@@ -530,7 +556,7 @@ export function ModerationActionsDialog({
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="shrink-0 h-9 w-9"
+                    className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "shrink-0 h-9 w-9")}
                     aria-label="Increase days"
                     onClick={() => adjustSuspendDays(1)}
                     disabled={pending || (parseInt(suspendDays, 10) || 0) >= MAX_SUSPEND_DAYS}
@@ -541,7 +567,7 @@ export function ModerationActionsDialog({
               </div>
               <Button
                 variant="outline"
-                className="shrink-0"
+                className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "shrink-0")}
                 onClick={handleSuspend}
                 disabled={pending || !reasonCategory}
               >
@@ -551,7 +577,7 @@ export function ModerationActionsDialog({
           </div>
 
           {/* Ban */}
-          <div className="border border-red-500/50 rounded-lg p-4 space-y-2 bg-red-500/5">
+          <div className="space-y-2 rounded-xl border border-red-500/40 bg-red-500/5 p-4">
             <div className="flex items-center gap-2">
               <Ban className="w-5 h-5 text-red-500" />
               <h3 className="font-semibold text-red-500">Permanent Ban</h3>
@@ -562,7 +588,7 @@ export function ModerationActionsDialog({
             </p>
             <Button
               variant="destructive"
-              className="w-full"
+              className={cn(APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS, "w-full")}
               onClick={handleBan}
               disabled={pending || !reasonCategory}
             >
@@ -571,7 +597,12 @@ export function ModerationActionsDialog({
           </div>
 
           <div className="flex justify-end pt-2">
-            <Button variant="outline" onClick={onClose} disabled={pending}>
+            <Button
+              variant="outline"
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              onClick={onClose}
+              disabled={pending}
+            >
               Cancel
             </Button>
           </div>

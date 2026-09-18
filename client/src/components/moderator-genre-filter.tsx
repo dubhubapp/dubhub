@@ -8,6 +8,7 @@ import {
   type ModeratorGenreId,
 } from "@/lib/moderator-queue-filters";
 import { cn } from "@/lib/utils";
+import { APP_MATERIAL_LINK_CLASS } from "@/lib/app-material";
 
 interface ModeratorGenreFilterProps {
   selectedGenres: ModeratorGenreId[];
@@ -33,7 +34,7 @@ export function ModeratorGenreFilter({ selectedGenres, onGenresChange }: Moderat
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 min-w-[9.5rem] max-w-full justify-between border-white/15 bg-black/35 px-2.5 text-sm font-normal"
+          className="h-8 min-w-[9.5rem] max-w-full justify-between rounded-[12px] border-white/15 bg-white/[0.06] px-2.5 text-sm font-normal shadow-none hover:bg-white/[0.1]"
           data-testid="moderator-genre-filter"
         >
           <span className="truncate">{triggerLabel}</span>
@@ -42,14 +43,14 @@ export function ModeratorGenreFilter({ selectedGenres, onGenresChange }: Moderat
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[min(18rem,calc(100vw-2rem))] border-white/15 bg-background/95 p-3 backdrop-blur-md"
+        className="w-[min(18rem,calc(100vw-2rem))] rounded-[15px] border-white/15 bg-background/95 p-3 backdrop-blur-md"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-foreground">Genres</span>
           {!isAllSelected ? (
             <button
               type="button"
-              className="text-xs font-medium text-accent hover:underline"
+              className={cn("text-xs", APP_MATERIAL_LINK_CLASS)}
               onClick={() => onGenresChange([])}
               data-testid="moderator-genre-filter-clear"
             >

@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { useUser } from "@/lib/user-context";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,7 +35,7 @@ import { ModerationActionsDialog } from "@/components/moderation-actions-dialog"
 import { CorrectGenreDialog } from "@/components/correct-genre-dialog";
 import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-badge";
 import { ModeratorShieldIcon, UserRoleInlineIcons } from "@/components/moderator-shield";
-import { formatUsernameDisplay } from "@/lib/utils";
+import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
 import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
 import {
@@ -52,7 +51,6 @@ import {
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
 } from "@/lib/app-material";
 import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
-import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import {
@@ -70,6 +68,40 @@ import {
   getCanonicalGenreLabel,
   parseSuggestedGenreFromReportDescription,
 } from "@shared/report-genre";
+import {
+  MODERATOR_ACCESS_BADGE_CLASS,
+  MODERATOR_ACTION_CLAIM_CLASS,
+  MODERATOR_ACTION_DESTRUCTIVE_CLASS,
+  MODERATOR_ACTION_FOLLOWUP_DESTRUCTIVE_CLASS,
+  MODERATOR_ACTION_FOLLOWUP_SECONDARY_CLASS,
+  MODERATOR_ACTION_PRIMARY_CLASS,
+  MODERATOR_ACTION_RELEASE_CLASS,
+  MODERATOR_ACTION_SECONDARY_CLASS,
+  MODERATOR_CLAIM_FILTER_ACTIVE_CLASS,
+  MODERATOR_CLAIM_FILTER_INACTIVE_CLASS,
+  MODERATOR_EMPTY_STATE_CLASS,
+  MODERATOR_FILTER_BLOCK_CLASS,
+  MODERATOR_FILTER_LABEL_CLASS,
+  MODERATOR_HELPER_CLAIM_CLASS,
+  MODERATOR_HELPER_KEEP_HINT_CLASS,
+  MODERATOR_HELPER_STACK_CLASS,
+  MODERATOR_PAGE_SCROLL_CLASS,
+  MODERATOR_PANEL_CLAIM_LOCK_CLASS,
+  MODERATOR_PANEL_COMMUNITY_REPORT_CLASS,
+  MODERATOR_PANEL_ID_CLASS,
+  MODERATOR_PANEL_ID_FALLBACK_CLASS,
+  MODERATOR_PANEL_REPORT_REASON_CLASS,
+  MODERATOR_QUEUE_ITEM_CLASS,
+  MODERATOR_QUEUE_LIST_CLASS,
+  MODERATOR_REPORTER_META_CLASS,
+  MODERATOR_SECTION_HELPER_CLASS,
+  MODERATOR_SELECTED_COMMENT_CHIP_CLASS,
+  MODERATOR_TAB_TRIGGER_ACTIVE_CLASS,
+  MODERATOR_TAB_TRIGGER_BASE_CLASS,
+  MODERATOR_TAB_TRIGGER_INACTIVE_CLASS,
+  MODERATOR_TABLIST_CLASS,
+  MODERATOR_THUMB_CLASS,
+} from "@/lib/moderator-presentation";
 
 function formatModeratorReportTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
@@ -665,26 +697,31 @@ export default function ModeratorPage() {
   };
 
   return (
-    <div className={`${APP_PAGE_SCROLL_CLASS} bg-background`}>
+    <div className={MODERATOR_PAGE_SCROLL_CLASS}>
       <div className="app-page-top-pad mx-auto w-full max-w-4xl space-y-5 px-4">
         {/* Moderator Badge */}
         <div className="flex items-center justify-center">
           <Badge
             variant="outline"
-            className="rounded-full border-red-500/40 bg-red-500/15 px-4 py-2 text-red-300 shadow-[0_0_20px_-10px_rgba(239,68,68,0.75)]"
+            className={MODERATOR_ACCESS_BADGE_CLASS}
             data-testid="moderator-badge"
           >
-            <ModeratorShieldIcon sizeClass="h-4 w-4" className="mr-2 self-center" />
+            <ModeratorShieldIcon sizeClass="h-3.5 w-3.5" className="mr-1.5 self-center opacity-80" />
             Moderator Access
           </Badge>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-md">
+          <TabsList className={MODERATOR_TABLIST_CLASS}>
             <TabsTrigger
               value="pending"
               data-testid="tab-pending"
-              className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+              className={cn(
+                MODERATOR_TAB_TRIGGER_BASE_CLASS,
+                activeTab === "pending"
+                  ? MODERATOR_TAB_TRIGGER_ACTIVE_CLASS
+                  : MODERATOR_TAB_TRIGGER_INACTIVE_CLASS,
+              )}
             >
               <span>Pending Verifications</span>
               <ModeratorQueueCountBadge count={pendingVerificationCount} />
@@ -692,18 +729,21 @@ export default function ModeratorPage() {
             <TabsTrigger
               value="reports"
               data-testid="tab-reports"
-              className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/20 text-white/70 font-medium data-[state=active]:border-accent/70 data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-accent-foreground data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_10px_28px_-18px_rgba(34,211,238,0.8)]"
+              className={cn(
+                MODERATOR_TAB_TRIGGER_BASE_CLASS,
+                activeTab === "reports"
+                  ? MODERATOR_TAB_TRIGGER_ACTIVE_CLASS
+                  : MODERATOR_TAB_TRIGGER_INACTIVE_CLASS,
+              )}
             >
               <span>Reports</span>
               <ModeratorQueueCountBadge count={unresolvedReportsCount} />
             </TabsTrigger>
           </TabsList>
 
-          <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
+          <div className={MODERATOR_FILTER_BLOCK_CLASS}>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Genre
-              </span>
+              <span className={MODERATOR_FILTER_LABEL_CLASS}>Genre</span>
               <ModeratorGenreFilter
                 selectedGenres={selectedGenres}
                 onGenresChange={setSelectedGenres}
@@ -714,7 +754,7 @@ export default function ModeratorPage() {
               role="group"
               aria-label="Filter by claim status"
             >
-              <span className="w-full text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:w-auto sm:mr-1 sm:self-center">
+              <span className={cn(MODERATOR_FILTER_LABEL_CLASS, "w-full sm:mr-1 sm:w-auto sm:self-center")}>
                 Claim
               </span>
               {QUEUE_CLAIM_FILTER_OPTIONS.map((opt) => (
@@ -722,8 +762,12 @@ export default function ModeratorPage() {
                   key={opt.id}
                   type="button"
                   size="sm"
-                  variant={queueClaimFilter === opt.id ? "default" : "outline"}
-                  className="h-8 px-2.5 text-xs"
+                  variant="outline"
+                  className={
+                    queueClaimFilter === opt.id
+                      ? MODERATOR_CLAIM_FILTER_ACTIVE_CLASS
+                      : MODERATOR_CLAIM_FILTER_INACTIVE_CLASS
+                  }
                   onClick={() => setQueueClaimFilter(opt.id)}
                   data-testid={`moderator-claim-filter-${opt.id}`}
                 >
@@ -733,695 +777,679 @@ export default function ModeratorPage() {
             </div>
           </div>
 
-          <TabsContent value="pending" className="mt-5 space-y-4">
-            <Card className="border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-              <CardHeader>
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  Pending Verifications
-                  <ModeratorQueueCountBadge count={pendingVerificationCount} />
-                </CardTitle>
-                <CardDescription className="text-muted-foreground/90">
-                  Community-verified posts awaiting moderator confirmation
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isPendingLoading ? (
-                  <div className="flex justify-center py-8">
-                    <VinylLoader />
-                  </div>
-                ) : pendingVerifications.length === 0 ? (
-                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
-                    <ModeratorShieldIcon sizeClass="h-12 w-12" className="mx-auto mb-4 opacity-50" />
-                    <p className="text-sm font-medium text-foreground/90">No pending verifications</p>
-                    <p className="mt-1 text-sm text-muted-foreground">All community verifications have been reviewed.</p>
-                  </div>
-                ) : filteredPendingVerifications.length === 0 ? (
-                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
-                    <p className="text-sm font-medium text-foreground/90">
-                      No pending verifications match these filters.
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Try All Genres and All claims, or claim an item from the full queue.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {filteredPendingVerifications.map((post: any) => (
-                      (() => {
-                        const genreChip = getGenreChipStyle(post.genre);
-                        const claimState = getQueueClaimState(post, currentUser?.id);
-                        const actionsLocked = claimState !== "mine";
-                        return (
-                      <Card
-                        key={post.id}
-                        className="border-white/10 bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
-                        data-testid={`pending-verification-${post.id}`}
+          <TabsContent value="pending" className="mt-5 space-y-3">
+            <p className={MODERATOR_SECTION_HELPER_CLASS}>
+              Community-verified posts awaiting moderator confirmation
+            </p>
+            {isPendingLoading ? (
+              <div className="flex justify-center py-8">
+                <VinylLoader />
+              </div>
+            ) : pendingVerifications.length === 0 ? (
+              <div className={MODERATOR_EMPTY_STATE_CLASS}>
+                <ModeratorShieldIcon sizeClass="h-12 w-12" className="mx-auto mb-4 opacity-50" />
+                <p className="text-sm font-medium text-foreground/90">No pending verifications</p>
+                <p className="mt-1 text-sm text-muted-foreground">All community verifications have been reviewed.</p>
+              </div>
+            ) : filteredPendingVerifications.length === 0 ? (
+              <div className={MODERATOR_EMPTY_STATE_CLASS}>
+                <p className="text-sm font-medium text-foreground/90">
+                  No pending verifications match these filters.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try All Genres and All claims, or claim an item from the full queue.
+                </p>
+              </div>
+            ) : (
+              <div className={MODERATOR_QUEUE_LIST_CLASS}>
+                {filteredPendingVerifications.map((post: any) => (
+                  (() => {
+                    const genreChip = getGenreChipStyle(post.genre);
+                    const claimState = getQueueClaimState(post, currentUser?.id);
+                    const actionsLocked = claimState !== "mine";
+                    return (
+                  <div
+                    key={post.id}
+                    className={MODERATOR_QUEUE_ITEM_CLASS}
+                    data-testid={`pending-verification-${post.id}`}
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row">
+                      {/* Video thumbnail - clickable */}
+                      <div
+                        className={MODERATOR_THUMB_CLASS}
+                        onClick={() => openPostPreviewModal(post)}
+                        data-testid={`thumbnail-${post.id}`}
                       >
-                        <CardContent className="p-4">
-                          <div className="flex flex-col gap-4 sm:flex-row">
-                            {/* Video thumbnail - clickable */}
-                            <div 
-                              className="group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-muted sm:h-24 sm:w-24"
-                              onClick={() => openPostPreviewModal(post)}
-                              data-testid={`thumbnail-${post.id}`}
-                            >
-                              {post.videoUrl || post.video_url ? (
-                                <>
-                                  <video
-                                    src={post.videoUrl || post.video_url}
-                                    className="w-full h-full object-cover"
-                                    muted
-                                  />
-                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <MessageSquare className="w-6 h-6 text-white" />
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <FileText className="w-8 h-8 text-muted-foreground" />
-                                </div>
-                              )}
-                              <div className="absolute right-1 top-1">
-                                <Badge
-                                  className="text-xs"
-                                  style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
-                                >
-                                  {genreChip.label}
-                                </Badge>
-                              </div>
+                        {post.videoUrl || post.video_url ? (
+                          <>
+                            <video
+                              src={post.videoUrl || post.video_url}
+                              className="w-full h-full object-cover"
+                              muted
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <MessageSquare className="w-6 h-6 text-white" />
                             </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FileText className="w-8 h-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="absolute right-1 top-1">
+                          <Badge
+                            className="text-xs"
+                            style={getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)}
+                          >
+                            {genreChip.label}
+                          </Badge>
+                        </div>
+                      </div>
 
-                            {/* Post info */}
-                            <div className="flex-1 space-y-2">
-                              <div>
-                                <p 
-                                  className="font-semibold cursor-pointer hover:text-primary transition-colors"
-                                  onClick={() => openPostPreviewModal(post)}
-                                  data-testid={`description-${post.id}`}
-                                >
-                                  {post.description}
-                                </p>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                                  <User className="w-4 h-4" />
-                                  <span>Uploaded by {formatUsernameDisplay(post.user.username)}</span>
-                                </div>
+                      {/* Post info */}
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <p
+                            className="font-semibold cursor-pointer hover:text-primary transition-colors"
+                            onClick={() => openPostPreviewModal(post)}
+                            data-testid={`description-${post.id}`}
+                          >
+                            {post.description}
+                          </p>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                            <User className="w-4 h-4" />
+                            <span>Uploaded by {formatUsernameDisplay(post.user.username)}</span>
+                          </div>
+                        </div>
+
+                        {/* Verified comment display */}
+                        {post.verifiedComment ? (
+                          <div className={MODERATOR_PANEL_ID_CLASS}>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-medium text-blue-300">Uploader's Selection:</p>
+                              <Badge variant="secondary" className={MODERATOR_SELECTED_COMMENT_CHIP_CLASS}>
+                                <MessageSquare className="mr-1 h-2.5 w-2.5" />
+                                Selected Comment
+                              </Badge>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <User className="w-3 h-3" />
+                                <span className="text-xs font-medium">
+                                  {post.verifiedComment.user?.username
+                                    ? formatUsernameDisplay(post.verifiedComment.user.username)
+                                    : "Unknown"}
+                                </span>
                               </div>
-
-                              {/* Verified comment display */}
-                              {post.verifiedComment ? (
-                                <div className="space-y-2 rounded-xl border border-blue-500/25 bg-blue-500/10 p-3">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-xs font-medium text-blue-300">Uploader's Selection:</p>
-                                    <Badge variant="secondary" className="text-xs">
-                                      <MessageSquare className="w-3 h-3 mr-1" />
-                                      Selected Comment
-                                    </Badge>
-                                  </div>
-                                  <div className="rounded-lg border border-white/10 bg-black/25 p-2">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <User className="w-3 h-3" />
-                                      <span className="text-xs font-medium">
-                                        {post.verifiedComment.user?.username
-                                          ? formatUsernameDisplay(post.verifiedComment.user.username)
-                                          : "Unknown"}
-                                      </span>
-                                    </div>
-                                    <p className="text-sm">{post.verifiedComment.body || post.verifiedComment.content || 'No comment text'}</p>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 p-2">
-                                  <p className="mb-1 text-xs font-medium text-blue-300">Community Identified</p>
-                                  <p className="text-sm">A user marked a comment as the correct track ID</p>
-                                </div>
-                              )}
-
-                              {claimState === "other" ? (
-                                <div
-                                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
-                                  data-testid={`pending-claimed-by-other-${post.id}`}
-                                >
-                                  <p className="flex items-center gap-1.5 font-medium text-amber-200">
-                                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                    Claimed by{" "}
-                                    {formatUsernameDisplay(
-                                      post.assigned_moderator_username ?? "another moderator",
-                                    )}
-                                  </p>
-                                  <p className="mt-0.5 text-xs text-muted-foreground">
-                                    Actions are locked while another moderator is handling this verification.
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              {claimState === "unclaimed" ? (
-                                <p className="text-xs text-muted-foreground">
-                                  Claim this verification to unlock review actions.
-                                </p>
-                              ) : null}
-
-                              <div className="space-y-2 pt-2">
-                                <p className="text-[11px] leading-snug text-muted-foreground">
-                                  Use Keep as Community Identified when the ID looks credible but can&apos;t be fully
-                                  confirmed.
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                  {claimState === "unclaimed" ? (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => claimPendingMutation.mutate(post.id)}
-                                      disabled={pendingClaimBusy}
-                                      data-testid={`button-claim-pending-${post.id}`}
-                                    >
-                                      Claim
-                                    </Button>
-                                  ) : null}
-                                  {claimState === "mine" ? (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => releasePendingMutation.mutate(post.id)}
-                                      disabled={
-                                        pendingClaimBusy ||
-                                        confirmVerificationMutation.isPending ||
-                                        communityApproveMutation.isPending ||
-                                        reopenVerificationMutation.isPending
-                                      }
-                                      data-testid={`button-release-pending-${post.id}`}
-                                    >
-                                      Release
-                                    </Button>
-                                  ) : null}
-                                  <Button
-                                    size="sm"
-                                    className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                                    onClick={() => {
-                                      if (actionsLocked) return;
-                                      setSelectedPost(post);
-                                      setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
-                                    }}
-                                    disabled={
-                                      actionsLocked ||
-                                      pendingClaimBusy ||
-                                      confirmVerificationMutation.isPending
-                                    }
-                                    title={
-                                      actionsLocked
-                                        ? claimState === "other"
-                                          ? "Claimed by another moderator"
-                                          : "Claim this verification first"
-                                        : undefined
-                                    }
-                                    data-testid={`button-review-confirm-${post.id}`}
-                                  >
-                                    <Check className="w-4 h-4 mr-1" />
-                                    Confirm ID
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => {
-                                      if (actionsLocked) return;
-                                      communityApproveMutation.mutate({
-                                        postId: post.id,
-                                        commentId: post.verifiedCommentId || post.verified_comment_id,
-                                        ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
-                                      });
-                                    }}
-                                    disabled={
-                                      actionsLocked ||
-                                      pendingClaimBusy ||
-                                      !(post.verifiedCommentId || post.verified_comment_id) ||
-                                      communityApproveMutation.isPending
-                                    }
-                                    title={
-                                      actionsLocked
-                                        ? claimState === "other"
-                                          ? "Claimed by another moderator"
-                                          : "Claim this verification first"
-                                        : undefined
-                                    }
-                                    data-testid={`button-keep-community-${post.id}`}
-                                  >
-                                    <Handshake className="w-4 h-4 mr-1" />
-                                    Keep as Community Identified
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-600 dark:hover:bg-red-700"
-                                    onClick={() => {
-                                      if (actionsLocked) return;
-                                      reopenVerificationMutation.mutate({
-                                        postId: post.id,
-                                        ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
-                                      });
-                                    }}
-                                    disabled={
-                                      actionsLocked ||
-                                      pendingClaimBusy ||
-                                      reopenVerificationMutation.isPending
-                                    }
-                                    title={
-                                      actionsLocked
-                                        ? claimState === "other"
-                                          ? "Claimed by another moderator"
-                                          : "Claim this verification first"
-                                        : undefined
-                                    }
-                                    data-testid={`button-reopen-${post.id}`}
-                                  >
-                                    <XCircle className="w-4 h-4 mr-1" />
-                                    Reopen for Review
-                                  </Button>
-                                </div>
-                              </div>
+                              <p className="text-sm">{post.verifiedComment.body || post.verifiedComment.content || 'No comment text'}</p>
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
-                        );
-                      })()
-                    ))}
+                        ) : (
+                          <div className={MODERATOR_PANEL_ID_FALLBACK_CLASS}>
+                            <p className="mb-1 text-xs font-medium text-blue-300">Community Identified</p>
+                            <p className="text-sm">A user marked a comment as the correct track ID</p>
+                          </div>
+                        )}
+
+                        {claimState === "other" ? (
+                          <div
+                            className={MODERATOR_PANEL_CLAIM_LOCK_CLASS}
+                            data-testid={`pending-claimed-by-other-${post.id}`}
+                          >
+                            <p className="flex items-center gap-1.5 font-medium text-amber-200">
+                              <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Claimed by{" "}
+                              {formatUsernameDisplay(
+                                post.assigned_moderator_username ?? "another moderator",
+                              )}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Actions are locked while another moderator is handling this verification.
+                            </p>
+                          </div>
+                        ) : null}
+
+                        <div className={MODERATOR_HELPER_STACK_CLASS}>
+                          {claimState === "unclaimed" ? (
+                            <p className={MODERATOR_HELPER_CLAIM_CLASS}>
+                              Claim this verification to unlock review actions.
+                            </p>
+                          ) : null}
+                          <p className={MODERATOR_HELPER_KEEP_HINT_CLASS}>
+                            Use Keep as Community Identified when the ID looks credible but can&apos;t be fully
+                            confirmed.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 pt-1.5">
+                            {claimState === "unclaimed" ? (
+                              <Button
+                                size="sm"
+                                className={MODERATOR_ACTION_CLAIM_CLASS}
+                                onClick={() => claimPendingMutation.mutate(post.id)}
+                                disabled={pendingClaimBusy}
+                                data-testid={`button-claim-pending-${post.id}`}
+                              >
+                                Claim
+                              </Button>
+                            ) : null}
+                            {claimState === "mine" ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={MODERATOR_ACTION_RELEASE_CLASS}
+                                onClick={() => releasePendingMutation.mutate(post.id)}
+                                disabled={
+                                  pendingClaimBusy ||
+                                  confirmVerificationMutation.isPending ||
+                                  communityApproveMutation.isPending ||
+                                  reopenVerificationMutation.isPending
+                                }
+                                data-testid={`button-release-pending-${post.id}`}
+                              >
+                                Release
+                              </Button>
+                            ) : null}
+                            <Button
+                              size="sm"
+                              className={MODERATOR_ACTION_PRIMARY_CLASS}
+                              onClick={() => {
+                                if (actionsLocked) return;
+                                setSelectedPost(post);
+                                setSelectedCommentId(post.verifiedCommentId || post.verified_comment_id || "");
+                              }}
+                              disabled={
+                                actionsLocked ||
+                                pendingClaimBusy ||
+                                confirmVerificationMutation.isPending
+                              }
+                              title={
+                                actionsLocked
+                                  ? claimState === "other"
+                                    ? "Claimed by another moderator"
+                                    : "Claim this verification first"
+                                  : undefined
+                              }
+                              data-testid={`button-review-confirm-${post.id}`}
+                            >
+                              <Check className="w-4 h-4 mr-1" />
+                              Confirm ID
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className={MODERATOR_ACTION_FOLLOWUP_SECONDARY_CLASS}
+                              onClick={() => {
+                                if (actionsLocked) return;
+                                communityApproveMutation.mutate({
+                                  postId: post.id,
+                                  commentId: post.verifiedCommentId || post.verified_comment_id,
+                                  ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
+                                });
+                              }}
+                              disabled={
+                                actionsLocked ||
+                                pendingClaimBusy ||
+                                !(post.verifiedCommentId || post.verified_comment_id) ||
+                                communityApproveMutation.isPending
+                              }
+                              title={
+                                actionsLocked
+                                  ? claimState === "other"
+                                    ? "Claimed by another moderator"
+                                    : "Claim this verification first"
+                                  : undefined
+                              }
+                              data-testid={`button-keep-community-${post.id}`}
+                            >
+                              <Handshake className="w-4 h-4 mr-1" />
+                              Keep as Community Identified
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className={MODERATOR_ACTION_FOLLOWUP_DESTRUCTIVE_CLASS}
+                              onClick={() => {
+                                if (actionsLocked) return;
+                                reopenVerificationMutation.mutate({
+                                  postId: post.id,
+                                  ownerUserId: post.user?.id ?? post.user_id ?? post.userId,
+                                });
+                              }}
+                              disabled={
+                                actionsLocked ||
+                                pendingClaimBusy ||
+                                reopenVerificationMutation.isPending
+                              }
+                              title={
+                                actionsLocked
+                                  ? claimState === "other"
+                                    ? "Claimed by another moderator"
+                                    : "Claim this verification first"
+                                  : undefined
+                              }
+                              data-testid={`button-reopen-${post.id}`}
+                            >
+                              <XCircle className="w-4 h-4 mr-1" />
+                              Reopen for Review
+                            </Button>
+                          </div>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                    );
+                  })()
+                ))}
+              </div>
+            )}
           </TabsContent>
 
-          <TabsContent value="reports" className="mt-5 space-y-4">
-            <Card className="border-white/10 bg-black/30 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-              <CardHeader>
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  Reports
-                  <ModeratorQueueCountBadge count={unresolvedReportsCount} />
-                </CardTitle>
-                <CardDescription className="text-muted-foreground/90">
-                  Content flagged by users for review
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isReportsLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <VinylLoader label="Loading reports..." />
-                  </div>
-                ) : reportedContent.length === 0 ? (
-                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
-                    <AlertTriangle className="mx-auto mb-4 h-12 w-12 opacity-50" />
-                    <p className="text-sm font-medium text-foreground/90">No reported content at this time</p>
-                    <p className="mt-1 text-sm text-muted-foreground">All clear for now.</p>
-                  </div>
-                ) : filteredReports.length === 0 ? (
-                  <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-12 text-center text-muted-foreground">
-                    <AlertTriangle className="mx-auto mb-4 h-12 w-12 opacity-50" />
-                    <p className="text-sm font-medium text-foreground/90">
-                      No reports match these filters.
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Try All Genres and All claims, or claim a report from the full queue.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {filteredReports.map((report: any) => {
-                      const incorrectGenrePost = isIncorrectGenrePostReport(report);
-                      const genreDisplay = incorrectGenrePost
-                        ? resolveIncorrectGenreReportDisplay(report)
-                        : null;
-                      const additionalDetails = incorrectGenrePost
-                        ? genreDisplay?.userNotes
-                        : report.description?.trim() || null;
-                      const claimState = getQueueClaimState(report, currentUser?.id);
-                      const actionsLocked = claimState !== "mine";
-                      const claimBusy =
-                        claimReportMutation.isPending || releaseReportMutation.isPending;
+          <TabsContent value="reports" className="mt-5 space-y-3">
+            <p className={MODERATOR_SECTION_HELPER_CLASS}>
+              Content flagged by users for review
+            </p>
+            {isReportsLoading ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <VinylLoader label="Loading reports..." />
+              </div>
+            ) : reportedContent.length === 0 ? (
+              <div className={MODERATOR_EMPTY_STATE_CLASS}>
+                <AlertTriangle className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                <p className="text-sm font-medium text-foreground/90">No reported content at this time</p>
+                <p className="mt-1 text-sm text-muted-foreground">All clear for now.</p>
+              </div>
+            ) : filteredReports.length === 0 ? (
+              <div className={MODERATOR_EMPTY_STATE_CLASS}>
+                <AlertTriangle className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                <p className="text-sm font-medium text-foreground/90">
+                  No reports match these filters.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try All Genres and All claims, or claim a report from the full queue.
+                </p>
+              </div>
+            ) : (
+              <div className={MODERATOR_QUEUE_LIST_CLASS}>
+                {filteredReports.map((report: any) => {
+                  const incorrectGenrePost = isIncorrectGenrePostReport(report);
+                  const genreDisplay = incorrectGenrePost
+                    ? resolveIncorrectGenreReportDisplay(report)
+                    : null;
+                  const additionalDetails = incorrectGenrePost
+                    ? genreDisplay?.userNotes
+                    : report.description?.trim() || null;
+                  const claimState = getQueueClaimState(report, currentUser?.id);
+                  const actionsLocked = claimState !== "mine";
+                  const claimBusy =
+                    claimReportMutation.isPending || releaseReportMutation.isPending;
 
-                      return (
-                      <Card
-                        key={report.id}
-                        className="border-white/10 bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
-                        data-testid={`report-${report.id}`}
+                  return (
+                  <div
+                    key={report.id}
+                    className={MODERATOR_QUEUE_ITEM_CLASS}
+                    data-testid={`report-${report.id}`}
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row">
+                      {/* Video thumbnail - clickable */}
+                      <div
+                        className={MODERATOR_THUMB_CLASS}
+                        onClick={async () => {
+                          if (report.post?.id) {
+                            // Fetch the full post data to ensure we have all fields
+                            try {
+                              const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
+                              if (!response.ok) {
+                                throw new Error(`Failed to fetch post: ${response.status}`);
+                              }
+                              const fullPost = await response.json();
+                              console.log("[Moderator] Fetched post for thumbnail click:", fullPost);
+                              // Ensure all required fields are present
+                              if (fullPost && fullPost.id && fullPost.videoUrl && fullPost.user) {
+                                openPostPreviewModal(fullPost);
+                              } else {
+                                console.error("[Moderator] Post data incomplete:", fullPost);
+                                toast({
+                                  title: "Error",
+                                  description: "Failed to load post data",
+                                  variant: "destructive",
+                                });
+                              }
+                              // Don't set selectedPost - that's only for verification dialog
+                            } catch (error) {
+                              console.error("[Moderator] Failed to fetch post:", error);
+                              toast({
+                                title: "Error",
+                                description: "Failed to load post",
+                                variant: "destructive",
+                              });
+                              // Fallback to report.post if fetch fails
+                              if (report.post && (report.post.videoUrl || report.post.video_url)) {
+                                openPostPreviewModal(report.post);
+                              }
+                            }
+                          }
+                        }}
+                        data-testid={`thumbnail-${report.id}`}
                       >
-                        <CardContent className="p-4">
-                          <div className="flex flex-col gap-4 sm:flex-row">
-                            {/* Video thumbnail - clickable */}
-                            <div 
-                              className="group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-muted sm:h-24 sm:w-24"
-                              onClick={async () => {
-                                if (report.post?.id) {
-                                  // Fetch the full post data to ensure we have all fields
-                                  try {
-                                    const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
-                                    if (!response.ok) {
-                                      throw new Error(`Failed to fetch post: ${response.status}`);
-                                    }
-                                    const fullPost = await response.json();
-                                    console.log("[Moderator] Fetched post for thumbnail click:", fullPost);
-                                    // Ensure all required fields are present
-                                    if (fullPost && fullPost.id && fullPost.videoUrl && fullPost.user) {
-                                      openPostPreviewModal(fullPost);
-                                    } else {
-                                      console.error("[Moderator] Post data incomplete:", fullPost);
-                                      toast({
-                                        title: "Error",
-                                        description: "Failed to load post data",
-                                        variant: "destructive",
-                                      });
-                                    }
-                                    // Don't set selectedPost - that's only for verification dialog
-                                  } catch (error) {
-                                    console.error("[Moderator] Failed to fetch post:", error);
-                                    toast({
-                                      title: "Error",
-                                      description: "Failed to load post",
-                                      variant: "destructive",
-                                    });
-                                    // Fallback to report.post if fetch fails
-                                    if (report.post && (report.post.videoUrl || report.post.video_url)) {
-                                      openPostPreviewModal(report.post);
-                                    }
+                        {report.post?.videoUrl || report.post?.video_url ? (
+                          <>
+                            <video
+                              src={report.post.videoUrl || report.post.video_url}
+                              className="w-full h-full object-cover"
+                              muted
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <MessageSquare className="w-6 h-6 text-white" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FileText className="w-8 h-8 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Report info */}
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant={report.is_user_report ? "secondary" : "destructive"}>
+                              {report.is_user_report ? "Community Report" : "Post Report"}
+                            </Badge>
+                          </div>
+                          <p
+                            className="font-semibold cursor-pointer hover:text-primary transition-colors"
+                            onClick={async () => {
+                              if (report.post?.id) {
+                                // Fetch the full post data to ensure we have all fields
+                                try {
+                                  const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
+                                  const fullPost = await response.json();
+                                  openPostPreviewModal(fullPost);
+                                  // Don't set selectedPost - that's only for verification dialog
+                                } catch (error) {
+                                  console.error("Failed to fetch post:", error);
+                                  // Fallback to report.post if fetch fails
+                                  if (report.post) {
+                                    openPostPreviewModal(report.post);
                                   }
                                 }
-                              }}
-                              data-testid={`thumbnail-${report.id}`}
-                            >
-                              {report.post?.videoUrl || report.post?.video_url ? (
-                                <>
-                                  <video
-                                    src={report.post.videoUrl || report.post.video_url}
-                                    className="w-full h-full object-cover"
-                                    muted
-                                  />
-                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <MessageSquare className="w-6 h-6 text-white" />
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <FileText className="w-8 h-8 text-muted-foreground" />
+                              }
+                            }}
+                            data-testid={`description-${report.id}`}
+                          >
+                            {report.post?.title || report.post?.description || "Unknown post"}
+                          </p>
+                          {report.is_user_report && report.reportedUser && (
+                            <div className={MODERATOR_PANEL_COMMUNITY_REPORT_CLASS}>
+                              <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ Community Comment Report</p>
+                              <p className="text-sm text-muted-foreground">
+                                Reported member:{" "}
+                                <span className="font-semibold">{formatUsernameDisplay(report.reportedUser.username)}</span>
+                              </p>
+                              {report.reported_comment_body && (
+                                <div className="mt-2 pt-2 border-t border-yellow-500/20">
+                                  <p className="text-xs font-medium text-yellow-600 mb-1">Reported Comment:</p>
+                                  <p className="text-sm italic">"{report.reported_comment_body}"</p>
                                 </div>
                               )}
                             </div>
-
-                            {/* Report info */}
-                            <div className="flex-1 space-y-2">
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <Badge variant={report.is_user_report ? "secondary" : "destructive"}>
-                                    {report.is_user_report ? "Community Report" : "Post Report"}
-                                  </Badge>
-                                </div>
-                                <p 
-                                  className="font-semibold cursor-pointer hover:text-primary transition-colors"
-                                  onClick={async () => {
-                                    if (report.post?.id) {
-                                      // Fetch the full post data to ensure we have all fields
-                                      try {
-                                        const response = await apiRequest("GET", `/api/posts/${report.post.id}`);
-                                        const fullPost = await response.json();
-                                        openPostPreviewModal(fullPost);
-                                        // Don't set selectedPost - that's only for verification dialog
-                                      } catch (error) {
-                                        console.error("Failed to fetch post:", error);
-                                        // Fallback to report.post if fetch fails
-                                        if (report.post) {
-                                          openPostPreviewModal(report.post);
-                                        }
-                                      }
-                                    }
-                                  }}
-                                  data-testid={`description-${report.id}`}
-                                >
-                                  {report.post?.title || report.post?.description || "Unknown post"}
-                                </p>
-                                {report.is_user_report && report.reportedUser && (
-                                  <div className="mt-2 rounded-xl border border-yellow-500/25 bg-yellow-500/10 p-2">
-                                    <p className="text-xs font-medium text-yellow-600 mb-1">⚠️ Community Comment Report</p>
-                                    <p className="text-sm text-muted-foreground">
-                                      Reported member:{" "}
-                                      <span className="font-semibold">{formatUsernameDisplay(report.reportedUser.username)}</span>
-                                    </p>
-                                    {report.reported_comment_body && (
-                                      <div className="mt-2 pt-2 border-t border-yellow-500/20">
-                                        <p className="text-xs font-medium text-yellow-600 mb-1">Reported Comment:</p>
-                                        <p className="text-sm italic">"{report.reported_comment_body}"</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {report.post?.user && (
-                                  <p className="text-sm text-muted-foreground mt-1">
-                                    Post by: {formatUsernameDisplay(report.post.user.username)}
-                                  </p>
-                                )}
-                                <div
-                                  className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-2 text-xs"
-                                  data-testid={`reporter-meta-${report.id}`}
-                                >
-                                  {report.reporter?.avatar_url ? (
-                                    <img
-                                      src={report.reporter.avatar_url}
-                                      alt=""
-                                      className="h-7 w-7 shrink-0 rounded-full border border-white/15 object-cover"
-                                    />
-                                  ) : (
-                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 bg-muted">
-                                      <User className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                                    </div>
-                                  )}
-                                  <div className="min-w-0 flex-1 space-y-0.5">
-                                    <p className="text-foreground">
-                                      <span className="text-muted-foreground">Reported by </span>
-                                      <span className="font-semibold">
-                                        {report.reporter?.username ? formatUsernameDisplay(report.reporter.username) : "unknown"}
-                                      </span>
-                                    </p>
-                                    <p className="flex items-center gap-1 text-muted-foreground">
-                                      <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                      <span>Reported on {formatModeratorReportTimestamp(report.created_at)}</span>
-                                    </p>
-                                  </div>
-                                </div>
+                          )}
+                          {report.post?.user && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Post by: {formatUsernameDisplay(report.post.user.username)}
+                            </p>
+                          )}
+                          <div
+                            className={MODERATOR_REPORTER_META_CLASS}
+                            data-testid={`reporter-meta-${report.id}`}
+                          >
+                            {report.reporter?.avatar_url ? (
+                              <img
+                                src={report.reporter.avatar_url}
+                                alt=""
+                                className="h-7 w-7 shrink-0 rounded-full border border-white/15 object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 bg-muted">
+                                <User className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                               </div>
-
-                              {/* Report reason */}
-                              <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3">
-                                <p className="mb-1 text-xs font-medium text-red-300">Report Reason:</p>
-                                <p className="text-sm">{report.reason}</p>
-                                {incorrectGenrePost && report.post ? (
-                                  <div className="mt-2 space-y-2">
-                                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                                      <span className="text-xs text-muted-foreground">Current genre:</span>
-                                      {(() => {
-                                        const chip = getGenreChipStyle(report.post.genre);
-                                        return (
-                                          <Badge
-                                            className="text-xs"
-                                            style={getGenreGlowPillStyle(chip.bgColor, chip.textClass)}
-                                          >
-                                            {chip.label}
-                                          </Badge>
-                                        );
-                                      })()}
-                                    </div>
-                                    {genreDisplay?.suggestedGenreId ? (
-                                      <div className="flex flex-wrap items-center gap-2 text-sm">
-                                        <span className="text-xs text-muted-foreground">Suggested genre:</span>
-                                        {(() => {
-                                          const chip = getGenreChipStyle(genreDisplay.suggestedGenreId);
-                                          return (
-                                            <Badge
-                                              className="text-xs"
-                                              style={getGenreGlowPillStyle(chip.bgColor, chip.textClass)}
-                                            >
-                                              {genreDisplay.suggestedLabel ?? chip.label}
-                                            </Badge>
-                                          );
-                                        })()}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                                {additionalDetails ? (
-                                  <div className="mt-2 pt-2 border-t border-red-500/20">
-                                    <p className="text-xs font-medium text-red-400 mb-1">
-                                      {incorrectGenrePost ? "Additional details:" : "Additional Details:"}
-                                    </p>
-                                    <p
-                                      className={
-                                        incorrectGenrePost
-                                          ? "text-sm text-muted-foreground italic"
-                                          : "text-sm text-muted-foreground"
-                                      }
-                                    >
-                                      {incorrectGenrePost ? (
-                                        <>
-                                          &ldquo;{additionalDetails}&rdquo;
-                                        </>
-                                      ) : (
-                                        additionalDetails
-                                      )}
-                                    </p>
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              {claimState === "other" ? (
-                                <div
-                                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
-                                  data-testid={`report-claimed-by-other-${report.id}`}
-                                >
-                                  <p className="flex items-center gap-1.5 font-medium text-amber-200">
-                                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                    Claimed by{" "}
-                                    {formatUsernameDisplay(
-                                      report.assigned_moderator_username ?? "another moderator",
-                                    )}
-                                  </p>
-                                  <p className="mt-0.5 text-xs text-muted-foreground">
-                                    Actions are locked while another moderator is handling this report.
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              {claimState === "unclaimed" ? (
-                                <p className="text-xs text-muted-foreground">
-                                  Claim this report to unlock moderation actions.
-                                </p>
-                              ) : null}
-
-                              {/* Claim / release + action buttons */}
-                              <div className="flex gap-2 pt-2 flex-wrap">
-                                {claimState === "unclaimed" ? (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => claimReportMutation.mutate(report.id)}
-                                    disabled={claimBusy}
-                                    data-testid={`button-claim-${report.id}`}
-                                  >
-                                    Claim
-                                  </Button>
-                                ) : null}
-                                {claimState === "mine" ? (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => releaseReportMutation.mutate(report.id)}
-                                    disabled={claimBusy || dismissReportMutation.isPending}
-                                    data-testid={`button-release-${report.id}`}
-                                  >
-                                    Release
-                                  </Button>
-                                ) : null}
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => dismissReportMutation.mutate(report.id)}
-                                  disabled={
-                                    actionsLocked ||
-                                    dismissReportMutation.isPending ||
-                                    claimBusy
-                                  }
-                                  title={
-                                    actionsLocked
-                                      ? claimState === "other"
-                                        ? "Claimed by another moderator"
-                                        : "Claim this report first"
-                                      : undefined
-                                  }
-                                  data-testid={`button-dismiss-${report.id}`}
-                                >
-                                  {actionsLocked ? (
-                                    <Lock className="w-4 h-4 mr-1" aria-hidden />
-                                  ) : (
-                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                  )}
-                                  Dismiss Report
-                                </Button>
-                                {incorrectGenrePost && report.post?.id ? (
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    disabled={actionsLocked || claimBusy}
-                                    title={
-                                      actionsLocked
-                                        ? claimState === "other"
-                                          ? "Claimed by another moderator"
-                                          : "Claim this report first"
-                                        : undefined
-                                    }
-                                    onClick={() => {
-                                      if (actionsLocked) return;
-                                      setCorrectGenreDialog({
-                                        reportId: report.id,
-                                        postId: report.post.id,
-                                        ownerUserId: report.post.user?.id,
-                                        currentGenre: report.post.genre,
-                                        suggestedGenreId: genreDisplay?.suggestedGenreId ?? null,
-                                      });
-                                    }}
-                                    data-testid={`button-correct-genre-${report.id}`}
-                                  >
-                                    Correct Genre
-                                  </Button>
-                                ) : null}
-                                {!incorrectGenrePost ? (
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={
-                                    actionsLocked ||
-                                    claimBusy ||
-                                    (report.is_user_report
-                                      ? !report.reported_user_id
-                                      : !report.post?.user?.id)
-                                  }
-                                  title={
-                                    actionsLocked
-                                      ? claimState === "other"
-                                        ? "Claimed by another moderator"
-                                        : "Claim this report first"
-                                      : report.is_user_report && !report.reported_user_id
-                                      ? "Missing reported user for this comment report"
-                                      : !report.is_user_report && !report.post?.user?.id
-                                        ? "Missing post author for this report"
-                                        : undefined
-                                  }
-                                  onClick={() => {
-                                    if (actionsLocked) return;
-                                    const userId = report.is_user_report
-                                      ? report.reported_user_id
-                                      : report.post?.user?.id;
-                                    if (!userId) return;
-                                    const username = report.is_user_report
-                                      ? report.reportedUser?.username ?? "Unknown"
-                                      : report.post?.user?.username ?? "Unknown";
-                                    setSelectedReportForModeration({
-                                      reportId: report.id,
-                                      userId,
-                                      username,
-                                      contentTarget: report.is_user_report ? "comment" : "post",
-                                      defaultReportReason:
-                                        typeof report.reason === "string" ? report.reason : "",
-                                    });
-                                    setModerationDialogOpen(true);
-                                  }}
-                                  data-testid={`button-remove-moderate-${report.id}`}
-                                >
-                                  Remove &amp; Moderate
-                                </Button>
-                                ) : null}
-                              </div>
+                            )}
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <p className="text-foreground">
+                                <span className="text-muted-foreground">Reported by </span>
+                                <span className="font-semibold">
+                                  {report.reporter?.username ? formatUsernameDisplay(report.reporter.username) : "unknown"}
+                                </span>
+                              </p>
+                              <p className="flex items-center gap-1 text-muted-foreground">
+                                <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                <span>Reported on {formatModeratorReportTimestamp(report.created_at)}</span>
+                              </p>
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
-                    );
-                    })}
+                        </div>
+
+                        {/* Report reason */}
+                        <div className={MODERATOR_PANEL_REPORT_REASON_CLASS}>
+                          <p className="mb-1 text-xs font-medium text-red-300">Report Reason:</p>
+                          <p className="text-sm">{report.reason}</p>
+                          {incorrectGenrePost && report.post ? (
+                            <div className="mt-2 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2 text-sm">
+                                <span className="text-xs text-muted-foreground">Current genre:</span>
+                                {(() => {
+                                  const chip = getGenreChipStyle(report.post.genre);
+                                  return (
+                                    <Badge
+                                      className="text-xs"
+                                      style={getGenreGlowPillStyle(chip.bgColor, chip.textClass)}
+                                    >
+                                      {chip.label}
+                                    </Badge>
+                                  );
+                                })()}
+                              </div>
+                              {genreDisplay?.suggestedGenreId ? (
+                                <div className="flex flex-wrap items-center gap-2 text-sm">
+                                  <span className="text-xs text-muted-foreground">Suggested genre:</span>
+                                  {(() => {
+                                    const chip = getGenreChipStyle(genreDisplay.suggestedGenreId);
+                                    return (
+                                      <Badge
+                                        className="text-xs"
+                                        style={getGenreGlowPillStyle(chip.bgColor, chip.textClass)}
+                                      >
+                                        {genreDisplay.suggestedLabel ?? chip.label}
+                                      </Badge>
+                                    );
+                                  })()}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {additionalDetails ? (
+                            <div className="mt-2 pt-2 border-t border-red-500/20">
+                              <p className="text-xs font-medium text-red-400 mb-1">
+                                {incorrectGenrePost ? "Additional details:" : "Additional Details:"}
+                              </p>
+                              <p
+                                className={
+                                  incorrectGenrePost
+                                    ? "text-sm text-muted-foreground italic"
+                                    : "text-sm text-muted-foreground"
+                                }
+                              >
+                                {incorrectGenrePost ? (
+                                  <>
+                                    &ldquo;{additionalDetails}&rdquo;
+                                  </>
+                                ) : (
+                                  additionalDetails
+                                )}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {claimState === "other" ? (
+                          <div
+                            className={MODERATOR_PANEL_CLAIM_LOCK_CLASS}
+                            data-testid={`report-claimed-by-other-${report.id}`}
+                          >
+                            <p className="flex items-center gap-1.5 font-medium text-amber-200">
+                              <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Claimed by{" "}
+                              {formatUsernameDisplay(
+                                report.assigned_moderator_username ?? "another moderator",
+                              )}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Actions are locked while another moderator is handling this report.
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {claimState === "unclaimed" ? (
+                          <p className="text-xs text-muted-foreground">
+                            Claim this report to unlock moderation actions.
+                          </p>
+                        ) : null}
+
+                        {/* Claim / release + action buttons */}
+                        <div className="flex gap-2 pt-2 flex-wrap">
+                          {claimState === "unclaimed" ? (
+                            <Button
+                              size="sm"
+                              className={MODERATOR_ACTION_CLAIM_CLASS}
+                              onClick={() => claimReportMutation.mutate(report.id)}
+                              disabled={claimBusy}
+                              data-testid={`button-claim-${report.id}`}
+                            >
+                              Claim
+                            </Button>
+                          ) : null}
+                          {claimState === "mine" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className={MODERATOR_ACTION_RELEASE_CLASS}
+                              onClick={() => releaseReportMutation.mutate(report.id)}
+                              disabled={claimBusy || dismissReportMutation.isPending}
+                              data-testid={`button-release-${report.id}`}
+                            >
+                              Release
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={MODERATOR_ACTION_SECONDARY_CLASS}
+                            onClick={() => dismissReportMutation.mutate(report.id)}
+                            disabled={
+                              actionsLocked ||
+                              dismissReportMutation.isPending ||
+                              claimBusy
+                            }
+                            title={
+                              actionsLocked
+                                ? claimState === "other"
+                                  ? "Claimed by another moderator"
+                                  : "Claim this report first"
+                                : undefined
+                            }
+                            data-testid={`button-dismiss-${report.id}`}
+                          >
+                            {actionsLocked ? (
+                              <Lock className="w-4 h-4 mr-1" aria-hidden />
+                            ) : (
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                            )}
+                            Dismiss Report
+                          </Button>
+                          {incorrectGenrePost && report.post?.id ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className={MODERATOR_ACTION_SECONDARY_CLASS}
+                              disabled={actionsLocked || claimBusy}
+                              title={
+                                actionsLocked
+                                  ? claimState === "other"
+                                    ? "Claimed by another moderator"
+                                    : "Claim this report first"
+                                  : undefined
+                              }
+                              onClick={() => {
+                                if (actionsLocked) return;
+                                setCorrectGenreDialog({
+                                  reportId: report.id,
+                                  postId: report.post.id,
+                                  ownerUserId: report.post.user?.id,
+                                  currentGenre: report.post.genre,
+                                  suggestedGenreId: genreDisplay?.suggestedGenreId ?? null,
+                                });
+                              }}
+                              data-testid={`button-correct-genre-${report.id}`}
+                            >
+                              Correct Genre
+                            </Button>
+                          ) : null}
+                          {!incorrectGenrePost ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className={MODERATOR_ACTION_DESTRUCTIVE_CLASS}
+                            disabled={
+                              actionsLocked ||
+                              claimBusy ||
+                              (report.is_user_report
+                                ? !report.reported_user_id
+                                : !report.post?.user?.id)
+                            }
+                            title={
+                              actionsLocked
+                                ? claimState === "other"
+                                  ? "Claimed by another moderator"
+                                  : "Claim this report first"
+                                : report.is_user_report && !report.reported_user_id
+                                ? "Missing reported user for this comment report"
+                                : !report.is_user_report && !report.post?.user?.id
+                                  ? "Missing post author for this report"
+                                  : undefined
+                            }
+                            onClick={() => {
+                              if (actionsLocked) return;
+                              const userId = report.is_user_report
+                                ? report.reported_user_id
+                                : report.post?.user?.id;
+                              if (!userId) return;
+                              const username = report.is_user_report
+                                ? report.reportedUser?.username ?? "Unknown"
+                                : report.post?.user?.username ?? "Unknown";
+                              setSelectedReportForModeration({
+                                reportId: report.id,
+                                userId,
+                                username,
+                                contentTarget: report.is_user_report ? "comment" : "post",
+                                defaultReportReason:
+                                  typeof report.reason === "string" ? report.reason : "",
+                              });
+                              setModerationDialogOpen(true);
+                            }}
+                            data-testid={`button-remove-moderate-${report.id}`}
+                          >
+                            Remove &amp; Moderate
+                          </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                );
+                })}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

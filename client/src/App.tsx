@@ -49,6 +49,7 @@ import {
   SETTINGS_SHELL_ATMOSPHERE_CLASS,
   isSettingsUtilityRoute,
 } from "@/lib/settings-presentation";
+import { MODERATOR_SHELL_ATMOSPHERE_CLASS } from "@/lib/moderator-presentation";
 import { HomeFeedInteractionProvider } from "@/lib/home-feed-interaction-context";
 import {
   AppLaunchSplash,
@@ -169,7 +170,9 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
           ? `${shellClass} ${SETTINGS_SHELL_ATMOSPHERE_CLASS}`
           : location.split("?")[0] === "/submit-metadata"
             ? `${shellClass} ${SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS}`
-            : shellClass
+            : location.split("?")[0] === "/moderator"
+              ? `${shellClass} ${MODERATOR_SHELL_ATMOSPHERE_CLASS}`
+              : shellClass
       }
     >
       {children}
