@@ -1,13 +1,15 @@
 /**
  * Private pending / final demographics persistence (server-only).
- * Never logs DOB or ticket plaintext.
+ * Never logs DOB, gender, country, or ticket plaintext.
  *
  * Claim DB writes go through public.claim_pending_signup_demographics(...) so
- * consumed-ticket + pending row commit atomically (or not at all).
+ * consumed-ticket + pending DOB/country/gender commit atomically (or not at all).
  */
 
 import type { Pool } from "pg";
 import { evaluateDateOfBirth } from "@shared/age-gate";
+import { parseCountryCodeInput } from "@shared/country-codes";
+import { parseDemographicsGender } from "@shared/demographics-gender";
 import {
   emailBindingsMatch,
   PENDING_CLAIM_AUTH_MAX_AGE_MS,
@@ -96,14 +98,24 @@ function mapRpcStatus(status: string): ClaimPendingDemographicsResult {
   };
 }
 
+export type ClaimPendingDemographicsInput = {
+  userId: unknown;
+  ticket: unknown;
+  countryCode: unknown;
+  gender: unknown;
+};
+
 /**
- * Claim sealed ticket → private pending_signup_demographics.
+ * Claim sealed ticket → private pending_signup_demographics (DOB+country+gender).
  * Pre-email-verification; does not trust UUID alone.
  * Persistence is a single RPC (atomic consumed + pending).
+ *
+ * Country: Railway validates against COUNTRY_OPTIONS allowlist (authoritative).
+ * SQL only shape-checks [A-Z]{2}. Gender: shared enum.
  */
 export async function claimPendingDemographics(
   deps: PendingDemographicsDeps,
-  input: { userId: unknown; ticket: unknown },
+  input: ClaimPendingDemographicsInput,
 ): Promise<ClaimPendingDemographicsResult> {
   if (!isUuid(input.userId) || typeof input.ticket !== "string") {
     return clientError("invalid_request", 400);
@@ -112,6 +124,19 @@ export async function claimPendingDemographics(
   const ticket = input.ticket;
   if (ticket.length < 16 || ticket.length > 2048) {
     return clientError("ticket_invalid", 400);
+  }
+
+  const countryParsed = parseCountryCodeInput(
+    typeof input.countryCode === "string" ? input.countryCode : null,
+  );
+  if (!countryParsed.ok || !countryParsed.countryCode) {
+    return clientError("invalid_request", 400);
+  }
+  const countryCode = countryParsed.countryCode;
+
+  const gender = parseDemographicsGender(input.gender);
+  if (!gender) {
+    return clientError("invalid_request", 400);
   }
 
   const key = deps.getTicketKey();
@@ -173,9 +198,18 @@ export async function claimPendingDemographics(
          $1::uuid,
          $2::uuid,
          $3::date,
-         $4::timestamptz
+         $4::text,
+         $5::text,
+         $6::timestamptz
        ) AS claim_pending_signup_demographics`,
-      [userId, payload.jti, payload.dob, expiresAt.toISOString()],
+      [
+        userId,
+        payload.jti,
+        payload.dob,
+        countryCode,
+        gender,
+        expiresAt.toISOString(),
+      ],
     );
     const status = result.rows[0]?.claim_pending_signup_demographics;
     if (typeof status !== "string") {
@@ -183,7 +217,7 @@ export async function claimPendingDemographics(
     }
     return mapRpcStatus(status);
   } catch (err) {
-    // Never include DOB / ticket in logs
+    // Never include DOB / ticket / country / gender in logs
     console.error("[pending-demographics] claim failed", {
       code: (err as { code?: string })?.code ?? "unknown",
     });
@@ -191,7 +225,7 @@ export async function claimPendingDemographics(
   }
 }
 
-/** Idempotent pending → user_demographics (Sign-In safety net / reusable). */
+/** Idempotent pending → user_demographics + profiles.country (Sign-In safety net). */
 export async function migratePendingDemographicsForUser(
   pool: Pool,
   userId: string,
@@ -205,14 +239,34 @@ export async function migratePendingDemographicsForUser(
       `WITH moved AS (
          DELETE FROM public.pending_signup_demographics p
          WHERE p.user_id = $1::uuid
-         RETURNING p.user_id, p.date_of_birth
+         RETURNING p.user_id, p.date_of_birth, p.country_code, p.gender
+       ),
+       inserted AS (
+         INSERT INTO public.user_demographics (
+           user_id, date_of_birth, gender, age_requirement_confirmed_at,
+           demographics_completed_at
+         )
+         SELECT
+           user_id,
+           date_of_birth,
+           gender,
+           $2::timestamptz,
+           CASE WHEN gender IS NOT NULL THEN $2::timestamptz ELSE NULL END
+         FROM moved
+         ON CONFLICT (user_id) DO NOTHING
+         RETURNING user_id
+       ),
+       profile_updated AS (
+         UPDATE public.profiles pr
+         SET
+           country_code = m.country_code,
+           country_prompt_pending = false
+         FROM moved m
+         WHERE pr.id = m.user_id
+           AND m.country_code IS NOT NULL
+         RETURNING pr.id
        )
-       INSERT INTO public.user_demographics (
-         user_id, date_of_birth, gender, age_requirement_confirmed_at
-       )
-       SELECT user_id, date_of_birth, NULL, $2::timestamptz FROM moved
-       ON CONFLICT (user_id) DO NOTHING
-       RETURNING user_id`,
+       SELECT user_id FROM inserted`,
       [userId, confirmedAt.toISOString()],
     );
     return {

@@ -57,7 +57,10 @@ export function redactSensitiveApiLogFields(value: unknown): unknown {
       key === "sealedticket" ||
       key === "email" ||
       key === "emailbinding" ||
-      key === "email_binding"
+      key === "email_binding" ||
+      key === "gender" ||
+      key === "countrycode" ||
+      key === "country_code"
     ) {
       out[k] = "[redacted]";
       continue;

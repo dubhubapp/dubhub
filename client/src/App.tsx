@@ -484,7 +484,7 @@ function App() {
             } else if (await isSessionUserStillActive(sessionUserId)) {
               setIsAuthenticated(true);
               setUserRole(userRole);
-              maybeQueueFirstLoginOnboarding({
+              await maybeQueueFirstLoginOnboarding({
                 userId: profileData.id,
                 email: session.user.email,
                 accountType: profileData.account_type,
@@ -596,7 +596,7 @@ function App() {
               } else if (await isSessionUserStillActive(signedInUserId)) {
                 setIsAuthenticated(true);
                 setUserRole(userRole);
-                maybeQueueFirstLoginOnboarding({
+                await maybeQueueFirstLoginOnboarding({
                   userId: profileData.id,
                   email: session.user.email,
                   accountType: profileData.account_type,
@@ -686,12 +686,20 @@ function App() {
   }, [isHomeFeedReady]);
 
   useEffect(() => {
-    if (firstLoginOnboarding.open || artistToolsIntro.open || artistToolsIntro.pending) {
+    if (
+      firstLoginOnboarding.open ||
+      artistToolsIntro.open ||
+      artistToolsIntro.pending
+    ) {
       sessionStorage.setItem(ONBOARDING_ACTIVE_SESSION_KEY, "1");
       return;
     }
     sessionStorage.removeItem(ONBOARDING_ACTIVE_SESSION_KEY);
-  }, [firstLoginOnboarding.open, artistToolsIntro.open, artistToolsIntro.pending]);
+  }, [
+    firstLoginOnboarding.open,
+    artistToolsIntro.open,
+    artistToolsIntro.pending,
+  ]);
 
   useLayoutEffect(() => {
     document.documentElement.removeAttribute("data-dubhub-launch-bg");
@@ -887,7 +895,8 @@ function App() {
         <ArtistSubscriptionIntroProfileTrigger
           introAlreadyActive={artistToolsIntro.pending || artistToolsIntro.open}
           appBlockingSurfaceActive={
-            firstLoginOnboarding.open || postOnboardingPushPrompt.open
+            firstLoginOnboarding.open ||
+            postOnboardingPushPrompt.open
           }
           onQueue={({ userId }) => {
             setArtistToolsIntro({
@@ -993,7 +1002,8 @@ function App() {
           />
           <InAppNotificationBannerHost
             suppressOnboardingModal={
-              firstLoginOnboarding.open || artistToolsIntro.open
+              firstLoginOnboarding.open ||
+              artistToolsIntro.open
             }
             suppressPushPrompt={
               postOnboardingPushPrompt.open ||

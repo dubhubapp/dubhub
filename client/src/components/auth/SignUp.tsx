@@ -28,6 +28,11 @@ import {
   runSignupWithDob,
   SIGNUP_INVALID_DOB_MESSAGE,
 } from '@/lib/signup-dob-flow';
+import {
+  canAdvanceSignupStep1,
+  canSubmitSignupStep2,
+  type SignupStep,
+} from '@/lib/signup-steps';
 import { ApiRequestError } from '@/lib/apiDiagnostics';
 import {
   isSignupAccountType,
@@ -43,6 +48,8 @@ import {
   ARTIST_DM_CTA_LABEL,
   openDubhubInstagram,
 } from '@/lib/artist-verification-ux';
+import { SignupAboutYouFields } from '@/components/auth/SignupAboutYouFields';
+import type { DemographicsGender } from '@shared/demographics-gender';
 import { cn, formatUsernameDisplay } from '@/lib/utils';
 import { AUTH_SURFACE_CLASS } from '@/lib/auth-surface';
 import {
@@ -139,7 +146,10 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
   const [accountType, setAccountType] = useState(
     initialAccountType === "user" || initialAccountType === "artist" ? initialAccountType : "",
   );
+  const [signupStep, setSignupStep] = useState<SignupStep>(1);
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [countryCode, setCountryCode] = useState<string | null>(null);
+  const [gender, setGender] = useState<DemographicsGender | "">("");
   const [dobError, setDobError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
@@ -155,7 +165,6 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
   // Initialize profanity filter
   const filter = new Filter();
   const passwordStrengthResult = getPasswordStrength(password);
-  const isPasswordWeak = password.length > 0 && !passwordStrengthResult.canSubmit;
   const confirmPasswordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
   const signupUsernameHandle = formatUsernameDisplay(username);
 
@@ -283,31 +292,27 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
     return () => clearTimeout(timeoutId);
   }, [username, accountType]);
 
-  const handleSignUp = async (e: React.FormEvent) => {
+  const goBackToStep1 = () => {
+    if (isLoading || hasSignupSucceeded) return;
+    setErrorMessage('');
+    setDobError('');
+    setSignupStep(1);
+  };
+
+  /** Step 1 Continue — client validation only; no age-gate / Auth / MailerLite. */
+  const handleContinueStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (hasSignupSucceeded || showVerificationModal) {
-      return;
-    }
-    if (signupCooldownRemaining > 0) {
-      setErrorMessage(SIGNUP_COOLDOWN_MESSAGE);
+    if (hasSignupSucceeded || showVerificationModal || signupStep !== 1) {
       return;
     }
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      // Validate form inputs
-      if (!email || !username || !password || !confirmPassword || !accountType || !dateOfBirth) {
+      if (!email || !username || !password || !confirmPassword || !accountType) {
         setErrorMessage('Please fill in all fields');
         return;
       }
-
-      if (!dateOfBirth.trim()) {
-        setDobError(SIGNUP_INVALID_DOB_MESSAGE);
-        setErrorMessage(SIGNUP_INVALID_DOB_MESSAGE);
-        return;
-      }
-      setDobError('');
 
       if (password !== confirmPassword) {
         setErrorMessage('Passwords do not match. Please try again');
@@ -319,36 +324,26 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
         return;
       }
 
-      // Check for profanity in username
       if (filter.isProfane(username)) {
         setErrorMessage('Username contains inappropriate language. Please choose a different username');
         return;
       }
 
-      // Validate username format first
       const trimmedUsername = username.trim();
       const validation = validateUsername(trimmedUsername);
 
       if (!validation.valid) {
-        console.warn('[SignUp] Username format validation failed:', {
-          attempted_username: trimmedUsername,
-          reason: validation.reason || 'format',
-          timestamp: new Date().toISOString(),
-        });
         setErrorMessage(validation.error || 'Invalid username');
         return;
       }
 
-      // Check username availability (matches backend rules exactly)
-      const availability = await checkUsernameAvailability(supabase, trimmedUsername, accountType as 'user' | 'artist');
+      const availability = await checkUsernameAvailability(
+        supabase,
+        trimmedUsername,
+        accountType as 'user' | 'artist',
+      );
 
       if (!availability.available) {
-        console.warn('[SignUp] Username availability check failed:', {
-          attempted_username: trimmedUsername,
-          reason: availability.reason || 'unavailable',
-          accountType,
-          timestamp: new Date().toISOString(),
-        });
         setErrorMessage(
           mapAvailabilityFailureToUsernameError(availability.reason, accountType),
         );
@@ -374,17 +369,55 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
         return;
       }
 
+      setSignupStep(2);
+    } catch (error: unknown) {
+      console.error('[SignUp] Unexpected step-1 error:', error);
+      setErrorMessage('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /** Step 2 Create Account — age-gate → signUp → claim(country+gender). */
+  const handleCreateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (hasSignupSucceeded || showVerificationModal || signupStep !== 2) {
+      return;
+    }
+    if (signupCooldownRemaining > 0) {
+      setErrorMessage(SIGNUP_COOLDOWN_MESSAGE);
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      if (!dateOfBirth.trim()) {
+        setDobError(SIGNUP_INVALID_DOB_MESSAGE);
+        setErrorMessage(SIGNUP_INVALID_DOB_MESSAGE);
+        return;
+      }
+      if (!countryCode || !gender) {
+        setErrorMessage('Please fill in all fields');
+        return;
+      }
+      setDobError('');
+
+      const trimmedUsername = username.trim();
+      const trimmedEmail = email.trim();
       const emailRedirectTo = getAuthCallbackUrl();
       let mailerLiteAttempted = false;
 
       const flow = await runSignupWithDob({
         dateOfBirth,
+        countryCode,
+        gender,
         email: trimmedEmail,
-        ageGate: async (dob, email) => {
+        ageGate: async (dob, emailForGate) => {
           try {
             const res = await apiRequest('POST', '/api/auth/age-gate', {
               dateOfBirth: dob,
-              email,
+              email: emailForGate,
             });
             const body = (await res.json()) as {
               eligible?: boolean;
@@ -407,9 +440,9 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
             return { ok: false, kind: 'unavailable' };
           }
         },
-        signUp: async (email) => {
+        signUp: async (emailForSignUp) => {
           const { data, error } = await supabase.auth.signUp({
-            email,
+            email: emailForSignUp,
             password: password,
             options: {
               emailRedirectTo,
@@ -431,9 +464,9 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
             };
           }
           if (error) {
-            const errorMessage = error.message || '';
+            const errMsg = error.message || '';
             const errorCode = error.code || '';
-            const em = errorMessage.toLowerCase();
+            const em = errMsg.toLowerCase();
             const isUsernameConflict =
               errorCode === '23505' ||
               em.includes('profiles_username') ||
@@ -449,19 +482,19 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
               };
             }
             if (
-              errorMessage.includes('Password should be') ||
-              errorMessage.toLowerCase().includes('password')
+              errMsg.includes('Password should be') ||
+              errMsg.toLowerCase().includes('password')
             ) {
               return {
                 ok: false,
                 kind: 'other',
-                message: errorMessage || 'Password was rejected. Please use a different password.',
+                message: errMsg || 'Password was rejected. Please use a different password.',
               };
             }
             return {
               ok: false,
               kind: 'other',
-              message: errorMessage || 'Failed to create account. Please try again.',
+              message: errMsg || 'Failed to create account. Please try again.',
             };
           }
           if (!data?.user?.id) {
@@ -469,11 +502,13 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
           }
           return { ok: true, userId: data.user.id };
         },
-        claim: async (userId, ticket) => {
+        claim: async (userId, ticket, claimCountry, claimGender) => {
           try {
             const res = await apiRequest('POST', '/api/auth/pending-demographics', {
               userId,
               ticket,
+              countryCode: claimCountry,
+              gender: claimGender,
             });
             const body = (await res.json()) as { ok?: boolean; code?: string };
             if (body.ok === true) return { ok: true };
@@ -535,7 +570,8 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
       if (!flow.ok) {
         if (
           flow.message === SIGNUP_INVALID_DOB_MESSAGE ||
-          flow.message.toLowerCase().includes('date of birth')
+          flow.message.toLowerCase().includes('date of birth') ||
+          flow.message.toLowerCase().includes('at least 13')
         ) {
           setDobError(flow.message);
         }
@@ -549,9 +585,9 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
       if (isAuthEmailRateLimitError(error)) {
         setErrorMessage(AUTH_EMAIL_RATE_LIMIT_MESSAGE);
       } else {
-        const errorMessage =
+        const errMsg =
           error instanceof Error ? error.message : String((error as { message?: string })?.message ?? '');
-        setErrorMessage(errorMessage || 'An unexpected error occurred. Please try again.');
+        setErrorMessage(errMsg || 'An unexpected error occurred. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -564,13 +600,18 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
         <div className="dubhub-prelogin-signup-logo-gap mb-2 flex justify-center">
           <Logo size="xl" className={PRELOGIN_AUTH_LOGO_CLASS} />
         </div>
-        <CardTitle className="text-2xl font-bold text-foreground bg-transparent">Join dub hub</CardTitle>
+        <CardTitle className="text-2xl font-bold text-foreground bg-transparent">
+          {signupStep === 1 ? "Join dub hub" : "About you"}
+        </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {signupSubtitleForAccountType(accountType)}
+          {signupStep === 1
+            ? signupSubtitleForAccountType(accountType)
+            : "A couple of details to finish setting up your account."}
         </CardDescription>
       </CardHeader>
       <CardContent className="px-6 pb-3 pt-1">
-        <form onSubmit={handleSignUp}>
+        <form onSubmit={signupStep === 1 ? handleContinueStep1 : handleCreateAccount}>
+          {signupStep === 1 ? (
           <div className={PRELOGIN_SIGNUP_FIELD_STACK_CLASS}>
           <div className="space-y-2">
             <Label htmlFor="accountType" className="text-foreground">Account Type</Label>
@@ -620,53 +661,6 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
               disabled={hasSignupSucceeded}
               data-testid="input-email"
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="dateOfBirth" className="text-foreground">
-              Date of birth
-            </Label>
-            {/*
-              Same closed-field geometry pattern as Submit Metadata played-date:
-              overflow-contain wrapper + proven `dubhub-date-input` WebKit rules.
-              Prelogin glass token kept so the field matches Email/Username chrome.
-            */}
-            <div className="dubhub-prelogin-dob-wrap relative isolate flex h-[2.8125rem] min-w-0 w-full max-w-full overflow-hidden rounded-[15px] [contain:inline-size]">
-              <Input
-                id="dateOfBirth"
-                type="date"
-                name="bday"
-                value={dateOfBirth}
-                onChange={(e) => {
-                  setDateOfBirth(e.target.value);
-                  setDobError('');
-                }}
-                className={cn(
-                  PRELOGIN_FIELD_CLASS,
-                  "dubhub-date-input h-full min-h-0 max-h-full min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-start px-3 py-0 pr-12 text-left [color-scheme:dark] md:text-sm",
-                  "focus-visible:ring-offset-0",
-                  dobError ? PRELOGIN_FIELD_INVALID_CLASS : "",
-                )}
-                autoComplete="bday"
-                required
-                disabled={hasSignupSucceeded}
-                data-testid="input-date-of-birth"
-                aria-invalid={!!dobError}
-                aria-describedby={dobError ? "dob-status" : undefined}
-              />
-            </div>
-            {dobError ? (
-              <div
-                id="dob-status"
-                className={PRELOGIN_CONFIRM_STATUS_CLASS}
-                data-testid="dob-status"
-                aria-live="polite"
-              >
-                <p className="text-xs text-red-600" data-testid="text-dob-error">
-                  {dobError}
-                </p>
-              </div>
-            ) : null}
           </div>
 
           <div className={cn("space-y-2", PRELOGIN_FEEDBACK_GROUP_CLASS)}>
@@ -840,30 +834,117 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
             </div>
           </div>
           </div>
+          ) : (
+          <div className={PRELOGIN_SIGNUP_FIELD_STACK_CLASS}>
+            <div className="space-y-2">
+              <Label htmlFor="dateOfBirth" className="text-foreground">
+                Date of birth
+              </Label>
+              {/*
+                Same closed-field geometry pattern as Submit Metadata played-date:
+                overflow-contain wrapper + proven `dubhub-date-input` WebKit rules.
+                Prelogin glass token kept so the field matches Email/Username chrome.
+              */}
+              <div className="dubhub-prelogin-dob-wrap relative isolate flex h-[2.8125rem] min-w-0 w-full max-w-full overflow-hidden rounded-[15px] [contain:inline-size]">
+                <Input
+                  id="dateOfBirth"
+                  type="date"
+                  name="bday"
+                  value={dateOfBirth}
+                  onChange={(e) => {
+                    setDateOfBirth(e.target.value);
+                    setDobError('');
+                  }}
+                  className={cn(
+                    PRELOGIN_FIELD_CLASS,
+                    "dubhub-date-input h-full min-h-0 max-h-full min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-start px-3 py-0 pr-12 text-left [color-scheme:dark] md:text-sm",
+                    "focus-visible:ring-offset-0",
+                    dobError ? PRELOGIN_FIELD_INVALID_CLASS : "",
+                  )}
+                  autoComplete="bday"
+                  required
+                  disabled={hasSignupSucceeded}
+                  data-testid="input-date-of-birth"
+                  aria-invalid={!!dobError}
+                  aria-describedby={dobError ? "dob-status" : undefined}
+                />
+              </div>
+              {dobError ? (
+                <div
+                  id="dob-status"
+                  className={PRELOGIN_CONFIRM_STATUS_CLASS}
+                  data-testid="dob-status"
+                  aria-live="polite"
+                >
+                  <p className="text-xs text-red-600" data-testid="text-dob-error">
+                    {dobError}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
+            <SignupAboutYouFields
+              countryCode={countryCode}
+              gender={gender}
+              onCountryChange={setCountryCode}
+              onGenderChange={setGender}
+              disabled={hasSignupSucceeded}
+            />
+          </div>
+          )}
 
           <div className={PRELOGIN_SIGNUP_CTA_WRAP_CLASS}>
+            {signupStep === 2 ? (
+              <button
+                type="button"
+                onClick={goBackToStep1}
+                disabled={isLoading || hasSignupSucceeded}
+                className={cn(PRELOGIN_LINK_CLASS, "mb-3 block w-full text-center text-sm")}
+                data-testid="button-signup-back"
+              >
+                Back
+              </button>
+            ) : null}
             <Button
               type="submit"
               className={PRELOGIN_PRIMARY_CTA_CLASS}
               disabled={
                 isLoading ||
-                !dateOfBirth ||
-                !isUsernameReadyForCreateAccount(usernameStatus) ||
-                isPasswordWeak ||
-                confirmPasswordMismatch ||
                 hasSignupSucceeded ||
-                signupCooldownRemaining > 0
+                (signupStep === 1
+                  ? !canAdvanceSignupStep1({
+                      email,
+                      username,
+                      password,
+                      confirmPassword,
+                      accountType,
+                      usernameReady: isUsernameReadyForCreateAccount(usernameStatus),
+                      passwordCanSubmit: passwordStrengthResult.canSubmit,
+                      passwordsMatch: !confirmPasswordMismatch && confirmPassword.length > 0,
+                    })
+                  : !canSubmitSignupStep2({
+                      dateOfBirth,
+                      countryCode,
+                      gender,
+                    }) ||
+                    signupCooldownRemaining > 0)
               }
-              data-testid="button-create-account"
+              data-testid={
+                signupStep === 1 ? "button-signup-continue" : "button-create-account"
+              }
             >
-              {isLoading
-                ? "Creating Account..."
-                : signupCooldownRemaining > 0
-                  ? `Please wait (${signupCooldownRemaining}s)`
-                  : "Create Account"}
+              {signupStep === 1
+                ? isLoading
+                  ? "Checking..."
+                  : "Continue"
+                : isLoading
+                  ? "Creating Account..."
+                  : signupCooldownRemaining > 0
+                    ? `Please wait (${signupCooldownRemaining}s)`
+                    : "Create Account"}
             </Button>
           </div>
-          {signupCooldownRemaining > 0 && !hasSignupSucceeded && (
+          {signupStep === 2 && signupCooldownRemaining > 0 && !hasSignupSucceeded && (
             <p className="text-xs text-muted-foreground text-center mt-2">
               Please wait a moment before creating another account.
             </p>

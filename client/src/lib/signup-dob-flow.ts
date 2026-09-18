@@ -1,12 +1,14 @@
 /**
- * SignUp DOB orchestration — testable without DOM.
- * Age-gate on submit only; claim before success UX; abandon if claim fails.
+ * SignUp orchestration — DOB + Country + Gender at Step 2.
+ * Age-gate on final submit only; claim before success UX; abandon if claim fails.
  *
  * Binding order (same submit attempt):
- * validate → age-gate(DOB + pinned email) → signUp(same email) → claim → success
+ * validate → age-gate(DOB + pinned email) → signUp(same email) → claim(country+gender) → success
  */
 
 import { evaluateDateOfBirth } from "@shared/age-gate";
+import { parseCountryCodeInput } from "@shared/country-codes";
+import { parseDemographicsGender } from "@shared/demographics-gender";
 
 export const SIGNUP_UNDER_13_MESSAGE =
   "You need to be at least 13 to create a dub hub account.";
@@ -19,6 +21,12 @@ export const SIGNUP_AGE_GATE_UNAVAILABLE_MESSAGE =
 
 export const SIGNUP_CLAIM_FAILED_MESSAGE =
   "We couldn’t finish creating your account. Please try again.";
+
+export const SIGNUP_INVALID_COUNTRY_MESSAGE =
+  "Please select your country.";
+
+export const SIGNUP_INVALID_GENDER_MESSAGE =
+  "Please select a gender option.";
 
 const CLAIM_RETRY_ATTEMPTS = 3;
 const CLAIM_RETRY_GAP_MS = 400;
@@ -43,6 +51,8 @@ export type SignupAbandonResult = { ok: boolean };
 
 export type RunSignupWithDobDeps = {
   dateOfBirth: string;
+  countryCode: string;
+  gender: string;
   /**
    * Signup email for this submit attempt — passed to age-gate and signUp.
    * Must not change between those steps within one run.
@@ -56,7 +66,12 @@ export type RunSignupWithDobDeps = {
   ) => Promise<SignupAgeGateResult>;
   /** Must sign up with the same email passed into this run. */
   signUp: (email: string) => Promise<SignupAuthResult>;
-  claim: (userId: string, ticket: string) => Promise<SignupClaimResult>;
+  claim: (
+    userId: string,
+    ticket: string,
+    countryCode: string,
+    gender: string,
+  ) => Promise<SignupClaimResult>;
   abandon: (userId: string, ticket: string) => Promise<SignupAbandonResult>;
   /** Runs only after claim succeeds — MailerLite / markers / modal. */
   afterClaimSuccess: () => Promise<void> | void;
@@ -102,6 +117,17 @@ export async function runSignupWithDob(
     return { ok: false, message: "Please enter a valid email." };
   }
 
+  const countryParsed = parseCountryCodeInput(deps.countryCode);
+  if (!countryParsed.ok || !countryParsed.countryCode) {
+    return { ok: false, message: SIGNUP_INVALID_COUNTRY_MESSAGE };
+  }
+  const countryCode = countryParsed.countryCode;
+
+  const gender = parseDemographicsGender(deps.gender);
+  if (!gender) {
+    return { ok: false, message: SIGNUP_INVALID_GENDER_MESSAGE };
+  }
+
   const gate = await deps.ageGate(dob, email);
   if (!gate.ok) {
     if (gate.kind === "under_13") {
@@ -139,7 +165,7 @@ export async function runSignupWithDob(
   let claimOk = false;
   let lastRetryable = true;
   for (let i = 0; i < CLAIM_RETRY_ATTEMPTS; i++) {
-    const claim = await deps.claim(auth.userId, ticket);
+    const claim = await deps.claim(auth.userId, ticket, countryCode, gender);
     if (claim.ok) {
       claimOk = true;
       break;

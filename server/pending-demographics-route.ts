@@ -22,9 +22,14 @@ import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 const claimBodySchema = z.object({
   userId: z.string().uuid(),
   ticket: z.string().min(16).max(2048),
+  countryCode: z.string().min(2).max(2),
+  gender: z.string().min(1).max(32),
 });
 
-const abandonBodySchema = claimBodySchema;
+const abandonBodySchema = z.object({
+  userId: z.string().uuid(),
+  ticket: z.string().min(16).max(2048),
+});
 
 function ticketKeyOrNull(): Buffer | null {
   const resolved = tryResolveAgeGateTicketKey();
@@ -51,6 +56,8 @@ async function fetchAuthUserByIdAdmin(userId: string): Promise<{
 
 /**
  * Claim + ensure-demographics endpoints (server/DB/Admin Auth).
+ * Post-login About You / complete-demographics removed — Country+Gender
+ * are collected at SignUp Step 2 and claimed into pending staging.
  */
 export function registerPendingDemographicsRoutes(
   app: Express,
@@ -151,8 +158,7 @@ export function registerPendingDemographicsRoutes(
   );
 
   /**
-   * Authenticated safety net: pending → user_demographics for the session user.
-   * Phase 3 SignIn should call once after successful profile load.
+   * Authenticated safety net: pending → user_demographics (+ country) for session user.
    */
   app.post(
     "/api/auth/ensure-demographics",

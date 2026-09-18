@@ -15,6 +15,10 @@ const migrationSrc = readFileSync(
   join(here, "../supabase/migrations/20260917200000_user_demographics_pending.sql"),
   "utf8",
 );
+const migration3bSrc = readFileSync(
+  join(here, "../supabase/migrations/20260918120000_complete_new_user_demographics.sql"),
+  "utf8",
+);
 const schemaSrc = readFileSync(join(here, "../supabase-schema.md"), "utf8");
 const publicProfilesSrc = readFileSync(
   join(here, "../supabase/migrations/20260917180000_public_profiles_view.sql"),
@@ -29,10 +33,11 @@ const JTI = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const JTI_OTHER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const DOB = "1995-06-15";
 const NOW = 1_700_000_000_000;
+const CLAIM_EXTRA = { countryCode: "GB", gender: "male" } as const;
 
 type State = {
   consumed: Map<string, string>;
-  pending: Map<string, { dob: string; ticket_id: string }>;
+  pending: Map<string, { dob: string; ticket_id: string; country_code: string; gender: string }>;
   final: Set<string>;
   /** When set, second write of a fresh claim throws — proves no partial commit. */
   failPendingInsert?: boolean;
@@ -48,6 +53,8 @@ function runClaimRpc(
   userId: string,
   ticketId: string,
   dob: string,
+  countryCode: string,
+  gender: string,
 ): string {
   state.rpcCalls += 1;
 
@@ -65,7 +72,7 @@ function runClaimRpc(
       if (pending.ticket_id !== ticketId) return "conflict";
       return "ok";
     }
-    state.pending.set(userId, { dob, ticket_id: ticketId });
+    state.pending.set(userId, { dob, ticket_id: ticketId, country_code: countryCode, gender });
     return "ok";
   }
 
@@ -93,7 +100,7 @@ function runClaimRpc(
   }
 
   state.consumed.set(ticketId, userId);
-  state.pending.set(userId, { dob, ticket_id: ticketId });
+  state.pending.set(userId, { dob, ticket_id: ticketId, country_code: countryCode, gender });
   return "ok";
 }
 
@@ -108,6 +115,8 @@ function mockPool(state: State): Pool {
       const userId = String(params?.[0]);
       const ticketId = String(params?.[1]);
       const dob = String(params?.[2]);
+      const countryCode = String(params?.[3]);
+      const gender = String(params?.[4]);
       if (state.failPendingInsert) {
         // Prove: throwing mid-claim leaves no partial state
         const beforeConsumed = new Map(state.consumed);
@@ -126,7 +135,7 @@ function mockPool(state: State): Pool {
           throw err;
         }
       }
-      const status = runClaimRpc(state, userId, ticketId, dob);
+      const status = runClaimRpc(state, userId, ticketId, dob, countryCode, gender);
       if (status === "unavailable_simulated") {
         throw Object.assign(new Error("simulated"), { code: "23505" });
       }
@@ -205,7 +214,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => null,
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "auth_user_not_found");
@@ -232,7 +241,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         }),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "auth_user_not_eligible");
@@ -254,10 +263,74 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A, "alice@example.com"),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, true);
     assert.equal(state.rpcCalls, 1);
+    assert.equal(state.pending.get(USER_A)?.country_code, "GB");
+    assert.equal(state.pending.get(USER_A)?.gender, "male");
+  });
+
+  it("rejects fake country ZZ and invalid gender before RPC", async () => {
+    const state: State = {
+      consumed: new Map(),
+      pending: new Map(),
+      final: new Set(),
+      rpcCalls: 0,
+    };
+    const ticket = await sealTicket();
+    const badCountry = await claimPendingDemographics(
+      {
+        pool: mockPool(state),
+        getTicketKey: () => TEST_KEY,
+        getAuthUserById: async () => recentAuth(USER_A),
+        nowMs: () => NOW,
+      },
+      { userId: USER_A, ticket, countryCode: "ZZ", gender: "male" },
+    );
+    assert.equal(badCountry.ok, false);
+    assert.equal(badCountry.code, "invalid_request");
+    assert.equal(state.rpcCalls, 0);
+
+    const badGender = await claimPendingDemographics(
+      {
+        pool: mockPool(state),
+        getTicketKey: () => TEST_KEY,
+        getAuthUserById: async () => recentAuth(USER_A),
+        nowMs: () => NOW,
+      },
+      { userId: USER_A, ticket, countryCode: "GB", gender: "nonbinary" },
+    );
+    assert.equal(badGender.ok, false);
+    assert.equal(badGender.code, "invalid_request");
+    assert.equal(state.rpcCalls, 0);
+  });
+
+  it("prefer_not_to_say gender is accepted", async () => {
+    const state: State = {
+      consumed: new Map(),
+      pending: new Map(),
+      final: new Set(),
+      rpcCalls: 0,
+    };
+    const ticket = await sealTicket();
+    const result = await claimPendingDemographics(
+      {
+        pool: mockPool(state),
+        getTicketKey: () => TEST_KEY,
+        getAuthUserById: async () => recentAuth(USER_A),
+        nowMs: () => NOW,
+      },
+      {
+        userId: USER_A,
+        ticket,
+        countryCode: "US",
+        gender: "prefer_not_to_say",
+      },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(state.pending.get(USER_A)?.gender, "prefer_not_to_say");
+    assert.equal(state.pending.get(USER_A)?.country_code, "US");
   });
 
   it("ticket email A + Auth email B → claim rejected (no RPC / no consume)", async () => {
@@ -275,7 +348,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A, "bob@example.com"),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "auth_user_not_eligible");
@@ -299,7 +372,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A, "alice@example.com"),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, true);
   });
@@ -319,18 +392,28 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, true);
     assert.equal(state.rpcCalls, 1);
     assert.equal(state.consumed.get(JTI), USER_A);
-    assert.deepEqual(state.pending.get(USER_A), { dob: DOB, ticket_id: JTI });
+    assert.deepEqual(state.pending.get(USER_A), {
+      dob: DOB,
+      ticket_id: JTI,
+      country_code: "GB",
+      gender: "male",
+    });
   });
 
   it("same-user retry is idempotent", async () => {
     const state: State = {
       consumed: new Map([[JTI, USER_A]]),
-      pending: new Map([[USER_A, { dob: DOB, ticket_id: JTI }]]),
+      pending: new Map([
+        [
+          USER_A,
+          { dob: DOB, ticket_id: JTI, country_code: "GB", gender: "male" },
+        ],
+      ]),
       final: new Set(),
       rpcCalls: 0,
     };
@@ -342,7 +425,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, true);
     assert.equal(state.rpcCalls, 1);
@@ -351,7 +434,9 @@ describe("claimPendingDemographics (atomic RPC)", () => {
   it("same ticket different user → ticket_replay", async () => {
     const state: State = {
       consumed: new Map([[JTI, USER_A]]),
-      pending: new Map([[USER_A, { dob: DOB, ticket_id: JTI }]]),
+      pending: new Map([
+        [USER_A, { dob: DOB, ticket_id: JTI, country_code: "GB", gender: "male" }],
+      ]),
       final: new Set(),
       rpcCalls: 0,
     };
@@ -363,7 +448,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_B),
         nowMs: () => NOW,
       },
-      { userId: USER_B, ticket },
+      { userId: USER_B, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "ticket_replay");
@@ -384,7 +469,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "conflict");
@@ -405,7 +490,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "user_already_has_demographics");
@@ -427,7 +512,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.equal(result.ok, false);
     assert.equal(result.code, "unavailable");
@@ -450,7 +535,7 @@ describe("claimPendingDemographics (atomic RPC)", () => {
         getAuthUserById: async () => recentAuth(USER_A),
         nowMs: () => NOW,
       },
-      { userId: USER_A, ticket },
+      { userId: USER_A, ticket, ...CLAIM_EXTRA },
     );
     assert.doesNotMatch(JSON.stringify(result), /1995/);
   });
@@ -460,7 +545,9 @@ describe("migratePendingDemographicsForUser", () => {
   it("moves pending into final and is idempotent", async () => {
     const state: State = {
       consumed: new Map(),
-      pending: new Map([[USER_A, { dob: DOB, ticket_id: JTI }]]),
+      pending: new Map([
+        [USER_A, { dob: DOB, ticket_id: JTI, country_code: "GB", gender: "male" }],
+      ]),
       final: new Set(),
       rpcCalls: 0,
     };
@@ -508,63 +595,105 @@ describe("claim atomicity + RPC security contract", () => {
 
   it("migration defines atomic claim RPC with service_role-only EXECUTE", () => {
     assert.match(
-      migrationSrc,
+      migration3bSrc,
       /CREATE OR REPLACE FUNCTION public\.claim_pending_signup_demographics/,
     );
     assert.match(
-      migrationSrc,
-      /GRANT EXECUTE ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, timestamptz\) TO service_role/,
+      migration3bSrc,
+      /GRANT EXECUTE ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, text, text, timestamptz\) TO service_role/,
     );
     assert.match(
-      migrationSrc,
-      /REVOKE ALL ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, timestamptz\) FROM anon/,
+      migration3bSrc,
+      /REVOKE ALL ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, text, text, timestamptz\) FROM anon/,
     );
     assert.match(
-      migrationSrc,
-      /REVOKE ALL ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, timestamptz\) FROM authenticated/,
+      migration3bSrc,
+      /REVOKE ALL ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, text, text, timestamptz\) FROM authenticated/,
     );
     assert.match(
-      migrationSrc,
-      /REVOKE ALL ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, timestamptz\) FROM PUBLIC/,
+      migration3bSrc,
+      /REVOKE ALL ON FUNCTION public\.claim_pending_signup_demographics\(uuid, uuid, date, text, text, timestamptz\) FROM PUBLIC/,
     );
   });
 
   it("SECURITY DEFINER claim/migrate/ensure use locked search_path", () => {
     assert.match(
-      migrationSrc,
+      migration3bSrc,
       /claim_pending_signup_demographics[\s\S]*?SET search_path = public, pg_temp/,
     );
     assert.match(
-      migrationSrc,
+      migration3bSrc,
       /migrate_pending_signup_demographics[\s\S]*?SET search_path = public, pg_temp/,
     );
     assert.match(
-      migrationSrc,
+      migration3bSrc,
       /ensure_user_demographics_from_pending[\s\S]*?SET search_path = public, pg_temp/,
     );
   });
 
   it("claim RPC returns status text only (no DOB in RETURNS)", () => {
     assert.match(
-      migrationSrc,
+      migration3bSrc,
       /claim_pending_signup_demographics\([\s\S]*?RETURNS text/,
     );
-    assert.match(migrationSrc, /never DOB/i);
+    assert.match(migration3bSrc, /never DOB|Returns status only/i);
   });
 
   it("fresh claim SQL has no exception handler between the two inserts", () => {
-    const fnStart = migrationSrc.indexOf(
+    const fnStart = migration3bSrc.indexOf(
       "CREATE OR REPLACE FUNCTION public.claim_pending_signup_demographics",
     );
-    const fnEnd = migrationSrc.indexOf(
+    const fnEnd = migration3bSrc.indexOf(
       "COMMENT ON FUNCTION public.claim_pending_signup_demographics",
     );
-    const body = migrationSrc.slice(fnStart, fnEnd);
+    const body = migration3bSrc.slice(fnStart, fnEnd);
     const freshMarker = "-- Fresh claim:";
     const fresh = body.slice(body.indexOf(freshMarker));
     assert.match(fresh, /INSERT INTO public\.age_gate_consumed_tickets/);
     assert.match(fresh, /INSERT INTO public\.pending_signup_demographics/);
+    assert.match(fresh, /country_code/);
+    assert.match(fresh, /gender/);
     assert.doesNotMatch(fresh, /EXCEPTION/);
+  });
+
+  it("pending table + confirmation migrate include country/gender; trigger order documented", () => {
+    assert.match(migration3bSrc, /ADD COLUMN IF NOT EXISTS country_code text/);
+    assert.match(migration3bSrc, /ADD COLUMN IF NOT EXISTS gender text/);
+    assert.match(migration3bSrc, /demographics_completed_at/);
+    assert.match(migration3bSrc, /country_prompt_pending = false/);
+    assert.match(
+      migration3bSrc,
+      /alphabetical trigger name order|alphabetical order/i,
+    );
+    assert.match(
+      migration3bSrc,
+      /on_auth_user_confirmed < on_auth_user_confirmed_demographics/,
+    );
+    assert.match(
+      migration3bSrc,
+      /Phase 2 trigger already installed|already installed/i,
+    );
+    assert.match(
+      migration3bSrc,
+      /DROP FUNCTION IF EXISTS public\.complete_new_user_demographics/,
+    );
+    assert.doesNotMatch(
+      migration3bSrc,
+      /CREATE OR REPLACE FUNCTION public\.complete_new_user_demographics/,
+    );
+    // Must not touch auth.users trigger DDL (Supabase Auth ownership → 42501).
+    assert.doesNotMatch(
+      migration3bSrc,
+      /DROP TRIGGER[\s\S]*ON auth\.users/,
+    );
+    assert.doesNotMatch(
+      migration3bSrc,
+      /CREATE TRIGGER[\s\S]*ON auth\.users/,
+    );
+    assert.doesNotMatch(
+      migration3bSrc,
+      /COMMENT ON TRIGGER[\s\S]*ON auth\.users/,
+    );
   });
 });
 

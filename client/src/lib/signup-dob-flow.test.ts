@@ -42,6 +42,8 @@ describe("runSignupWithDob orchestration", () => {
     const calls: string[] = [];
     const result = await runSignupWithDob({
       dateOfBirth: "1995-06-15",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       ageGate: async (dob, email) => {
         calls.push(`ageGate:${dob}:${email}`);
@@ -51,8 +53,8 @@ describe("runSignupWithDob orchestration", () => {
         calls.push(`signUp:${email}`);
         return { ok: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
       },
-      claim: async (userId, ticket) => {
-        calls.push(`claim:${userId}:${ticket}`);
+      claim: async (userId, ticket, country, gender) => {
+        calls.push(`claim:${userId}:${ticket}:${country}:${gender}`);
         return { ok: true };
       },
       abandon: async () => {
@@ -68,7 +70,7 @@ describe("runSignupWithDob orchestration", () => {
     assert.deepEqual(calls, [
       `ageGate:1995-06-15:${EMAIL}`,
       `signUp:${EMAIL}`,
-      "claim:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:v2.ticket",
+      "claim:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:v2.ticket:GB:male",
       "success",
     ]);
   });
@@ -78,6 +80,8 @@ describe("runSignupWithDob orchestration", () => {
     let signEmail = "";
     await runSignupWithDob({
       dateOfBirth: "1995-06-15",
+      countryCode: "GB",
+      gender: "male",
       email: "  Alice@Example.COM ",
       ageGate: async (_dob, email) => {
         gateEmail = email;
@@ -100,6 +104,8 @@ describe("runSignupWithDob orchestration", () => {
     const calls: string[] = [];
     const result = await runSignupWithDob({
       dateOfBirth: "2018-01-01",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       ageGate: async () => {
         calls.push("ageGate");
@@ -130,6 +136,8 @@ describe("runSignupWithDob orchestration", () => {
     const calls: string[] = [];
     const result = await runSignupWithDob({
       dateOfBirth: "2026-02-30",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       clientValidateDob: () => true,
       ageGate: async () => {
@@ -157,6 +165,8 @@ describe("runSignupWithDob orchestration", () => {
     const calls: string[] = [];
     await runSignupWithDob({
       dateOfBirth: "1995-06-15",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       ageGate: async () => {
         calls.push("ageGate");
@@ -182,6 +192,8 @@ describe("runSignupWithDob orchestration", () => {
     const calls: string[] = [];
     await runSignupWithDob({
       dateOfBirth: "1995-06-15",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       ageGate: async () => ({ ok: true, ticket: "t" }),
       signUp: async () => {
@@ -208,6 +220,8 @@ describe("runSignupWithDob orchestration", () => {
     let n = 0;
     const result = await runSignupWithDob({
       dateOfBirth: "1995-06-15",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       ageGate: async () => ({ ok: true, ticket: "t" }),
       signUp: async () => ({
@@ -237,6 +251,8 @@ describe("runSignupWithDob orchestration", () => {
     const calls: string[] = [];
     const result = await runSignupWithDob({
       dateOfBirth: "1995-06-15",
+      countryCode: "GB",
+      gender: "male",
       email: EMAIL,
       ageGate: async () => ({ ok: true, ticket: "t" }),
       signUp: async () => ({
@@ -293,6 +309,17 @@ describe("SignUp.tsx Phase 3A wiring", () => {
       flowSrc,
       /You need to be at least 13 to create a dub hub account/,
     );
+  });
+
+  it("two-step: age-gate only on Step 2 Create Account path", () => {
+    assert.match(signUpSrc, /signupStep === 1 \? handleContinueStep1 : handleCreateAccount/);
+    assert.match(signUpSrc, /\/api\/auth\/age-gate/);
+    const createStart = signUpSrc.indexOf("handleCreateAccount");
+    const createEnd = signUpSrc.indexOf("return (", createStart);
+    const createBody = signUpSrc.slice(createStart, createEnd);
+    assert.match(createBody, /age-gate/);
+    assert.match(createBody, /auth\.signUp/);
+    assert.match(createBody, /pending-demographics/);
   });
 
   it("reuses Submit Metadata date wrapper + dubhub-date-input; no empty status reserve", () => {
@@ -376,9 +403,9 @@ describe("SignUp.tsx Phase 3A wiring", () => {
 
   it("age-gate request includes email; signUp uses same email arg", () => {
     assert.match(signUpSrc, /email:\s*trimmedEmail/);
-    assert.match(signUpSrc, /ageGate:\s*async\s*\(dob,\s*email\)/);
-    assert.match(signUpSrc, /dateOfBirth:\s*dob,\s*\n\s*email,/);
-    assert.match(signUpSrc, /signUp:\s*async\s*\(email\)/);
+    assert.match(signUpSrc, /ageGate:\s*async\s*\(dob,\s*emailForGate\)/);
+    assert.match(signUpSrc, /dateOfBirth:\s*dob,\s*\n\s*email:\s*emailForGate/);
+    assert.match(signUpSrc, /signUp:\s*async\s*\(emailForSignUp\)/);
   });
 
   it("does not persist DOB or emailBinding to localStorage/sessionStorage", () => {
