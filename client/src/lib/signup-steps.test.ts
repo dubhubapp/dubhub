@@ -94,6 +94,51 @@ describe("SignUp two-step wiring", () => {
     assert.match(signUpSrc, /setSignupStep\(1\)/);
   });
 
+  it("Step 2 uses standard ChevronLeft back arrow top-left; no worded Back", () => {
+    assert.match(signUpSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
+    assert.match(signUpSrc, /APP_MATERIAL_BACK_ICON_CLASS/);
+    assert.match(signUpSrc, /ChevronLeft/);
+    assert.match(signUpSrc, /aria-label="Back"/);
+    assert.match(signUpSrc, /grid-cols-\[1fr_auto_1fr\]/);
+    // No centered text Back control in CTA wrap.
+    assert.doesNotMatch(
+      signUpSrc,
+      /PRELOGIN_LINK_CLASS[\s\S]{0,120}>\s*Back\s*</,
+    );
+    assert.doesNotMatch(
+      signUpSrc,
+      /button-signup-back[\s\S]{0,200}>\s*Back\s*</,
+    );
+  });
+
+  it("Step 1 and Step 2 share the same logo header row geometry", () => {
+    assert.match(signUpSrc, /dubhub-prelogin-signup-logo-gap mb-2 grid grid-cols-\[1fr_auto_1fr\]/);
+    assert.match(signUpSrc, /PRELOGIN_AUTH_LOGO_CLASS/);
+    assert.match(signUpSrc, /size="xl"/);
+    // Absolute overlay back removed — logo row is shared structure.
+    assert.doesNotMatch(signUpSrc, /absolute left-3 top-1/);
+  });
+
+  it("Step 2 privacy note is behind glass ? info popover, not always visible", () => {
+    assert.match(signUpSrc, /signup-about-you-info/);
+    assert.match(signUpSrc, /signup-about-you-privacy-popover/);
+    assert.match(signUpSrc, /signup-about-you-privacy-note/);
+    assert.match(signUpSrc, /PRELOGIN_MINI_SURFACE_CLASS/);
+    assert.match(signUpSrc, /SIGNUP_ABOUT_YOU_PRIVACY_NOTE/);
+    assert.match(
+      signUpSrc,
+      /We use these details to confirm your age and understand our community/,
+    );
+    assert.match(signUpSrc, /A couple of details to finish setting up your account/);
+    assert.match(signUpSrc, /aria-label="More info about About you"/);
+    // Icon is inline with subtitle sentence (not a detached flex side column).
+    assert.match(signUpSrc, /inline-flex h-5 w-5[\s\S]*?align-middle/);
+    assert.doesNotMatch(
+      signUpSrc,
+      /flex items-center justify-center gap-1\.5[\s\S]{0,80}signup-about-you-info/,
+    );
+  });
+
   it("final claim posts countryCode + gender; metadata stays username/account_type", () => {
     assert.match(
       signUpSrc,
@@ -133,5 +178,24 @@ describe("SignUp two-step wiring", () => {
   it("post-login About You gate is removed", () => {
     assert.doesNotMatch(appSrc, /AboutYouGate|about-you-gate|resolveDemographicsGateDecision/);
     assert.doesNotMatch(appSrc, /demographics-status|complete-demographics/);
+  });
+
+  it("Step 2 shows legal acknowledgement with external Terms/Privacy links", () => {
+    assert.match(signUpSrc, /signup-legal-acknowledgement/);
+    assert.match(
+      signUpSrc,
+      /By creating an account, you agree to our/,
+    );
+    assert.match(signUpSrc, /DUBHUB_SIGNUP_TERMS_URL/);
+    assert.match(signUpSrc, /DUBHUB_SIGNUP_PRIVACY_URL/);
+    assert.match(signUpSrc, /target="_blank"/);
+    assert.match(signUpSrc, /rel="noopener noreferrer"/);
+    assert.match(signUpSrc, /text-\[11px\]/);
+    assert.doesNotMatch(signUpSrc, /signup-legal-terms[\s\S]{0,120}underline/);
+    assert.doesNotMatch(signUpSrc, /signup-legal-privacy[\s\S]{0,120}underline/);
+    // Legal block is Step 2 only and sits after the Sign In row.
+    const signInIdx = signUpSrc.indexOf("Already have an account?");
+    const legalIdx = signUpSrc.indexOf("signup-legal-acknowledgement");
+    assert.ok(signInIdx >= 0 && legalIdx > signInIdx);
   });
 });

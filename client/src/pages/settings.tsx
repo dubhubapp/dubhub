@@ -168,37 +168,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
               </button>
 
-              <button
-                type="button"
-                className={SETTINGS_NAV_ROW_CLASS}
-                onClick={() => navigate("/settings/country")}
-                data-testid="button-settings-country"
-                aria-label="Country"
-              >
-                <Globe2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
-                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Country</span>
-                  <span
-                    className={`${SETTINGS_ROW_SUBTITLE_CLASS} flex items-center gap-2`}
-                  >
-                    {countryLabel && countryCode ? (
-                      <>
-                        <CountryFlag
-                          countryCode={countryCode}
-                          countryName={countryLabel}
-                          className={COUNTRY_FLAG_SETTINGS_ROW_CLASS}
-                          data-testid="settings-country-row-flag"
-                        />
-                        <span className="truncate">{countryLabel}</span>
-                      </>
-                    ) : (
-                      "Shown on Leaderboard"
-                    )}
-                  </span>
-                </span>
-                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
-              </button>
-
               <div className={SETTINGS_SWITCH_ROW_CLASS}>
                 <Moon className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
                 <div className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
@@ -279,6 +248,44 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Send feedback</span>
                   <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
                     Tell us what we can improve.
+                  </span>
+                </span>
+                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
+              </button>
+            </div>
+          </section>
+
+          <section aria-labelledby="settings-section-personal-details">
+            <h2 id="settings-section-personal-details" className={SETTINGS_SECTION_LABEL_CLASS}>
+              Personal Details
+            </h2>
+            <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-personal-details">
+              <button
+                type="button"
+                className={SETTINGS_NAV_ROW_CLASS}
+                onClick={() => navigate("/settings/country")}
+                data-testid="button-settings-country"
+                aria-label="Country"
+              >
+                <Globe2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
+                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Country</span>
+                  <span
+                    className={`${SETTINGS_ROW_SUBTITLE_CLASS} flex items-center gap-2`}
+                  >
+                    {countryLabel && countryCode ? (
+                      <>
+                        <CountryFlag
+                          countryCode={countryCode}
+                          countryName={countryLabel}
+                          className={COUNTRY_FLAG_SETTINGS_ROW_CLASS}
+                          data-testid="settings-country-row-flag"
+                        />
+                        <span className="truncate">{countryLabel}</span>
+                      </>
+                    ) : (
+                      "Shown on Leaderboard"
+                    )}
                   </span>
                 </span>
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />

@@ -1,6 +1,7 @@
 /**
- * Slice C5C.1 — public Profile no-banner canvas must actually paint.
+ * Slice C5C.1 — Profile no-banner canvas must actually paint.
  * The C5C canvas class was on the scroll root, but an opaque hero stack hid it.
+ * Own Profile matches public: transparent no-banner hero, navy only for uploaded/loading.
  */
 
 import assert from "node:assert/strict";
@@ -55,7 +56,7 @@ describe("C5C.1 public no-banner canvas visibility", () => {
   });
 });
 
-describe("C5C.1 public Back lane + own Profile isolation", () => {
+describe("C5C.1 public Back lane + own Profile canvas visibility", () => {
   it("keeps approved C5C Back-lane geometry", () => {
     assert.match(publicProfileSrc, /PUBLIC_PROFILE_BACK_LANE_CLASS/);
     assert.match(publicProfileSrc, /data-testid="public-profile-back-lane"/);
@@ -67,16 +68,18 @@ describe("C5C.1 public Back lane + own Profile isolation", () => {
     assert.match(publicProfileSrc, /const handleBack = \(\) =>/);
   });
 
-  it("leaves own Profile canvas/hero contracts unchanged", () => {
+  it("does not cover no-banner own Profile hero with a legacy opaque navy plate", () => {
     assert.match(userProfileSrc, /profilePageCanvasClass\(hasReadyUploadedBanner\)/);
+    assert.match(userProfileSrc, /bg-transparent/);
     assert.match(
       userProfileSrc,
-      /relative -mx-6 mb-3 overflow-hidden bg-\[#0f1324\]/,
+      /showUploadedBannerImage \|\| showBannerLoadingPlaceholder[\s\S]*\? "bg-\[#0f1324\]"[\s\S]*: "bg-transparent"/,
     );
-    assert.match(
+    assert.doesNotMatch(
       userProfileSrc,
       /from-slate-950\/35 via-slate-900\/22 to-slate-950\/28/,
     );
+    assert.doesNotMatch(userProfileSrc, /PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS/);
     assert.match(userProfileSrc, /PROFILE_PRIMARY_NAV_GROUP_CLASS/);
   });
 });

@@ -10,7 +10,7 @@ import {
   publicProfileQueryKey,
   type PublicProfileResponse,
 } from "@/lib/public-profile-query";
-import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { goldAvatarGlowShadowClass, goldTextClass } from "./verified-artist";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import type { PublicLightProfileStats } from "@shared/schema";
@@ -816,7 +816,10 @@ function HomeProfilePreviewSheetBody({
                 <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                   <h3
                     id="user-profile-light-popup-title"
-                    className="min-w-0 break-words text-lg font-semibold leading-tight text-white"
+                    className={cn(
+                      "min-w-0 break-words text-lg font-semibold leading-tight",
+                      isVerifiedArtist ? goldTextClass : "text-white",
+                    )}
                     data-testid="profile-preview-username"
                   >
                     {user.username ? formatUsernameDisplay(user.username) : "…"}
@@ -1011,8 +1014,11 @@ function UserProfileLightPreviewInner({
             <div className="flex min-w-0 items-center gap-1">
               <h3
                 id="user-profile-light-popup-title"
-                className="min-w-0 max-w-[10rem] break-words text-sm font-semibold leading-tight sm:max-w-[11rem]"
-                style={{ color: primaryTextColor }}
+                className={cn(
+                  "min-w-0 max-w-[10rem] break-words text-sm font-semibold leading-tight sm:max-w-[11rem]",
+                  isVerifiedArtist ? goldTextClass : undefined,
+                )}
+                style={isVerifiedArtist ? undefined : { color: primaryTextColor }}
                 data-testid="profile-preview-username"
               >
                 {user.username ? formatUsernameDisplay(user.username) : "…"}

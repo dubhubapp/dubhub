@@ -75,8 +75,12 @@ describe("C2 opt-in overlay material (not global primitive rewrite)", () => {
     assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
     assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS/);
     assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS/);
-    assert.doesNotMatch(pushSrc, /APP_MATERIAL_OVERLAY|dubhub-app-overlay/);
-    assert.match(pushSrc, /#4ae9df/);
+    // Push permission prompts (post-onboarding + Releases) share overlay material.
+    assert.match(pushSrc, /APP_MATERIAL_DIALOG_CONTENT_CLASS/);
+    assert.match(pushSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
+    assert.match(pushSrc, /APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS/);
+    assert.match(pushSrc, /APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS/);
+    assert.doesNotMatch(pushSrc, /#4ae9df/);
   });
 
   it("does not touch Home / playback files", () => {

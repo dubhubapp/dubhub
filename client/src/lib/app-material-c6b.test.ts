@@ -155,13 +155,15 @@ describe("C6B Settings intro copy + IA order", () => {
     assert.doesNotMatch(SETTINGS_INTRO_COMMUNITY_COPY, /subscription/i);
   });
 
-  it("keeps Preferences → Artist → Support → Account → Developer source order", () => {
+  it("keeps Preferences → Artist → Support → Personal Details → Account → Developer source order", () => {
     const prefs = settingsSrc.indexOf("settings-section-preferences");
     const artist = settingsSrc.indexOf("settings-section-artist");
     const support = settingsSrc.indexOf("settings-section-support");
+    const personal = settingsSrc.indexOf("settings-section-personal-details");
     const account = settingsSrc.indexOf("settings-section-account");
     const developer = settingsSrc.indexOf("settings-section-developer");
-    assert.ok(prefs > 0 && artist > prefs && support > artist && account > support);
+    assert.ok(prefs > 0 && artist > prefs && support > artist);
+    assert.ok(personal > support && account > personal);
     assert.ok(developer > account);
     assert.match(settingsSrc, /\{verifiedArtist \? \(/);
   });

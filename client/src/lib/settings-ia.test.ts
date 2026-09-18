@@ -123,14 +123,30 @@ describe("settings root IA slice 1", () => {
 });
 
 describe("settings root chrome slice 3", () => {
-  it("renders Preferences / Artist / Support / Account groups with shared stack rhythm", () => {
+  it("renders Preferences / Artist / Support / Personal Details / Account groups with shared stack rhythm", () => {
     assert.match(settingsSrc, /SETTINGS_SECTIONS_STACK_CLASS/);
     assert.match(settingsSrc, /data-testid="settings-group-preferences"/);
     assert.match(settingsSrc, /data-testid="settings-group-support"/);
+    assert.match(settingsSrc, /data-testid="settings-group-personal-details"/);
     assert.match(settingsSrc, /data-testid="settings-group-account"/);
     assert.match(settingsSrc, /settings-section-preferences/);
     assert.match(settingsSrc, /settings-section-support/);
+    assert.match(settingsSrc, /settings-section-personal-details/);
     assert.match(settingsSrc, /settings-section-account/);
+  });
+
+  it("places Country under Personal Details, not Preferences", () => {
+    const prefs = settingsSrc.indexOf('data-testid="settings-group-preferences"');
+    const personal = settingsSrc.indexOf('data-testid="settings-group-personal-details"');
+    const country = settingsSrc.indexOf('data-testid="button-settings-country"');
+    const support = settingsSrc.indexOf('data-testid="settings-group-support"');
+    const account = settingsSrc.indexOf('data-testid="settings-group-account"');
+    assert.ok(prefs > 0 && personal > support && country > personal && account > country);
+    assert.match(settingsSrc, /Personal Details/);
+    assert.doesNotMatch(settingsSrc, /Date of birth|Gender/i);
+    assert.match(settingsSrc, /button-settings-country/);
+    assert.match(settingsSrc, /navigate\("\/settings\/country"\)/);
+    assert.match(settingsSrc, /CountryFlag/);
   });
 
   it("preserves Notifications, VAT, Artist Questions, Feedback, switches, password, logout", () => {

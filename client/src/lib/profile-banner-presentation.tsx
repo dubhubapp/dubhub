@@ -53,8 +53,9 @@ export const PROFILE_BANNER_UPLOADED_SCRIM_STYLE: CSSProperties = {
 export const PROFILE_BANNER_UPLOADED_SCRIM_CLASS = "bg-black/40" as const;
 
 /**
- * No-banner own-Profile lower fade (C5C) — unchanged for no-banner safety.
- * Uploaded banners use PROFILE_BANNER_UPLOADED_DISSOLVE_* instead.
+ * Historical contained fade token (C5C) — retained for contract tests.
+ * Own + public Profile no-banner heroes are transparent so the page canvas
+ * wash paints through; uploaded banners use PROFILE_BANNER_UPLOADED_DISSOLVE_*.
  */
 export const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
   background: `linear-gradient(to bottom,
@@ -65,7 +66,7 @@ export const PROFILE_BANNER_BOTTOM_FADE_STYLE: CSSProperties = {
     ${PROFILE_BANNER_SURFACE} 100%)`,
 };
 
-/** Historical dissolve depth for no-banner own Profile only. */
+/** Historical dissolve depth token — not painted on current Profile heroes. */
 export const PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS = "h-48" as const;
 
 /**

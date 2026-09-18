@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Logo } from '@/components/brand/Logo';
 import { Mail } from 'lucide-react';
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ChevronLeft } from "lucide-react";
 import { Filter } from 'bad-words';
 import { apiRequest } from '@/lib/queryClient';
 import { validateUsername } from '@shared/usernameValidation';
@@ -50,6 +50,19 @@ import {
 } from '@/lib/artist-verification-ux';
 import { SignupAboutYouFields } from '@/components/auth/SignupAboutYouFields';
 import type { DemographicsGender } from '@shared/demographics-gender';
+import {
+  DUBHUB_SIGNUP_PRIVACY_URL,
+  DUBHUB_SIGNUP_TERMS_URL,
+} from '@/lib/legal-urls';
+import {
+  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_BACK_ICON_CLASS,
+} from '@/lib/app-material';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { cn, formatUsernameDisplay } from '@/lib/utils';
 import { AUTH_SURFACE_CLASS } from '@/lib/auth-surface';
 import {
@@ -63,6 +76,7 @@ import {
   PRELOGIN_FIELD_CLASS,
   PRELOGIN_FIELD_INVALID_CLASS,
   PRELOGIN_LINK_CLASS,
+  PRELOGIN_MINI_SURFACE_CLASS,
   PRELOGIN_PASSWORD_FEEDBACK_REGION_CLASS,
   PRELOGIN_PRIMARY_CTA_CLASS,
   PRELOGIN_SELECT_CONTENT_CLASS,
@@ -72,6 +86,9 @@ import {
   PRELOGIN_SIGNUP_FIELD_STACK_CLASS,
   PRELOGIN_USERNAME_STATUS_CLASS,
 } from '@/lib/prelogin-material';
+
+const SIGNUP_ABOUT_YOU_PRIVACY_NOTE =
+  "We use these details to confirm your age and understand our community. Your date of birth and gender are private.";
 
 interface SignUpProps {
   onToggleMode: () => void;
@@ -597,17 +614,87 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
   return (
     <Card className="w-full max-w-md mx-auto border-0 bg-transparent shadow-none">
       <CardHeader className="dubhub-prelogin-signup-header space-y-1 px-6 pb-2 pt-1 text-center">
-        <div className="dubhub-prelogin-signup-logo-gap mb-2 flex justify-center">
-          <Logo size="xl" className={PRELOGIN_AUTH_LOGO_CLASS} />
+        {/*
+          Same brand-row geometry on Step 1 and Step 2 (pre-login onboarding pattern):
+          [back | logo | spacer] so logo size/position stay identical when Back appears.
+        */}
+        <div className="dubhub-prelogin-signup-logo-gap mb-2 grid grid-cols-[1fr_auto_1fr] items-center">
+          <div className="justify-self-start">
+            {signupStep === 2 ? (
+              <button
+                type="button"
+                onClick={goBackToStep1}
+                disabled={isLoading || hasSignupSucceeded}
+                aria-label="Back"
+                className={cn(
+                  APP_MATERIAL_BACK_BUTTON_CLASS,
+                  "disabled:pointer-events-none disabled:opacity-50",
+                )}
+                data-testid="button-signup-back"
+              >
+                <ChevronLeft
+                  className={APP_MATERIAL_BACK_ICON_CLASS}
+                  strokeWidth={2}
+                  aria-hidden
+                />
+              </button>
+            ) : null}
+          </div>
+          <div className="justify-self-center">
+            <Logo size="xl" className={PRELOGIN_AUTH_LOGO_CLASS} />
+          </div>
+          <span aria-hidden />
         </div>
         <CardTitle className="text-2xl font-bold text-foreground bg-transparent">
           {signupStep === 1 ? "Join dub hub" : "About you"}
         </CardTitle>
-        <CardDescription className="text-muted-foreground">
-          {signupStep === 1
-            ? signupSubtitleForAccountType(accountType)
-            : "A couple of details to finish setting up your account."}
-        </CardDescription>
+        {signupStep === 1 ? (
+          <CardDescription className="text-muted-foreground">
+            {signupSubtitleForAccountType(accountType)}
+          </CardDescription>
+        ) : (
+          <CardDescription className="mx-auto max-w-[20.5rem] text-muted-foreground">
+            {/*
+              Inline sentence + ? so the icon anchors to the end of the copy
+              (including when the subtitle wraps), not a detached side column.
+            */}
+            A couple of details to finish setting up your account.{" "}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    PRELOGIN_MINI_SURFACE_CLASS,
+                    "ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full align-middle text-[11px] font-medium leading-none text-muted-foreground touch-manipulation transition-[color,transform] duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f1324] active:scale-95",
+                  )}
+                  aria-label="More info about About you"
+                  data-testid="signup-about-you-info"
+                >
+                  ?
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="bottom"
+                align="center"
+                sideOffset={8}
+                collisionPadding={12}
+                className={cn(
+                  PRELOGIN_SELECT_CONTENT_CLASS,
+                  "z-[80] w-[min(18rem,calc(100vw-2rem))] max-w-[18rem] p-3 shadow-none",
+                )}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                data-testid="signup-about-you-privacy-popover"
+              >
+                <p
+                  className="text-xs font-normal leading-relaxed text-muted-foreground"
+                  data-testid="signup-about-you-privacy-note"
+                >
+                  {SIGNUP_ABOUT_YOU_PRIVACY_NOTE}
+                </p>
+              </PopoverContent>
+            </Popover>
+          </CardDescription>
+        )}
       </CardHeader>
       <CardContent className="px-6 pb-3 pt-1">
         <form onSubmit={signupStep === 1 ? handleContinueStep1 : handleCreateAccount}>
@@ -894,17 +981,6 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
           )}
 
           <div className={PRELOGIN_SIGNUP_CTA_WRAP_CLASS}>
-            {signupStep === 2 ? (
-              <button
-                type="button"
-                onClick={goBackToStep1}
-                disabled={isLoading || hasSignupSucceeded}
-                className={cn(PRELOGIN_LINK_CLASS, "mb-3 block w-full text-center text-sm")}
-                data-testid="button-signup-back"
-              >
-                Back
-              </button>
-            ) : null}
             <Button
               type="submit"
               className={PRELOGIN_PRIMARY_CTA_CLASS}
@@ -968,6 +1044,35 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
             </button>
           </p>
         </div>
+
+        {signupStep === 2 ? (
+          <p
+            className="mx-auto mt-3 max-w-[20rem] px-1 text-center text-[11px] leading-relaxed text-muted-foreground/80"
+            data-testid="signup-legal-acknowledgement"
+          >
+            By creating an account, you agree to our{" "}
+            <a
+              href={DUBHUB_SIGNUP_TERMS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#0a83ff]"
+              data-testid="signup-legal-terms"
+            >
+              Terms of Use
+            </a>{" "}
+            and acknowledge our{" "}
+            <a
+              href={DUBHUB_SIGNUP_PRIVACY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#0a83ff]"
+              data-testid="signup-legal-privacy"
+            >
+              Privacy Policy
+            </a>
+            .
+          </p>
+        ) : null}
       </CardContent>
 
       {/* Post-signup verification Dialog — dedicated confirmation (no success toast). */}

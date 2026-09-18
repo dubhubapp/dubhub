@@ -9,6 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  APP_MATERIAL_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
 import { setPushPromptSessionActive, type PushPromptVariant } from "@/lib/push-prompt";
 import {
   getPushReceivePermission,
@@ -17,6 +25,7 @@ import {
   type PushReceivePermission,
 } from "@/lib/push-notifications";
 import { playInteractionLight } from "@/lib/haptic";
+import { cn } from "@/lib/utils";
 
 const COPY: Record<
   PushPromptVariant,
@@ -40,6 +49,10 @@ const COPY: Record<
 
 const DENIED_HINT =
   "Notifications are turned off for dub hub in iOS Settings. Open Settings \u2192 Notifications \u2192 dub hub to allow alerts.";
+
+/** Glass icon chip — same family as Country prompt, left-aligned for this dialog. */
+const PUSH_PROMPT_ICON_CHIP_CLASS =
+  "mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/15";
 
 interface PushPermissionPromptProps {
   open: boolean;
@@ -137,8 +150,11 @@ export function PushPermissionPrompt({
     >
       <DialogContent
         forceMount
-        overlayClassName="fixed inset-0 z-[60] bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200"
-        className="z-[60] w-[calc(100%-2rem)] max-w-md rounded-2xl border-[#4ae9df]/35 bg-[#0f1324]/95 p-0 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+        overlayClassName={cn(APP_MATERIAL_OVERLAY_BACKDROP_CLASS, "z-[60]")}
+        className={cn(
+          APP_MATERIAL_DIALOG_CONTENT_CLASS,
+          "z-[60] w-[calc(100%-2rem)] gap-0 p-0",
+        )}
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
@@ -150,12 +166,14 @@ export function PushPermissionPrompt({
           transition={{ duration: 0.2, ease: "easeOut" }}
           className="p-5 sm:p-6"
         >
-          <DialogHeader className="space-y-1.5 text-left">
-            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#4ae9df]/15 ring-1 ring-[#4ae9df]/30">
-              <Bell className="h-5 w-5 text-[#4ae9df]" aria-hidden />
+          <DialogHeader className="space-y-1.5 pr-8 text-left">
+            <div className={PUSH_PROMPT_ICON_CHIP_CLASS}>
+              <Bell className="h-5 w-5 text-foreground" aria-hidden />
             </div>
-            <DialogTitle className="text-xl font-semibold text-white">{copy.title}</DialogTitle>
-            <DialogDescription className="text-sm text-white/70">{copy.description}</DialogDescription>
+            <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>{copy.title}</DialogTitle>
+            <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+              {copy.description}
+            </DialogDescription>
           </DialogHeader>
 
           {isDenied ? (
@@ -170,7 +188,7 @@ export function PushPermissionPrompt({
                 type="button"
                 disabled={busy}
                 onClick={handleOpenSettings}
-                className="w-full bg-[#4ae9df] text-black hover:bg-[#4ae9df]/90"
+                className={cn("w-full", APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS)}
                 data-testid={`button-push-prompt-open-settings-${variant}`}
               >
                 Open Settings
@@ -180,7 +198,7 @@ export function PushPermissionPrompt({
                 type="button"
                 disabled={busy}
                 onClick={handleEnable}
-                className="w-full bg-[#4ae9df] text-black hover:bg-[#4ae9df]/90"
+                className={cn("w-full", APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS)}
                 data-testid={`button-push-prompt-enable-${variant}`}
               >
                 {copy.enableLabel}
@@ -188,10 +206,9 @@ export function PushPermissionPrompt({
             )}
             <Button
               type="button"
-              variant="ghost"
               disabled={busy}
               onClick={handleDismiss}
-              className="w-full text-white/80 hover:bg-white/10 hover:text-white"
+              className={cn("w-full", APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS)}
               data-testid={`button-push-prompt-dismiss-${variant}`}
             >
               {copy.dismissLabel}

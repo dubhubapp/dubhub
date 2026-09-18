@@ -1,4 +1,10 @@
-import logoImage from "@/assets/dub-hub-logo.png";
+/** Same 3D D mark as the React splash / native PremiumLaunchMarkBaseline. */
+const LOGO_SRC = "/launch/dubhub-premium-launch-mark-baseline.png";
+const LOGO_SRCSET = [
+  "/launch/dubhub-premium-launch-mark-baseline.png 1x",
+  "/launch/dubhub-premium-launch-mark-baseline@2x.png 2x",
+  "/launch/dubhub-premium-launch-mark-baseline@3x.png 3x",
+].join(", ");
 
 interface LogoProps {
   className?: string;
@@ -15,9 +21,10 @@ export function Logo({ className = "", size = 'md' }: LogoProps) {
 
   return (
     <img 
-      src={logoImage} 
+      src={LOGO_SRC}
+      srcSet={LOGO_SRCSET}
       alt="dub hub" 
-      className={`${sizeClasses[size]} ${className}`}
+      className={`${sizeClasses[size]} object-contain ${className}`}
     />
   );
 }

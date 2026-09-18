@@ -79,7 +79,9 @@ describe("C5B.1 profile banner dissolve", () => {
   it("applies the shared uploaded dissolve on own and public profiles", () => {
     assert.match(userProfileSrc, /PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS/);
     assert.match(publicProfileSrc, /PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS/);
-    assert.match(userProfileSrc, /PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS/);
+    // No-banner heroes stay transparent so page canvas paints; fade token is historical only.
+    assert.doesNotMatch(userProfileSrc, /PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS/);
+    assert.doesNotMatch(publicProfileSrc, /PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS/);
   });
 
   it("keeps uploaded-banner readability scrims and no-banner atmosphere", () => {

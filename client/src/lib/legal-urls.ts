@@ -13,6 +13,14 @@ export const DUBHUB_TERMS_OF_USE_URL =
 /** Public privacy policy. Confirm page is live before App Store review. */
 export const DUBHUB_PRIVACY_POLICY_URL = `${DUBHUB_PUBLIC_ORIGIN}/privacy` as const;
 
+/**
+ * Website Terms / Privacy for SignUp acknowledgement.
+ * Opens in the system browser (`target="_blank"`) so the Capacitor WebView
+ * keeps Step 1/2 form state. Distinct from Apple EULA used on IAP surfaces.
+ */
+export const DUBHUB_SIGNUP_TERMS_URL = "https://www.dubhub.uk/terms" as const;
+export const DUBHUB_SIGNUP_PRIVACY_URL = "https://www.dubhub.uk/privacy" as const;
+
 /** Official App Store subscriptions management page. */
 export const IOS_MANAGE_SUBSCRIPTIONS_URL =
   "https://apps.apple.com/account/subscriptions" as const;

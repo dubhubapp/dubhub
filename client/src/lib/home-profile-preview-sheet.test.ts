@@ -324,6 +324,38 @@ describe("Home profile preview sheet — visual refinement", () => {
       /accountCue|"Verified Artist"|"Community"|isVerifiedArtist \? "Verified Artist"/,
     );
   });
+
+  it("verified artist username uses goldTextClass on first paint (sheet + floating)", () => {
+    assert.match(popupSrc, /import \{ goldAvatarGlowShadowClass, goldTextClass \} from "\.\/verified-artist"/);
+    const sheetBodyIdx = popupSrc.indexOf("function HomeProfilePreviewSheetBody");
+    assert.ok(sheetBodyIdx > 0);
+    const sheetSlice = popupSrc.slice(sheetBodyIdx, sheetBodyIdx + 7500);
+    assert.match(
+      sheetSlice,
+      /isVerifiedArtist \? goldTextClass : "text-white"/,
+    );
+    assert.match(sheetSlice, /data-testid="profile-preview-username"/);
+    // Sheet must not hardcode white-only username (regression that flashed white for verified artists).
+    assert.doesNotMatch(
+      sheetSlice,
+      /text-lg font-semibold leading-tight text-white"/,
+    );
+
+    const floatingIdx = popupSrc.indexOf("function UserProfileLightPreviewInner");
+    assert.ok(floatingIdx > 0);
+    const floatingSlice = popupSrc.slice(floatingIdx, floatingIdx + 4500);
+    assert.match(
+      floatingSlice,
+      /isVerifiedArtist \? goldTextClass : undefined/,
+    );
+    assert.match(
+      floatingSlice,
+      /style=\{isVerifiedArtist \? undefined : \{ color: primaryTextColor \}\}/,
+    );
+    // Username gold shares the same verified flag as the tick / avatar border.
+    assert.match(popupSrc, /verifiedArtist=\{isVerifiedArtist\}/);
+    assert.match(popupSrc, /const isVerifiedArtist = user\?\.verified_artist === true/);
+  });
 });
 
 function APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS_SNIPPET(): string {
