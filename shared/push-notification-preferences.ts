@@ -68,6 +68,8 @@ export function evaluatePushPreferenceGate(
     case "artist_identified_post":
     case "community_identified_post":
     case "track_identified":
+    case "anonymous_track_identified":
+    case "anonymous_track_revealed":
     case "collab_invite":
     case "collab_accept":
     case "collab_reject":

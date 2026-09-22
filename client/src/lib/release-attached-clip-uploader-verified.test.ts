@@ -77,12 +77,39 @@ describe("ReleaseAttachedClipCard uploader tick presentation", () => {
     assert.match(clipsSrc, /uploader profile identity only/);
   });
 
-  it("12–14. caption, username, likes presentation unchanged", () => {
+  it("12–14. caption, username, likes presentation", () => {
     assert.match(clipsSrc, /clipDisplayTitle\(clip\)/);
     assert.match(clipsSrc, /clip\.title\?\.trim\(\)/);
-    assert.match(clipsSrc, /@\{clip\.uploaderUsername\}/);
+    assert.match(clipsSrc, /formatUsernameDisplay\(clip\.uploaderUsername\)/);
     assert.match(clipsSrc, /clip\.likes\s*>\s*0/);
     assert.match(clipsSrc, /clip\.likes\.toLocaleString\(\)/);
+  });
+
+  it("EyeOff anonymous title row uses items-center without mt-0.5", () => {
+    const titleRow = clipsSrc.slice(
+      clipsSrc.indexOf("clip.isArtistVerifiedAnonymous"),
+      clipsSrc.indexOf("clip.isArtistVerifiedAnonymous") + 900,
+    );
+    assert.match(clipsSrc, /items-center gap-1 text-\[11px\] font-medium leading-snug/);
+    assert.match(clipsSrc, /EyeOff[\s\S]{0,120}className="h-3 w-3 shrink-0 text-muted-foreground"/);
+    assert.doesNotMatch(clipsSrc, /EyeOff[\s\S]{0,80}mt-0\.5/);
+    assert.doesNotMatch(titleRow, /items-start gap-1 text-\[11px\]/);
+  });
+
+  it("verified uploader username uses goldTextClass; non-verified stays muted", () => {
+    assert.match(clipsSrc, /goldTextClass/);
+    assert.match(
+      clipsSrc,
+      /clip\.isVerifiedArtist \? goldTextClass : "text-muted-foreground"/,
+    );
+  });
+});
+
+describe("attach title priority unchanged (no polish regression)", () => {
+  it("keeps artist title ahead of uploader post.title", () => {
+    assert.match(overviewSrc, /resolveEligibleArtistTrackTitle/);
+    assert.match(overviewSrc, /formatAnonymousIdentificationTitleLabel\(artistTitle\)/);
+    assert.match(overviewSrc, /post\.title\?\.trim\(\) \|\| post\.dj_name\?\.trim/);
   });
 });
 

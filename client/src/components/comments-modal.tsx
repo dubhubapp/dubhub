@@ -75,8 +75,14 @@ import { findCommentInTree } from "@/lib/comment-selection";
 import {
   findEarliestCommentIdTaggingArtist,
   isCommentEligibleForArtistConfirmId,
+  markViewerArtistRevealedOnPost,
+  readAnonymousIdentifyErrorCode,
+  resolveAnonymousIdentifyErrorCopy,
   resolveArtistPendingActionsVisible,
+  ANONYMOUS_ID_INFO_TITLE,
+  ANONYMOUS_ID_INFO_BODY,
 } from "@/lib/artist-id-comments-actions";
+import { StatInfoPopover } from "@/components/stat-info-popover";
 import {
   ANONYMOUS_IDENTIFIED_A11Y_LABEL,
   IDENTIFIED_PILL_LABEL,
@@ -589,6 +595,7 @@ export function CommentsModal({
   const [reportingComment, setReportingComment] = useState<{id: string, userId: string} | null>(null);
   const [deleteConfirmCommentId, setDeleteConfirmCommentId] = useState<string | null>(null);
   const [showNotMyTrackConfirm, setShowNotMyTrackConfirm] = useState(false);
+  const [showRevealIdConfirm, setShowRevealIdConfirm] = useState(false);
   const [nativeKeyboardInsetPx, setNativeKeyboardInsetPx] = useState(0);
   const [nativeKeyboardLayoutActive, setNativeKeyboardLayoutActive] = useState(false);
   const { toast } = useToast();
@@ -1216,6 +1223,40 @@ export function CommentsModal({
     refetchOnMount: "always",
   });
   const comments = Array.isArray(commentsData) ? commentsData : [];
+  const isAnonymousIdentifiedPost =
+    resolvePostIdentificationPresentationKind(post) === "artist_verified_anonymous";
+  const anonymousTrackTitleLabel = formatAnonymousIdentificationTitleLabel(
+    (post as { anonymousTrackTitle?: string | null }).anonymousTrackTitle ??
+      (post as { anonymous_track_title?: string | null }).anonymous_track_title,
+  );
+
+  /** Owner-only: existing GET returns 404 for non-owners (no identity leak). */
+  const { data: ownerPrivateClaim } = useQuery<{
+    claim?: { state?: string; trackTitle?: string | null; artistId?: string };
+  } | null>({
+    queryKey: ["/api/posts", post.id, "artist-private-identification"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/posts/${post.id}/artist-private-identification`,
+        );
+        return (await res.json()) as {
+          claim?: { state?: string; trackTitle?: string | null; artistId?: string };
+        };
+      } catch {
+        return null;
+      }
+    },
+    enabled: isOpen && isAnonymousIdentifiedPost && !!verifiedArtist && !!contextUser?.id,
+    staleTime: 0,
+    retry: false,
+  });
+  const ownsAnonymousClaim =
+    ownerPrivateClaim?.claim?.state === "anonymous" &&
+    !!contextUser?.id &&
+    ownerPrivateClaim.claim.artistId === contextUser.id;
+
   const reviewingArtistIdentity = useMemo(() => {
     if (!contextUser?.id || !verifiedArtist) return null;
     return {
@@ -1760,6 +1801,49 @@ export function CommentsModal({
     },
   });
 
+  const revealAnonymousIdentificationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/posts/${post.id}/artist-reveal-identification`,
+        {},
+      );
+      return res.json() as Promise<{
+        alreadyRevealed?: boolean;
+        insertedConfirmCommentId?: string | null;
+      }>;
+    },
+    onSuccess: () => {
+      playSuccessNotification();
+      const artistId = contextUser?.id;
+      if (artistId) {
+        patchPostInFeedCaches(queryClient, post.id, (p) =>
+          markViewerArtistRevealedOnPost(p, artistId),
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", post.id, "comments"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/posts", post.id, "artist-private-identification"],
+      });
+      setShowRevealIdConfirm(false);
+      toast({
+        title: "ID revealed",
+        description: "Your artist identity is now public on this track.",
+      });
+    },
+    onError: (error: unknown) => {
+      const { code, message } = readAnonymousIdentifyErrorCode(error);
+      const copy = resolveAnonymousIdentifyErrorCopy(code, message);
+      toast({
+        title: copy.title === "Couldn't identify anonymously" ? "Couldn't reveal" : copy.title,
+        description: copy.description,
+        variant: "destructive",
+      });
+    },
+  });
+
   const requestDeleteComment = (commentId: string) => {
     if (deleteCommentMutation.isPending) return;
     setDeleteConfirmCommentId(commentId);
@@ -1903,6 +1987,7 @@ export function CommentsModal({
     if (!isOpen) {
       setDeleteConfirmCommentId(null);
       setShowNotMyTrackConfirm(false);
+      setShowRevealIdConfirm(false);
     }
   }, [isOpen]);
 
@@ -2029,6 +2114,53 @@ export function CommentsModal({
               Cancel
             </AlertDialogCancel>
           </div>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={showRevealIdConfirm}
+        onOpenChange={(open) => {
+          if (!open && !revealAnonymousIdentificationMutation.isPending) {
+            setShowRevealIdConfirm(false);
+          }
+        }}
+      >
+        <AlertDialogContent
+          className={cn(alertDialogStackZ, APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS)}
+          overlayClassName={cn(alertDialogStackZ, APP_MATERIAL_OVERLAY_BACKDROP_CLASS)}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Reveal this ID?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+              This will reveal that you identified this track. This can&apos;t be undone.
+              {anonymousTrackTitleLabel ? (
+                <span className="mt-2 block font-medium text-foreground/90">
+                  {anonymousTrackTitleLabel}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              disabled={revealAnonymousIdentificationMutation.isPending}
+              data-testid="reveal-anonymous-id-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
+              disabled={revealAnonymousIdentificationMutation.isPending}
+              data-testid="reveal-anonymous-id-confirm"
+              onClick={(event) => {
+                event.preventDefault();
+                revealAnonymousIdentificationMutation.mutate();
+              }}
+            >
+              {revealAnonymousIdentificationMutation.isPending ? "Revealing…" : "Reveal ID"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <ReportModal
@@ -3000,31 +3132,67 @@ export function CommentsModal({
             return (
               <>
                 {(() => {
-                  const anonTitleLabel = formatAnonymousIdentificationTitleLabel(
-                    (post as { anonymousTrackTitle?: string | null }).anonymousTrackTitle ??
-                      (post as { anonymous_track_title?: string | null }).anonymous_track_title,
-                  );
-                  const isAnonymousIdentified =
-                    resolvePostIdentificationPresentationKind(post) ===
-                    "artist_verified_anonymous";
-                  if (!isAnonymousIdentified || !anonTitleLabel) return null;
+                  const anonTitleLabel = anonymousTrackTitleLabel;
+                  const isAnonymousIdentified = isAnonymousIdentifiedPost;
+                  if (!isAnonymousIdentified) return null;
                   return (
                     <div
-                      className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.05]"
+                      className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 dark:border-white/10 dark:bg-white/[0.05]"
                       data-testid="anonymous-identification-title-row"
                     >
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <CommentsPostIdentificationPill
-                          post={post}
-                          testIdPrefix="badge-anonymous-title"
+                      <div className="flex items-start gap-2">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                          <CommentsPostIdentificationPill
+                            post={post}
+                            testIdPrefix="badge-anonymous-title"
+                          />
+                          {anonTitleLabel ? (
+                            <p
+                              className="min-w-0 text-[13px] font-medium leading-snug text-gray-800 sm:text-sm dark:text-white/90"
+                              data-testid="anonymous-identification-title-label"
+                            >
+                              {anonTitleLabel}
+                            </p>
+                          ) : null}
+                        </div>
+                        <StatInfoPopover
+                          label={ANONYMOUS_ID_INFO_TITLE}
+                          modal
+                          side="bottom"
+                          align="end"
+                          className="relative z-10 h-8 w-8 shrink-0 text-white/50 hover:text-white/80 dark:text-white/50 dark:hover:text-white/80"
+                          contentClassName={cn(
+                            alertDialogStackZ,
+                            "border-border bg-popover text-popover-foreground shadow-xl",
+                          )}
+                          content={
+                            <div
+                              className="space-y-1.5"
+                              data-testid="anonymous-identification-info-content"
+                            >
+                              <p className="text-sm font-medium text-foreground">
+                                {ANONYMOUS_ID_INFO_TITLE}
+                              </p>
+                              <p className="text-sm leading-relaxed text-muted-foreground">
+                                {ANONYMOUS_ID_INFO_BODY}
+                              </p>
+                            </div>
+                          }
                         />
                       </div>
-                      <p
-                        className="mt-1.5 text-[13px] font-medium leading-snug text-gray-800 sm:text-sm dark:text-white/90"
-                        data-testid="anonymous-identification-title-label"
-                      >
-                        {anonTitleLabel}
-                      </p>
+                      {ownsAnonymousClaim ? (
+                        <button
+                          type="button"
+                          className={cn(
+                            APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+                            "mt-2 flex h-9 w-full items-center justify-center rounded-md text-sm font-medium",
+                          )}
+                          data-testid="button-reveal-anonymous-id"
+                          onClick={() => setShowRevealIdConfirm(true)}
+                        >
+                          Reveal ID
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })()}

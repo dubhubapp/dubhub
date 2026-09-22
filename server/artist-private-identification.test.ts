@@ -225,10 +225,14 @@ describe("VAT-ANON-1 route + serializer contracts", () => {
   });
 
   it("create path never sets artist_verified_by or confirm comment/notify", () => {
-    assert.match(serviceSrc, /is_artist_verified_anonymous = true/);
-    assert.doesNotMatch(serviceSrc, /artist_verified_by\s*=/);
-    assert.doesNotMatch(serviceSrc, /artist_identified_post|track_identified|createComment/);
-    assert.doesNotMatch(serviceSrc, /awardConfirmedIdKarma/);
+    const createFn = serviceSrc.slice(
+      serviceSrc.indexOf("export async function createAnonymousArtistIdentification"),
+      serviceSrc.indexOf("export async function revealAnonymousArtistIdentification"),
+    );
+    assert.match(createFn, /is_artist_verified_anonymous = true/);
+    assert.doesNotMatch(createFn, /artist_verified_by\s*=/);
+    assert.doesNotMatch(createFn, /artist_identified_post|track_identified|createComment/);
+    assert.doesNotMatch(createFn, /awardConfirmedIdKarma/);
     assert.match(policySrc, /canPerformIrreversiblePaidAction/);
   });
 });

@@ -7,6 +7,11 @@ import {
 import { buildNotificationListGroupKey } from "./notification-grouping";
 
 describe("track_identified grouping separation", () => {
+  it("maps anonymous ID types to single (not release_event)", () => {
+    assert.equal(notificationTypeToGroupKind("anonymous_track_identified"), "single");
+    assert.equal(notificationTypeToGroupKind("anonymous_track_revealed"), "single");
+  });
+
   it("maps track_identified and artist_identified_post to single, not release_event", () => {
     assert.equal(notificationTypeToGroupKind("track_identified"), "single");
     assert.equal(notificationTypeToGroupKind("artist_identified_post"), "single");

@@ -1,6 +1,7 @@
 import {
   COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
   TRACK_ID_CONFIRMED_TITLE,
+  TRACK_ID_REVEALED_TITLE,
   TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
   formatArtistIdentifiedPostMessage,
   formatReleaseAnnounceMessage,
@@ -22,6 +23,8 @@ type PushEventName =
   | "artist_identified_post"
   | "community_identified_post"
   | "track_identified"
+  | "anonymous_track_identified"
+  | "anonymous_track_revealed"
   | "release_attached_to_liked_or_uploaded_post"
   | "artist_release_alert"
   | "release_day_out_today"
@@ -88,6 +91,23 @@ interface TrackIdentifiedPayload extends BaseEventPayload {
   notificationId: string;
   postId: string;
   actorUserId: string;
+}
+
+/** Actor-less: no artistId / actorUserId / username in payload. */
+interface AnonymousTrackIdentifiedPayload extends BaseEventPayload {
+  type: "anonymous_track_identified";
+  notificationId: string;
+  postId: string;
+  message: string;
+}
+
+interface AnonymousTrackRevealedPayload extends BaseEventPayload {
+  type: "anonymous_track_revealed";
+  notificationId: string;
+  postId: string;
+  actorUserId: string;
+  actorUsername?: string | null;
+  message: string;
 }
 
 interface ReleaseAttachedPayload extends BaseEventPayload {
@@ -161,6 +181,8 @@ type EventPayload =
   | ArtistIdentifiedPayload
   | CommunityIdentifiedPayload
   | TrackIdentifiedPayload
+  | AnonymousTrackIdentifiedPayload
+  | AnonymousTrackRevealedPayload
   | ReleaseAttachedPayload
   | ArtistReleaseAlertPayload
   | ReleaseDayOutPayload
@@ -205,6 +227,16 @@ function buildTitleAndBody(payload: EventPayload): { title: string; body: string
       return {
         title: TRACK_ID_CONFIRMED_TITLE,
         body: TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
+      };
+    case "anonymous_track_identified":
+      return {
+        title: TRACK_ID_CONFIRMED_TITLE,
+        body: payload.message,
+      };
+    case "anonymous_track_revealed":
+      return {
+        title: TRACK_ID_REVEALED_TITLE,
+        body: payload.message,
       };
     case "release_attached_to_liked_or_uploaded_post":
       return {

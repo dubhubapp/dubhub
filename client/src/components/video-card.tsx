@@ -22,7 +22,7 @@ import { CommentsModal } from "./comments-modal";
 import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
 import { isOwnerCommunityMarkEligible } from "@/lib/mark-id-long-press";
-import { isArtistPendingActionEligible, markViewerArtistDeniedOnPost, markViewerArtistAnonymouslyIdentifiedOnPost, ANONYMOUS_IDENTIFY_CREATED_VIA, readAnonymousIdentifyErrorCode, resolveAnonymousIdentifyErrorCopy } from "@/lib/artist-id-comments-actions";
+import { isArtistPendingActionEligible, markViewerArtistDeniedOnPost, markViewerArtistAnonymouslyIdentifiedOnPost, syncCommentsPostIdentificationFromLiveFeed, commentsPostNeedsIdentificationSync, ANONYMOUS_IDENTIFY_CREATED_VIA, readAnonymousIdentifyErrorCode, resolveAnonymousIdentifyErrorCopy } from "@/lib/artist-id-comments-actions";
 import {
   ANONYMOUS_IDENTIFIED_A11Y_LABEL,
   IDENTIFIED_PILL_LABEL,
@@ -545,7 +545,7 @@ function VideoCardInner({
     verifiedArtist,
   ]);
 
-  // Live feed post for eligibility (commentsPost can be a stale open-time snapshot).
+  // Live feed post for eligibility + ID projection (commentsPost is an open-time snapshot).
   useEffect(() => {
     if (!showComments || !commentsPost) return;
     if (commentsPost.id !== post.id) return;
@@ -565,7 +565,8 @@ function VideoCardInner({
     );
     const needsTagged = liveTagged && !frozenTagged;
     const needsDenied = liveDenied && !frozenDenied;
-    if (!needsTagged && !needsDenied) return;
+    const needsIdentification = commentsPostNeedsIdentificationSync(post, commentsPost);
+    if (!needsTagged && !needsDenied && !needsIdentification) return;
     setCommentsPost((prev) => {
       if (!prev || prev.id !== post.id) return prev;
       let next = prev;
@@ -578,6 +579,9 @@ function VideoCardInner({
       }
       if (needsDenied) {
         next = markViewerArtistDeniedOnPost(next);
+      }
+      if (needsIdentification) {
+        next = syncCommentsPostIdentificationFromLiveFeed(post, next);
       }
       return next;
     });

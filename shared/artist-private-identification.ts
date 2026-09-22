@@ -77,6 +77,31 @@ export function formatAnonymousIdentificationTitleLabel(
   return `ID - ${trimmed}`;
 }
 
+/**
+ * Parse artist-supplied track title from confirm comment bodies:
+ * `@User confirmed: ArtistCredit - Track Title`
+ * `@User confirmed: ArtistCredit` → null (no title)
+ *
+ * Uses the last ` - ` after `confirmed:` so collaborator credits stay in the credit segment.
+ */
+export function extractArtistTrackTitleFromConfirmComment(
+  body: string | null | undefined,
+): string | null {
+  if (typeof body !== "string") return null;
+  const trimmed = body.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  const marker = "confirmed:";
+  const idx = lower.indexOf(marker);
+  if (idx < 0) return null;
+  const after = trimmed.slice(idx + marker.length).trim();
+  if (!after) return null;
+  const dashIdx = after.lastIndexOf(" - ");
+  if (dashIdx < 0) return null;
+  const title = after.slice(dashIdx + 3).trim();
+  return title.length > 0 ? title : null;
+}
+
 function readAnonymousFlag(input: PublicArtistVerificationProjectionInput): boolean {
   return (
     input.isArtistVerifiedAnonymous === true ||

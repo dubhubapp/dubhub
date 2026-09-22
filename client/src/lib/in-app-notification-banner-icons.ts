@@ -22,6 +22,8 @@ export type InAppNotificationBadgeKind =
   | "artist_identified_post"
   | "community_identified_post"
   | "track_identified"
+  | "anonymous_track_identified"
+  | "anonymous_track_revealed"
   | "release_attached"
   | "artist_release_alert"
   | "release_alert_enabled"
@@ -38,6 +40,8 @@ const TOASTABLE_BADGE_KINDS = new Set<InAppNotificationBadgeKind>([
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
+  "anonymous_track_identified",
+  "anonymous_track_revealed",
   "release_attached",
   "artist_release_alert",
   "release_alert_enabled",
@@ -65,6 +69,8 @@ const BADGE_ICON_BY_KIND: Record<InAppNotificationBadgeKind, BadgeIconConfig> = 
   artist_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
   community_identified_post: { Icon: CheckCircle, color: VERIFIED_GOLD },
   track_identified: { Icon: CheckCircle, color: VERIFIED_GOLD },
+  anonymous_track_identified: { Icon: CheckCircle, color: VERIFIED_GOLD },
+  anonymous_track_revealed: { Icon: CheckCircle, color: VERIFIED_GOLD },
   release_attached: { Icon: CalendarDays, color: DUBHUB_TEAL },
   artist_release_alert: { Icon: Disc3, color: DUBHUB_TEAL },
   release_alert_enabled: { Icon: Bell, color: DUBHUB_TEAL },

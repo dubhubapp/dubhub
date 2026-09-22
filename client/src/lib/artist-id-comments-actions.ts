@@ -20,6 +20,7 @@ export type ArtistPendingActionPostFields = {
   is_artist_verified_anonymous?: boolean | null;
   /** Optional public track title while anonymously identified. */
   anonymousTrackTitle?: string | null;
+  anonymous_track_title?: string | null;
   artistVerifiedBy?: string | null;
   artist_verified_by?: string | null;
   deniedByArtist?: boolean | null;
@@ -137,6 +138,102 @@ export function markViewerArtistAnonymouslyIdentifiedOnPost<
     verificationStatus: "identified",
     verification_status: "identified",
     anonymousTrackTitle: trimmed,
+    anonymous_track_title: trimmed,
+  };
+}
+
+/**
+ * Optimistic public projection after POST /artist-reveal-identification.
+ * Clears anonymous scrub; exposes current viewer as public verifying artist.
+ */
+export function markViewerArtistRevealedOnPost<
+  T extends ArtistPendingActionPostFields,
+>(post: T, artistId: string): T {
+  return {
+    ...post,
+    isArtistVerifiedAnonymous: false,
+    is_artist_verified_anonymous: false,
+    isVerifiedArtist: true,
+    is_verified_artist: true,
+    artistVerifiedBy: artistId,
+    artist_verified_by: artistId,
+    verificationStatus: "identified",
+    verification_status: "identified",
+    anonymousTrackTitle: null,
+    anonymous_track_title: null,
+  };
+}
+
+/** VAT-ANON-5.1: copy for anonymous-ID info popover (no identity leak). */
+export const ANONYMOUS_ID_INFO_TITLE = "Why is the artist hidden?";
+export const ANONYMOUS_ID_INFO_BODY =
+  "An artist has confirmed this track but is keeping their identity private for now. Like this post and we’ll let you know when they reveal the full ID or link it to a release.";
+
+function readAnonymousFlag(post: ArtistPendingActionPostFields): boolean {
+  return !!(post.isArtistVerifiedAnonymous ?? post.is_artist_verified_anonymous);
+}
+
+function readArtistVerifiedFlag(post: ArtistPendingActionPostFields): boolean {
+  return !!(post.isVerifiedArtist ?? post.is_verified_artist);
+}
+
+function readArtistVerifiedBy(post: ArtistPendingActionPostFields): string | null {
+  const raw = post.artistVerifiedBy ?? post.artist_verified_by ?? null;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+function readAnonymousTrackTitle(post: ArtistPendingActionPostFields): string | null {
+  const raw = post.anonymousTrackTitle ?? post.anonymous_track_title ?? null;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+function readVerificationStatus(post: ArtistPendingActionPostFields): string | null {
+  const raw = post.verificationStatus ?? post.verification_status ?? null;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+/**
+ * VAT-ANON-5.1: Comments keeps an open-time `commentsPost` snapshot.
+ * Feed pill updates from live `post`, but Comments stays stale unless these
+ * identification fields are merged from the live feed row.
+ */
+export function commentsPostNeedsIdentificationSync(
+  live: ArtistPendingActionPostFields,
+  frozen: ArtistPendingActionPostFields,
+): boolean {
+  return (
+    readAnonymousFlag(live) !== readAnonymousFlag(frozen) ||
+    readArtistVerifiedFlag(live) !== readArtistVerifiedFlag(frozen) ||
+    readArtistVerifiedBy(live) !== readArtistVerifiedBy(frozen) ||
+    readAnonymousTrackTitle(live) !== readAnonymousTrackTitle(frozen) ||
+    readVerificationStatus(live) !== readVerificationStatus(frozen)
+  );
+}
+
+/**
+ * Merge live feed identification projection into the open Comments snapshot.
+ * Does not touch comment draft, scroll, or unrelated post fields.
+ */
+export function syncCommentsPostIdentificationFromLiveFeed<
+  T extends ArtistPendingActionPostFields,
+>(live: T, frozen: T): T {
+  if (!commentsPostNeedsIdentificationSync(live, frozen)) return frozen;
+  const anon = readAnonymousFlag(live);
+  const title = readAnonymousTrackTitle(live);
+  const verifiedBy = readArtistVerifiedBy(live);
+  const status = readVerificationStatus(live);
+  return {
+    ...frozen,
+    isArtistVerifiedAnonymous: anon,
+    is_artist_verified_anonymous: anon,
+    isVerifiedArtist: readArtistVerifiedFlag(live),
+    is_verified_artist: readArtistVerifiedFlag(live),
+    artistVerifiedBy: verifiedBy,
+    artist_verified_by: verifiedBy,
+    verificationStatus: status ?? frozen.verificationStatus ?? frozen.verification_status,
+    verification_status: status ?? frozen.verification_status ?? frozen.verificationStatus,
+    anonymousTrackTitle: title,
+    anonymous_track_title: title,
   };
 }
 
@@ -189,6 +286,16 @@ export function resolveAnonymousIdentifyErrorCopy(
         description:
           fallbackMessage?.trim() ||
           "Open the tagged comment again, then try identifying anonymously.",
+      };
+    case "CLAIM_NOT_FOUND":
+      return {
+        title: "Nothing to reveal",
+        description: "No anonymous identification was found for this post.",
+      };
+    case "NOT_CLAIM_OWNER":
+      return {
+        title: "Can't reveal",
+        description: "Only the artist who identified this track anonymously can reveal it.",
       };
     case "POST_NOT_FOUND":
       return {

@@ -12,6 +12,8 @@ export const NOTIFICATION_TYPES = [
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
+  "anonymous_track_identified",
+  "anonymous_track_revealed",
   "release_attached",
   "artist_release_alert",
   "release_alert_enabled",
@@ -52,6 +54,8 @@ export const ALWAYS_ON_NOTIFICATION_TYPES = new Set<NotificationType>([
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
+  "anonymous_track_identified",
+  "anonymous_track_revealed",
   "collab_invite",
   "collab_accept",
   "collab_reject",
@@ -256,6 +260,8 @@ export function notificationTypeToGroupKind(type: NotificationType): Notificatio
     case "artist_identified_post":
     case "community_identified_post":
     case "track_identified":
+    case "anonymous_track_identified":
+    case "anonymous_track_revealed":
       // Keep Track ID milestones independent from release_attached / release_event grouping.
       return "single";
     case "id_verification_feedback":

@@ -223,6 +223,12 @@ function resolvePushTapRoute(payload: Record<string, unknown>): string {
   if (type === "track_identified" && postId && postId.length > 0) {
     return `/?post=${encodeURIComponent(postId)}`;
   }
+  if (type === "anonymous_track_identified" && postId && postId.length > 0) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
+  if (type === "anonymous_track_revealed" && postId && postId.length > 0) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
   if (type === "moderator_community_verification_pending") {
     return "/moderator?tab=pending";
   }

@@ -59,6 +59,14 @@ export function getNotificationTapRoute(notification: NotificationWithUser): str
     return `/?post=${encodeURIComponent(postId)}`;
   }
 
+  if (type === "anonymous_track_identified" && postId) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
+
+  if (type === "anonymous_track_revealed" && postId) {
+    return `/?post=${encodeURIComponent(postId)}`;
+  }
+
   if (type === "release_attached") {
     if (releaseId) return `/releases/${encodeURIComponent(releaseId)}`;
     return "/profile";

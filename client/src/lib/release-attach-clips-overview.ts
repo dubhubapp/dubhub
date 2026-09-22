@@ -4,6 +4,10 @@
  */
 
 import { resolveAttachedClipUploaderIsVerifiedArtist } from "@shared/attached-clip-uploader-verified";
+import {
+  extractArtistTrackTitleFromConfirmComment,
+  formatAnonymousIdentificationTitleLabel,
+} from "@shared/artist-private-identification";
 
 export const ATTACHED_POSTS_ROW_LABEL = "Attached posts" as const;
 export const ATTACHED_POSTS_EMPTY_SUMMARY = "No posts attached" as const;
@@ -35,7 +39,104 @@ export type EligiblePostForAttach = {
   verified_comment_body?: string;
   /** Post track-ID flag — must not drive attached-card uploader tick. */
   is_verified_artist?: boolean;
+  is_artist_verified_anonymous?: boolean | null;
+  isArtistVerifiedAnonymous?: boolean | null;
+  anonymous_track_title?: string | null;
+  anonymousTrackTitle?: string | null;
+  /** Owner eligible: artist-confirmed track title (claim any state or confirm comment). */
+  artist_track_title?: string | null;
+  artistTrackTitle?: string | null;
+  artist_confirm_comment_body?: string | null;
 };
+
+export function isEligibleAnonymousOwnerPost(post: EligiblePostForAttach): boolean {
+  return !!(post.isArtistVerifiedAnonymous ?? post.is_artist_verified_anonymous);
+}
+
+/** Resolve artist-confirmed track title for owner attach UI (no identity fields). */
+export function resolveEligibleArtistTrackTitle(
+  post: EligiblePostForAttach,
+): string | null {
+  const direct =
+    (typeof post.artistTrackTitle === "string" && post.artistTrackTitle.trim()) ||
+    (typeof post.artist_track_title === "string" && post.artist_track_title.trim()) ||
+    null;
+  if (direct) return direct.trim();
+
+  if (isEligibleAnonymousOwnerPost(post)) {
+    const anon =
+      (typeof post.anonymousTrackTitle === "string" && post.anonymousTrackTitle.trim()) ||
+      (typeof post.anonymous_track_title === "string" && post.anonymous_track_title.trim()) ||
+      null;
+    if (anon) return anon.trim();
+  }
+
+  return (
+    extractArtistTrackTitleFromConfirmComment(post.artist_confirm_comment_body) ??
+    extractArtistTrackTitleFromConfirmComment(post.verified_comment_body)
+  );
+}
+
+/** Owner-facing attach label for anonymous IDs. */
+export function formatEligibleAnonymousAttachLabel(post: EligiblePostForAttach): string {
+  const titleLabel = formatAnonymousIdentificationTitleLabel(
+    resolveEligibleArtistTrackTitle(post) ??
+      post.anonymousTrackTitle ??
+      post.anonymous_track_title,
+  );
+  return titleLabel ?? "Anonymous ID";
+}
+
+/**
+ * VAT-ANON-4B.1 title priority for owner attach UI:
+ * 1. artist-confirmed track title → `ID - {title}`
+ * 2. anonymous without title → `Anonymous ID`
+ * 3. uploader/post title / dj_name fallback (no false `ID -` prefix)
+ */
+export function formatEligiblePostAttachDisplayTitle(
+  post: EligiblePostForAttach,
+): string | null {
+  const artistTitle = resolveEligibleArtistTrackTitle(post);
+  if (artistTitle) {
+    return formatAnonymousIdentificationTitleLabel(artistTitle);
+  }
+  if (isEligibleAnonymousOwnerPost(post)) {
+    return "Anonymous ID";
+  }
+  return post.title?.trim() || post.dj_name?.trim() || null;
+}
+
+export function selectAnonymousEligiblePosts(
+  eligiblePosts: EligiblePostForAttach[],
+  selectedPostIds: string[],
+): EligiblePostForAttach[] {
+  const selected = new Set(selectedPostIds);
+  return eligiblePosts.filter(
+    (p) => selected.has(p.id) && isEligibleAnonymousOwnerPost(p),
+  );
+}
+
+export function buildRevealAndAttachConfirmCopy(anonymousPosts: EligiblePostForAttach[]): {
+  title: string;
+  body: string;
+  /** @deprecated Prefer titleHints — single-post convenience. */
+  titleHint: string | null;
+  /** One bold label per anonymous post (selection order). */
+  titleHints: string[];
+} {
+  const plural = anonymousPosts.length > 1;
+  const title = plural ? "Reveal these IDs?" : "Reveal this ID?";
+  const body = plural
+    ? "Attaching these posts to your release will reveal that you identified them. This can’t be undone."
+    : "Attaching this post to your release will reveal that you identified it. This can’t be undone.";
+  const titleHints = anonymousPosts.map((p) => formatEligibleAnonymousAttachLabel(p));
+  return {
+    title,
+    body,
+    titleHints,
+    titleHint: titleHints.length === 1 ? titleHints[0] ?? null : null,
+  };
+}
 
 export function eligiblePostToAttachedClip(
   post: EligiblePostForAttach,
@@ -57,9 +158,11 @@ export function eligiblePostToAttachedClip(
   uploaderUsername: string;
   /** Uploader verified-artist identity (not post artist-identification). */
   isVerifiedArtist: boolean;
+  /** Anonymous artist ID — EyeOff in attach overview only. */
+  isArtistVerifiedAnonymous: boolean;
   likes: number;
 } {
-  const title = post.title?.trim() || post.dj_name?.trim() || null;
+  const title = formatEligiblePostAttachDisplayTitle(post);
   const username =
     enriched?.user?.username?.trim() ||
     enriched?.username?.trim() ||
@@ -80,6 +183,7 @@ export function eligiblePostToAttachedClip(
       postIsVerifiedArtist: post.is_verified_artist,
       postArtistVerifiedBy: null,
     }),
+    isArtistVerifiedAnonymous: isEligibleAnonymousOwnerPost(post),
     likes: typeof enriched?.likes === "number" ? enriched.likes : 0,
   };
 }
@@ -89,16 +193,24 @@ export function filterEligiblePostsForAttachSearch<
     dj_name?: string;
     title?: string;
     verified_comment_body?: string;
+    is_artist_verified_anonymous?: boolean | null;
+    isArtistVerifiedAnonymous?: boolean | null;
+    anonymous_track_title?: string | null;
+    anonymousTrackTitle?: string | null;
+    artist_track_title?: string | null;
+    artistTrackTitle?: string | null;
   },
 >(posts: T[], searchTerm: string): T[] {
   if (!searchTerm.trim()) return posts;
   const q = searchTerm.trim().toLowerCase();
-  return posts.filter(
-    (p) =>
-      (p.dj_name || "").toLowerCase().includes(q) ||
-      (p.title || "").toLowerCase().includes(q) ||
-      (p.verified_comment_body || "").toLowerCase().includes(q),
-  );
+  return posts.filter((p) => {
+    if ((p.dj_name || "").toLowerCase().includes(q)) return true;
+    if ((p.title || "").toLowerCase().includes(q)) return true;
+    if ((p.verified_comment_body || "").toLowerCase().includes(q)) return true;
+    const display = formatEligiblePostAttachDisplayTitle(p as EligiblePostForAttach);
+    if (display && display.toLowerCase().includes(q)) return true;
+    return false;
+  });
 }
 
 export function selectAttachedPostsForOverview<T extends { id: string }>(

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Check, Heart, Music } from "lucide-react";
-import { GoldVerifiedTick } from "@/components/verified-artist";
+import { Check, EyeOff, Heart, Music } from "lucide-react";
+import { GoldVerifiedTick, goldTextClass } from "@/components/verified-artist";
 import { resolveMediaUrl } from "@/lib/media-url";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn, formatUsernameDisplay } from "@/lib/utils";
 
 export type { ReleaseAttachedClip };
 
@@ -88,12 +88,39 @@ export function ReleaseAttachedClipCard({
         </div>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 p-2">
         {title ? (
-          <p className="line-clamp-2 text-[11px] font-medium leading-snug text-foreground">{title}</p>
+          <p className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-snug text-foreground">
+            {clip.isArtistVerifiedAnonymous ? (
+              <EyeOff
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-hidden
+                data-testid={`release-attached-clip-anonymous-eyeoff-${clip.id}`}
+              />
+            ) : null}
+            <span className="min-w-0 line-clamp-2">{title}</span>
+          </p>
         ) : (
-          <p className="text-[11px] font-medium leading-snug text-muted-foreground">Post</p>
+          <p className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-snug text-muted-foreground">
+            {clip.isArtistVerifiedAnonymous ? (
+              <EyeOff
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-hidden
+                data-testid={`release-attached-clip-anonymous-eyeoff-${clip.id}`}
+              />
+            ) : null}
+            <span className="min-w-0">
+              {clip.isArtistVerifiedAnonymous ? "Anonymous ID" : "Post"}
+            </span>
+          </p>
         )}
         <div className="flex min-w-0 items-center gap-1">
-          <span className="min-w-0 truncate text-[10px] text-muted-foreground">@{clip.uploaderUsername}</span>
+          <span
+            className={cn(
+              "min-w-0 truncate text-[10px]",
+              clip.isVerifiedArtist ? goldTextClass : "text-muted-foreground",
+            )}
+          >
+            @{formatUsernameDisplay(clip.uploaderUsername) || clip.uploaderUsername}
+          </span>
           {/* clip.isVerifiedArtist = uploader profile identity only */}
           {clip.isVerifiedArtist ? (
             <GoldVerifiedTick className="h-2.5 w-2.5 shrink-0 text-[#FFD700]" glow="inline" />

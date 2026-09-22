@@ -76,6 +76,7 @@ import {
   getAnonymousClaimForModerator,
   getAnonymousClaimForOwner,
   listAnonymousClaimsForOwner,
+  revealAnonymousArtistIdentification,
 } from "./artist-private-identification";
 import { normalizeAnonymousTrackTitleInput } from "@shared/artist-private-identification";
 import { handlePostArtistReleaseAlert } from "./post-artist-release-alert";
@@ -90,6 +91,10 @@ import {
   getReleaseAttachmentCapacity,
 } from "./attach-posts-with-limit";
 import { isFreeAttachmentLimitReachedError } from "./release-attachment-limit";
+import {
+  RevealAndAttachError,
+  revealAndAttachPosts,
+} from "./reveal-and-attach-posts";
 import {
   getArtistLinkAllowance,
   getReleaseLinkCapacity,
@@ -3664,6 +3669,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           },
         );
 
+        // VAT-ANON-5: post-commit, actor-less identify notifications (first ID event).
+        void storage
+          .notifyAnonymousTrackIdentified({
+            postId: claim.postId,
+            claimingArtistId: claim.artistId,
+            trackTitle: claim.trackTitle,
+          })
+          .catch((err) =>
+            console.error("[artist-identify-anonymous] notify failed:", err),
+          );
+
         return res.status(201).json({
           message: "Track identified anonymously",
           claim: {
@@ -3692,7 +3708,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
-  // Owner private claim read (foundation for VAT-ANON-4; no UI yet)
+  // VAT-ANON-4/5: one-way owner reveal (+ uploader reveal notification; not for 4B attach)
+  app.post(
+    "/api/posts/:id/artist-reveal-identification",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.dbUser) {
+          return res.status(401).json({ message: "Not authenticated" });
+        }
+        const body = req.body && typeof req.body === "object" ? req.body : {};
+        const result = await revealAnonymousArtistIdentification({
+          postId: req.params.id,
+          artistId: req.dbUser.id,
+          bodyArtistId: (body as any).artistId ?? (body as any).artist_id,
+        });
+
+        // VAT-ANON-5: manual reveal only — uploader notify after commit. Skip if already revealed.
+        if (!result.alreadyRevealed) {
+          const profile = await storage.getUser(req.dbUser.id);
+          void storage
+            .notifyAnonymousTrackRevealed({
+              postId: result.claim.postId,
+              revealedArtistId: result.claim.artistId,
+              revealedArtistUsername: profile?.username ?? null,
+              trackTitle: result.claim.trackTitle,
+            })
+            .catch((err) =>
+              console.error("[artist-reveal-identification] notify failed:", err),
+            );
+        }
+
+        return res.status(200).json({
+          message: result.alreadyRevealed
+            ? "Identification already revealed"
+            : "Identification revealed",
+          alreadyRevealed: result.alreadyRevealed,
+          insertedConfirmCommentId: result.insertedConfirmCommentId,
+          claim: {
+            id: result.claim.id,
+            postId: result.claim.postId,
+            state: result.claim.state,
+            claimedAt: result.claim.claimedAt,
+            revealedAt: result.claim.revealedAt,
+            sourceCommentId: result.claim.sourceCommentId,
+            entitledAtClaim: result.claim.entitledAtClaim,
+            createdVia: result.claim.createdVia,
+            trackTitle: result.claim.trackTitle,
+          },
+          // Owner-only echo; public serializers use posts.artist_verified_by after reveal.
+          artistId: result.claim.artistId,
+        });
+      } catch (error) {
+        if (error instanceof AnonymousClaimError) {
+          return res.status(error.httpStatus).json({
+            code: error.code,
+            message: error.message,
+          });
+        }
+        console.error("[artist-reveal-identification] Error:", error);
+        return res.status(500).json({ message: "Failed to reveal identification" });
+      }
+    },
+  );
+
+  // Owner private claim read
   app.get(
     "/api/posts/:id/artist-private-identification",
     withSupabaseUser,
@@ -6814,6 +6894,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to attach posts" });
     }
   });
+
+  // VAT-ANON-4B: atomic reveal + attach (public releases only; reveal silent)
+  app.post(
+    "/api/releases/:id/reveal-and-attach",
+    withSupabaseUser,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+        const releaseId = req.params.id;
+        const release = await storage.getRelease(releaseId);
+        if (!release) return res.status(404).json({ message: "Release not found" });
+        const canManage = await storage.canManageRelease(releaseId, req.dbUser.id);
+        if (!canManage) {
+          return res.status(403).json({ message: "Not authorized to manage this release" });
+        }
+        const { post_ids } = req.body ?? {};
+        const ids = Array.isArray(post_ids) ? post_ids.filter((id: unknown) => typeof id === "string") : [];
+        if (ids.length === 0) {
+          return res.status(400).json({ message: "post_ids required" });
+        }
+
+        const profile = await storage.getUser(req.dbUser.id);
+        const { attached, newlyAttached, rejected } = await revealAndAttachPosts(
+          releaseId,
+          req.dbUser.id,
+          ids,
+          {
+            pool,
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+            canManage: true,
+            callerUsername: profile?.username ?? null,
+          },
+        );
+
+        // Existing attach / release_public fan-out only — no dedicated reveal notify (VAT-ANON-5).
+        if (newlyAttached.length > 0 && release.isPublic) {
+          await storage.notifyNewlyAttachedPostAudience(releaseId, newlyAttached);
+        }
+        if (attached.length > 0 || newlyAttached.length > 0) {
+          await storage.maybeNotifyReleasePublic(releaseId);
+        }
+        return res.json({ attached, newlyAttached, rejected });
+      } catch (error) {
+        if (isFreeAttachmentLimitReachedError(error)) {
+          return res.status(error.statusCode).json(error.toJSON());
+        }
+        if (error instanceof RevealAndAttachError) {
+          return res.status(error.httpStatus).json({
+            code: error.code,
+            message: error.message,
+            postId: error.postId,
+          });
+        }
+        if (error instanceof AnonymousClaimError) {
+          return res.status(error.httpStatus).json({
+            code: error.code,
+            message: error.message,
+          });
+        }
+        console.error("[/api/releases/:id/reveal-and-attach] Error:", error);
+        return res.status(500).json({ message: "Failed to reveal and attach posts" });
+      }
+    },
+  );
 
   app.get("/api/releases/:id/attachment-capacity", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {

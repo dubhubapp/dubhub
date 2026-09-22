@@ -43,12 +43,13 @@ import {
   runNotifyTrackIdentifiedLikers,
   type NotifyTrackIdentifiedLikersResult,
 } from "./notify-track-identified-likers";
+import type { NotifyAnonymousIdentifiedResult } from "./notify-anonymous-track-identified";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { createReleaseWithLimit } from "./create-release-with-limit";
 import { mapReleaseTimingFields } from "@shared/release-timing";
 import { shouldSetReleaseAnnouncedAt } from "@shared/release-announced";
 import { resolveAttachedClipUploaderIsVerifiedArtist } from "@shared/attached-clip-uploader-verified";
-import { projectPublicArtistVerificationFields, mapPublicAnonymousTrackTitle } from "@shared/artist-private-identification";
+import { projectPublicArtistVerificationFields, mapPublicAnonymousTrackTitle, extractArtistTrackTitleFromConfirmComment } from "@shared/artist-private-identification";
 
 /** Map raw post verification columns → public-safe artist verification fields. */
 function mapPublicArtistVerification(row: {
@@ -71,6 +72,36 @@ const SQL_ANONYMOUS_TRACK_TITLE = sql`(
     AND api.state = 'anonymous'
   LIMIT 1
 )`;
+
+/**
+ * Owner-only eligible attach: claim track_title for this artist in any state
+ * (anonymous or revealed). Not for public feed serializers.
+ */
+function sqlOwnerClaimTrackTitle(artistId: string) {
+  return sql`(
+    SELECT api.track_title
+    FROM artist_private_identifications api
+    WHERE api.post_id = p.id
+      AND api.artist_id = ${artistId}
+      AND api.track_title IS NOT NULL
+      AND btrim(api.track_title) <> ''
+    LIMIT 1
+  )`;
+}
+
+/** Owner-only: latest artist confirm helper comment body for track-title parse. */
+function sqlArtistConfirmCommentBody(artistId: string) {
+  return sql`(
+    SELECT c2.body
+    FROM comments c2
+    WHERE c2.post_id = p.id
+      AND c2.user_id = ${artistId}
+      AND c2.parent_id IS NULL
+      AND c2.body ILIKE '% confirmed: %'
+    ORDER BY c2.created_at DESC
+    LIMIT 1
+  )`;
+}
 
 function mapAnonymousTrackTitleField(
   isArtistVerifiedAnonymous: boolean,
@@ -265,6 +296,24 @@ export interface IStorage {
     isFirstListenerVisibleIdentification: boolean;
     excludeRecipientIds?: string[];
   }): Promise<NotifyTrackIdentifiedLikersResult>;
+  /** VAT-ANON-5: anonymous identify → uploader + likers (actor-less). */
+  notifyAnonymousTrackIdentified(args: {
+    postId: string;
+    claimingArtistId: string;
+    trackTitle: string | null;
+  }): Promise<NotifyAnonymousIdentifiedResult>;
+  /** VAT-ANON-5.1: manual reveal → uploader + likers (not reveal+attach). */
+  notifyAnonymousTrackRevealed(args: {
+    postId: string;
+    revealedArtistId: string;
+    revealedArtistUsername: string | null;
+    trackTitle: string | null;
+  }): Promise<{
+    notified: boolean;
+    notificationCount: number;
+    uploaderNotified: boolean;
+    likerRecipientIds: string[];
+  }>;
   getUserNotifications(
     userId: string,
     options?: { limit?: number; before?: string; beforeId?: string; after?: string; afterId?: string }
@@ -2136,9 +2185,13 @@ export class DatabaseStorage implements IStorage {
       const postId = notification.postId ?? null;
       const releaseId = notification.releaseId ?? null;
       const notificationType = notification.notificationType ?? null;
+      const triggeredBy =
+        typeof notification.triggeredBy === "string" && notification.triggeredBy.trim()
+          ? notification.triggeredBy.trim()
+          : null;
       const result = await db.execute(sql`
         INSERT INTO notifications (artist_id, triggered_by, post_id, release_id, message, notification_type, read, created_at)
-        VALUES (${notification.artistId}, ${notification.triggeredBy}, ${postId}, ${releaseId}, ${notification.message}, ${notificationType}, false, NOW())
+        VALUES (${notification.artistId}, ${triggeredBy}, ${postId}, ${releaseId}, ${notification.message}, ${notificationType}, false, NOW())
         RETURNING *
       `);
 
@@ -2180,7 +2233,7 @@ export class DatabaseStorage implements IStorage {
         SELECT 1
         FROM notifications
         WHERE post_id = ${postId}
-          AND notification_type = 'track_identified'
+          AND notification_type IN ('track_identified', 'anonymous_track_identified')
         LIMIT 1
       `);
       return ((result as any).rows || []).length > 0;
@@ -2188,6 +2241,170 @@ export class DatabaseStorage implements IStorage {
       console.error("[hasTrackIdentifiedNotification] Error:", error);
       // Fail closed: avoid duplicate fan-out if we cannot verify.
       return true;
+    }
+  }
+
+  private async hasAnonymousTrackRevealedNotification(postId: string): Promise<boolean> {
+    if (!postId) return false;
+    try {
+      const result = await db.execute(sql`
+        SELECT 1
+        FROM notifications
+        WHERE post_id = ${postId}
+          AND notification_type = 'anonymous_track_revealed'
+        LIMIT 1
+      `);
+      return ((result as any).rows || []).length > 0;
+    } catch (error) {
+      console.error("[hasAnonymousTrackRevealedNotification] Error:", error);
+      return true;
+    }
+  }
+
+  async getPostOwnerId(postId: string): Promise<string | null> {
+    if (!postId) return null;
+    try {
+      const result = await db.execute(sql`
+        SELECT user_id FROM posts WHERE id = ${postId} LIMIT 1
+      `);
+      const rows = (result as any).rows || [];
+      const id = rows[0]?.user_id;
+      return typeof id === "string" && id.trim() ? id.trim() : null;
+    } catch (error) {
+      console.error("[getPostOwnerId] Error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * VAT-ANON-5: after anonymous identify COMMIT — uploader + likers, actor-less.
+   */
+  async notifyAnonymousTrackIdentified(args: {
+    postId: string;
+    claimingArtistId: string;
+    trackTitle: string | null;
+  }): Promise<NotifyAnonymousIdentifiedResult> {
+    const { runNotifyAnonymousTrackIdentified } = await import(
+      "./notify-anonymous-track-identified"
+    );
+    try {
+      return await runNotifyAnonymousTrackIdentified(
+        {
+          postId: args.postId,
+          claimingArtistId: args.claimingArtistId,
+          trackTitle: args.trackTitle,
+        },
+        {
+          getPostOwnerId: (id) => this.getPostOwnerId(id),
+          getLikerIds: (id) => this.getPostLikerIds(id),
+          hasExistingFirstIdentificationNotification: (id) =>
+            this.hasTrackIdentifiedNotification(id),
+          createNotification: async (input) => {
+            const notif = await this.createNotification({
+              artistId: input.recipientId,
+              triggeredBy: input.triggeredBy,
+              postId: input.postId,
+              message: input.message,
+              notificationType: input.notificationType,
+            });
+            return { id: notif.id };
+          },
+          sendPush: ({ recipientId, postId, notificationId, message }) => {
+            void import("./push/pushSend").then(({ sendPushToUser }) =>
+              sendPushToUser(recipientId, {
+                type: "anonymous_track_identified",
+                notificationId,
+                postId,
+                message,
+              }),
+            );
+          },
+          log: (payload) => console.log("[notifyAnonymousTrackIdentified]", payload),
+        },
+      );
+    } catch (error) {
+      console.error("[notifyAnonymousTrackIdentified] Error:", error);
+      return {
+        outcome: "skipped_no_recipients",
+        notificationCount: 0,
+        pushAttemptCount: 0,
+        uploaderNotified: false,
+        likerRecipientIds: [],
+      };
+    }
+  }
+
+  /**
+   * VAT-ANON-5.1: after manual Reveal ID COMMIT — uploader + likers.
+   * Do not call from reveal-and-attach.
+   */
+  async notifyAnonymousTrackRevealed(args: {
+    postId: string;
+    revealedArtistId: string;
+    revealedArtistUsername: string | null;
+    trackTitle: string | null;
+  }): Promise<{
+    notified: boolean;
+    notificationCount: number;
+    uploaderNotified: boolean;
+    likerRecipientIds: string[];
+  }> {
+    const { runNotifyAnonymousTrackRevealed } = await import(
+      "./notify-anonymous-track-identified"
+    );
+    try {
+      return await runNotifyAnonymousTrackRevealed(
+        {
+          postId: args.postId,
+          revealedArtistId: args.revealedArtistId,
+          revealedArtistUsername: args.revealedArtistUsername,
+          trackTitle: args.trackTitle,
+        },
+        {
+          getPostOwnerId: (id) => this.getPostOwnerId(id),
+          getLikerIds: (id) => this.getPostLikerIds(id),
+          hasExistingRevealNotification: (id) =>
+            this.hasAnonymousTrackRevealedNotification(id),
+          createNotification: async (input) => {
+            const notif = await this.createNotification({
+              artistId: input.recipientId,
+              triggeredBy: input.triggeredBy,
+              postId: input.postId,
+              message: input.message,
+              notificationType: input.notificationType,
+            });
+            return { id: notif.id };
+          },
+          sendPush: ({
+            recipientId,
+            postId,
+            notificationId,
+            actorUserId,
+            actorUsername,
+            message,
+          }) => {
+            void import("./push/pushSend").then(({ sendPushToUser }) =>
+              sendPushToUser(recipientId, {
+                type: "anonymous_track_revealed",
+                notificationId,
+                postId,
+                actorUserId,
+                actorUsername,
+                message,
+              }),
+            );
+          },
+          log: (payload) => console.log("[notifyAnonymousTrackRevealed]", payload),
+        },
+      );
+    } catch (error) {
+      console.error("[notifyAnonymousTrackRevealed] Error:", error);
+      return {
+        notified: false,
+        notificationCount: 0,
+        uploaderNotified: false,
+        likerRecipientIds: [],
+      };
     }
   }
 
@@ -2757,16 +2974,18 @@ export class DatabaseStorage implements IStorage {
           artistId: row.artist_id,
           postId: row.post_id,
           releaseId: row.release_id,
-          triggeredBy: row.triggered_by,
+          triggeredBy: row.triggered_by ?? null,
           message: parsedMessage.message,
           notificationType: row.notification_type ?? null,
           read: row.read,
           createdAt: row.created_at,
-          triggeredByUser: {
-            id: row.triggered_by,
-            username: row.triggered_by_username,
-            avatarUrl: row.triggered_by_avatar_url,
-          },
+          triggeredByUser: row.triggered_by
+            ? {
+                id: row.triggered_by,
+                username: row.triggered_by_username,
+                avatarUrl: row.triggered_by_avatar_url,
+              }
+            : null,
           post: hasJoinedPostPreview
             ? {
                 id: row.post_id,
@@ -4499,6 +4718,19 @@ export class DatabaseStorage implements IStorage {
    * in which case posts attached only to that release are included so they appear in the editor.
    */
   async getEligiblePostsForArtist(artistId: string, currentReleaseId?: string): Promise<any[]> {
+    const anonymousOwnerBranch = sql`(
+      p.is_artist_verified_anonymous = true
+      AND EXISTS (
+        SELECT 1 FROM artist_private_identifications api
+        WHERE api.post_id = p.id
+          AND api.artist_id = ${artistId}
+          AND api.state = 'anonymous'
+      )
+    )`;
+    const publicVerifiedBranch = sql`(
+      p.is_verified_artist = true
+      AND p.artist_verified_by = ${artistId}
+    )`;
     const result = currentReleaseId
       ? await db.execute(sql`
           SELECT
@@ -4513,14 +4745,20 @@ export class DatabaseStorage implements IStorage {
             p.description,
             p.verification_status,
             p.is_verified_artist,
+            p.is_artist_verified_anonymous,
+            ${SQL_ANONYMOUS_TRACK_TITLE} AS anonymous_track_title,
+            ${sqlOwnerClaimTrackTitle(artistId)} AS owner_claim_track_title,
+            ${sqlArtistConfirmCommentBody(artistId)} AS artist_confirm_comment_body,
             p.artist_verified_by,
             p.verified_comment_id,
             p.created_at,
             c.body AS verified_comment_body
           FROM posts p
           LEFT JOIN comments c ON c.id = p.verified_comment_id
-          WHERE p.is_verified_artist = true
-            AND p.artist_verified_by = ${artistId}
+          WHERE (
+              ${publicVerifiedBranch}
+              OR ${anonymousOwnerBranch}
+            )
             AND (p.denied_by_artist IS NOT TRUE)
             AND (p.verification_status IS NULL OR p.verification_status != 'unverified')
             AND NOT EXISTS (
@@ -4541,14 +4779,20 @@ export class DatabaseStorage implements IStorage {
             p.description,
             p.verification_status,
             p.is_verified_artist,
+            p.is_artist_verified_anonymous,
+            ${SQL_ANONYMOUS_TRACK_TITLE} AS anonymous_track_title,
+            ${sqlOwnerClaimTrackTitle(artistId)} AS owner_claim_track_title,
+            ${sqlArtistConfirmCommentBody(artistId)} AS artist_confirm_comment_body,
             p.artist_verified_by,
             p.verified_comment_id,
             p.created_at,
             c.body AS verified_comment_body
           FROM posts p
           LEFT JOIN comments c ON c.id = p.verified_comment_id
-          WHERE p.is_verified_artist = true
-            AND p.artist_verified_by = ${artistId}
+          WHERE (
+              ${publicVerifiedBranch}
+              OR ${anonymousOwnerBranch}
+            )
             AND (p.denied_by_artist IS NOT TRUE)
             AND (p.verification_status IS NULL OR p.verification_status != 'unverified')
             AND NOT EXISTS (
@@ -4557,11 +4801,34 @@ export class DatabaseStorage implements IStorage {
           ORDER BY p.created_at DESC
         `);
     const rows = (result as any).rows || [];
-    return rows.map((row: any) => ({
-      ...row,
-      videoUrl: row.video_url,
-      thumbnailUrl: mapPostThumbnailUrl(row),
-    }));
+    return rows.map((row: any) => {
+      const isAnonymous = row.is_artist_verified_anonymous === true;
+      const anonTitle =
+        typeof row.anonymous_track_title === "string" && row.anonymous_track_title.trim()
+          ? row.anonymous_track_title.trim()
+          : null;
+      const claimTitle =
+        typeof row.owner_claim_track_title === "string" && row.owner_claim_track_title.trim()
+          ? row.owner_claim_track_title.trim()
+          : null;
+      const fromConfirm = extractArtistTrackTitleFromConfirmComment(
+        row.artist_confirm_comment_body,
+      );
+      const artistTrackTitle = claimTitle || fromConfirm || null;
+      return {
+        ...row,
+        videoUrl: row.video_url,
+        thumbnailUrl: mapPostThumbnailUrl(row),
+        isArtistVerifiedAnonymous: isAnonymous,
+        is_artist_verified_anonymous: isAnonymous,
+        // Title-only while anonymous; never join claim artist_id into this payload.
+        anonymousTrackTitle: isAnonymous ? anonTitle : null,
+        anonymous_track_title: isAnonymous ? anonTitle : null,
+        // Owner eligible attach only — artist-confirmed track title (claim or confirm comment).
+        artistTrackTitle,
+        artist_track_title: artistTrackTitle,
+      };
+    });
   }
 
   async notifyReleaseLikers(releaseId: string, artistId: string): Promise<boolean> {

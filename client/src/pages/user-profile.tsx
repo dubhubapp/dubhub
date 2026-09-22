@@ -1664,6 +1664,19 @@ export default function UserProfile() {
 
   const isCollaboratorResponse = (n: NotificationWithUser) => isCollaboratorAcceptance(n) || isCollaboratorRejection(n);
 
+  /** Self-contained copy (no "Someone"/actor prefix). Includes actor-less anonymous ID rows. */
+  const isMessageOnlyNotification = (n: NotificationWithUser) => {
+    if (isTagNotification(n) || isCollaboratorResponse(n)) return true;
+    if (!n.triggeredByUser) return true;
+    const type = getEffectiveNotificationType(notificationRowFields(n));
+    return (
+      type === "anonymous_track_identified" ||
+      type === "anonymous_track_revealed" ||
+      type === "track_identified" ||
+      type === "community_identified_post"
+    );
+  };
+
   type GroupedNotification = {
     id: string;
     representative: NotificationWithUser;
@@ -4073,10 +4086,10 @@ export default function UserProfile() {
                     {visibleNotifications.map((group) => {
                     const notification = group.representative;
                     const hasUnread = group.unreadCount > 0;
-                    const isTag = isTagNotification(notification);
                     const isAcceptance = isCollaboratorAcceptance(notification);
                     const isRejection = isCollaboratorRejection(notification);
                     const isCollabResponse = isCollaboratorResponse(notification);
+                    const isMessageOnly = isMessageOnlyNotification(notification);
                     const isReleaseAlertEnabled =
                       getEffectiveNotificationType(notificationRowFields(notification)) ===
                       "release_alert_enabled";
@@ -4167,7 +4180,7 @@ export default function UserProfile() {
                           <p className={getProfileNotificationBodyClass(hasUnread)}>
                             {summaryText ? (
                               summaryText
-                            ) : isTag || isCollabResponse ? (
+                            ) : isMessageOnly ? (
                               notification.message
                             ) : (
                               <>

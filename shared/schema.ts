@@ -427,7 +427,7 @@ export const artistProfileQuestionAnswers = pgTable(
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   artistId: varchar("artist_id").notNull().references(() => profiles.id), // Who receives the notification
-  triggeredBy: varchar("triggered_by").notNull().references(() => profiles.id), // Who caused the notification
+  triggeredBy: varchar("triggered_by").references(() => profiles.id), // Nullable for actor-less notifications (VAT-ANON-5)
   postId: varchar("post_id").references(() => posts.id), // Related post (nullable for release notifications)
   releaseId: varchar("release_id").references(() => releases.id), // Related release (nullable)
   message: text("message").notNull(),
@@ -582,7 +582,7 @@ export const insertCommentVoteSchema = createInsertSchema(commentVotes).pick({
 // Notifications schema - updated to use postId and correct field names
 export const insertNotificationSchema = z.object({
   artistId: z.string(), // Who receives the notification
-  triggeredBy: z.string(), // Who triggered the notification
+  triggeredBy: z.string().nullable().optional(), // Null = actor-less (anonymous ID)
   postId: z.string().optional().nullable(),
   releaseId: z.string().optional().nullable(),
   message: z.string(),
@@ -730,7 +730,7 @@ export type PublicArtistProfileQuestionAnswer = {
 
 // NotificationWithUser - updated to use Post instead of Track
 export type NotificationWithUser = Notification & {
-  triggeredByUser: Profile;
+  triggeredByUser: Profile | null;
   post: Post | null;
   release?: { id: string; artworkUrl: string | null } | null;
 };

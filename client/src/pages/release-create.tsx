@@ -78,7 +78,11 @@ import {
   ReleaseAttachPostsSection,
   type EligiblePostForAttach,
 } from "@/components/release-attach-posts-section";
-import { filterEligiblePostsForAttachSearch } from "@/lib/release-attach-clips-overview";
+import {
+  filterEligiblePostsForAttachSearch,
+  buildRevealAndAttachConfirmCopy,
+  selectAnonymousEligiblePosts,
+} from "@/lib/release-attach-clips-overview";
 import {
   RELEASE_CREATION_CAPACITY_QUERY_KEY,
   RELEASE_LIMIT_REACHED_TOAST,
@@ -153,6 +157,8 @@ export default function ReleaseCreate() {
   const [collaboratorsSheetOpen, setCollaboratorsSheetOpen] = useState(false);
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [zeroPostConfirmOpen, setZeroPostConfirmOpen] = useState(false);
+  const [revealAttachConfirmOpen, setRevealAttachConfirmOpen] = useState(false);
+  const revealAttachApprovedRef = useRef(false);
   const createSubmitStartedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -465,12 +471,15 @@ export default function ReleaseCreate() {
     if (artworkPreviewUrl) URL.revokeObjectURL(artworkPreviewUrl);
   }, [artworkPreviewUrl]);
 
-  async function attachPostsWithAuth(releaseId: string, postIds: string[]) {
+  async function attachPostsWithAuth(releaseId: string, postIds: string[], opts?: { revealAndAttach?: boolean }) {
     if (postIds.length === 0) return;
     const { data: { session } } = await supabase.auth.getSession();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-    const res = await fetch(apiUrl(`/api/releases/${releaseId}/attach-posts`), {
+    const path = opts?.revealAndAttach
+      ? `/api/releases/${releaseId}/reveal-and-attach`
+      : `/api/releases/${releaseId}/attach-posts`;
+    const res = await fetch(apiUrl(path), {
       method: "POST",
       headers,
       credentials: "include",
@@ -487,6 +496,16 @@ export default function ReleaseCreate() {
         void queryClient.invalidateQueries({ queryKey: [...ATTACHMENT_ALLOWANCE_QUERY_KEY] });
         throw new Error(ATTACHMENT_LIMIT_TOAST.body);
       }
+      if (data.code === "RELEASE_NOT_PUBLIC") {
+        toast({
+          title: "Release isn’t public yet",
+          description:
+            data.message ||
+            "Reveal & attach is only available for public releases. Reveal from Comments first, or finish collaborator invites.",
+          variant: "destructive",
+        });
+        throw new Error(data.message || "Release not public");
+      }
       toast({
         title: "Attach failed",
         description: data.message || "Failed to attach posts",
@@ -498,6 +517,24 @@ export default function ReleaseCreate() {
 
   const submitCreatedRelease = async () => {
     if (createLocked || createSubmitStartedRef.current) return;
+    const anonymousSelected = selectAnonymousEligiblePosts(
+      (eligiblePosts as EligiblePostForAttach[]) || [],
+      selectedPostIds,
+    );
+    if (anonymousSelected.length > 0 && stagedCollaborators.length > 0) {
+      toast({
+        title: "Reveal anonymous IDs first",
+        description:
+          "Pending collaborator invites make this release private. Reveal from Comments, then attach — or create without collaborators.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (anonymousSelected.length > 0 && !revealAttachApprovedRef.current) {
+      setRevealAttachConfirmOpen(true);
+      return;
+    }
+    revealAttachApprovedRef.current = false;
     const timingFields = buildReleaseTimingRequestFields({
       comingSoon,
       releaseDateYmd: releaseDate,
@@ -579,7 +616,9 @@ export default function ReleaseCreate() {
 
       // 4) Attachments
       if (selectedPostIds.length > 0) {
-        await attachPostsWithAuth(releaseId, selectedPostIds);
+        await attachPostsWithAuth(releaseId, selectedPostIds, {
+          revealAndAttach: anonymousSelected.length > 0,
+        });
         console.log("[ReleaseCreate] Attached posts", { releaseId, attached: selectedPostIds });
       }
 
@@ -1008,6 +1047,72 @@ export default function ReleaseCreate() {
               {saving ? "Creating…" : CREATE_WITHOUT_POSTS_CONFIRM}
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={revealAttachConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) setRevealAttachConfirmOpen(false);
+        }}
+      >
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        >
+          {(() => {
+            const copy = buildRevealAndAttachConfirmCopy(
+              selectAnonymousEligiblePosts(
+                (eligiblePosts as EligiblePostForAttach[]) || [],
+                selectedPostIds,
+              ),
+            );
+            return (
+              <>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+                    {copy.title}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+                    {copy.body}
+                    {copy.titleHints.length > 0 ? (
+                      <span className="mt-2 block space-y-1">
+                        {copy.titleHints.map((hint, index) => (
+                          <span
+                            key={`reveal-hint-${index}-${hint}`}
+                            className="block font-semibold text-foreground"
+                            data-testid="reveal-attach-title-hint"
+                          >
+                            {hint}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+                    data-testid="reveal-attach-cancel"
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
+                    data-testid="reveal-attach-confirm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setRevealAttachConfirmOpen(false);
+                      revealAttachApprovedRef.current = true;
+                      void submitCreatedRelease();
+                    }}
+                  >
+                    Reveal & attach
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </>
+            );
+          })()}
         </AlertDialogContent>
       </AlertDialog>
 

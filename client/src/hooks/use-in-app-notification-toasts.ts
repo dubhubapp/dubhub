@@ -10,6 +10,7 @@ import {
 import {
   COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
   TRACK_ID_CONFIRMED_TITLE,
+  TRACK_ID_REVEALED_TITLE,
   TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
 } from "@shared/notification-messages";
 import { apiRequest } from "@/lib/queryClient";
@@ -51,6 +52,8 @@ const TOASTABLE_TYPES = new Set<NotificationType>([
   "artist_identified_post",
   "community_identified_post",
   "track_identified",
+  "anonymous_track_identified",
+  "anonymous_track_revealed",
   "release_attached",
   "artist_release_alert",
   "release_alert_enabled",
@@ -66,6 +69,8 @@ const TYPE_PRIORITY: Partial<Record<NotificationType, number>> = {
   artist_identified_post: 4,
   community_identified_post: 4,
   track_identified: 4,
+  anonymous_track_identified: 4,
+  anonymous_track_revealed: 4,
   release_day: 5,
   artist_release_alert: 6,
   release_attached: 7,
@@ -218,6 +223,16 @@ function getBannerCopy(
         title: TRACK_ID_CONFIRMED_TITLE,
         description: n.message || TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
       };
+    case "anonymous_track_identified":
+      return {
+        title: TRACK_ID_CONFIRMED_TITLE,
+        description: n.message || "A track was identified.",
+      };
+    case "anonymous_track_revealed":
+      return {
+        title: TRACK_ID_REVEALED_TITLE,
+        description: n.message || "The artist has revealed this track.",
+      };
     case "release_day":
       return {
         title: "Out today",
@@ -324,6 +339,8 @@ function buildPayloadFromNotifications(
     null;
   const preferPostThumb =
     chosenType === "track_identified" ||
+    chosenType === "anonymous_track_identified" ||
+    chosenType === "anonymous_track_revealed" ||
     chosenType === "artist_identified_post" ||
     chosenType === "community_identified_post";
   return {
@@ -334,7 +351,7 @@ function buildPayloadFromNotifications(
     avatarUrl: preferActorAvatar
       ? actorAvatarUrl(chosen)
       : preferPostThumb
-        ? postThumb ?? actorAvatarUrl(chosen)
+        ? postThumb ?? (chosenType === "anonymous_track_identified" ? null : actorAvatarUrl(chosen))
         : chosen.release?.artworkUrl ?? actorAvatarUrl(chosen),
     badgeKind: notificationTypeToBadgeKind(chosenType),
     avatarPresentation: preferActorAvatar ? "person" : "media",

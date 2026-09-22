@@ -10,6 +10,8 @@ export type ReleaseAttachedClip = {
   uploaderUsername: string;
   /** Uploader profile verified-artist identity — not posts.is_verified_artist. */
   isVerifiedArtist: boolean;
+  /** Anonymous artist ID on owner attach overview — EyeOff cue only. */
+  isArtistVerifiedAnonymous?: boolean;
   likes: number;
 };
 

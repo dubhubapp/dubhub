@@ -153,6 +153,34 @@ describe("getNotificationTapRoute", () => {
     );
   });
 
+  it("anonymous_track_identified opens the post", () => {
+    assert.equal(
+      getNotificationTapRoute(
+        notif({
+          notificationType: "anonymous_track_identified",
+          postId: "post-anon",
+          message: "A track you uploaded was identified.",
+          triggeredBy: null as unknown as string,
+          triggeredByUser: null as unknown as { id: string; username: string },
+        }),
+      ),
+      "/?post=post-anon",
+    );
+  });
+
+  it("anonymous_track_revealed opens the post", () => {
+    assert.equal(
+      getNotificationTapRoute(
+        notif({
+          notificationType: "anonymous_track_revealed",
+          postId: "post-reveal",
+          message: "Mystery solved — it's @ArtistName",
+        }),
+      ),
+      "/?post=post-reveal",
+    );
+  });
+
   it("release_attached opens the release independently of track_identified", () => {
     assert.equal(
       getNotificationTapRoute(
