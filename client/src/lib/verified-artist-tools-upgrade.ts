@@ -18,8 +18,10 @@ export type VerifiedArtistToolsUpgradeContext = {
   /** Optional focus restore target after the Settings-originated paywall closes. */
   returnFocusRef?: RefObject<HTMLElement | null>;
   /**
-   * Called when the upgrade UI is dismissed (paywall close or toast-only path).
-   * Use to restore a suspended sheet (e.g. Links) without stacking modals.
+   * Called when the upgrade UI is dismissed.
+   * For the paywall: after Vaul close animation settles (`onAnimationEnd(false)`).
+   * Toast-only fallback: called immediately.
+   * Use to restore a suspended sheet (e.g. Links) or re-enable an inert Confirm dialog.
    */
   onDismissed?: () => void;
 };

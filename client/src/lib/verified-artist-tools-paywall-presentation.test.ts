@@ -70,7 +70,7 @@ describe("VAT-PAYWALL-POLISH-2 material", () => {
     assert.ok(PAYWALL_SHELL_CLASS.includes("rounded-t-[28px]"));
     assert.ok(!PAYWALL_SHELL_CLASS.includes("bg-[#0f1324]"));
     assert.match(paywallSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS/);
-    assert.match(paywallSrc, /overlayClassName=\{cn\("z-\[70\]"/);
+    assert.match(paywallSrc, /overlayClassName=\{cn\("z-\[140\]"/);
     assert.doesNotMatch(paywallSrc, /bg-\[#0f1324\]/);
   });
 });
@@ -96,7 +96,7 @@ describe("VAT-PAYWALL-POLISH-2 geometry + nav overlay", () => {
     assert.match(paywallSrc, /max-h-\[92dvh\]/);
     assert.doesNotMatch(paywallSrc, /min-h-\[min\(78dvh,92dvh\)\]/);
     assert.match(paywallSrc, /mt-\[max\(0\.75rem,min\(22dvh,10rem\)\)\]/);
-    assert.ok(PAYWALL_SHELL_CLASS.includes("z-[70]"));
+    assert.ok(PAYWALL_SHELL_CLASS.includes("z-[140]"));
     assert.match(paywallSrc, /setVerifiedArtistToolsPaywallCoveringNativeNav/);
     assert.match(hostSrc, /paywallOpen:\s*paywallCovering/);
     assert.match(hostSrc, /subscribeVerifiedArtistToolsPaywallNativeNavCover/);
@@ -122,7 +122,7 @@ describe("VAT-PAYWALL-POLISH-2D ready-state spacing", () => {
 });
 
 describe("VAT-PAYWALL-POLISH-2 benefits + intro parity", () => {
-  it("shares canonical four benefits and turquoise Checks; no speculative footer", () => {
+  it("shares canonical benefits and turquoise Checks; no speculative footer", () => {
     assert.deepEqual(
       [...ARTIST_SUBSCRIPTION_INTRO_COPY.benefits],
       [...VERIFIED_ARTIST_TOOLS_BENEFITS],

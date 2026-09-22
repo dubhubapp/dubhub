@@ -52,6 +52,8 @@ export type ArtistPrivateIdentificationRow = {
   revealedAt: string | null;
   entitledAtClaim: boolean;
   createdVia: string | null;
+  /** Optional public track title while anonymous. */
+  trackTitle: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -62,6 +64,8 @@ export type CreateAnonymousClaimInput = {
   artistId: string;
   sourceCommentId?: string | null;
   createdVia?: string | null;
+  /** Optional public track title (already normalized). */
+  trackTitle?: string | null;
   /** Spoof attempts: ignored. */
   bodyArtistId?: unknown;
 };
@@ -86,6 +90,9 @@ function normalizeCreatedVia(raw: string | null | undefined): string | null {
 }
 
 function mapClaimRow(row: Record<string, unknown>): ArtistPrivateIdentificationRow {
+  const rawTitle = row.track_title;
+  const trackTitle =
+    typeof rawTitle === "string" && rawTitle.trim().length > 0 ? rawTitle.trim() : null;
   return {
     id: String(row.id),
     postId: String(row.post_id),
@@ -96,6 +103,7 @@ function mapClaimRow(row: Record<string, unknown>): ArtistPrivateIdentificationR
     revealedAt: row.revealed_at != null ? new Date(String(row.revealed_at)).toISOString() : null,
     entitledAtClaim: row.entitled_at_claim === true,
     createdVia: row.created_via != null ? String(row.created_via) : null,
+    trackTitle,
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };
@@ -298,10 +306,16 @@ export async function createAnonymousArtistIdentification(
     const insertResult = await client.query(
       `INSERT INTO artist_private_identifications (
          post_id, artist_id, source_comment_id, state,
-         entitled_at_claim, created_via
-       ) VALUES ($1, $2, $3, 'anonymous', true, $4)
+         entitled_at_claim, created_via, track_title
+       ) VALUES ($1, $2, $3, 'anonymous', true, $4, $5)
        RETURNING *`,
-      [input.postId, artistId, validatedCommentId, createdVia],
+      [
+        input.postId,
+        artistId,
+        validatedCommentId,
+        createdVia,
+        input.trackTitle ?? null,
+      ],
     );
 
     // Public projection only — never write artist_verified_by while anonymous.

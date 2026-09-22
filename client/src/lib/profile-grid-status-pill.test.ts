@@ -112,6 +112,17 @@ describe("profile-grid-status-pill presentation", () => {
       "artist_identified",
     );
     assert.equal(profileGridStatusPillLabel("artist_identified"), "Identified");
+
+    assert.equal(
+      resolveProfileGridStatusPillKind({
+        verificationStatus: "identified",
+        isArtistVerifiedAnonymous: true,
+        isVerifiedArtist: false,
+        artistVerifiedBy: null,
+      }),
+      "artist_verified_anonymous",
+    );
+    assert.equal(profileGridStatusPillLabel("artist_verified_anonymous"), "Identified");
   });
 
   it("keeps under_review → Unidentified fallback (open debt vs Home)", () => {

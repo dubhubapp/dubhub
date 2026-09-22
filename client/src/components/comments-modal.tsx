@@ -18,7 +18,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { X, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2, Pin } from "lucide-react";
+import { X, Heart, Check, CheckCircle, Award, Users, XCircle, Flag, MoreHorizontal, ArrowUpDown, MessageCircle, Trash2, Pin, EyeOff, Lock } from "lucide-react";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { Textarea } from "@/components/ui/textarea";
 import { INPUT_LIMITS } from "@shared/input-limits";
@@ -77,6 +77,12 @@ import {
   isCommentEligibleForArtistConfirmId,
   resolveArtistPendingActionsVisible,
 } from "@/lib/artist-id-comments-actions";
+import {
+  ANONYMOUS_IDENTIFIED_A11Y_LABEL,
+  IDENTIFIED_PILL_LABEL,
+  resolvePostIdentificationPresentationKind,
+} from "@/lib/post-identification-status";
+import { formatAnonymousIdentificationTitleLabel } from "@shared/artist-private-identification";
 import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
 import { resolvePaidToolGateMode } from "@/lib/paid-tool-gate";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
@@ -281,6 +287,62 @@ const COMMENTS_IDENTIFIED_PILL_STYLE = getGenreGlowPillStyle(
   STATUS_GLOW_PILL_BG.identified,
   "text-white",
 );
+
+function CommentsPostIdentificationPill({
+  post,
+  testIdPrefix,
+}: {
+  post: PostWithUser;
+  testIdPrefix: string;
+}) {
+  const kind = resolvePostIdentificationPresentationKind(post);
+  if (
+    kind !== "artist_verified_anonymous" &&
+    kind !== "artist_verified" &&
+    kind !== "moderator_identified" &&
+    kind !== "community_approved" &&
+    kind !== "community"
+  ) {
+    return null;
+  }
+
+  const suffix =
+    kind === "artist_verified_anonymous"
+      ? "artist-verified-anonymous"
+      : kind === "artist_verified"
+        ? "artist-identified"
+        : kind === "moderator_identified"
+          ? "identified"
+          : kind === "community_approved"
+            ? "community-approved-identified"
+            : "community-identified";
+
+  const icon =
+    kind === "artist_verified_anonymous" ? (
+      <EyeOff className="h-3 w-3 shrink-0 text-white" aria-hidden />
+    ) : kind === "artist_verified" ? (
+      <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
+    ) : kind === "moderator_identified" ? (
+      <Check className="h-3 w-3 shrink-0 text-white" />
+    ) : (
+      <Users className="h-3 w-3 shrink-0" />
+    );
+
+  return (
+    <span
+      className={COMMENTS_IDENTIFIED_PILL_CLASS}
+      style={COMMENTS_IDENTIFIED_PILL_STYLE}
+      data-testid={`${testIdPrefix}-${suffix}`}
+      aria-label={
+        kind === "artist_verified_anonymous" ? ANONYMOUS_IDENTIFIED_A11Y_LABEL : undefined
+      }
+      title={kind === "artist_verified_anonymous" ? ANONYMOUS_IDENTIFIED_A11Y_LABEL : undefined}
+    >
+      {icon}
+      {IDENTIFIED_PILL_LABEL}
+    </span>
+  );
+}
 
 const COMMENTS_THREAD_LINK_CLASS =
   "text-xs font-medium text-[#0a83ff] hover:text-[#3b9bff] dark:text-[#5babff] dark:hover:text-[#7cbcff]";
@@ -1914,6 +1976,11 @@ export function CommentsModal({
                 (anonymousIdentifyEntitled && !onRequestArtistIdentifyAnonymously)
               }
               data-testid="identify-anonymously-confirm"
+              aria-label={
+                anonymousIdentifyEntitled
+                  ? "Identify anonymously"
+                  : "Identify anonymously — Verified Artist Tools"
+              }
               onClick={(event) => {
                 event.preventDefault();
                 if (!notMyTrackCommentId) return;
@@ -1927,7 +1994,16 @@ export function CommentsModal({
                 });
               }}
             >
-              {artistIdentifyAnonymouslyPending ? "Saving…" : "Identify anonymously"}
+              {artistIdentifyAnonymouslyPending ? (
+                "Saving…"
+              ) : (
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  {!anonymousIdentifyEntitled ? (
+                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  ) : null}
+                  Identify anonymously
+                </span>
+              )}
             </AlertDialogAction>
             <AlertDialogAction
               className={cn(APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS, "w-full")}
@@ -2259,39 +2335,7 @@ export function CommentsModal({
                             ? `Reply to ${formatUsernameDisplay(verifiedReplyPin.parentAuthorUsername)}`
                             : "Reply in thread"}
                         </span>
-                        {(post.verificationStatus === "community" ||
-                          post.verificationStatus === "community_approved") &&
-                          !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
-                            <span
-                              className={COMMENTS_IDENTIFIED_PILL_CLASS}
-                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
-                              data-testid="badge-pinned-community-identified"
-                            >
-                              <Users className="h-3 w-3 shrink-0" />
-                              Identified
-                            </span>
-                          )}
-                        {post.verificationStatus === "identified" &&
-                          !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
-                            <span
-                              className={COMMENTS_IDENTIFIED_PILL_CLASS}
-                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
-                              data-testid="badge-pinned-identified"
-                            >
-                              <Check className="h-3 w-3 shrink-0 text-white" />
-                              Identified
-                            </span>
-                          )}
-                        {isArtistVerifiedPost && (
-                          <span
-                            className={COMMENTS_IDENTIFIED_PILL_CLASS}
-                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
-                            data-testid="badge-pinned-artist-identified"
-                          >
-                            <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
-                            Identified
-                          </span>
-                        )}
+                        <CommentsPostIdentificationPill post={post} testIdPrefix="badge-pinned" />
                         <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/40">
                           {formatTimeAgo(pinnedVerifiedReply.createdAt)}
                         </span>
@@ -2439,15 +2483,40 @@ export function CommentsModal({
                       Identified
                     </span>
                   )}
-                  {/* Moderator identified badge: match post-level identified treatment */}
-                  {!commentIsDeleted && isVerifiedComment && post.verificationStatus === "identified" && !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
+                  {/* Moderator / anonymous identified badge: match post-level identified treatment */}
+                  {!commentIsDeleted &&
+                    isVerifiedComment &&
+                    post.verificationStatus === "identified" &&
+                    !((post as any).isVerifiedArtist ?? (post as any).is_verified_artist) && (
                     <span
                       className={COMMENTS_IDENTIFIED_PILL_CLASS}
                       style={COMMENTS_IDENTIFIED_PILL_STYLE}
-                      data-testid={`badge-identified-${comment.id}`}
+                      data-testid={
+                        ((post as any).isArtistVerifiedAnonymous ??
+                        (post as any).is_artist_verified_anonymous)
+                          ? `badge-artist-verified-anonymous-${comment.id}`
+                          : `badge-identified-${comment.id}`
+                      }
+                      aria-label={
+                        ((post as any).isArtistVerifiedAnonymous ??
+                        (post as any).is_artist_verified_anonymous)
+                          ? ANONYMOUS_IDENTIFIED_A11Y_LABEL
+                          : undefined
+                      }
+                      title={
+                        ((post as any).isArtistVerifiedAnonymous ??
+                        (post as any).is_artist_verified_anonymous)
+                          ? ANONYMOUS_IDENTIFIED_A11Y_LABEL
+                          : undefined
+                      }
                     >
-                      <Check className="h-3 w-3 shrink-0 text-white" />
-                      Identified
+                      {((post as any).isArtistVerifiedAnonymous ??
+                      (post as any).is_artist_verified_anonymous) ? (
+                        <EyeOff className="h-3 w-3 shrink-0 text-white" aria-hidden />
+                      ) : (
+                        <Check className="h-3 w-3 shrink-0 text-white" />
+                      )}
+                      {IDENTIFIED_PILL_LABEL}
                     </span>
                   )}
                   {/* Artist-selected verified comment: same identified treatment as post-level artist state */}
@@ -2726,10 +2795,32 @@ export function CommentsModal({
                                 <span
                                   className={COMMENTS_IDENTIFIED_PILL_CLASS}
                       style={COMMENTS_IDENTIFIED_PILL_STYLE}
-                                  data-testid={`badge-identified-${reply.id}`}
+                                  data-testid={
+                                    ((post as any).isArtistVerifiedAnonymous ??
+                                    (post as any).is_artist_verified_anonymous)
+                                      ? `badge-artist-verified-anonymous-${reply.id}`
+                                      : `badge-identified-${reply.id}`
+                                  }
+                                  aria-label={
+                                    ((post as any).isArtistVerifiedAnonymous ??
+                                    (post as any).is_artist_verified_anonymous)
+                                      ? ANONYMOUS_IDENTIFIED_A11Y_LABEL
+                                      : undefined
+                                  }
+                                  title={
+                                    ((post as any).isArtistVerifiedAnonymous ??
+                                    (post as any).is_artist_verified_anonymous)
+                                      ? ANONYMOUS_IDENTIFIED_A11Y_LABEL
+                                      : undefined
+                                  }
                                 >
-                                  <Check className="h-2.5 w-2.5 shrink-0 text-white" />
-                                  Identified
+                                  {((post as any).isArtistVerifiedAnonymous ??
+                                  (post as any).is_artist_verified_anonymous) ? (
+                                    <EyeOff className="h-2.5 w-2.5 shrink-0 text-white" aria-hidden />
+                                  ) : (
+                                    <Check className="h-2.5 w-2.5 shrink-0 text-white" />
+                                  )}
+                                  {IDENTIFIED_PILL_LABEL}
                                 </span>
                               )}
                             {/* Verified by Artist Badge for Reply */}
@@ -2908,6 +2999,35 @@ export function CommentsModal({
 
             return (
               <>
+                {(() => {
+                  const anonTitleLabel = formatAnonymousIdentificationTitleLabel(
+                    (post as { anonymousTrackTitle?: string | null }).anonymousTrackTitle ??
+                      (post as { anonymous_track_title?: string | null }).anonymous_track_title,
+                  );
+                  const isAnonymousIdentified =
+                    resolvePostIdentificationPresentationKind(post) ===
+                    "artist_verified_anonymous";
+                  if (!isAnonymousIdentified || !anonTitleLabel) return null;
+                  return (
+                    <div
+                      className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.05]"
+                      data-testid="anonymous-identification-title-row"
+                    >
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <CommentsPostIdentificationPill
+                          post={post}
+                          testIdPrefix="badge-anonymous-title"
+                        />
+                      </div>
+                      <p
+                        className="mt-1.5 text-[13px] font-medium leading-snug text-gray-800 sm:text-sm dark:text-white/90"
+                        data-testid="anonymous-identification-title-label"
+                      >
+                        {anonTitleLabel}
+                      </p>
+                    </div>
+                  );
+                })()}
                 {identificationClusterComments.map((c) => renderTopLevelComment(c))}
               </>
             );

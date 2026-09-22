@@ -3,8 +3,9 @@
  * Persistent overlay on grid thumbnails — always rendered with the card.
  */
 
-import { Check, Clock, Users } from "lucide-react";
+import { Check, Clock, EyeOff, Users } from "lucide-react";
 import { GoldVerifiedTick } from "@/components/verified-artist";
+import { ANONYMOUS_IDENTIFIED_A11Y_LABEL } from "@/lib/post-identification-status";
 import {
   PROFILE_GRID_STATUS_PILL_CLASS,
   PROFILE_GRID_STATUS_PILL_ICON_CLASS,
@@ -24,9 +25,12 @@ export function ProfileGridStatusPill({ post }: ProfileGridStatusPillProps) {
   const glowBg = profileGridStatusPillGlowBg(kind);
   const label = profileGridStatusPillLabel(kind);
   const iconClass = PROFILE_GRID_STATUS_PILL_ICON_CLASS;
+  const anonymous = kind === "artist_verified_anonymous";
 
   const icon =
-    kind === "artist_identified" ? (
+    kind === "artist_verified_anonymous" ? (
+      <EyeOff className={`${iconClass} text-white`} aria-hidden />
+    ) : kind === "artist_identified" ? (
       <GoldVerifiedTick className={`${iconClass} text-[#FFD700]`} glow="inline" />
     ) : kind === "identified" ? (
       <Check className={`${iconClass} text-white`} aria-hidden />
@@ -41,6 +45,8 @@ export function ProfileGridStatusPill({ post }: ProfileGridStatusPillProps) {
       className={PROFILE_GRID_STATUS_PILL_CLASS}
       style={getCompactStatusGlowPillStyle(glowBg)}
       data-testid={profileGridStatusPillTestId(kind)}
+      title={anonymous ? ANONYMOUS_IDENTIFIED_A11Y_LABEL : undefined}
+      aria-label={anonymous ? ANONYMOUS_IDENTIFIED_A11Y_LABEL : undefined}
     >
       {icon}
       {label}

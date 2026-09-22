@@ -147,20 +147,20 @@ describe("verified-artist-tools-paywall-lifecycle", () => {
     assert.equal(shouldShowPaywallRestoreButton("verifying"), false);
   });
 
-  it("success confirmation is exactly four non-empty feature lines", () => {
-    assert.equal(PAYWALL_SUCCESS_CONFIRMATION_LINES.length, 4);
+  it("success confirmation matches canonical VAT benefit lines", () => {
+    assert.equal(PAYWALL_SUCCESS_CONFIRMATION_LINES.length, 5);
     assert.equal(
       PAYWALL_SUCCESS_CONFIRMATION_LINES[0],
       "Unlimited releases and active future releases",
     );
     assert.equal(
       PAYWALL_SUCCESS_CONFIRMATION_LINES[2],
-      "Pre-save, Pre-add and Pre-order links",
+      "Identify tracks anonymously",
     );
     for (const line of PAYWALL_SUCCESS_CONFIRMATION_LINES) {
       assert.ok(line.trim().length > 0);
     }
-    assert.equal(new Set(PAYWALL_SUCCESS_CONFIRMATION_LINES).size, 4);
+    assert.equal(new Set(PAYWALL_SUCCESS_CONFIRMATION_LINES).size, 5);
     assert.ok(PAYWALL_SHELL_CLASS.includes("rounded-t-[28px]"));
     assert.ok(PAYWALL_SHELL_CLASS.includes("dubhub-app-sheet-surface"));
     assert.ok(!PAYWALL_SHELL_CLASS.includes("bg-[#0f1324]"));

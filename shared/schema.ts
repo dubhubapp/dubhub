@@ -132,6 +132,8 @@ export const artistPrivateIdentifications = pgTable(
     revealedAt: timestamp("revealed_at", { withTimezone: true }),
     entitledAtClaim: boolean("entitled_at_claim").notNull(),
     createdVia: text("created_via"),
+    /** Optional public track title while anonymous; not release metadata. */
+    trackTitle: text("track_title"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -653,6 +655,11 @@ export type PostWithUser = Post & {
   verificationStatus?: string;
   isVerifiedCommunity?: boolean;
   verifiedByModerator?: boolean;
+  /**
+   * Public anonymous claim track title (identity still hidden).
+   * Null when not anonymously identified or no title was supplied.
+   */
+  anonymousTrackTitle?: string | null;
 };
 
 export type UserStats = {

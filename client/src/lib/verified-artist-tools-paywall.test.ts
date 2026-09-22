@@ -11,6 +11,7 @@ import {
 } from "./verified-artist-tools-offerings";
 import {
   resolveVerifiedArtistToolsPaywallCopy,
+  VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
   type VerifiedArtistToolsPaywallSource,
 } from "./verified-artist-tools-paywall-copy";
@@ -64,7 +65,7 @@ describe("verified-artist-tools-paywall-copy", () => {
   });
 
   it("keeps shared benefits identical and avoids followers/reach claims", () => {
-    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS.length, 4);
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS.length, 5);
     const joined = VERIFIED_ARTIST_TOOLS_BENEFITS.join(" ");
     assert.equal(joined.includes("follower"), false);
     assert.equal(joined.toLowerCase().includes("boost"), false);
@@ -79,12 +80,17 @@ describe("verified-artist-tools-paywall-copy", () => {
       VERIFIED_ARTIST_TOOLS_BENEFITS[1],
       "Unlimited attached posts and release links",
     );
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[2], "Identify tracks anonymously");
     assert.equal(
-      VERIFIED_ARTIST_TOOLS_BENEFITS[2],
-      "Pre-save, Pre-add and Pre-order links",
+      VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify tracks anonymously"],
+      "Identify the track anonymously now, then reveal yourself and the full track ID closer to release.",
     );
     assert.equal(
       VERIFIED_ARTIST_TOOLS_BENEFITS[3],
+      "Pre-save, Pre-add and Pre-order links",
+    );
+    assert.equal(
+      VERIFIED_ARTIST_TOOLS_BENEFITS[4],
       "See your Release Alerts audience and send alerts to listeners waiting",
     );
     assert.doesNotMatch(joined, /Includes future Verified Artist Tools/);

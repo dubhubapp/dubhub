@@ -94,6 +94,11 @@ describe("VAT-ANON-2 decline dialog + Identify anonymously wiring", () => {
     assert.match(commentsSrc, /source:\s*"anonymous_identify"/);
     assert.match(commentsSrc, /anonymousIdentifyEntitled/);
     assert.match(commentsSrc, /resolvePaidToolGateMode/);
+    assert.match(commentsSrc, /Lock/);
+    assert.match(
+      commentsSrc,
+      /Identify anonymously — Verified Artist Tools/,
+    );
     // Entitled branch calls parent callback; otherwise paywall — never both.
     assert.match(
       commentsSrc,
@@ -101,11 +106,11 @@ describe("VAT-ANON-2 decline dialog + Identify anonymously wiring", () => {
     );
   });
 
-  it("paywall source anonymous_identify has Keep your ID under wraps copy", () => {
+  it("paywall source anonymous_identify has Keep the track under wraps copy", () => {
     const source: VerifiedArtistToolsPaywallSource = "anonymous_identify";
     const copy = resolveVerifiedArtistToolsPaywallCopy(source);
-    assert.equal(copy.title, "Keep your ID under wraps");
-    assert.match(copy.body, /without revealing yourself/i);
+    assert.equal(copy.title, "Keep the track under wraps");
+    assert.match(copy.body, /without revealing your identity/i);
     assert.doesNotMatch(copy.body, /credibility|verified status|more trusted/i);
     assert.match(paywallCopySrc, /anonymous_identify/);
   });

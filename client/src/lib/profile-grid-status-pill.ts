@@ -6,6 +6,10 @@
 
 import type { CSSProperties } from "react";
 import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG } from "@/lib/genre-styles";
+import {
+  resolvePostIdentificationPresentationKind,
+  type PostIdentificationPresentationKind,
+} from "@/lib/post-identification-status";
 
 /** Compact chrome — rectangular radius, smaller type/padding than Home `STATUS_GLOW_PILL_CLASS`. */
 /** `z-10` sits above thumbnail media `z-[2]` inside the card `.ios-press` stacking context. */
@@ -60,33 +64,42 @@ function hexFromCssColor(hex: string): { r: number; g: number; b: number } {
 }
 
 export type ProfileGridStatusPillKind =
+  | "artist_verified_anonymous"
   | "artist_identified"
   | "identified"
   | "community_approved"
   | "community"
   | "unidentified";
 
+function mapPresentationToGridKind(
+  kind: PostIdentificationPresentationKind,
+): ProfileGridStatusPillKind {
+  switch (kind) {
+    case "artist_verified_anonymous":
+      return "artist_verified_anonymous";
+    case "artist_verified":
+      return "artist_identified";
+    case "moderator_identified":
+      return "identified";
+    case "community_approved":
+      return "community_approved";
+    case "community":
+      return "community";
+    case "unidentified":
+    case "under_review":
+    case "none":
+    default:
+      return "unidentified";
+  }
+}
+
 /**
  * Resolve grid pill kind from post fields.
- * Mirrors prior Profile grid tier order (artist → mod/identified → community → else Unidentified).
+ * Anonymous artist verification wins; then public artist → mod/identified → community.
  * Open debt: `under_review` still falls through to Unidentified (unchanged vs pre-2A).
  */
 export function resolveProfileGridStatusPillKind(post: unknown): ProfileGridStatusPillKind {
-  if (post == null || typeof post !== "object") return "unidentified";
-  const p = post as Record<string, unknown>;
-  const status = (p.verificationStatus ?? p.verification_status) as string | undefined;
-  const isModeratorVerified = !!(p.verifiedByModerator ?? p.verified_by_moderator);
-  const artistVerifiedBy = p.artistVerifiedBy ?? p.artist_verified_by;
-  const isArtistVerified =
-    !!(p.isVerifiedArtist ?? p.is_verified_artist) &&
-    artistVerifiedBy != null &&
-    String(artistVerifiedBy).trim() !== "";
-
-  if (isArtistVerified) return "artist_identified";
-  if (status === "identified" || isModeratorVerified) return "identified";
-  if (status === "community_approved") return "community_approved";
-  if (status === "community") return "community";
-  return "unidentified";
+  return mapPresentationToGridKind(resolvePostIdentificationPresentationKind(post));
 }
 
 export function profileGridStatusPillGlowBg(kind: ProfileGridStatusPillKind): string {
@@ -101,6 +114,8 @@ export function profileGridStatusPillLabel(kind: ProfileGridStatusPillKind): "Id
 
 export function profileGridStatusPillTestId(kind: ProfileGridStatusPillKind): string {
   switch (kind) {
+    case "artist_verified_anonymous":
+      return "profile-grid-badge-artist-verified-anonymous";
     case "artist_identified":
       return "profile-grid-badge-artist-verified";
     case "identified":

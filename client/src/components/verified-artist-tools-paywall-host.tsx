@@ -48,20 +48,15 @@ export function VerifiedArtistToolsPaywallHost() {
   return (
     <VerifiedArtistToolsPaywall
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) {
-          setReturnFocusRef(undefined);
-          const dismissed = onDismissedRef.current;
-          onDismissedRef.current = undefined;
-          // After close animation frame so Links can reopen cleanly on top.
-          if (dismissed) {
-            window.setTimeout(() => dismissed(), 0);
-          }
-        }
-      }}
+      onOpenChange={setOpen}
       source={source}
       returnFocusRef={returnFocusRef}
+      onDismissSettled={() => {
+        setReturnFocusRef(undefined);
+        const dismissed = onDismissedRef.current;
+        onDismissedRef.current = undefined;
+        dismissed?.();
+      }}
     />
   );
 }

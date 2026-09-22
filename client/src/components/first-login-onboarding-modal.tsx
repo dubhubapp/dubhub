@@ -3,6 +3,7 @@ import {
   Calendar,
   Check,
   Clock,
+  EyeOff,
   Film,
   Heart,
   MessageCircle,
@@ -32,6 +33,11 @@ import {
   APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
 } from "@/lib/app-material";
+import {
+  ANONYMOUS_IDENTIFIED_ONBOARDING_BODY,
+  ANONYMOUS_IDENTIFIED_SUPPORTING_COPY,
+  IDENTIFIED_PILL_LABEL,
+} from "@/lib/post-identification-status";
 import { cn } from "@/lib/utils";
 
 type OnboardingAudience = "user" | "artist";
@@ -205,10 +211,31 @@ export function FirstLoginOnboardingModal({
                 icon={<GoldVerifiedTick className={`${statusIconBase} text-[#FFD700]`} />}
                 label="Artist Identified"
               />
+              <span
+                className="inline-flex max-w-full flex-col items-start gap-1"
+                data-testid="first-login-anonymous-identified"
+              >
+                <StatusPill
+                  icon={<EyeOff className={`${statusIconBase} text-white`} aria-hidden />}
+                  label={IDENTIFIED_PILL_LABEL}
+                />
+                <span
+                  className="pl-0.5 text-[11px] leading-snug text-muted-foreground"
+                  data-testid="first-login-anonymous-identified-supporting"
+                >
+                  {ANONYMOUS_IDENTIFIED_SUPPORTING_COPY}
+                </span>
+              </span>
             </div>
+            <p
+              className="text-[11px] leading-relaxed text-muted-foreground"
+              data-testid="first-login-anonymous-identified-body"
+            >
+              {ANONYMOUS_IDENTIFIED_ONBOARDING_BODY}
+            </p>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               IDs can be suggested by the community, confirmed by moderators, or confirmed by
-              artists.
+              artists — including anonymously when the artist chooses to stay hidden.
             </p>
           </div>
 

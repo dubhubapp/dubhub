@@ -77,6 +77,7 @@ import {
   getAnonymousClaimForOwner,
   listAnonymousClaimsForOwner,
 } from "./artist-private-identification";
+import { normalizeAnonymousTrackTitleInput } from "@shared/artist-private-identification";
 import { handlePostArtistReleaseAlert } from "./post-artist-release-alert";
 import { isFreeReleaseLimitReachedError } from "./release-creation-limit";
 import {
@@ -3641,12 +3642,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const createdVia =
           typeof (body as any).createdVia === "string" ? (body as any).createdVia : null;
 
+        const titleNorm = normalizeAnonymousTrackTitleInput(
+          (body as any).title ?? (body as any).trackTitle ?? (body as any).track_title,
+        );
+        if (!titleNorm.ok) {
+          return res.status(400).json({ message: titleNorm.message });
+        }
+
         const claim = await createAnonymousArtistIdentification(
           {
             postId,
             artistId,
             sourceCommentId,
             createdVia,
+            trackTitle: titleNorm.title,
             // Spoof attempts are ignored inside the service.
             bodyArtistId: (body as any).artistId ?? (body as any).artist_id,
           },
@@ -3665,6 +3674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sourceCommentId: claim.sourceCommentId,
             entitledAtClaim: claim.entitledAtClaim,
             createdVia: claim.createdVia,
+            trackTitle: claim.trackTitle,
           },
           // Owner-only echo; never returned from public post serializers.
           artistId: claim.artistId,

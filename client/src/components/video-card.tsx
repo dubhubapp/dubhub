@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { Heart, MessageCircle, Bookmark, Send, Check, Clock, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload, ArrowLeftRight } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Send, Check, Clock, EyeOff, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload, ArrowLeftRight } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
@@ -23,6 +23,11 @@ import { CommunityVerificationDialog } from "./community-verification-dialog";
 import { ArtistVerificationDialog } from "./artist-verification-dialog";
 import { isOwnerCommunityMarkEligible } from "@/lib/mark-id-long-press";
 import { isArtistPendingActionEligible, markViewerArtistDeniedOnPost, markViewerArtistAnonymouslyIdentifiedOnPost, ANONYMOUS_IDENTIFY_CREATED_VIA, readAnonymousIdentifyErrorCode, resolveAnonymousIdentifyErrorCopy } from "@/lib/artist-id-comments-actions";
+import {
+  ANONYMOUS_IDENTIFIED_A11Y_LABEL,
+  IDENTIFIED_PILL_LABEL,
+  resolvePostIdentificationPresentationKind,
+} from "@/lib/post-identification-status";
 import { ReportModal } from "./report-modal";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { 
@@ -312,6 +317,13 @@ function videoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps): boolea
     if (pVid !== nVid) return false;
     if (getPostFeedPosterRaw(prev.post) !== getPostFeedPosterRaw(next.post)) return false;
     if (prev.post.verificationStatus !== next.post.verificationStatus) return false;
+    const pAnon =
+      (prev.post as { isArtistVerifiedAnonymous?: boolean }).isArtistVerifiedAnonymous ??
+      (prev.post as { is_artist_verified_anonymous?: boolean }).is_artist_verified_anonymous;
+    const nAnon =
+      (next.post as { isArtistVerifiedAnonymous?: boolean }).isArtistVerifiedAnonymous ??
+      (next.post as { is_artist_verified_anonymous?: boolean }).is_artist_verified_anonymous;
+    if (pAnon !== nAnon) return false;
     if (prev.post.description !== next.post.description) return false;
     if (genrePillMemoFieldsDiffer(prev.post, next.post)) return false;
     if (prev.post.comments !== next.post.comments) return false;
@@ -2509,25 +2521,23 @@ function VideoCardInner({
       label: string,
       testId: string,
       glowBgHex: string,
+      opts?: { ariaLabel?: string; title?: string },
     ) => (
       <span
         className={statusPillBase}
         style={getGenreGlowPillStyle(glowBgHex, "text-white")}
         data-testid={testId}
+        aria-label={opts?.ariaLabel}
+        title={opts?.title}
       >
         {icon}
         {label}
       </span>
     );
 
-    const verificationStatus = post.verificationStatus ?? (post as any).verification_status;
-    const isModeratorVerified =
-      !!((post as any).verifiedByModerator ?? (post as any).verified_by_moderator);
-    const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
-    const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+    const kind = resolvePostIdentificationPresentationKind(post);
 
-    // Show under review badge
-    if (verificationStatus === "under_review") {
+    if (kind === "under_review") {
       return (
         <span
           className={statusPillBase}
@@ -2539,9 +2549,8 @@ function VideoCardInner({
         </span>
       );
     }
-    
-    // Unidentified should always show a red status pill
-    if (verificationStatus === "unverified") {
+
+    if (kind === "unidentified") {
       return (
         <span
           className={statusPillBase}
@@ -2554,41 +2563,51 @@ function VideoCardInner({
       );
     }
 
-    // Elevated identification tiers first — do not let stale `isVerifiedCommunity` override these.
-    // 1) Artist confirmed on post
-    if (isArtistVerifiedPost && artistVerifiedBy) {
+    // Anonymous artist verification takes precedence over other identified branches.
+    if (kind === "artist_verified_anonymous") {
+      return renderStatus(
+        <EyeOff className={`${iconBaseClass} text-white`} aria-hidden />,
+        IDENTIFIED_PILL_LABEL,
+        "badge-artist-verified-anonymous",
+        STATUS_GLOW_PILL_BG.identified,
+        {
+          ariaLabel: ANONYMOUS_IDENTIFIED_A11Y_LABEL,
+          title: ANONYMOUS_IDENTIFIED_A11Y_LABEL,
+        },
+      );
+    }
+
+    if (kind === "artist_verified") {
       return renderStatus(
         <GoldVerifiedTick className={`${iconBaseClass} text-[#FFD700]`} />,
-        "Identified",
+        IDENTIFIED_PILL_LABEL,
         "badge-artist-verified",
         STATUS_GLOW_PILL_BG.identified,
       );
     }
 
-    // 2) Moderator full confirmation / generic identified (matches comments-modal gates)
-    if (verificationStatus === "identified" || isModeratorVerified) {
+    if (kind === "moderator_identified") {
       return renderStatus(
         <Check className={`${iconBaseClass} text-white`} />,
-        "Identified",
+        IDENTIFIED_PILL_LABEL,
         "badge-identified",
         STATUS_GLOW_PILL_BG.identified,
       );
     }
 
-    // 3) Community-only pills — gated on verification_status only (not bare isVerifiedCommunity)
-    if (verificationStatus === "community_approved") {
+    if (kind === "community_approved") {
       return renderStatus(
         <Users className={iconBaseClass} />,
-        "Identified",
+        IDENTIFIED_PILL_LABEL,
         "badge-community-approved-identified",
         STATUS_GLOW_PILL_BG.identified,
       );
     }
 
-    if (verificationStatus === "community") {
+    if (kind === "community") {
       return renderStatus(
         <Users className={iconBaseClass} />,
-        "Identified",
+        IDENTIFIED_PILL_LABEL,
         "badge-community-identified",
         STATUS_GLOW_PILL_BG.identified,
       );
@@ -3041,6 +3060,9 @@ function VideoCardInner({
         );
         const isArtistVerified = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
         const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
+        const isArtistVerifiedAnonymous = !!(
+          (post as any).isArtistVerifiedAnonymous ?? (post as any).is_artist_verified_anonymous
+        );
         const isAnyIdentifiedState =
           isVerifiedCommunity ||
           status === "community_approved" ||
@@ -3049,6 +3071,7 @@ function VideoCardInner({
           status === "community" ||
           isModeratorVerified ||
           isArtistVerified ||
+          isArtistVerifiedAnonymous ||
           !!artistVerifiedBy;
         const alreadyArtistConfirmed = isArtistVerified && artistVerifiedBy === currentUserId;
         const alreadyArtistVerifiedBySomeone = isArtistVerified && !!artistVerifiedBy;

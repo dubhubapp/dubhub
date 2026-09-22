@@ -3,6 +3,8 @@
  * Pure helpers — no DB. Public APIs must never expose the claiming artist while anonymous.
  */
 
+import { INPUT_LIMITS } from "./input-limits";
+
 export const ARTIST_PRIVATE_IDENTIFICATION_STATES = ["anonymous", "revealed"] as const;
 export type ArtistPrivateIdentificationState =
   (typeof ARTIST_PRIVATE_IDENTIFICATION_STATES)[number];
@@ -27,6 +29,53 @@ export type PublicArtistVerificationProjection = {
   /** Public artist id. Always null while anonymous. */
   artistVerifiedBy: null | string;
 };
+
+/**
+ * Normalize optional anonymous track title from client body.
+ * Empty/whitespace → null. Rejects non-strings and over-length.
+ */
+export function normalizeAnonymousTrackTitleInput(
+  raw: unknown,
+  maxLen: number = INPUT_LIMITS.postTitle,
+): { ok: true; title: string | null } | { ok: false; message: string } {
+  if (raw == null) return { ok: true, title: null };
+  if (typeof raw !== "string") {
+    return { ok: false, message: "Title must be a string" };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true, title: null };
+  if (trimmed.length > maxLen) {
+    return {
+      ok: false,
+      message: `Title must be at most ${maxLen} characters`,
+    };
+  }
+  return { ok: true, title: trimmed };
+}
+
+/**
+ * Map a raw SQL title onto the public payload only while the post is anonymous.
+ * Never used as a channel for claim/artist metadata.
+ */
+export function mapPublicAnonymousTrackTitle(
+  isArtistVerifiedAnonymous: boolean,
+  rawTitle: unknown,
+): string | null {
+  if (!isArtistVerifiedAnonymous) return null;
+  if (typeof rawTitle !== "string") return null;
+  const trimmed = rawTitle.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Comments / neutral system label: `ID - Test Song`. */
+export function formatAnonymousIdentificationTitleLabel(
+  title: string | null | undefined,
+): string | null {
+  if (typeof title !== "string") return null;
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  return `ID - ${trimmed}`;
+}
 
 function readAnonymousFlag(input: PublicArtistVerificationProjectionInput): boolean {
   return (

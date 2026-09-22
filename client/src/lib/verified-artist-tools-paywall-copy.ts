@@ -25,17 +25,32 @@ export type VerifiedArtistToolsPaywallContextCopy = {
  * Shared benefit bullets — tools only, no credibility/reach claims.
  * “Waiting listeners” = opted-in Release Alerts audience (not followers).
  */
+export const ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE =
+  "Identify tracks anonymously" as const;
+
+export const ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL =
+  "Identify the track anonymously now, then reveal yourself and the full track ID closer to release." as const;
+
 export const VERIFIED_ARTIST_TOOLS_BENEFITS = [
   "Unlimited releases and active future releases",
   "Unlimited attached posts and release links",
+  ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   "Pre-save, Pre-add and Pre-order links",
   "See your Release Alerts audience and send alerts to listeners waiting",
 ] as const;
+
+/** Optional detail under a benefit title (paywall list). */
+export const VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS: Partial<
+  Record<(typeof VERIFIED_ARTIST_TOOLS_BENEFITS)[number], string>
+> = {
+  [ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE]: ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
+};
 
 /** Shorter list for SE / short viewports — same product meaning. */
 export const VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT = [
   "Unlimited releases and future releases",
   "Unlimited attachments and links",
+  ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   "Pre-save, Pre-add and Pre-order links",
   "See Release Alerts audience and send alerts",
 ] as const;
@@ -86,9 +101,10 @@ const CONTEXT_COPY: Record<
       "Verified Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
   },
   anonymous_identify: {
-    title: "Keep your ID under wraps",
+    title: "Keep the track under wraps",
     body:
-      "Identify your track without revealing yourself, then reveal it when you're ready.",
+      "Confirm it’s yours without revealing your identity. Reveal the full track ID when you’re ready.",
+    emphasizeBenefit: ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   },
 };
 

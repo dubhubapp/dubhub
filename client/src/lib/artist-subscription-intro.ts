@@ -15,7 +15,7 @@ export const ARTIST_SUBSCRIPTION_INTRO_COPY = {
     "Verified Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
   /** Product name styled with a restrained brand accent in the intro modal. */
   bodyBrand: "Verified Artist Tools",
-  /** Same canonical four benefits as the Verified Artist Tools paywall. */
+  /** Same canonical benefits as the Verified Artist Tools paywall. */
   benefits: VERIFIED_ARTIST_TOOLS_BENEFITS,
   primaryCta: "View Verified Artist Tools",
   secondaryCta: "Maybe later",

@@ -472,7 +472,7 @@ describe("ARTIST-SUB-INTRO copy and actions", () => {
       ARTIST_SUBSCRIPTION_INTRO_COPY.body,
       /manage releases and act on listener demand/,
     );
-    assert.equal(ARTIST_SUBSCRIPTION_INTRO_COPY.benefits.length, 4);
+    assert.equal(ARTIST_SUBSCRIPTION_INTRO_COPY.benefits.length, 5);
     assert.equal(
       ARTIST_SUBSCRIPTION_INTRO_COPY.benefits[0],
       "Unlimited releases and active future releases",
@@ -483,10 +483,14 @@ describe("ARTIST-SUB-INTRO copy and actions", () => {
     );
     assert.equal(
       ARTIST_SUBSCRIPTION_INTRO_COPY.benefits[2],
-      "Pre-save, Pre-add and Pre-order links",
+      "Identify tracks anonymously",
     );
     assert.equal(
       ARTIST_SUBSCRIPTION_INTRO_COPY.benefits[3],
+      "Pre-save, Pre-add and Pre-order links",
+    );
+    assert.equal(
+      ARTIST_SUBSCRIPTION_INTRO_COPY.benefits[4],
       "See your Release Alerts audience and send alerts to listeners waiting",
     );
     assert.doesNotMatch(

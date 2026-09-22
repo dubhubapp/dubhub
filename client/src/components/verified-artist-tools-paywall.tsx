@@ -30,6 +30,8 @@ import {
   APP_MATERIAL_SHEET_BACKDROP_CLASS,
 } from "@/lib/app-material";
 import {
+  ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
+  ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   PAYWALL_UI_COPY,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
   VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT,
@@ -82,6 +84,8 @@ export type VerifiedArtistToolsPaywallProps = {
   onOpenChange: (open: boolean) => void;
   source: VerifiedArtistToolsPaywallSource;
   returnFocusRef?: React.RefObject<HTMLElement | null>;
+  /** Fired after Vaul close animation completes (`onAnimationEnd(false)`). */
+  onDismissSettled?: () => void;
 };
 
 function useCompactBenefits(): boolean {
@@ -102,6 +106,7 @@ export function VerifiedArtistToolsPaywall({
   onOpenChange,
   source,
   returnFocusRef,
+  onDismissSettled,
 }: VerifiedArtistToolsPaywallProps) {
   const queryClient = useQueryClient();
   const subscription = useAuthoritativeSubscriptionStatus({ enabled: open });
@@ -171,10 +176,7 @@ export function VerifiedArtistToolsPaywall({
       busyRef.current = false;
       bootstrappedOpenRef.current = false;
       // Leave phase/packages mounted for Vaul close animation; reset on next open.
-      const el = returnFocusRef?.current;
-      if (el && typeof el.focus === "function") {
-        window.setTimeout(() => el.focus(), 0);
-      }
+      // Focus restore + dismiss callbacks wait for onAnimationEnd(false).
       return;
     }
 
@@ -510,10 +512,17 @@ export function VerifiedArtistToolsPaywall({
       shouldScaleBackground={false}
       onAnimationEnd={(animationOpen) => {
         setSheetPhase(nativeNavSheetPhaseOnAnimationEnd(animationOpen));
+        if (!animationOpen) {
+          const el = returnFocusRef?.current;
+          if (el && typeof el.focus === "function") {
+            window.setTimeout(() => el.focus({ preventScroll: true }), 0);
+          }
+          onDismissSettled?.();
+        }
       }}
     >
       <DrawerContent
-        overlayClassName={cn("z-[70]", APP_MATERIAL_SHEET_BACKDROP_CLASS)}
+        overlayClassName={cn("z-[140]", APP_MATERIAL_SHEET_BACKDROP_CLASS)}
         className={cn(
           "mx-auto flex w-full max-w-lg flex-col gap-0 border-0 bg-transparent p-0",
           // Override Drawer default mt-24: taller premium presence (~8–22dvh top gap).
@@ -727,19 +736,38 @@ export function VerifiedArtistToolsPaywall({
                           emphasize ===
                             "See your Release Alerts audience and send alerts to listeners waiting" &&
                           line === "See Release Alerts audience and send alerts"));
+                    const detail =
+                      line === ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE
+                        ? ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL
+                        : undefined;
                     return (
                       <li
                         key={line}
                         className={cn(
                           "flex items-start gap-2 text-xs leading-relaxed text-muted-foreground",
-                          isEmphasized && "text-foreground",
+                          isEmphasized && "font-medium text-foreground",
                         )}
+                        data-paywall-benefit-emphasized={isEmphasized ? "true" : undefined}
                       >
                         <Check
                           className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#4ae9df]"
                           aria-hidden
                         />
-                        <span>{line}</span>
+                        <span className="min-w-0">
+                          <span>{line}</span>
+                          {detail ? (
+                            <span
+                              className={cn(
+                                "mt-0.5 block text-[11px] font-normal leading-snug",
+                                isEmphasized
+                                  ? "text-foreground/75"
+                                  : "text-muted-foreground/85",
+                              )}
+                            >
+                              {detail}
+                            </span>
+                          ) : null}
+                        </span>
                       </li>
                     );
                   })}

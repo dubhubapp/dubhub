@@ -239,6 +239,7 @@ export function shouldShowPaywallRestoreButton(phase: PaywallUiPhase): boolean {
 export const PAYWALL_SUCCESS_CONFIRMATION_LINES = [
   "Unlimited releases and active future releases",
   "Unlimited attached posts and release links",
+  "Identify tracks anonymously",
   "Pre-save, Pre-add and Pre-order links",
   "See your Release Alerts audience and send alerts to listeners waiting",
 ] as const;
@@ -246,12 +247,13 @@ export const PAYWALL_SUCCESS_CONFIRMATION_LINES = [
 /**
  * Paywall sheet chrome — shared sheet surface + paywall-local radius / stacking.
  * Backdrop is applied separately via APP_MATERIAL_SHEET_BACKDROP_CLASS.
+ * z-[140] stacks above ID-marking / Confirm dialogs (z-[120]) and profile-above-comments (z-[130]).
  */
 export const PAYWALL_SHELL_CLASS = [
   APP_MATERIAL_SHEET_SURFACE_CLASS,
   // Do not add relative/absolute/sticky — DrawerContent supplies `fixed`;
   // twMerge would drop fixed if a later position utility is present.
-  "z-[70] overflow-hidden rounded-t-[28px] outline-none",
+  "z-[140] overflow-hidden rounded-t-[28px] outline-none",
   // Static premium metallic top hairline (no animation).
   "before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:z-10 before:h-px",
   "before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent",

@@ -78,6 +78,8 @@ describe("HINTS-ALIGN-2B ID Status Key preserved", () => {
     assert.match(modalSrc, /Community Identified/);
     assert.match(modalSrc, /Moderator Confirmed/);
     assert.match(modalSrc, /Artist Identified/);
+    assert.match(modalSrc, /first-login-anonymous-identified/);
+    assert.match(modalSrc, /EyeOff/);
     assert.match(
       modalSrc,
       /IDs can be suggested by the community, confirmed by moderators, or confirmed by\s+artists/,

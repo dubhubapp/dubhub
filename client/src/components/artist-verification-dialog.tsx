@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Clock3, User } from "lucide-react";
+import { Clock3, Lock, User } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
@@ -38,6 +38,15 @@ import {
   ATTACHMENT_LIMIT_TOAST,
   isFreeAttachmentLimitReachedError,
 } from "@/lib/release-attachment-limit";
+import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
+import { resolvePaidToolGateMode } from "@/lib/paid-tool-gate";
+import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
+import {
+  ANONYMOUS_IDENTIFY_CONFIRM_CREATED_VIA,
+  markViewerArtistAnonymouslyIdentifiedOnPost,
+  readAnonymousIdentifyErrorCode,
+  resolveAnonymousIdentifyErrorCopy,
+} from "@/lib/artist-id-comments-actions";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -67,6 +76,8 @@ export function ArtistVerificationDialog({
   const initialFocusRef = useRef<HTMLDivElement | null>(null);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
 
+  const [vatPaywallCovering, setVatPaywallCovering] = useState(false);
+
   useFeedModalKeyboardGuard(isOpen);
   const { className: keyboardAwareClassName, style: keyboardAwareStyle } = useKeyboardAwareDialogContent(
     isOpen,
@@ -74,10 +85,22 @@ export function ArtistVerificationDialog({
     ID_MARKING_DIALOG_CONTENT_CLASS,
   );
 
+  const subscription = useAuthoritativeSubscriptionStatus({
+    enabled: isOpen && !!verifiedArtist,
+  });
+  const anonymousIdentifyGateMode = resolvePaidToolGateMode({
+    enabled: !!verifiedArtist,
+    loading: subscription.loading,
+    hasError: subscription.error != null,
+    selection: subscription.selection,
+  });
+  const anonymousIdentifyEntitled = anonymousIdentifyGateMode === "available";
+
   // Rail ID: empty selection. Comments Confirm ID: preselect. Never auto-submit.
   useEffect(() => {
     if (!isOpen) {
       setSelectedCommentId("");
+      setVatPaywallCovering(false);
       return;
     }
     const trimmed = typeof initialCommentId === "string" ? initialCommentId.trim() : "";
@@ -290,8 +313,102 @@ export function ArtistVerificationDialog({
     },
   });
 
+  /** Main Confirm ID — POST /artist-identify-anonymous (VAT paid path). */
+  const identifyAnonymouslyMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCommentId) {
+        throw new Error("Please select a comment");
+      }
+      const trimmedTitle = title.trim();
+      return apiRequest("POST", `/api/posts/${postId}/artist-identify-anonymous`, {
+        commentId: selectedCommentId,
+        sourceCommentId: selectedCommentId,
+        createdVia: ANONYMOUS_IDENTIFY_CONFIRM_CREATED_VIA,
+        // Collaborators are intentionally omitted — not supported anonymously.
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
+      });
+    },
+    onSuccess: () => {
+      playSuccessNotification();
+      const optimisticTitle = title.trim() || null;
+      queryClient.setQueriesData({ queryKey: ["/api/posts"], exact: false }, (old: unknown) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map((p: { id?: string }) =>
+            p?.id === postId
+              ? markViewerArtistAnonymouslyIdentifiedOnPost(p as any, optimisticTitle)
+              : p,
+          );
+        }
+        if (old && Array.isArray((old as { pages?: unknown[] }).pages)) {
+          const paged = old as { pages: { items?: { id?: string }[] }[] };
+          return {
+            ...paged,
+            pages: paged.pages.map((page) => ({
+              ...page,
+              items: Array.isArray(page.items)
+                ? page.items.map((p) =>
+                    p?.id === postId
+                      ? markViewerArtistAnonymouslyIdentifiedOnPost(p as any, optimisticTitle)
+                      : p,
+                  )
+                : page.items,
+            })),
+          };
+        }
+        if (
+          typeof old === "object" &&
+          typeof (old as { id?: string }).id === "string" &&
+          (old as { id: string }).id === postId
+        ) {
+          return markViewerArtistAnonymouslyIdentifiedOnPost(old as any, optimisticTitle);
+        }
+        return old;
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      if (currentUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "posts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "liked-posts"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", postId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "artist-tags"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/eligible-for-release"] });
+      toast({
+        title: "Identified anonymously",
+      });
+      handleClose();
+    },
+    onError: (error: unknown) => {
+      const { code, message } = readAnonymousIdentifyErrorCode(error);
+      const copy = resolveAnonymousIdentifyErrorCopy(code, message);
+      toast({
+        title: copy.title,
+        description: copy.description,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleConfirm = () => confirmMutation.mutate();
   const handleDeny = () => denyMutation.mutate();
+  const handleIdentifyAnonymously = () => {
+    if (!selectedCommentId) return;
+    if (anonymousIdentifyEntitled) {
+      identifyAnonymouslyMutation.mutate();
+      return;
+    }
+    // Keep Confirm mounted + modal; hide visually until VAT dismiss settles.
+    setVatPaywallCovering(true);
+    requestVerifiedArtistToolsUpgrade(toast, {
+      source: "anonymous_identify",
+      onDismissed: () => setVatPaywallCovering(false),
+    });
+  };
+  const verifyActionsPending =
+    confirmMutation.isPending ||
+    denyMutation.isPending ||
+    identifyAnonymouslyMutation.isPending;
   const sortedComments = [...flatComments].sort((a, b) => {
     const toTime = (value: unknown) => {
       if (!value) return 0;
@@ -397,12 +514,24 @@ export function ArtistVerificationDialog({
         ref={dialogContentRef}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          initialFocusRef.current?.focus();
+          initialFocusRef.current?.focus({ preventScroll: true });
         }}
         onInteractOutside={(event) => event.preventDefault()}
-        overlayClassName={ID_MARKING_DIALOG_OVERLAY_CLASS}
-        className={keyboardAwareClassName}
+        onEscapeKeyDown={(event) => {
+          if (vatPaywallCovering) event.preventDefault();
+        }}
+        overlayClassName={cn(
+          ID_MARKING_DIALOG_OVERLAY_CLASS,
+          vatPaywallCovering && "pointer-events-none opacity-0",
+        )}
+        className={cn(
+          keyboardAwareClassName,
+          vatPaywallCovering && "pointer-events-none opacity-0",
+        )}
         style={keyboardAwareStyle}
+        aria-hidden={vatPaywallCovering || undefined}
+        data-vat-paywall-covering={vatPaywallCovering ? "true" : undefined}
+        {...(vatPaywallCovering ? ({ inert: "" } as Record<string, string>) : {})}
       >
         <div ref={initialFocusRef} tabIndex={-1} />
         {step === "verify" ? (
@@ -565,32 +694,67 @@ export function ArtistVerificationDialog({
                     />
                   </div>
 
-                  <div className="flex justify-end gap-2 border-t border-white/15 pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={handleClose}
-                      className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
-                      data-testid="button-cancel-artist-verification"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleDeny}
-                      disabled={!selectedCommentId || denyMutation.isPending}
-                      className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
-                      data-testid="button-artist-deny"
-                    >
-                      {denyMutation.isPending ? "Saving…" : "Not my track"}
-                    </Button>
+                  <div
+                    className="space-y-3 border-t border-white/15 pt-4"
+                    data-testid="artist-verification-actions"
+                  >
                     <Button
                       onClick={handleConfirm}
-                      disabled={!selectedCommentId || confirmMutation.isPending}
-                      className={APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS}
+                      disabled={!selectedCommentId || verifyActionsPending}
+                      className={cn(APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS, "w-full")}
                       data-testid="button-artist-confirm"
                     >
-                      {confirmMutation.isPending ? "Confirming..." : "Confirm"}
+                      {confirmMutation.isPending ? "Confirming..." : "Confirm publicly"}
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleIdentifyAnonymously}
+                      disabled={!selectedCommentId || verifyActionsPending}
+                      className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "w-full")}
+                      data-testid="button-artist-identify-anonymously"
+                      aria-label={
+                        anonymousIdentifyEntitled
+                          ? "Identify anonymously"
+                          : "Identify anonymously — Verified Artist Tools"
+                      }
+                    >
+                      {identifyAnonymouslyMutation.isPending ? (
+                        "Saving…"
+                      ) : (
+                        <span className="inline-flex items-center justify-center gap-1.5">
+                          {!anonymousIdentifyEntitled ? (
+                            <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          ) : null}
+                          Identify anonymously
+                        </span>
+                      )}
+                    </Button>
+                    <p
+                      className="px-0.5 text-center text-[11px] leading-snug text-white/45"
+                      data-testid="artist-anonymous-metadata-helper"
+                    >
+                      Title is optional and public. Collaborators are not saved on anonymous IDs —
+                      add them when you reveal.
+                    </p>
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <Button
+                        variant="ghost"
+                        onClick={handleClose}
+                        className="h-9 px-2 text-sm font-medium text-white/55 hover:bg-white/5 hover:text-white/80"
+                        data-testid="button-cancel-artist-verification"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={handleDeny}
+                        disabled={!selectedCommentId || verifyActionsPending}
+                        className="h-9 px-2 text-sm font-medium text-red-400/90 hover:bg-white/5 hover:text-red-300"
+                        data-testid="button-artist-deny"
+                      >
+                        {denyMutation.isPending ? "Saving…" : "Not my track"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}

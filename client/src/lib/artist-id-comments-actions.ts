@@ -18,6 +18,8 @@ export type ArtistPendingActionPostFields = {
   /** Public anonymous artist attestation (identity hidden). */
   isArtistVerifiedAnonymous?: boolean | null;
   is_artist_verified_anonymous?: boolean | null;
+  /** Optional public track title while anonymously identified. */
+  anonymousTrackTitle?: string | null;
   artistVerifiedBy?: string | null;
   artist_verified_by?: string | null;
   deniedByArtist?: boolean | null;
@@ -31,6 +33,9 @@ export type ArtistPendingActionPostFields = {
 
 /** Server-allowed createdVia for comments decline-flow anonymous identify. */
 export const ANONYMOUS_IDENTIFY_CREATED_VIA = "tag_decline" as const;
+
+/** Server-allowed createdVia for main ArtistVerificationDialog anonymous identify. */
+export const ANONYMOUS_IDENTIFY_CONFIRM_CREATED_VIA = "confirm_dialog" as const;
 
 /**
  * Mirrors VideoCard tagged-artist rail ID eligibility (pending actions only).
@@ -116,7 +121,11 @@ export function markViewerArtistDeniedOnPost<T extends ArtistPendingActionPostFi
  */
 export function markViewerArtistAnonymouslyIdentifiedOnPost<
   T extends ArtistPendingActionPostFields,
->(post: T): T {
+>(post: T, anonymousTrackTitle?: string | null): T {
+  const trimmed =
+    typeof anonymousTrackTitle === "string" && anonymousTrackTitle.trim()
+      ? anonymousTrackTitle.trim()
+      : null;
   return {
     ...post,
     isArtistVerifiedAnonymous: true,
@@ -127,6 +136,7 @@ export function markViewerArtistAnonymouslyIdentifiedOnPost<
     artist_verified_by: null,
     verificationStatus: "identified",
     verification_status: "identified",
+    anonymousTrackTitle: trimmed,
   };
 }
 

@@ -48,7 +48,7 @@ import { createReleaseWithLimit } from "./create-release-with-limit";
 import { mapReleaseTimingFields } from "@shared/release-timing";
 import { shouldSetReleaseAnnouncedAt } from "@shared/release-announced";
 import { resolveAttachedClipUploaderIsVerifiedArtist } from "@shared/attached-clip-uploader-verified";
-import { projectPublicArtistVerificationFields } from "@shared/artist-private-identification";
+import { projectPublicArtistVerificationFields, mapPublicAnonymousTrackTitle } from "@shared/artist-private-identification";
 
 /** Map raw post verification columns → public-safe artist verification fields. */
 function mapPublicArtistVerification(row: {
@@ -61,6 +61,25 @@ function mapPublicArtistVerification(row: {
     is_verified_artist: row.is_verified_artist,
     artist_verified_by: row.artist_verified_by,
   });
+}
+
+/** Public-safe: track_title only from anonymous claims — never artist_id / claim id. */
+const SQL_ANONYMOUS_TRACK_TITLE = sql`(
+  SELECT api.track_title
+  FROM artist_private_identifications api
+  WHERE api.post_id = p.id
+    AND api.state = 'anonymous'
+  LIMIT 1
+)`;
+
+function mapAnonymousTrackTitleField(
+  isArtistVerifiedAnonymous: boolean,
+  row: { anonymous_track_title?: unknown },
+): string | null {
+  return mapPublicAnonymousTrackTitle(
+    isArtistVerifiedAnonymous,
+    row.anonymous_track_title,
+  );
 }
 import { attachPostsWithLimit } from "./attach-posts-with-limit";
 import {
@@ -666,6 +685,7 @@ export class DatabaseStorage implements IStorage {
           p.is_verified_community,
           p.is_verified_artist,
           p.is_artist_verified_anonymous,
+          ${SQL_ANONYMOUS_TRACK_TITLE} AS anonymous_track_title,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
@@ -812,6 +832,10 @@ export class DatabaseStorage implements IStorage {
         isVerifiedCommunity: row.is_verified_community,
         isVerifiedArtist: artistVerification.isVerifiedArtist,
         isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
+        anonymousTrackTitle: mapAnonymousTrackTitleField(
+          artistVerification.isArtistVerifiedAnonymous,
+          row,
+        ),
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
@@ -930,6 +954,7 @@ export class DatabaseStorage implements IStorage {
           p.is_verified_community,
           p.is_verified_artist,
           p.is_artist_verified_anonymous,
+          ${SQL_ANONYMOUS_TRACK_TITLE} AS anonymous_track_title,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
@@ -1056,6 +1081,10 @@ export class DatabaseStorage implements IStorage {
         isVerifiedCommunity: row.is_verified_community,
         isVerifiedArtist: artistVerification.isVerifiedArtist,
         isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
+        anonymousTrackTitle: mapAnonymousTrackTitleField(
+          artistVerification.isArtistVerifiedAnonymous,
+          row,
+        ),
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
@@ -1199,6 +1228,7 @@ export class DatabaseStorage implements IStorage {
           p.is_verified_community,
           p.is_verified_artist,
           p.is_artist_verified_anonymous,
+          ${SQL_ANONYMOUS_TRACK_TITLE} AS anonymous_track_title,
           p.verified_by_moderator,
           p.verified_comment_id,
           p.verified_by,
@@ -1298,6 +1328,10 @@ export class DatabaseStorage implements IStorage {
         isVerifiedCommunity: row.is_verified_community,
         isVerifiedArtist: artistVerification.isVerifiedArtist,
         isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
+        anonymousTrackTitle: mapAnonymousTrackTitleField(
+          artistVerification.isArtistVerifiedAnonymous,
+          row,
+        ),
         verifiedByModerator: row.verified_by_moderator,
         verifiedCommentId: row.verified_comment_id,
         verifiedBy: row.verified_by,
@@ -1769,6 +1803,7 @@ export class DatabaseStorage implements IStorage {
           p.verified_by,
           p.is_verified_artist,
           p.is_artist_verified_anonymous,
+          ${SQL_ANONYMOUS_TRACK_TITLE} AS anonymous_track_title,
           p.artist_verified_by,
           p.created_at,
           pr.id         AS profile_id,
@@ -1867,6 +1902,10 @@ export class DatabaseStorage implements IStorage {
         verifiedBy: row.verified_by,
         isVerifiedArtist: artistVerification.isVerifiedArtist,
         isArtistVerifiedAnonymous: artistVerification.isArtistVerifiedAnonymous,
+        anonymousTrackTitle: mapAnonymousTrackTitleField(
+          artistVerification.isArtistVerifiedAnonymous,
+          row,
+        ),
         artistVerifiedBy: artistVerification.artistVerifiedBy,
         createdAt: row.created_at,
         likes: Number(row.likes_count ?? 0),
