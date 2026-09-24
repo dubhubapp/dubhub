@@ -37,9 +37,12 @@ describe("VAT-ANON-5.2 Info popover stacking vs Comments drawer", () => {
   });
 
   it("Comments anonymous Info uses modal + alertDialogStackZ above the drawer", () => {
-    const rowIdx = commentsSrc.indexOf('data-testid="anonymous-identification-title-row"');
-    assert.ok(rowIdx > 0);
-    const row = commentsSrc.slice(rowIdx, rowIdx + 2200);
+    const gridIdx = commentsSrc.indexOf("grid-cols-[2rem_minmax(0,1fr)_2rem]");
+    assert.ok(gridIdx > 0);
+    const row = commentsSrc.slice(
+      gridIdx,
+      commentsSrc.indexOf('data-testid="artist-identification-status-divider"'),
+    );
     assert.match(row, /StatInfoPopover/);
     assert.match(row, /\bmodal\b/);
     assert.match(row, /contentClassName=\{cn\(\s*alertDialogStackZ/);
@@ -49,11 +52,17 @@ describe("VAT-ANON-5.2 Info popover stacking vs Comments drawer", () => {
 });
 
 describe("VAT-ANON-5.2 compact anonymous presentation", () => {
-  it("keeps pill + title + info on one compact row", () => {
-    const rowIdx = commentsSrc.indexOf('data-testid="anonymous-identification-title-row"');
-    const row = commentsSrc.slice(rowIdx - 280, rowIdx + 2800);
-    assert.match(row, /px-2\.5 py-1\.5/);
-    assert.match(row, /flex items-start gap-2/);
+  it("keeps pill + title + info on one compact containerless centred row", () => {
+    const gridIdx = commentsSrc.indexOf("grid-cols-[2rem_minmax(0,1fr)_2rem]");
+    const row = commentsSrc.slice(
+      gridIdx,
+      commentsSrc.indexOf('data-testid="artist-identification-status-divider"'),
+    );
+    assert.doesNotMatch(row, /rounded-lg border border-white\/10 bg-white\/\[0\.04\]/);
+    assert.doesNotMatch(row, /px-2\.5 py-1\.5/);
+    assert.match(row, /artist-identification-status-grid/);
+    assert.match(row, /grid-cols-\[2rem_minmax\(0,1fr\)_2rem\]/);
+    assert.match(row, /justify-center/);
     assert.match(row, /anonymous-identification-title-label/);
     assert.match(row, /CommentsPostIdentificationPill/);
     const pillIdx = row.indexOf("CommentsPostIdentificationPill");
@@ -80,7 +89,7 @@ describe("VAT-ANON-5.2 compact anonymous presentation", () => {
       "An artist has confirmed this track but is keeping their identity private for now. Like this post and we’ll let you know when they reveal the full ID or link it to a release.",
     );
     assert.doesNotMatch(ANONYMOUS_ID_INFO_BODY, /@|artistId|uuid|claim/i);
-    assert.match(commentsSrc, /if \(!isAnonymousIdentified\) return null;/);
+    assert.match(commentsSrc, /if \(!showArtistIdentificationHeader\) return null;/);
     const publicPill = commentsSrc.slice(
       commentsSrc.indexOf("function CommentsPostIdentificationPill"),
       commentsSrc.indexOf("function CommentsPostIdentificationPill") + 1600,

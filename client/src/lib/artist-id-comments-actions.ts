@@ -123,10 +123,13 @@ export function markViewerArtistDeniedOnPost<T extends ArtistPendingActionPostFi
 export function markViewerArtistAnonymouslyIdentifiedOnPost<
   T extends ArtistPendingActionPostFields,
 >(post: T, anonymousTrackTitle?: string | null): T {
-  const trimmed =
-    typeof anonymousTrackTitle === "string" && anonymousTrackTitle.trim()
+  // Explicit 2nd arg (including null) sets title; omit arg to preserve any existing projection.
+  const explicitTitleArg = arguments.length >= 2;
+  const trimmed = explicitTitleArg
+    ? typeof anonymousTrackTitle === "string" && anonymousTrackTitle.trim()
       ? anonymousTrackTitle.trim()
-      : null;
+      : null
+    : readAnonymousTrackTitle(post);
   return {
     ...post,
     isArtistVerifiedAnonymous: true,

@@ -89,6 +89,16 @@ import {
   resolvePostIdentificationPresentationKind,
 } from "@/lib/post-identification-status";
 import { formatAnonymousIdentificationTitleLabel } from "@shared/artist-private-identification";
+import {
+  findArtistConfirmationCommentId,
+  resolveArtistIdentificationDiscussionPinId,
+  resolveAnonymousHeaderTrackTitle,
+  resolveAnonymousIdentificationHeaderLabel,
+  resolvePublicArtistIdentificationHeaderParts,
+  resolveVerifyingArtistUsername,
+  resolveVerifyingArtistUser,
+} from "@/lib/comments-identification-presentation";
+import { VerifiedArtistName } from "@/components/verified-artist-name";
 import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
 import { resolvePaidToolGateMode } from "@/lib/paid-tool-gate";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
@@ -1225,10 +1235,6 @@ export function CommentsModal({
   const comments = Array.isArray(commentsData) ? commentsData : [];
   const isAnonymousIdentifiedPost =
     resolvePostIdentificationPresentationKind(post) === "artist_verified_anonymous";
-  const anonymousTrackTitleLabel = formatAnonymousIdentificationTitleLabel(
-    (post as { anonymousTrackTitle?: string | null }).anonymousTrackTitle ??
-      (post as { anonymous_track_title?: string | null }).anonymous_track_title,
-  );
 
   /** Owner-only: existing GET returns 404 for non-owners (no identity leak). */
   const { data: ownerPrivateClaim } = useQuery<{
@@ -1256,6 +1262,19 @@ export function CommentsModal({
     ownerPrivateClaim?.claim?.state === "anonymous" &&
     !!contextUser?.id &&
     ownerPrivateClaim.claim.artistId === contextUser.id;
+
+  const anonymousTrackTitleFromPost =
+    (post as { anonymousTrackTitle?: string | null }).anonymousTrackTitle ??
+    (post as { anonymous_track_title?: string | null }).anonymous_track_title;
+  const anonymousHeaderTrackTitle = resolveAnonymousHeaderTrackTitle({
+    anonymousTrackTitle: anonymousTrackTitleFromPost,
+    ownerClaimTrackTitle: ownsAnonymousClaim
+      ? (ownerPrivateClaim?.claim?.trackTitle ?? null)
+      : null,
+    isOwnerViewer: ownsAnonymousClaim,
+  });
+  const anonymousTrackTitleLabel =
+    formatAnonymousIdentificationTitleLabel(anonymousHeaderTrackTitle);
 
   const reviewingArtistIdentity = useMemo(() => {
     if (!contextUser?.id || !verifiedArtist) return null;
@@ -2314,37 +2333,25 @@ export function CommentsModal({
             const artistVerifiedBy = (post as any).artistVerifiedBy ?? (post as any).artist_verified_by;
             const isArtistVerifiedPost = !!((post as any).isVerifiedArtist ?? (post as any).is_verified_artist);
 
-            // Derive the artist confirmation comment heuristically:
-            // - Same artist who verified the post
-            // - Body uses the confirmation copy we generate ("@... confirmed:"), with or without legacy leading emoji
-            const artistConfirmationCommentId = isArtistVerifiedPost && artistVerifiedBy
-              ? filteredComments.find((c) => {
-                  const userId = (c as any).userId ?? (c as any).user?.id;
-                  const body = (c as any).body ?? "";
-                  const normalizedBody =
-                    typeof body === "string" ? body.trim().replace(/^✅\s*/, "") : "";
-                  return (
-                    userId === artistVerifiedBy &&
-                    typeof body === "string" &&
-                    normalizedBody.toLowerCase().includes("confirmed:")
-                  );
-                })?.id ?? null
-              : null;
+            // Helper confirm comment stays in data for attach/title/idempotency — suppressed from UI.
+            const artistConfirmationCommentId = findArtistConfirmationCommentId(
+              filteredComments,
+              artistVerifiedBy,
+              isArtistVerifiedPost,
+            );
+            const artistDiscussionPinId = isArtistVerifiedPost
+              ? resolveArtistIdentificationDiscussionPinId(
+                  post.verifiedCommentId,
+                  artistConfirmationCommentId,
+                )
+              : post.verifiedCommentId ?? null;
 
-            // Sort so that:
-            // 1) The artist/system confirmation comment appears first (if present)
-            // 2) The artist-selected community comment (verifiedCommentId) appears next
+            // Pin genuine source (if any) first; never surface the confirm helper as a discussion pin.
             filteredComments.sort((a, b) => {
-              const aIsArtistConfirmation = artistConfirmationCommentId && a.id === artistConfirmationCommentId;
-              const bIsArtistConfirmation = artistConfirmationCommentId && b.id === artistConfirmationCommentId;
-              if (aIsArtistConfirmation && !bIsArtistConfirmation) return -1;
-              if (!aIsArtistConfirmation && bIsArtistConfirmation) return 1;
-
-              const aIsPinned = post.verifiedCommentId === a.id;
-              const bIsPinned = post.verifiedCommentId === b.id;
+              const aIsPinned = !!artistDiscussionPinId && a.id === artistDiscussionPinId;
+              const bIsPinned = !!artistDiscussionPinId && b.id === artistDiscussionPinId;
               if (aIsPinned && !bIsPinned) return -1;
               if (!aIsPinned && bIsPinned) return 1;
-
               return 0;
             });
 
@@ -2370,9 +2377,23 @@ export function CommentsModal({
               );
             }
 
-            const hasVisibleThreadComments = filteredComments.some(isVisibleInCommentsThread);
+            const artistConfirmHelperComment = artistConfirmationCommentId
+              ? filteredComments.find((c) => c.id === artistConfirmationCommentId) ?? null
+              : null;
+            const showArtistIdentificationHeader =
+              isAnonymousIdentifiedPost || isArtistVerifiedPost;
 
-            if (!hasVisibleThreadComments && !verifiedReplyPin) {
+            const hasVisibleThreadComments = filteredComments.some(
+              (c) =>
+                isVisibleInCommentsThread(c) &&
+                !(artistConfirmationCommentId && c.id === artistConfirmationCommentId),
+            );
+
+            if (
+              !hasVisibleThreadComments &&
+              !verifiedReplyPin &&
+              !showArtistIdentificationHeader
+            ) {
               return (
                 <div className="flex h-full min-h-[9rem] items-center justify-center px-4 text-center">
                   <div className="flex max-w-[18rem] flex-col items-center gap-2 text-gray-500/85 dark:text-white/55">
@@ -2388,15 +2409,52 @@ export function CommentsModal({
             const pinnedVerifiedReply = verifiedReplyPin?.comment ?? null;
             const pinnedReplyIsDeleted =
               pinnedVerifiedReply != null && isDeletedCommentBody(pinnedVerifiedReply.body);
+            const isSuppressedArtistConfirmHelper = (c: (typeof filteredComments)[number]) =>
+              !!artistConfirmationCommentId && c.id === artistConfirmationCommentId;
             const isIdentificationPinnedComment = (c: (typeof filteredComments)[number]) =>
-              (!!artistConfirmationCommentId && c.id === artistConfirmationCommentId) ||
-              post.verifiedCommentId === c.id;
+              !!artistDiscussionPinId && c.id === artistDiscussionPinId;
             const identificationClusterComments = filteredComments
               .filter(isIdentificationPinnedComment)
+              .filter((c) => !isSuppressedArtistConfirmHelper(c))
               .filter(isVisibleInCommentsThread);
             const remainingComments = filteredComments
               .filter((c) => !isIdentificationPinnedComment(c))
+              .filter((c) => !isSuppressedArtistConfirmHelper(c))
               .filter(isVisibleInCommentsThread);
+
+            const verifyingArtistUsername =
+              isArtistVerifiedPost && !isAnonymousIdentifiedPost
+                ? resolveVerifyingArtistUsername(
+                    filteredComments,
+                    artistVerifiedBy,
+                    artistConfirmHelperComment,
+                  )
+                : null;
+            const verifyingArtistUser =
+              isArtistVerifiedPost && !isAnonymousIdentifiedPost
+                ? resolveVerifyingArtistUser(
+                    filteredComments,
+                    artistVerifiedBy,
+                    artistConfirmHelperComment,
+                  )
+                : null;
+            const publicArtistHeaderParts =
+              isArtistVerifiedPost && !isAnonymousIdentifiedPost
+                ? resolvePublicArtistIdentificationHeaderParts({
+                    verifyingArtistUsername,
+                    confirmCommentBody: artistConfirmHelperComment?.body ?? null,
+                  })
+                : null;
+            const artistHeaderTitleLabel = !showArtistIdentificationHeader
+              ? null
+              : isAnonymousIdentifiedPost
+                ? resolveAnonymousIdentificationHeaderLabel(anonymousHeaderTrackTitle)
+                : null;
+            const showArtistSourceDiscussionDivider =
+              isArtistVerifiedPost &&
+              !isAnonymousIdentifiedPost &&
+              identificationClusterComments.length > 0 &&
+              remainingComments.length > 0;
 
             let renderTopLevelComment: (comment: (typeof filteredComments)[number]) => ReactNode =
               () => null;
@@ -2467,7 +2525,9 @@ export function CommentsModal({
                             ? `Reply to ${formatUsernameDisplay(verifiedReplyPin.parentAuthorUsername)}`
                             : "Reply in thread"}
                         </span>
-                        <CommentsPostIdentificationPill post={post} testIdPrefix="badge-pinned" />
+                        {!isArtistVerifiedPost && !isAnonymousIdentifiedPost ? (
+                          <CommentsPostIdentificationPill post={post} testIdPrefix="badge-pinned" />
+                        ) : null}
                         <span className="whitespace-nowrap text-[11px] text-gray-500 sm:text-xs dark:text-white/40">
                           {formatTimeAgo(pinnedVerifiedReply.createdAt)}
                         </span>
@@ -2489,9 +2549,9 @@ export function CommentsModal({
               if (commentIsDeleted && visibleReplies.length === 0) {
                 return null;
               }
-              const isOwnComment = !!contextUser?.id && comment.userId === contextUser.id;
-              const isVerifiedComment = post.verifiedCommentId === comment.id; // artist-selected community comment
-              const isArtistConfirmationComment = !!artistConfirmationCommentId && comment.id === artistConfirmationCommentId; // system/artist confirmation comment
+                  const isOwnComment = !!contextUser?.id && comment.userId === contextUser.id;
+              const isVerifiedComment = artistDiscussionPinId === comment.id;
+              const isArtistConfirmationComment = !!artistConfirmationCommentId && comment.id === artistConfirmationCommentId; // system/artist confirmation comment (suppressed from UI)
               // Only treat tagged comments specially before artist verification; once verified, rely solely on the selected + confirmation comments
               const isTaggedSuggestion =
                 !commentIsDeleted &&
@@ -2499,8 +2559,7 @@ export function CommentsModal({
                 artistVerifiedBy &&
                 ((comment as any).artistTag ?? (comment as any).artist_tag) === artistVerifiedBy;
 
-              const isPinnedIdentificationComment =
-                isArtistConfirmationComment || isVerifiedComment;
+              const isPinnedIdentificationComment = isVerifiedComment;
               const highlightClass = commentIsDeleted
                 ? ""
                 : isTaggedSuggestion
@@ -2651,16 +2710,7 @@ export function CommentsModal({
                       {IDENTIFIED_PILL_LABEL}
                     </span>
                   )}
-                  {/* Artist-selected verified comment: same identified treatment as post-level artist state */}
-                  {!commentIsDeleted && isVerifiedComment && isArtistVerifiedPost && (
-                    <span
-                      className={COMMENTS_IDENTIFIED_PILL_CLASS}
-                      style={COMMENTS_IDENTIFIED_PILL_STYLE}
-                    >
-                      <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" />
-                      Identified
-                    </span>
-                  )}
+                  {/* Artist source pin: header owns Identified — no duplicate badge on the discussion row */}
                   {/* Denied Tag Badge */}
                   {comment.tagStatus === "denied" && (
                     <div className="flex items-center space-x-1 rounded-full bg-red-50 px-1.5 py-0.5 dark:bg-red-950/55 dark:ring-1 dark:ring-red-500/25">
@@ -2834,7 +2884,7 @@ export function CommentsModal({
                       .map((reply) => {
                         const replyIsDeleted = isDeletedCommentBody(reply.body);
                         const isOwnReply = !!contextUser?.id && reply.userId === contextUser.id;
-                        const isVerifiedReply = post.verifiedCommentId === reply.id;
+                        const isVerifiedReply = !!artistDiscussionPinId && reply.id === artistDiscussionPinId;
                         const isArtistConfirmationReply =
                           !!artistConfirmationCommentId && reply.id === artistConfirmationCommentId;
                         return (
@@ -2972,7 +3022,7 @@ export function CommentsModal({
                             <span className="whitespace-nowrap text-xs text-gray-500 dark:text-white/40">
                               {formatTimeAgo(reply.createdAt)}
                             </span>
-                            {isVerifiedReply || isArtistConfirmationReply ? (
+                            {isVerifiedReply ? (
                               <Pin className={COMMENTS_PIN_ICON_CLASS} aria-hidden />
                             ) : null}
                           </div>
@@ -3132,55 +3182,118 @@ export function CommentsModal({
             return (
               <>
                 {(() => {
-                  const anonTitleLabel = anonymousTrackTitleLabel;
+                  if (!showArtistIdentificationHeader) return null;
                   const isAnonymousIdentified = isAnonymousIdentifiedPost;
-                  if (!isAnonymousIdentified) return null;
                   return (
                     <div
-                      className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 dark:border-white/10 dark:bg-white/[0.05]"
-                      data-testid="anonymous-identification-title-row"
+                      className="mb-2.5"
+                      data-testid={
+                        isAnonymousIdentified
+                          ? "anonymous-identification-title-row"
+                          : "artist-identification-status-row"
+                      }
                     >
-                      <div className="flex items-start gap-2">
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                      {/*
+                        3-column grid: left spacer (= Info width) | centred status | Info or spacer.
+                        Keeps the badge/title cluster optically centred without absolute positioning.
+                      */}
+                      <div
+                        className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-x-1"
+                        data-testid="artist-identification-status-grid"
+                      >
+                        <div className="h-8 w-8 shrink-0" aria-hidden />
+                        <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5">
                           <CommentsPostIdentificationPill
                             post={post}
-                            testIdPrefix="badge-anonymous-title"
+                            testIdPrefix={
+                              isAnonymousIdentified
+                                ? "badge-anonymous-title"
+                                : "badge-artist-status"
+                            }
                           />
-                          {anonTitleLabel ? (
+                          {isAnonymousIdentified ? (
+                            artistHeaderTitleLabel ? (
+                              <p
+                                className="min-w-0 text-center text-[13px] font-medium leading-snug text-gray-800 sm:text-sm dark:text-white/90"
+                                data-testid="anonymous-identification-title-label"
+                              >
+                                {artistHeaderTitleLabel}
+                              </p>
+                            ) : null
+                          ) : publicArtistHeaderParts ? (
                             <p
-                              className="min-w-0 text-[13px] font-medium leading-snug text-gray-800 sm:text-sm dark:text-white/90"
-                              data-testid="anonymous-identification-title-label"
+                              className="min-w-0 text-center text-[13px] font-medium leading-snug text-gray-800 sm:text-sm dark:text-white/90"
+                              data-testid="artist-identification-title-label"
                             >
-                              {anonTitleLabel}
+                              <button
+                                type="button"
+                                className="inline-flex max-w-full touch-manipulation items-center rounded-sm align-baseline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD700]/45 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-[#141a2e]"
+                                data-testid="artist-identification-artist-handle"
+                                data-mark-id-long-press-ignore="true"
+                                aria-label={`View profile ${formatUsernameDisplay(publicArtistHeaderParts.username)}`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openByUsername(publicArtistHeaderParts.username, {
+                                    anchor: { x: e.clientX, y: e.clientY },
+                                    reopenCommentsPostId: post.id,
+                                    seed: {
+                                      id: verifyingArtistUser?.id ?? artistVerifiedBy ?? undefined,
+                                      avatar_url: verifyingArtistUser?.avatar_url,
+                                      account_type:
+                                        verifyingArtistUser?.account_type ?? "artist",
+                                      verified_artist:
+                                        verifyingArtistUser?.verified_artist ?? true,
+                                      moderator: verifyingArtistUser?.moderator,
+                                    },
+                                  });
+                                }}
+                              >
+                                <VerifiedArtistName
+                                  username={publicArtistHeaderParts.username}
+                                  className="text-[13px] sm:text-sm"
+                                  tickClassName="h-3 w-3"
+                                />
+                              </button>
+                              {publicArtistHeaderParts.title ? (
+                                <span data-testid="artist-identification-track-title">
+                                  {" - "}
+                                  {publicArtistHeaderParts.title}
+                                </span>
+                              ) : null}
                             </p>
                           ) : null}
                         </div>
-                        <StatInfoPopover
-                          label={ANONYMOUS_ID_INFO_TITLE}
-                          modal
-                          side="bottom"
-                          align="end"
-                          className="relative z-10 h-8 w-8 shrink-0 text-white/50 hover:text-white/80 dark:text-white/50 dark:hover:text-white/80"
-                          contentClassName={cn(
-                            alertDialogStackZ,
-                            "border-border bg-popover text-popover-foreground shadow-xl",
-                          )}
-                          content={
-                            <div
-                              className="space-y-1.5"
-                              data-testid="anonymous-identification-info-content"
-                            >
-                              <p className="text-sm font-medium text-foreground">
-                                {ANONYMOUS_ID_INFO_TITLE}
-                              </p>
-                              <p className="text-sm leading-relaxed text-muted-foreground">
-                                {ANONYMOUS_ID_INFO_BODY}
-                              </p>
-                            </div>
-                          }
-                        />
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                          {isAnonymousIdentified ? (
+                            <StatInfoPopover
+                              label={ANONYMOUS_ID_INFO_TITLE}
+                              modal
+                              side="bottom"
+                              align="end"
+                              className="relative z-10 h-8 w-8 shrink-0 text-white/50 hover:text-white/80 dark:text-white/50 dark:hover:text-white/80"
+                              contentClassName={cn(
+                                alertDialogStackZ,
+                                "border-border bg-popover text-popover-foreground shadow-xl",
+                              )}
+                              content={
+                                <div
+                                  className="space-y-1.5"
+                                  data-testid="anonymous-identification-info-content"
+                                >
+                                  <p className="text-sm font-medium text-foreground">
+                                    {ANONYMOUS_ID_INFO_TITLE}
+                                  </p>
+                                  <p className="text-sm leading-relaxed text-muted-foreground">
+                                    {ANONYMOUS_ID_INFO_BODY}
+                                  </p>
+                                </div>
+                              }
+                            />
+                          ) : null}
+                        </div>
                       </div>
-                      {ownsAnonymousClaim ? (
+                      {isAnonymousIdentified && ownsAnonymousClaim ? (
                         <button
                           type="button"
                           className={cn(
@@ -3193,10 +3306,22 @@ export function CommentsModal({
                           Reveal ID
                         </button>
                       ) : null}
+                      <div
+                        className="mt-2.5 border-t border-black/10 dark:border-white/10"
+                        data-testid="artist-identification-status-divider"
+                        aria-hidden
+                      />
                     </div>
                   );
                 })()}
                 {identificationClusterComments.map((c) => renderTopLevelComment(c))}
+                {showArtistSourceDiscussionDivider ? (
+                  <div
+                    className="border-t border-black/10 dark:border-white/10"
+                    data-testid="artist-identification-source-divider"
+                    aria-hidden
+                  />
+                ) : null}
               </>
             );
             })()}

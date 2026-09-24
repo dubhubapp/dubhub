@@ -169,8 +169,15 @@ describe("verified-artist-tools-paywall-lifecycle", () => {
   it("vinyl loading copy covers processing, restore, and verifying", () => {
     assert.equal(paywallVinylLoadingCopy("purchasing")?.title, "Processing…");
     assert.equal(paywallVinylLoadingCopy("verifying")?.title, "Unlocking your tools…");
-    assert.match(paywallVinylLoadingCopy("verifying")?.body ?? "", /Confirming your purchase/);
+    assert.equal(
+      paywallVinylLoadingCopy("verifying")?.body,
+      "Confirming your purchase with dub hub.",
+    );
     assert.equal(paywallVinylLoadingCopy("restoring")?.title, "Restoring…");
+    assert.equal(
+      paywallVinylLoadingCopy("restoring")?.body,
+      "Confirming your purchases with dub hub.",
+    );
     assert.equal(paywallVinylLoadingCopy("ready"), null);
   });
 

@@ -90,6 +90,7 @@ import {
   APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
+  APP_MATERIAL_TOAST_SURFACE_CLASS,
   APP_MATERIAL_SELECT_CONTENT_CLASS,
   APP_MATERIAL_SELECT_ITEM_CLASS,
   APP_MATERIAL_SELECT_TRIGGER_CLASS,
@@ -197,7 +198,7 @@ type SubmitFormData = z.infer<typeof submitFormSchema>;
 
 const genres = [
   { value: "DnB", label: "Drum & Bass" },
-  { value: "UKG", label: "UK Garage" },
+  { value: "UKG", label: "UKG" },
   { value: "Dubstep", label: "Dubstep" },
   { value: "Bassline", label: "Bassline" },
   { value: "House", label: "House" },
@@ -253,19 +254,19 @@ type TrackFieldKey =
   | "genre"
   | "subgenre";
 
-/** Semantic green success cue; tick is secondary. */
+/** Semantic green success cue; field surface stays quiet — tick carries success. */
 const fieldSuccessOutlineClass = APP_MATERIAL_FIELD_SUCCESS_CLASS;
 
 function FieldCompleteCheck({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500/15 ring-1 ring-green-400/30",
+        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-green-500/25 bg-green-700/35",
         className,
       )}
       aria-hidden
     >
-      <Check className="h-3 w-3 text-green-300/90" strokeWidth={2.25} />
+      <Check className="h-3 w-3 text-green-400/90" strokeWidth={2.25} />
     </span>
   );
 }
@@ -1642,28 +1643,34 @@ export default function SubmitMetadata() {
         showBlockingUploadOverlay &&
         createPortal(
           <div
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 px-5"
+            className="pointer-events-auto fixed inset-0 z-[200] flex items-center justify-center bg-black/30 px-5"
             aria-busy="true"
             aria-live="polite"
           >
-            <div className="w-full max-w-md space-y-3 rounded-xl border border-gray-700/50 bg-surface/90 p-4 shadow-lg backdrop-blur-sm">
+            <div
+              className={cn(
+                APP_MATERIAL_TOAST_SURFACE_CLASS,
+                "w-full max-w-sm space-y-2 px-4 py-3",
+              )}
+              data-testid="upload-progress-capsule"
+            >
               {!uploadCompleteOpeningPost ? (
                 <>
                   <Progress
                     value={uploadHandoff ? 100 : uploadProgress}
-                    className="h-2.5 bg-gray-800"
+                    className="h-1 bg-white/10"
                   />
-                  <p className="text-center text-sm text-gray-300 tabular-nums">
+                  <p className="text-center text-sm font-medium text-foreground tabular-nums">
                     {uploadHandoff || uploadProgress >= 99
                       ? "Processing video…"
-                      : `Uploading... ${Math.round(uploadProgress)}%`}
+                      : `Uploading… ${Math.round(uploadProgress)}%`}
                   </p>
                 </>
               ) : (
-                <div className="flex flex-col items-center gap-3 py-1">
-                  <InlineSpinner className="border-white" sizeClassName="h-8 w-8" />
-                  <p className="text-center text-sm text-gray-200">
-                    Upload complete — opening post…
+                <div className="flex items-center justify-center gap-2.5 py-0.5">
+                  <InlineSpinner className="border-white" sizeClassName="h-4 w-4" />
+                  <p className="text-sm font-medium text-foreground">
+                    Opening post…
                   </p>
                 </div>
               )}

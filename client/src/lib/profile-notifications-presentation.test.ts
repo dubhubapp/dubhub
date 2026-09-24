@@ -246,6 +246,8 @@ describe("Profile Notifications tab wiring", () => {
     assert.match(userProfileSrc, /buildNotificationListGroupKey/);
     assert.match(userProfileSrc, /handleNotificationClick/);
     assert.doesNotMatch(userProfileSrc, /getNotificationTapRoute/);
+    assert.doesNotMatch(userProfileSrc, /Mark all as read/);
+    assert.doesNotMatch(userProfileSrc, /data-testid="mark-all-read"/);
   });
 
   it("leaves nested list scroller (pagination + pull-to-refresh bound to it)", () => {

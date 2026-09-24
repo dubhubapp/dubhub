@@ -106,6 +106,11 @@ export const APP_MATERIAL_OVERLAY_BACKDROP_CLASS = "dubhub-app-overlay-backdrop"
 export const APP_MATERIAL_SHEET_BACKDROP_CLASS = "dubhub-app-sheet-backdrop";
 export const APP_MATERIAL_OVERLAY_SURFACE_CLASS = "dubhub-app-overlay-surface";
 export const APP_MATERIAL_SHEET_SURFACE_CLASS = "dubhub-app-sheet-surface";
+/**
+ * Compact floating feedback — standard toasts + upload progress capsule.
+ * Not for in-app notification glass banners.
+ */
+export const APP_MATERIAL_TOAST_SURFACE_CLASS = "dubhub-app-toast-surface";
 
 export const APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS =
   `${APP_MATERIAL_OVERLAY_SURFACE_CLASS} max-w-sm` as const;
@@ -139,7 +144,7 @@ export const APP_MATERIAL_FIELD_CLASS =
 
 export const APP_MATERIAL_FIELD_INVALID_CLASS = "dubhub-app-field-invalid" as const;
 
-/** Semantic success (green) — not generic blue. */
+/** Semantic green success — quiet field cue (Submit metadata); not a glow. */
 export const APP_MATERIAL_FIELD_SUCCESS_CLASS = "dubhub-app-field-success" as const;
 
 export const APP_MATERIAL_SELECT_TRIGGER_CLASS =

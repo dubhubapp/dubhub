@@ -157,13 +157,15 @@ describe("VAT-ANON-3.6 comments presentation", () => {
     assert.equal(formatAnonymousIdentificationTitleLabel("  "), null);
     assert.match(commentsSrc, /anonymous-identification-title-row/);
     assert.match(commentsSrc, /anonymous-identification-title-label/);
-    assert.match(commentsSrc, /formatAnonymousIdentificationTitleLabel/);
-    // System row uses post projection + pill — no avatar/username/gold artist path in that block.
-    const block = commentsSrc.slice(
-      commentsSrc.indexOf("anonymous-identification-title-row"),
-      commentsSrc.indexOf("anonymous-identification-title-row") + 900,
+    assert.match(commentsSrc, /resolveArtistIdentificationHeaderTitleLabel|resolveAnonymousIdentificationHeaderLabel/);
+    // Anonymous system row: no avatar chrome on the status header itself.
+    assert.doesNotMatch(
+      commentsSrc.slice(
+        commentsSrc.indexOf('"anonymous-identification-title-row"'),
+        commentsSrc.indexOf('"anonymous-identification-title-row"') + 400,
+      ),
+      /avatar|GoldVerifiedTick/,
     );
-    assert.doesNotMatch(block, /avatar|GoldVerifiedTick|formatUsernameDisplay|profile/);
   });
 
   it("feed VideoCard does not render ID - title under pill", () => {

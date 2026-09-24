@@ -145,7 +145,7 @@ export const PAYWALL_UI_COPY = {
   processingLabel: "Processing…",
   processingAnnouncement: "Opening App Store purchase…",
   unlockingTitle: "Unlocking your tools…",
-  unlockingBody: "Confirming your purchase with Dub Hub.",
+  unlockingBody: "Confirming your purchase with dub hub.",
   pendingTitle: "Purchase pending",
   pendingBody:
     "Your tools will unlock once the App Store confirms the purchase.",

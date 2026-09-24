@@ -200,13 +200,13 @@ export function paywallVinylLoadingCopy(phase: PaywallUiPhase): {
   if (phase === "restoring") {
     return {
       title: "Restoring…",
-      body: "Confirming your purchases with Dub Hub.",
+      body: "Confirming your purchases with dub hub.",
     };
   }
   if (phase === "verifying") {
     return {
       title: "Unlocking your tools…",
-      body: "Confirming your purchase with Dub Hub.",
+      body: "Confirming your purchase with dub hub.",
     };
   }
   return null;

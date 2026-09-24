@@ -1205,6 +1205,34 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
     0 -8px 32px rgba(0, 0, 0, 0.28) !important;
 }
 
+/**
+ * Standard toast + upload progress capsule — same navy gradient family as sheets.
+ * Intentionally separate from in-app notification glass banners.
+ */
+.dark .dubhub-app-toast-surface {
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(18, 24, 48, 0.92) !important;
+  background-image: linear-gradient(
+    180deg,
+    rgba(36, 48, 88, 0.55) 0%,
+    rgba(18, 24, 48, 0.88) 50%,
+    rgba(12, 16, 32, 0.95) 100%
+  );
+  color: hsl(210, 25%, 96%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 12px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .dark .dubhub-app-toast-surface {
+    background-color: rgba(18, 24, 48, 0.78) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    backdrop-filter: blur(16px) saturate(1.15);
+  }
+}
+
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .dark .dubhub-app-sheet-surface {
     background-color: rgba(18, 24, 48, 0.58) !important;
@@ -1277,6 +1305,22 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.7),
     0 -8px 28px rgba(15, 23, 42, 0.1) !important;
+}
+
+:root:not(.dark) .dubhub-app-toast-surface,
+.light .dubhub-app-toast-surface {
+  border-radius: 18px !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background-color: hsl(var(--background) / 0.96) !important;
+  background-image: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.98) 0%,
+    hsl(var(--background) / 0.9) 100%
+  );
+  color: hsl(var(--foreground));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 12px 28px rgba(15, 23, 42, 0.14) !important;
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -1509,11 +1553,21 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
 }
 
 .dark .dubhub-app-field.dubhub-app-field-success {
-  border-color: rgba(34, 197, 94, 0.5) !important;
-  background-color: rgba(20, 40, 32, 0.55) !important;
+  /* Quiet success: keep default field fill; subtle green border only — no outer glow. */
+  border-color: rgba(34, 197, 94, 0.22) !important;
+  background-color: rgba(28, 36, 68, 0.78) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(34, 197, 94, 0.22);
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.dark .dubhub-app-field.dubhub-app-field-success:focus,
+.dark .dubhub-app-field.dubhub-app-field-success:focus-visible {
+  border-color: rgba(10, 131, 255, 0.55) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(10, 131, 255, 0.28);
 }
 
 .dark .dubhub-app-select-content {
@@ -1572,8 +1626,17 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
 
 :root:not(.dark) .dubhub-app-field.dubhub-app-field-success,
 .light .dubhub-app-field.dubhub-app-field-success {
-  border-color: rgba(22, 163, 74, 0.55) !important;
-  background-color: rgba(240, 253, 244, 0.9) !important;
+  border-color: rgba(22, 163, 74, 0.28) !important;
+  background-color: hsl(var(--background)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+:root:not(.dark) .dubhub-app-field.dubhub-app-field-success:focus,
+:root:not(.dark) .dubhub-app-field.dubhub-app-field-success:focus-visible,
+.light .dubhub-app-field.dubhub-app-field-success:focus,
+.light .dubhub-app-field.dubhub-app-field-success:focus-visible {
+  border-color: rgba(10, 131, 255, 0.55) !important;
+  box-shadow: 0 0 0 1px rgba(10, 131, 255, 0.25);
 }
 
 :root:not(.dark) .dubhub-app-select-content,

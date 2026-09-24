@@ -120,7 +120,6 @@ import {
   profilePageCanvasClass,
 } from "@/lib/profile-banner-presentation";
 import { cn, formatUsernameDisplay, formatNotificationBadgeCount } from "@/lib/utils";
-import { APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_NAV_ROW_CLASS,
   SETTINGS_ROW_SUBTITLE_CLASS,
@@ -1589,13 +1588,10 @@ export default function UserProfile() {
     },
   });
 
-  type MarkAllNotificationsVars = { silent?: boolean };
-
   const markAllNotificationsAsReadMutation = useMutation({
-    mutationFn: async (variables: MarkAllNotificationsVars = {}) => {
+    mutationFn: async () => {
       if (!currentUser?.id) throw new Error("Not authenticated");
       await apiRequest("PATCH", `/api/user/${currentUser.id}/notifications/mark-all-read`);
-      return variables;
     },
     onMutate: async () => {
       const userId = currentUser?.id;
@@ -1621,13 +1617,10 @@ export default function UserProfile() {
       }
       queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser?.id, "notifications"] });
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/user", currentUser.id, "notifications"] });
-      }
-      if (!variables?.silent) {
-        toast({ title: "All notifications marked as read" });
       }
     },
   });
@@ -1858,14 +1851,11 @@ export default function UserProfile() {
     if (unreadCount <= 0 || !currentUser?.id) return;
     if (markAllReadOnNotificationsTabRef.current) return;
     markAllReadOnNotificationsTabRef.current = true;
-    markAllNotificationsAsReadMutation.mutate(
-      { silent: true },
-      {
-        onError: () => {
-          markAllReadOnNotificationsTabRef.current = false;
-        },
+    markAllNotificationsAsReadMutation.mutate(undefined, {
+      onError: () => {
+        markAllReadOnNotificationsTabRef.current = false;
       },
-    );
+    });
   }, [activeTab, unreadCount, currentUser?.id, markAllNotificationsAsReadMutation]);
 
   useEffect(() => {
@@ -3995,20 +3985,6 @@ export default function UserProfile() {
               data-profile-pager-index={3}
               className={profilePagerPanelClass(3, PROFILE_NOTIFICATIONS_TAB_CONTENT_CLASS)}
             >
-              {userType !== "moderator" && unreadCount > 0 && (
-                <div className="flex justify-end mb-4">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => markAllNotificationsAsReadMutation.mutate({ silent: false })}
-                    data-testid="mark-all-read"
-                    disabled={markAllNotificationsAsReadMutation.isPending}
-                    className={APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS}
-                  >
-                    Mark all as read
-                  </Button>
-                </div>
-              )}
               {isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0 ? (
                 <ProfileNotificationsLoadingSkeleton />
               ) : hasLoadedNotifications && visibleNotifications.length === 0 ? (

@@ -79,10 +79,16 @@ describe("VAT-ANON-5.1 anonymous ID info affordance", () => {
     assert.match(commentsSrc, /ANONYMOUS_ID_INFO_TITLE/);
     assert.match(commentsSrc, /ANONYMOUS_ID_INFO_BODY/);
     assert.match(commentsSrc, /anonymous-identification-info-content/);
-    assert.match(commentsSrc, /if \(!isAnonymousIdentified\) return null;/);
-    const rowIdx = commentsSrc.indexOf('data-testid="anonymous-identification-title-row"');
+    assert.match(commentsSrc, /if \(!showArtistIdentificationHeader\) return null;/);
+    const rowIdx = commentsSrc.indexOf('"anonymous-identification-title-row"');
     assert.ok(rowIdx > 0);
-    assert.match(commentsSrc.slice(rowIdx - 200, rowIdx + 1800), /StatInfoPopover/);
+    assert.match(
+      commentsSrc.slice(
+        commentsSrc.indexOf("grid-cols-[2rem_minmax(0,1fr)_2rem]"),
+        commentsSrc.indexOf('data-testid="artist-identification-status-divider"'),
+      ),
+      /StatInfoPopover/,
+    );
   });
 
   it("info copy matches product text and does not expose identity placeholders", () => {
