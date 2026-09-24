@@ -119,7 +119,8 @@ export function ReleaseAttachedClipCard({
               clip.isVerifiedArtist ? goldTextClass : "text-muted-foreground",
             )}
           >
-            @{formatUsernameDisplay(clip.uploaderUsername) || clip.uploaderUsername}
+            {formatUsernameDisplay(clip.uploaderUsername) ||
+              (clip.uploaderUsername ? `@${clip.uploaderUsername}` : "")}
           </span>
           {/* clip.isVerifiedArtist = uploader profile identity only */}
           {clip.isVerifiedArtist ? (

@@ -41,7 +41,8 @@ export const RELEASE_TRACKER_TAB_PAGER_VIEWPORT_CLASS =
   "relative z-0 -mx-4 flex min-h-0 flex-1 flex-col overflow-x-hidden" as const;
 
 /** Horizontal track; min-h-full matches viewport so empty space below short lists stays swipeable. */
-export const RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS = "flex min-h-full w-full flex-1" as const;
+export const RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS =
+  "flex min-h-full w-full flex-1" as const;
 
 /**
  * One full pager page. `px-4` restores the content inset.
@@ -51,12 +52,28 @@ export const RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS = "flex min-h-full w-full fle
 export const RELEASE_TRACKER_TAB_PAGER_PANEL_CLASS =
   "box-border min-w-full w-full shrink-0 grow-0 basis-full self-start px-4 data-[state=inactive]:!block data-[state=inactive]:h-0 data-[state=inactive]:min-h-0 data-[state=inactive]:overflow-y-hidden data-[state=active]:h-auto data-[state=active]:min-h-full data-[state=active]:overflow-y-visible" as const;
 
-/** Active list panel showing empty-state — flex column so EMPTY_REGION flex-1 can centre. */
-export const RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS = "flex flex-col" as const;
+/**
+ * Empty / loading list panel — Slice-1 fill so EMPTY_REGION can centre.
+ * Do not pair with VERT_UNLOCK height resets (`!h-auto !min-h-0`); use
+ * {@link RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS} when unlocked.
+ */
+export const RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS =
+  "flex min-h-full flex-1 flex-col self-stretch" as const;
 
-/** Overrides inactive collapse for current/adjacent during dragging or snapping. */
+/**
+ * Overrides inactive collapse for populated panels during dragging or snapping.
+ * Height resets are intentional for tall list measurement — never apply to
+ * empty/loading stable-fill panels (they collapse min-h-full → content height).
+ */
 export const RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS =
   "!h-auto !min-h-0 !overflow-y-visible" as const;
+
+/**
+ * Unlock for empty/loading only: escape inactive `h-0` / overflow clip without
+ * resetting min-height (preserves Slice-1 `min-h-full` settle).
+ */
+export const RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS =
+  "!overflow-y-visible data-[state=inactive]:!h-auto data-[state=inactive]:!min-h-full" as const;
 
 /** Release feed rows — swipe-eligible carve-out from interactive exclusion. */
 export const RELEASE_TRACKER_TAB_PAGER_CARD_ATTR = "data-releases-pager-card" as const;

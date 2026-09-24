@@ -26,6 +26,7 @@ import {
 } from "@/components/public-artist-discography";
 import { type ReleaseFeedCardData } from "@/components/release-feed-card";
 import { prefetchReleaseDetail } from "@/lib/release-cache";
+import { prefetchReleaseArtworkAtmosphere } from "@/lib/release-artwork-atmosphere";
 import { appendReleaseDetailFromProfileParam } from "@/lib/release-detail-navigation";
 import { APP_PAGE_SCROLL_CLASS } from "@/lib/app-shell-layout";
 import {
@@ -292,6 +293,7 @@ export default function PublicProfile() {
   const openRelease = useCallback(
     (release: ReleaseFeedCardData) => {
       prefetchReleaseDetail(queryClient, release.id);
+      prefetchReleaseArtworkAtmosphere(release.artworkUrl);
       navigate(appendReleaseDetailFromProfileParam(`/releases/${release.id}`, routeUsername));
     },
     [navigate, queryClient, routeUsername],

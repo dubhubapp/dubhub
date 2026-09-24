@@ -87,11 +87,11 @@ describe("C1 frozen geometry + anti-card rows", () => {
 
   it("does not card-wrap release rows or add per-row blur", () => {
     assert.match(RELEASE_FEED_ROW_BASE_CLASS, /items-start/);
-    assert.match(RELEASE_FEED_ROW_BASE_CLASS, /py-3\.5/);
+    assert.match(RELEASE_FEED_ROW_BASE_CLASS, /(?:^|\s)py-4(?:\s|$)/);
     assert.doesNotMatch(RELEASE_FEED_ROW_BASE_CLASS, /backdrop-blur|rounded-xl|bg-black\/30|shadow-lg/);
     assert.doesNotMatch(feedCardSrc, /backdrop-blur/);
-    assert.equal(RELEASE_FEED_ARTWORK_PX, 96);
-    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-24 w-24/);
+    assert.equal(RELEASE_FEED_ARTWORK_PX, 120);
+    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-\[7.5rem\] w-\[7.5rem\]/);
     assert.match(RELEASE_FEED_DIVIDE_CLASS, /divide-y/);
   });
 
@@ -108,6 +108,14 @@ describe("C1 frozen geometry + anti-card rows", () => {
       getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "my" }).title,
       "No upcoming releases",
     );
+    assert.equal(
+      getReleaseTrackerEmptyCopy({
+        view: "upcoming",
+        scope: "my",
+        hasOwnedReleaseHistory: false,
+      }).title,
+      "No releases yet",
+    );
     assert.equal(resolveMyUpcomingEmptyReleaseCtaLabel(), MY_UPCOMING_EMPTY_CTA_UNRESOLVED);
     assert.equal(getMyUpcomingEmptyReleaseCtaLabel(false), MY_UPCOMING_EMPTY_CTA_FIRST);
     assert.equal(getMyUpcomingEmptyReleaseCtaLabel(true), MY_UPCOMING_EMPTY_CTA_NEXT);
@@ -121,10 +129,10 @@ describe("C1 frozen geometry + anti-card rows", () => {
     assert.doesNotMatch(trackerSrc, /backdrop-blur.*empty|empty.*backdrop-blur/);
   });
 
-  it("skeleton count/geometry unchanged (3 flat rows, 96px art)", () => {
+  it("skeleton count/geometry unchanged (3 flat rows, 120px art)", () => {
     assert.equal(RELEASE_FEED_SKELETON_VARIANT, "flat-row");
     assert.match(trackerSrc, /\[0, 1, 2\]\.map/);
-    assert.match(trackerSrc, /h-24 w-24/);
+    assert.match(trackerSrc, /h-\[7.5rem\] w-\[7.5rem\]/);
     assert.match(trackerSrc, /data-testid="release-feed-row-skeleton"/);
     assert.doesNotMatch(trackerSrc, /tone="teal"/);
   });

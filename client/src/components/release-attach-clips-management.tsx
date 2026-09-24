@@ -1,14 +1,10 @@
-import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Info, Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ReleaseAttachedClipCard } from "@/components/release-attached-clips";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { StatInfoPopover } from "@/components/stat-info-popover";
 import { SEARCH_INPUT_KEYBOARD_PROPS } from "@/lib/form-search-input";
 import { apiRequest } from "@/lib/queryClient";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
@@ -18,6 +14,7 @@ import { playInteractionLightThrottled } from "@/lib/haptic";
 import {
   ATTACHMENT_CAPACITY_UPGRADE_HINT,
   resolveAttachmentCapacityHeader,
+  resolveProjectedAttachmentCount,
 } from "@/lib/release-attachment-limit";
 import { resolveAttachmentLimitNoticeProminence } from "@/lib/release-form-limit-prominence";
 import {
@@ -25,20 +22,24 @@ import {
   resolveAttachClipToggleKind,
 } from "@/lib/release-attach-post-release";
 import {
+  ATTACH_POSTS_INFO_COPY,
   ATTACH_POSTS_NO_ELIGIBLE_COPY,
   ATTACH_POSTS_NO_SEARCH_MATCH_COPY,
   ATTACH_POSTS_POLICY_DISCLOSURE_LABEL,
   ATTACH_POSTS_SEARCH_PLACEHOLDER,
-  ATTACH_POSTS_WARNING_COPY,
   eligiblePostToAttachedClip,
   isPostSelectedForRelease,
   shouldShowAttachDetachAllRow,
   shouldShowAttachSelectedCountRow,
   type EligiblePostForAttach,
 } from "@/lib/release-attach-clips-overview";
+import {
+  RELEASE_UPGRADE_HINT_CHEVRON_CLASS,
+  RELEASE_UPGRADE_HINT_CLASS,
+} from "@/lib/release-upgrade-hint";
 
 const FIELD_FOCUS =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:ring-offset-0";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-inset focus-visible:ring-offset-0";
 
 type ReleaseAttachClipsManagementProps = {
   eligiblePosts: EligiblePostForAttach[];
@@ -78,7 +79,6 @@ export function ReleaseAttachClipsManagement({
   onOpenClip,
 }: ReleaseAttachClipsManagementProps) {
   const queryClient = useQueryClient();
-  const [policyOpen, setPolicyOpen] = useState(false);
 
   const postQueries = useQueries({
     queries: filteredEligiblePosts.map((post) => ({
@@ -109,10 +109,14 @@ export function ReleaseAttachClipsManagement({
   const atFreeLimit =
     typeof maxSelectable === "number" && selectedPostIds.length >= maxSelectable;
 
+  const projectedAttachmentCount = resolveProjectedAttachmentCount({
+    selectedPostIds,
+  });
+
   const capacityProminence = attachmentUsage
     ? resolveAttachmentLimitNoticeProminence({
         unlimited: false,
-        usedOrSelected: attachmentUsage.used,
+        usedOrSelected: projectedAttachmentCount,
         limit: attachmentUsage.limit,
         showUpgradeCta,
       })
@@ -123,7 +127,7 @@ export function ReleaseAttachClipsManagement({
       ? null
       : resolveAttachmentCapacityHeader({
           unlimited: false,
-          used: attachmentUsage.used,
+          used: projectedAttachmentCount,
           limit: attachmentUsage.limit,
         });
 
@@ -168,35 +172,6 @@ export function ReleaseAttachClipsManagement({
           data-testid="release-attach-live-notice"
         >
           {lockedNotice}
-        </p>
-      ) : null}
-
-      {capacityHeader ? (
-        <p
-          className="text-xs leading-snug text-muted-foreground"
-          data-testid="release-attachment-limit-notice"
-          role="status"
-        >
-          <span data-testid="release-attachment-limit-title">
-            {capacityHeader.title}
-          </span>
-          {showCapacityUpgrade && onUpgradeClick ? (
-            <>
-              {" · "}
-              <button
-                type="button"
-                className="ios-press text-accent underline-offset-2 hover:underline"
-                onClick={() => {
-                  playInteractionLightThrottled();
-                  onUpgradeClick();
-                }}
-                data-testid="release-attachment-upgrade"
-                aria-label={`${ATTACHMENT_CAPACITY_UPGRADE_HINT}. Opens upgrade options.`}
-              >
-                {ATTACHMENT_CAPACITY_UPGRADE_HINT}
-              </button>
-            </>
-          ) : null}
         </p>
       ) : null}
 
@@ -267,7 +242,7 @@ export function ReleaseAttachClipsManagement({
               size="sm"
               type="button"
               variant="ghost"
-              className="text-destructive hover:text-destructive"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => onSelectedPostIdsChange([])}
               data-testid="release-attach-detach-all"
               aria-label="Detach all posts"
@@ -278,31 +253,57 @@ export function ReleaseAttachClipsManagement({
         </div>
       ) : null}
 
-      <Collapsible open={policyOpen} onOpenChange={setPolicyOpen}>
-        <CollapsibleTrigger
-          type="button"
-          className="ios-press flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground"
-          data-testid="release-attach-policy-disclosure"
+      {capacityHeader ? (
+        <p
+          className="text-xs leading-snug text-muted-foreground"
+          data-testid="release-attachment-limit-notice"
+          role="status"
         >
-          <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span>{ATTACH_POSTS_POLICY_DISCLOSURE_LABEL}</span>
-          <ChevronDown
-            className={cn(
-              "ml-auto h-3.5 w-3.5 shrink-0 transition-transform",
-              policyOpen && "rotate-180",
-            )}
-            aria-hidden
-          />
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <p
-            className="mt-2 text-xs leading-snug text-amber-600 dark:text-amber-400"
-            data-testid="release-attach-policy-copy"
-          >
-            {ATTACH_POSTS_WARNING_COPY}
-          </p>
-        </CollapsibleContent>
-      </Collapsible>
+          <span data-testid="release-attachment-limit-title">
+            {capacityHeader.title}
+          </span>
+          {showCapacityUpgrade && onUpgradeClick ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className={RELEASE_UPGRADE_HINT_CLASS}
+                onClick={() => {
+                  playInteractionLightThrottled();
+                  onUpgradeClick();
+                }}
+                data-testid="release-attachment-upgrade"
+                aria-label={`${ATTACHMENT_CAPACITY_UPGRADE_HINT}. Opens upgrade options.`}
+              >
+                <span>{ATTACHMENT_CAPACITY_UPGRADE_HINT}</span>
+                <ChevronRight className={RELEASE_UPGRADE_HINT_CHEVRON_CLASS} aria-hidden />
+              </button>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      <div
+        className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+        data-testid="release-attach-policy-disclosure"
+      >
+        <span>{ATTACH_POSTS_POLICY_DISCLOSURE_LABEL}</span>
+        <StatInfoPopover
+          label={ATTACH_POSTS_POLICY_DISCLOSURE_LABEL}
+          size="compact"
+          side="top"
+          align="start"
+          className="text-muted-foreground hover:text-foreground"
+          content={
+            <p
+              className="text-sm leading-relaxed text-muted-foreground"
+              data-testid="release-attach-policy-copy"
+            >
+              {ATTACH_POSTS_INFO_COPY}
+            </p>
+          }
+        />
+      </div>
     </div>
   );
 }

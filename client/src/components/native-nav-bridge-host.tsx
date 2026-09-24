@@ -49,6 +49,10 @@ import {
   subscribeHomeProfilePreviewNativeNavCover,
 } from "@/lib/home-profile-preview-native-cover";
 import {
+  isReleaseFormDrawerCoveringNativeNav,
+  subscribeReleaseFormDrawerNativeNavCover,
+} from "@/lib/release-form-drawer-native-cover";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -93,6 +97,11 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const profilePreviewCovering = useSyncExternalStore(
     subscribeHomeProfilePreviewNativeNavCover,
     isHomeProfilePreviewCoveringNativeNav,
+    () => false,
+  );
+  const releaseFormDrawerCovering = useSyncExternalStore(
+    subscribeReleaseFormDrawerNativeNavCover,
+    isReleaseFormDrawerCoveringNativeNav,
     () => false,
   );
   const [nativeEnabled, setNativeEnabled] = useState(false);
@@ -153,6 +162,7 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     paywallOpen: paywallCovering,
     postSequenceViewerOpen: postSequenceViewerCovering,
     profilePreviewOpen: profilePreviewCovering,
+    releaseFormDrawerOpen: releaseFormDrawerCovering,
   });
 
   useEffect(() => {

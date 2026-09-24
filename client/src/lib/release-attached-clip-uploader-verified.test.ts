@@ -81,6 +81,7 @@ describe("ReleaseAttachedClipCard uploader tick presentation", () => {
     assert.match(clipsSrc, /clipDisplayTitle\(clip\)/);
     assert.match(clipsSrc, /clip\.title\?\.trim\(\)/);
     assert.match(clipsSrc, /formatUsernameDisplay\(clip\.uploaderUsername\)/);
+    assert.doesNotMatch(clipsSrc, /@\{formatUsernameDisplay/);
     assert.match(clipsSrc, /clip\.likes\s*>\s*0/);
     assert.match(clipsSrc, /clip\.likes\.toLocaleString\(\)/);
   });

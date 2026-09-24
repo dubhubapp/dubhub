@@ -57,7 +57,8 @@ describe("Countdown overview status badge chrome", () => {
 
   it("Artwork and List both mount the shared badge beside the status pill", () => {
     assert.match(artworkSrc, /artwork-release-status-row[\s\S]*ReleaseStatusPill[\s\S]*CountdownStatusBadge/);
-    assert.match(listSrc, /release-feed-status-row[\s\S]*ReleaseStatusPill[\s\S]*CountdownStatusBadge/);
+    assert.match(listSrc, /release-feed-widget-slot[\s\S]*CountdownStatusBadge/);
+    assert.match(listSrc, /release-feed-status-row[\s\S]*ReleaseStatusPill/);
     assert.match(artworkSrc, /artwork-countdown-selected-indicator-/);
     assert.match(listSrc, /release-countdown-selected-indicator-/);
     assert.doesNotMatch(artworkSrc, /text-accent/);

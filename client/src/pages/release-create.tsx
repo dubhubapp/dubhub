@@ -73,6 +73,7 @@ import {
   defaultMidnightDraft,
   type ReleaseTimingDraft,
 } from "@/lib/release-timing-draft";
+import { validateReleaseRequiredMetadata } from "@/lib/release-form-required-metadata";
 import { releaseTimingApiErrorToast } from "@/lib/release-timing-api-error";
 import {
   ReleaseAttachPostsSection,
@@ -307,10 +308,6 @@ export default function ReleaseCreate() {
     releaseDate: releaseDate || null,
     releaseTimingMode: timingDraft.mode,
   });
-  const showFutureListenGuidance =
-    !linkUnlimited &&
-    releaseIsUpcoming &&
-    draftLinks.some((l) => !isPaidOnlyReleaseLink(l.platform, l.linkType));
   const platformChoices = useMemo(
     () => availablePlatformOptions(draftLinks.map((l) => l.platform)),
     [draftLinks],
@@ -350,15 +347,15 @@ export default function ReleaseCreate() {
     setPurposeTouched(false);
   };
 
-  const handleAddDraftLink = () => {
-    if (!linkPlatform || !linkUrl.trim()) return;
+  const handleAddDraftLink = (): boolean => {
+    if (!linkPlatform || !linkUrl.trim()) return false;
     if (!canAddDraftLink) {
       toast({
         title: LINK_LIMIT_TOAST.title,
         description: LINK_LIMIT_TOAST.body,
         variant: "destructive",
       });
-      return;
+      return false;
     }
     if (
       draftLinks.some(
@@ -372,18 +369,18 @@ export default function ReleaseCreate() {
         description: "Each platform can only be added once per release.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
     const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
     const purpose = unlocked.includes(linkPurpose)
       ? linkPurpose
       : (unlocked[0] ?? "listen");
-    if (isPaidOnlyReleaseLink(linkPlatform, purpose)) {
+    if (!linkUnlimited && isPaidOnlyReleaseLink(linkPlatform, purpose)) {
       openLinksPremiumUpgrade({
         platform: linkPlatform,
         requestedLinkType: purpose,
       });
-      return;
+      return false;
     }
     setDraftLinks((links) => [
       ...links,
@@ -391,12 +388,70 @@ export default function ReleaseCreate() {
         platform: linkPlatform,
         url: linkUrl.trim(),
         linkType: purpose === "listen" ? null : purpose,
+        sortOrder: links.length,
       },
     ]);
     setLinkPlatform("");
     setLinkUrl("");
     setLinkPurpose("listen");
     setPurposeTouched(false);
+    return true;
+  };
+
+  const clearLinkForm = () => {
+    setLinkPlatform("");
+    setLinkUrl("");
+    setLinkPurpose("listen");
+    setPurposeTouched(false);
+  };
+
+  const startEditDraftLink = (link: {
+    platform: string;
+    url: string;
+    linkType?: string | null;
+  }) => {
+    setLinkPlatform(link.platform);
+    setLinkUrl(link.url);
+    const raw = String(link.linkType ?? "").trim().toLowerCase();
+    const purpose: CanonicalLinkPurpose =
+      raw === "presave" || raw === "download" || raw === "listen" ? raw : "listen";
+    setLinkPurpose(purpose);
+    setPurposeTouched(true);
+  };
+
+  const handleUpdateDraftLink = (): boolean => {
+    if (!linkPlatform || !linkUrl.trim()) return false;
+    const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
+    const purpose = unlocked.includes(linkPurpose)
+      ? linkPurpose
+      : (unlocked[0] ?? "listen");
+    if (!linkUnlimited && isPaidOnlyReleaseLink(linkPlatform, purpose)) {
+      openLinksPremiumUpgrade({
+        platform: linkPlatform,
+        requestedLinkType: purpose,
+      });
+      return false;
+    }
+    const platformKey = normalizePlatformForApi(linkPlatform);
+    setDraftLinks((links) =>
+      links.map((l) =>
+        normalizePlatformForApi(l.platform) === platformKey
+          ? {
+              ...l,
+              url: linkUrl.trim(),
+              linkType: purpose === "listen" ? null : purpose,
+            }
+          : l,
+      ),
+    );
+    clearLinkForm();
+    return true;
+  };
+
+  const handleReorderDraftLinks = (
+    next: { id?: string; platform: string; url: string; linkType?: string | null; sortOrder?: number | null }[],
+  ) => {
+    setDraftLinks(next);
   };
 
   const { data: verifiedArtists = [] } = useQuery({
@@ -541,7 +596,8 @@ export default function ReleaseCreate() {
       draft: timingDraft,
     });
     if ("error" in timingFields) {
-      toast({ title: timingFields.error, variant: "destructive" });
+      toast({ title: timingFields.error });
+      setScheduleSheetOpen(true);
       return;
     }
     createSubmitStartedRef.current = true;
@@ -711,19 +767,17 @@ export default function ReleaseCreate() {
     e.preventDefault();
     if (createLocked || saving) return;
     releaseCreateHapticFiredRef.current = false;
-    if (!title.trim()) {
-      toast({ title: "Title is required", variant: "destructive" });
-      return;
-    }
-    if (title.trim().length > INPUT_LIMITS.releaseTitle) {
-      toast({
-        title: `Title must be at most ${INPUT_LIMITS.releaseTitle} characters`,
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!comingSoon && !releaseDate) {
-      toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
+    const requiredIssue = validateReleaseRequiredMetadata({
+      title,
+      comingSoon,
+      releaseDateYmd: releaseDate,
+      timingDraft,
+      titleMaxLength: INPUT_LIMITS.releaseTitle,
+    });
+    if (requiredIssue) {
+      toast({ title: requiredIssue.message });
+      if (requiredIssue.focus === "title") setTitleSheetOpen(true);
+      else setScheduleSheetOpen(true);
       return;
     }
     const timingFields = buildReleaseTimingRequestFields({
@@ -732,7 +786,8 @@ export default function ReleaseCreate() {
       draft: timingDraft,
     });
     if ("error" in timingFields) {
-      toast({ title: timingFields.error, variant: "destructive" });
+      toast({ title: timingFields.error });
+      setScheduleSheetOpen(true);
       return;
     }
     if (draftHasDuplicatePlatforms(draftLinks)) {
@@ -899,6 +954,9 @@ export default function ReleaseCreate() {
                   ),
                 )
               }
+              onStartEditLink={startEditDraftLink}
+              onClearLinkForm={clearLinkForm}
+              onReorderLinks={handleReorderDraftLinks}
               linkPlatform={linkPlatform}
               onLinkPlatformChange={(nextPlatform) => {
                 setLinkPlatform(nextPlatform);
@@ -926,6 +984,7 @@ export default function ReleaseCreate() {
               linkTypeOptions={linkTypeOptions}
               canAddDraftLink={canAddDraftLink}
               onAddLink={handleAddDraftLink}
+              onUpdateLink={handleUpdateDraftLink}
               limitNotice={{
                 show: !!linkAllowanceQuery.data && linkLimitProminence !== "hidden",
                 prominence: linkLimitProminence,
@@ -934,7 +993,6 @@ export default function ReleaseCreate() {
                 showUpgrade: showLinkUpgrade,
                 onUpgradeClick: () => handleUpgrade("link_limit"),
               }}
-              showFutureListenGuidance={showFutureListenGuidance}
             />
             <ReleaseCollaboratorsSheet
               open={collaboratorsSheetOpen}

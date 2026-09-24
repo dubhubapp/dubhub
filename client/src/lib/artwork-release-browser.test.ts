@@ -796,6 +796,9 @@ describe("Artwork C.3 geometric crossing + attraction + thumb pad", () => {
       resolveArtworkViewColumnMinHClass(false),
       ARTWORK_VIEW_COLUMN_LISTENER_MIN_H_CLASS,
     );
+    assert.match(trackerSrc, /resolveArtworkViewColumnMinHClass\(isArtist\)/);
+    assert.doesNotMatch(trackerSrc, /resolveReleasesContentColumnMinHClass|RELEASES_USABLE_BAND/);
+    assert.doesNotMatch(artworkBrowserSrc, /RELEASES_USABLE_BAND|resolveReleasesContentColumnMinHClass/);
     assert.match(trackerSrc, /ARTWORK_VIEW_WELL_CLASS/);
     assert.match(trackerSrc, /artwork-view-well/);
     assert.match(trackerSrc, /resolveArtworkViewPageBottomPadClass/);

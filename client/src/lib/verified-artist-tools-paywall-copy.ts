@@ -39,12 +39,26 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS = [
   "See your Release Alerts audience and send alerts to listeners waiting",
 ] as const;
 
-/** Optional detail under a benefit title (paywall list). */
+/**
+ * Optional detail under a benefit title (paywall list).
+ * Anonymous detail is source-gated via {@link resolveVerifiedArtistToolsBenefitDetail}
+ * — not shown on general VAT entry points.
+ */
 export const VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS: Partial<
   Record<(typeof VERIFIED_ARTIST_TOOLS_BENEFITS)[number], string>
 > = {
   [ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE]: ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
 };
+
+/** Long anonymous benefit detail only when opened from Identify anonymously. */
+export function resolveVerifiedArtistToolsBenefitDetail(args: {
+  benefit: string;
+  source: VerifiedArtistToolsPaywallSource;
+}): string | undefined {
+  if (args.benefit !== ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE) return undefined;
+  if (args.source !== "anonymous_identify") return undefined;
+  return ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL;
+}
 
 /** Shorter list for SE / short viewports — same product meaning. */
 export const VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT = [

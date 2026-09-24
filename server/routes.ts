@@ -102,6 +102,10 @@ import {
   upsertReleaseLinkWithLimit,
 } from "./upsert-release-link-with-limit";
 import {
+  isReleaseLinkReorderError,
+  reorderReleaseLinks,
+} from "./reorder-release-links";
+import {
   isAcceptedReleaseLinkPlatform,
   isApprovedReleaseLinkPlatform,
   isFreeLinkLimitReachedError,
@@ -6763,6 +6767,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("[/api/releases/:id/links] Error:", error);
       res.status(500).json({ message: "Failed to upsert link" });
+    }
+  });
+
+  app.put("/api/releases/:id/links/order", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
+      const releaseId = req.params.id;
+      const canManage = await storage.canManageRelease(releaseId, req.dbUser.id);
+      if (!canManage) {
+        const release = await storage.getRelease(releaseId);
+        if (!release) return res.status(404).json({ message: "Release not found" });
+        return res.status(403).json({ message: "Not allowed to manage this release" });
+      }
+      const links = await reorderReleaseLinks(releaseId, req.body?.linkIds, { pool });
+      res.json(links);
+    } catch (error) {
+      if (isReleaseLinkReorderError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+      console.error("[/api/releases/:id/links/order] Error:", error);
+      res.status(500).json({ message: "Failed to reorder links" });
     }
   });
 

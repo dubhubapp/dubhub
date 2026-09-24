@@ -19,11 +19,14 @@ export type ReleaseActivityStats = {
   daysToRelease: number | null;
 };
 
+/** Activity icons + metric values — foreground/white; labels stay muted. */
+export const RELEASE_ACTIVITY_ICON_CLASS = "text-foreground" as const;
+export const RELEASE_ACTIVITY_VALUE_CLASS = "text-foreground" as const;
+
 type ReleaseKeyStatDefinition = {
   key: "posts" | "saves" | "comments" | "uploaders";
   label: string;
   icon: ComponentType<{ className?: string }>;
-  tone: string;
   value: (stats: ReleaseActivityStats) => number;
 };
 
@@ -33,28 +36,24 @@ export const RELEASE_ACTIVITY_KEY_STATS: readonly ReleaseKeyStatDefinition[] = [
     key: "posts",
     label: "Featured posts",
     icon: Radio,
-    tone: "text-purple-400",
     value: (stats) => stats.postsFeaturingTrack,
   },
   {
     key: "saves",
     label: "Saves",
     icon: Heart,
-    tone: "text-pink-400",
     value: (stats) => stats.totalLikes,
   },
   {
     key: "comments",
     label: "Comments",
     icon: MessageCircle,
-    tone: "text-cyan-400",
     value: (stats) => stats.totalComments,
   },
   {
     key: "uploaders",
     label: "Uploaders",
     icon: Users,
-    tone: "text-blue-400",
     value: (stats) => stats.uniqueUploaders,
   },
 ] as const;
@@ -73,12 +72,20 @@ function ReleaseKeyStatSlot({
       data-testid={`release-key-stat-${def.key}`}
     >
       {stats ? (
-        <Icon className={cn("h-4 w-4 shrink-0", def.tone)} aria-hidden />
+        <Icon
+          className={cn("h-4 w-4 shrink-0", RELEASE_ACTIVITY_ICON_CLASS)}
+          aria-hidden
+        />
       ) : (
         <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
       )}
       {stats ? (
-        <span className={cn("text-base font-bold tabular-nums leading-none", def.tone)}>
+        <span
+          className={cn(
+            "text-base font-bold tabular-nums leading-none",
+            RELEASE_ACTIVITY_VALUE_CLASS,
+          )}
+        >
           {def.value(stats).toLocaleString()}
         </span>
       ) : (

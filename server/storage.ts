@@ -4623,10 +4623,10 @@ export class DatabaseStorage implements IStorage {
 
   async getReleaseLinks(releaseId: string): Promise<any[]> {
     const result = await db.execute(sql`
-      SELECT id, release_id, platform, url, link_type, created_at
+      SELECT id, release_id, platform, url, link_type, sort_order, created_at
       FROM release_links
       WHERE release_id = ${releaseId}
-      ORDER BY platform
+      ORDER BY sort_order ASC, platform ASC
     `);
     const rows = (result as any).rows || [];
     return rows.map((r: any) => ({
@@ -4635,6 +4635,7 @@ export class DatabaseStorage implements IStorage {
       platform: r.platform,
       url: r.url,
       linkType: r.link_type,
+      sortOrder: r.sort_order ?? 0,
       createdAt: r.created_at,
     }));
   }
@@ -4649,9 +4650,14 @@ export class DatabaseStorage implements IStorage {
         UPDATE release_links SET url = ${url}, link_type = ${linkType ?? null} WHERE release_id = ${releaseId} AND platform = ${platform}
       `);
     } else {
+      const maxResult = await db.execute(sql`
+        SELECT COALESCE(MAX(sort_order), -1)::int AS m FROM release_links WHERE release_id = ${releaseId}
+      `);
+      const maxRows = (maxResult as any).rows || [];
+      const nextOrder = (maxRows[0]?.m ?? -1) + 1;
       await db.execute(sql`
-        INSERT INTO release_links (release_id, platform, url, link_type, created_at)
-        VALUES (${releaseId}, ${platform}, ${url}, ${linkType ?? null}, NOW())
+        INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
+        VALUES (${releaseId}, ${platform}, ${url}, ${linkType ?? null}, ${nextOrder}, NOW())
       `);
     }
   }

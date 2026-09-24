@@ -156,9 +156,12 @@ export const APP_MATERIAL_SELECT_ITEM_CLASS =
 export const APP_MATERIAL_SEGMENT_BASE_CLASS =
   "ios-press box-border min-h-10 min-w-0 w-full max-w-full rounded-[15px] border px-2 py-2.5 text-sm font-medium leading-snug transition-colors break-words text-center" as const;
 
-/** Generic selected segment — dub hub blue with dimensional material (CSS). */
+/**
+ * Selected segment — dark material platter (no saturated system-blue fill).
+ * Dimensional highlight via `.dubhub-app-segment-active` in index.css.
+ */
 export const APP_MATERIAL_SEGMENT_ACTIVE_CLASS =
-  "dubhub-app-segment-active border-[#0a83ff]/45 font-semibold text-white" as const;
+  "dubhub-app-segment-active border-white/20 font-semibold text-white" as const;
 
 export const APP_MATERIAL_SEGMENT_INACTIVE_CLASS =
   "border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1] hover:text-white" as const;

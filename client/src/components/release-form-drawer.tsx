@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
 import {
   Drawer,
@@ -15,6 +15,13 @@ import {
 } from "@/lib/app-material";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 import { useIosKeyboardAwareScroll } from "@/lib/use-ios-keyboard-aware-scroll";
+import { acquireReleaseFormDrawerNativeNavCover } from "@/lib/release-form-drawer-native-cover";
+import {
+  nativeNavSheetCoversBar,
+  nativeNavSheetPhaseOnAnimationEnd,
+  nativeNavSheetPhaseOnOpenChange,
+  type NativeNavSheetPhase,
+} from "@/lib/native-nav-sheet-cover";
 
 type ReleaseFormDrawerProps = {
   open: boolean;
@@ -51,6 +58,7 @@ const STABLE_HEIGHT =
  * Shared Release Create/Edit bottom drawer (Vaul).
  * Fixed header + scroll body + sticky footer. Keyboard pads the body —
  * it does not lift the whole sheet (which clipped the header off-screen).
+ * Covers native Liquid Glass while open/closing so Done stays tappable.
  */
 export function ReleaseFormDrawer({
   open,
@@ -69,11 +77,26 @@ export function ReleaseFormDrawer({
   className,
 }: ReleaseFormDrawerProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [sheetPhase, setSheetPhase] = useState<NativeNavSheetPhase>("closed");
   const { isNativeIos, keyboardHeight, keyboardOpen, prefersReducedMotion } =
     useIosKeyboardAwareScroll({
       enabled: open,
       scrollContainerRef: scrollRef,
     });
+
+  useEffect(() => {
+    if (open) setSheetPhase("open");
+  }, [open]);
+
+  useEffect(() => {
+    if (!nativeNavSheetCoversBar(sheetPhase)) return;
+    return acquireReleaseFormDrawerNativeNavCover();
+  }, [sheetPhase]);
+
+  const handleOpenChange = (next: boolean) => {
+    setSheetPhase(nativeNavSheetPhaseOnOpenChange(next));
+    onOpenChange(next);
+  };
 
   const keyboardPadPx = isNativeIos && keyboardOpen ? keyboardHeight : 0;
   // Stable sheets: hide Done while the keyboard is open so the body can
@@ -85,13 +108,16 @@ export function ReleaseFormDrawer({
       ? footer
       : showDone
         ? (
-          <div className="shrink-0 border-t border-white/[0.06] px-4 py-3">
+          <div
+            className="shrink-0 border-t border-white/[0.06] px-4 py-3"
+            data-testid="release-form-drawer-footer"
+          >
             <Button
               type="button"
               className={APP_MATERIAL_FORM_PRIMARY_CLASS}
               onClick={() => {
                 playInteractionLightThrottled();
-                onOpenChange(false);
+                handleOpenChange(false);
               }}
               data-testid={doneTestId}
             >
@@ -104,8 +130,11 @@ export function ReleaseFormDrawer({
   return (
     <Drawer
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={handleOpenChange}
       shouldScaleBackground={false}
+      onAnimationEnd={(animationOpen) => {
+        setSheetPhase(nativeNavSheetPhaseOnAnimationEnd(animationOpen));
+      }}
     >
       <DrawerPortal>
         <DrawerOverlay

@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { ReleaseFormDrawer } from "@/components/release-form-drawer";
 import {
   clampReleaseTitleInput,
   releaseTitleCharCountLabel,
   RELEASE_TITLE_MAX_LENGTH,
 } from "@/lib/release-title-input";
+import { APP_MATERIAL_FIELD_CLASS, APP_MATERIAL_FORM_PRIMARY_CLASS } from "@/lib/app-material";
+import { cn } from "@/lib/utils";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 
 type ReleaseTitleSheetProps = {
@@ -52,14 +55,14 @@ export function ReleaseTitleSheet({
       showDone={false}
       footer={
         <div className="shrink-0 border-t border-white/10 px-4 py-3">
-          <button
+          <Button
             type="button"
-            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+            className={APP_MATERIAL_FORM_PRIMARY_CLASS}
             onClick={commitAndClose}
             data-testid="release-title-sheet-done"
           >
             Done
-          </button>
+          </Button>
         </div>
       }
     >
@@ -70,7 +73,7 @@ export function ReleaseTitleSheet({
           onChange={(e) => setDraft(clampReleaseTitleInput(e.target.value))}
           placeholder="Brand New Banger"
           maxLength={RELEASE_TITLE_MAX_LENGTH}
-          className="h-11 bg-black/40"
+          className={cn("h-11", APP_MATERIAL_FIELD_CLASS)}
           autoComplete="off"
           enterKeyHint="done"
           onKeyDown={(e) => {

@@ -30,117 +30,114 @@ export const RELEASE_TRACKER_PAGE_CLASS =
 
 /** Flat media row — no per-item glass card shell. Top-align artwork with metadata. */
 export const RELEASE_FEED_ROW_BASE_CLASS =
-  "ios-press relative flex items-start w-full min-w-0 gap-3.5 overflow-hidden py-3.5 text-left transition-colors" as const;
+  "ios-press relative flex items-start w-full min-w-0 gap-3.5 overflow-hidden py-4 text-left transition-colors" as const;
 
 /** Restrained list separators (not card chrome). */
 export const RELEASE_FEED_DIVIDE_CLASS = "divide-y divide-white/[0.08]" as const;
 
-/** Artwork size token — 96px (R1.5). Subtle edge only; size/layout frozen. */
+/**
+ * Artwork size — 120px (+8 from 112) for stronger presence without dominating.
+ * Meta min-height must stay in lockstep with artwork.
+ */
 export const RELEASE_FEED_ARTWORK_SIZE_CLASS =
-  "h-24 w-24 shrink-0 rounded-lg ring-1 ring-white/10 shadow-[0_2px_8px_rgba(0,0,0,0.22)]" as const;
-export const RELEASE_FEED_ARTWORK_PX = 96 as const;
-export const RELEASE_FEED_ARTWORK_FALLBACK_ICON_CLASS = "h-11 w-11" as const;
+  "h-[7.5rem] w-[7.5rem] shrink-0 rounded-lg ring-1 ring-white/10 shadow-[0_2px_8px_rgba(0,0,0,0.22)]" as const;
+export const RELEASE_FEED_ARTWORK_PX = 120 as const;
+export const RELEASE_FEED_ARTWORK_FALLBACK_ICON_CLASS = "h-12 w-12" as const;
 
 /**
- * Metadata column — min-h matches artwork so the icon row can sit on the
- * artwork bottom via mt-auto without clipping.
+ * Metadata column — min-h matches artwork; flex-col so the action row can
+ * mt-auto to the artwork bottom edge regardless of title/artist line count.
  */
 export const RELEASE_FEED_META_COLUMN_CLASS =
-  "flex min-h-24 min-w-0 flex-1 flex-col" as const;
+  "flex min-h-[7.5rem] min-w-0 flex-1 flex-col" as const;
+
+/** Top metadata: title (+ @artist when shown). */
+export const RELEASE_FEED_META_TOP_CLASS =
+  "flex w-full min-w-0 flex-col gap-1" as const;
 
 /**
- * Solo metadata stack — relaxed 2px gap (accepted no-byline composition).
- * Do not change for byline 4px budget work.
+ * @deprecated Prefer schedule row + mt-auto actions.
+ * Kept for tests that still reference the old bottom group token.
+ */
+export const RELEASE_FEED_META_BOTTOM_CLASS =
+  "flex w-full min-w-0 flex-col gap-1" as const;
+
+/**
+ * @deprecated Prefer META_TOP / META_BOTTOM. Solo stack kept for rhythm helpers.
  */
 export const RELEASE_FEED_META_STACK_SOLO_CLASS =
-  "flex min-w-0 flex-col gap-0.5" as const;
+  "flex w-full min-w-0 flex-col gap-1" as const;
 
 /**
- * Byline metadata stack — 4px gaps across title → byline → date → status
- * (equal share of the leftover 16px in the 96px artwork budget).
+ * @deprecated Prefer META_TOP / META_BOTTOM. Byline stack kept for rhythm helpers.
  */
 export const RELEASE_FEED_META_STACK_BYLINE_CLASS =
-  "flex min-w-0 flex-col gap-1" as const;
+  "flex w-full min-w-0 flex-col gap-1" as const;
 
 /** @deprecated Prefer SOLO / BYLINE via resolveReleaseFeedCardRhythm. */
 export const RELEASE_FEED_META_STACK_CLASS = RELEASE_FEED_META_STACK_SOLO_CLASS;
 
 /* -------------------------------------------------------------------------- */
-/* Byline-visible (dense) — compact shells for attribution-heavy rows          */
+/* Byline-visible — title then @artist (stacked), calmer leading               */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Title row shell — top-align glyphs; ~14px one-line floor; grows on wrap.
- */
 export const RELEASE_FEED_TITLE_ROW_CLASS =
-  "flex min-h-[14px] w-full min-w-0 items-start" as const;
+  "flex w-full min-w-0 items-start" as const;
 
-/** Dense title text — leading-none inside the shell. */
+/** Title — primary; truncate cleanly across full meta width. */
 export const RELEASE_FEED_TITLE_CLASS =
-  "m-0 w-full min-w-0 break-all p-0 text-[15px] font-semibold leading-none text-foreground line-clamp-2" as const;
+  "m-0 w-full min-w-0 truncate p-0 text-[15px] font-semibold leading-snug text-foreground" as const;
 
-/** Byline row shell — items-start; ~12px shell. */
 export const RELEASE_FEED_BYLINE_ROW_CLASS =
-  "flex h-[12px] w-full min-w-0 shrink-0 items-start" as const;
+  "flex w-full min-w-0 items-start" as const;
 
-/** Dense byline text. */
+/** Artist — secondary; muted; no separator into the title. */
 export const RELEASE_FEED_BYLINE_CLASS =
-  "m-0 w-full min-w-0 truncate p-0 text-xs leading-none text-muted-foreground" as const;
+  "m-0 w-full min-w-0 truncate p-0 text-xs leading-snug text-muted-foreground" as const;
 
-/** Date row shell — same start-aligned model as byline. */
+/** Date on its own row (status pill follows beneath). */
 export const RELEASE_FEED_DATE_ROW_CLASS =
-  "flex h-[12px] w-full min-w-0 shrink-0 items-start" as const;
+  "flex w-full min-w-0 items-start" as const;
 
-/** Dense date text. */
 export const RELEASE_FEED_DATE_CLASS =
-  "m-0 w-full min-w-0 p-0 text-xs leading-none text-muted-foreground" as const;
+  "m-0 w-full min-w-0 p-0 text-xs leading-snug text-muted-foreground" as const;
 
-/**
- * Dense status row — gap from parent stack only (no extra pt).
- */
+/** Status (+ collab) row beneath the date. */
 export const RELEASE_FEED_STATUS_ROW_CLASS =
-  "flex w-full flex-wrap items-center gap-1" as const;
+  "flex w-full min-w-0 flex-wrap items-center gap-1" as const;
+
+/** @deprecated Combined date+status row removed — status is its own row again. */
+export const RELEASE_FEED_SCHEDULE_ROW_CLASS =
+  "flex w-full min-w-0 flex-col gap-1" as const;
 
 /**
- * Dense provider list — same 4px as metadata gaps (pt-1); mt-auto keeps
- * glyph bottoms on artwork when column has slack / overflow variance.
+ * Provider icons — sit at the end of the bottom meta group so glyph bottoms
+ * flush with the artwork edge. No mt-auto here (bottom group owns anchoring).
  */
 export const RELEASE_FEED_CTA_LIST_BYLINE_CLASS =
-  "mt-auto flex w-full min-w-0 flex-wrap items-end gap-[3px] pt-1" as const;
+  "flex w-full min-w-0 flex-wrap items-end gap-[3px]" as const;
 
 /* -------------------------------------------------------------------------- */
-/* No-byline (solo) — restored pre-compaction relaxed text rhythm (HEAD)       */
+/* No-byline (solo) — title only, same top/bottom contract                     */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Solo title — original leading-snug composition (no compact shell).
- * Exact pre-rhythm-experiment list typography from committed ReleaseFeedCard.
- */
 export const RELEASE_FEED_TITLE_SOLO_CLASS =
-  "line-clamp-2 min-w-0 break-all text-[15px] font-semibold leading-snug text-foreground" as const;
+  "line-clamp-2 w-full min-w-0 break-words text-[15px] font-semibold leading-snug text-foreground" as const;
 
-/** Solo date — original text-xs without tightened leading/shell. */
 export const RELEASE_FEED_DATE_SOLO_CLASS =
-  "text-xs text-muted-foreground" as const;
+  "w-full min-w-0 text-xs leading-snug text-muted-foreground" as const;
 
-/**
- * Solo status — restored pt-0.5 breathing room under date (HEAD).
- */
 export const RELEASE_FEED_STATUS_ROW_SOLO_CLASS =
-  "flex w-full flex-wrap items-center gap-1 pt-0.5" as const;
+  "flex w-full min-w-0 flex-wrap items-center gap-1" as const;
 
-/**
- * Solo provider list — no extra pt; mt-auto supplies the large flexible
- * space that made own solo rows feel balanced.
- */
 export const RELEASE_FEED_CTA_LIST_SOLO_CLASS =
-  "mt-auto flex w-full min-w-0 flex-wrap items-end gap-[3px]" as const;
+  "flex w-full min-w-0 flex-wrap items-end gap-[3px]" as const;
 
 /** @deprecated Prefer BYLINE / SOLO via resolveReleaseFeedCardRhythm. */
 export const RELEASE_FEED_CTA_LIST_CLASS = RELEASE_FEED_CTA_LIST_BYLINE_CLASS;
 
 export type ReleaseFeedCardRhythm = {
-  /** True when artist/collaborator byline is shown (dense attribution). */
+  /** True when artist/collaborator byline is shown. */
   bylineVisible: boolean;
   /** When true, wrap title/byline/date in compact shell divs. */
   useTextShells: boolean;
@@ -157,8 +154,8 @@ export type ReleaseFeedCardRhythm = {
 
 /**
  * Spacing density from byline visibility — not collaboration/account type.
- * Byline → compact shells + equal 4px gaps (stack gap-1 + provider pt-1).
- * No byline → restored relaxed solo typography + mt-auto breathing room.
+ * Byline → stacked title then @artist in the top group.
+ * No byline → title-only top group (own releases).
  */
 export function resolveReleaseFeedCardRhythm(args: {
   showByline: boolean;
@@ -233,6 +230,34 @@ export const RELEASE_FEED_CTA_ICON_SLOT_CLASS =
 /** Decorative Lucide ExternalLink is intentionally not shown on list CTAs. */
 export const RELEASE_FEED_CTA_SHOW_EXTERNAL_ICON = false as const;
 
+/** Primary streaming / pre-save pill — content-sized, no forced width. */
+export const RELEASE_FEED_PRIMARY_CTA_CLASS =
+  "ios-press ios-press-soft relative inline-flex w-auto max-w-full shrink-0 items-center gap-1.5 rounded-full bg-white/[0.12] px-2.5 py-1.5 text-xs font-semibold leading-none text-foreground ring-1 ring-white/10 hover:bg-white/[0.16] hover:text-white" as const;
+
+export const RELEASE_FEED_PRIMARY_CTA_ICON_SLOT_CLASS =
+  "flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden" as const;
+
+/** Plain secondary platform glyphs — no per-icon containers. */
+export const RELEASE_FEED_SECONDARY_ICON_CLASS =
+  `ios-press ios-press-soft relative inline-flex h-5 w-5 shrink-0 items-center justify-center text-foreground/80 hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
+
+export const RELEASE_FEED_SECONDARY_ICON_SLOT_CLASS =
+  "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden" as const;
+
+/** +N overflow → opens release detail. */
+export const RELEASE_FEED_OVERFLOW_COUNT_CLASS =
+  "ios-press ios-press-soft inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md px-1 text-[11px] font-semibold leading-none text-muted-foreground hover:text-foreground" as const;
+
+/** Bottom actions anchored to artwork bottom — mt-auto on the action row only. */
+export const RELEASE_FEED_ACTIONS_ROW_CLASS =
+  "mt-auto flex w-full min-w-0 items-end justify-between gap-2 pt-1" as const;
+
+export const RELEASE_FEED_ACTIONS_LEADING_CLASS =
+  "flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1.5" as const;
+
+export const RELEASE_FEED_WIDGET_SLOT_CLASS =
+  "flex shrink-0 items-end justify-end" as const;
+
 /** Detail: inline wrap row — no button/card shells. */
 export const RELEASE_DETAIL_LINK_ROW_CLASS =
   "mb-6 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2.5" as const;
@@ -300,10 +325,11 @@ export const RELEASE_TRACKER_SECONDARY_TABLIST_CLASS =
 
 /**
  * Usable empty region below sticky tabs / above Add Release (or listener bottom pad).
- * Parent column supplies min-height via artwork column tokens; this flex-centres the block.
+ * `min-h-full` fills the active pager panel even when that panel is temporarily
+ * `display:block` (flex-1 alone cannot grow without a flex parent).
  */
 export const RELEASE_TRACKER_EMPTY_REGION_CLASS =
-  "flex min-h-0 flex-1 flex-col items-center justify-center py-4" as const;
+  "flex min-h-full w-full flex-1 flex-col items-center justify-center py-4" as const;
 
 /** Empty-state group (icon/title/body/optional CTA) — one centred block, no viewport %). */
 export const RELEASE_TRACKER_EMPTY_CLASS =
@@ -391,14 +417,36 @@ export function shouldShowReleaseFeedByline(args: {
 export function getReleaseTrackerEmptyCopy(args: {
   view: ReleaseTrackerFeedView;
   scope: ReleaseTrackerFeedScope;
+  /**
+   * My Upcoming only — owned Past history when known.
+   * `null` / omitted = unresolved (stable generic upcoming empty).
+   */
+  hasOwnedReleaseHistory?: boolean | null;
 }): { title: string; body: string } {
   if (args.view === "upcoming") {
+    if (args.scope === "my") {
+      if (args.hasOwnedReleaseHistory === true) {
+        return {
+          title: "No upcoming releases",
+          body: "Add your next release when you're ready.",
+        };
+      }
+      if (args.hasOwnedReleaseHistory === false) {
+        return {
+          title: "No releases yet",
+          body:
+            "Create your first release to start linking your identified posts and sharing release details.",
+        };
+      }
+      return {
+        title: "No upcoming releases",
+        body:
+          "Create a release or accept collaboration invites to see upcoming releases here.",
+      };
+    }
     return {
       title: "No upcoming releases",
-      body:
-        args.scope === "my"
-          ? "Create a release or accept collaboration invites to see upcoming releases here."
-          : "Like posts that are verified by artists to see their releases here.",
+      body: "Like posts identified by artists to see their releases here.",
     };
   }
   if (args.view === "collaborations") {
@@ -407,12 +455,15 @@ export function getReleaseTrackerEmptyCopy(args: {
       body: "You'll see releases you're invited to collaborate on here.",
     };
   }
+  if (args.scope === "my") {
+    return {
+      title: "No past releases",
+      body: "Your released music will appear here.",
+    };
+  }
   return {
     title: "No past releases",
-    body:
-      args.scope === "my"
-        ? "Past releases from you and collaborations will appear here."
-        : "Past releases from liked posts will appear here.",
+    body: "Past releases from liked posts will appear here.",
   };
 }
 

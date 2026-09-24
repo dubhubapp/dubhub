@@ -22,8 +22,10 @@ import {
   clearReleaseAtmosphereCacheForTests,
   normaliseAtmosphereRgb,
   peekReleaseAtmosphereCache,
+  prefetchReleaseArtworkAtmosphere,
   resolveReleaseArtworkAtmosphere,
   rgbToHsl,
+  shouldHoldReleaseDetailForAtmosphere,
   seedReleaseAtmosphereCacheForTests,
 } from "@/lib/release-artwork-atmosphere";
 
@@ -31,6 +33,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const detailSrc = readFileSync(join(here, "../pages/release-detail.tsx"), "utf8");
 const cssSrc = readFileSync(join(here, "../index.css"), "utf8");
 const utilSrc = readFileSync(join(here, "./release-artwork-atmosphere.ts"), "utf8");
+const trackerSrc = readFileSync(join(here, "../pages/release-tracker.tsx"), "utf8");
+const publicProfileSrc = readFileSync(join(here, "../pages/public-profile.tsx"), "utf8");
+const linksSrc = readFileSync(
+  join(here, "../components/release-links-sheet.tsx"),
+  "utf8",
+);
 
 function rgbaFill(
   w: number,
@@ -182,5 +190,168 @@ describe("C4B.2 presentation / flicker guards", () => {
     assert.match(detailSrc, /artworkAtmosphereUrl/);
     assert.match(utilSrc, /instant: cached\.mode === "artwork"/);
     assert.ok(atmosphereLightness01(atmosphereResultFromRgba(rgbaFill(4, 4, [255, 255, 255, 255])).rgb) < 0.35);
+  });
+});
+
+describe("Atmosphere prefetch before detail navigation", () => {
+  beforeEach(() => {
+    clearReleaseAtmosphereCacheForTests();
+  });
+
+  it("prefetch is fire-and-forget; no-op without URL", () => {
+    assert.match(utilSrc, /export function prefetchReleaseArtworkAtmosphere/);
+    assert.match(utilSrc, /void resolveReleaseArtworkAtmosphere\(artworkUrl\)/);
+    assert.doesNotThrow(() => prefetchReleaseArtworkAtmosphere(null));
+    assert.doesNotThrow(() => prefetchReleaseArtworkAtmosphere(""));
+    assert.doesNotThrow(() => prefetchReleaseArtworkAtmosphere("   "));
+  });
+
+  it("inflight + cache dedupe reuse resolveReleaseArtworkAtmosphere", () => {
+    assert.match(utilSrc, /const inflight = new Map/);
+    assert.match(utilSrc, /inflight\.get\(url\)/);
+    assert.match(utilSrc, /resultCache\.get\(url\)/);
+  });
+
+  it("warmed cache → bootstrap artwork/neutral + instant (no brand pending)", () => {
+    const url = "https://cdn.example/prefetch-warm.png";
+    const derived = atmosphereResultFromRgba(
+      rgbaFill(8, 8, [40, 180, 90, 255]),
+    );
+    assert.equal(derived.mode, "artwork");
+    seedReleaseAtmosphereCacheForTests(url, derived);
+    const boot = bootstrapReleaseAtmosphere(url);
+    assert.equal(boot.mode, "artwork");
+    assert.equal(boot.ready, true);
+    assert.equal(boot.instant, true);
+    assert.notEqual(boot.mode, "brand");
+  });
+
+  it("cold URL still brand-pending until extract; failure → brand", async () => {
+    const cold = bootstrapReleaseAtmosphere("https://cdn.example/cold-miss.png");
+    assert.equal(cold.mode, "brand");
+    assert.equal(cold.ready, false);
+    assert.equal(cold.instant, false);
+
+    const failed = await resolveReleaseArtworkAtmosphere(
+      "https://example.invalid/prefetch-fail.png",
+    );
+    assert.equal(failed.mode, "brand");
+    assert.deepEqual(failed.rgb, RELEASE_ATMOSPHERE_BRAND_RGB);
+  });
+
+  it("Releases tab + public profile warm atmosphere before navigate", () => {
+    assert.match(trackerSrc, /prefetchReleaseArtworkAtmosphere\(r\.artworkUrl\)/);
+    assert.match(
+      trackerSrc,
+      /prefetchReleaseDetail\(queryClient, r\.id\);\s*\n\s*prefetchReleaseArtworkAtmosphere/,
+    );
+    assert.doesNotMatch(trackerSrc, /await prefetchReleaseArtworkAtmosphere/);
+    assert.match(
+      publicProfileSrc,
+      /prefetchReleaseArtworkAtmosphere\(release\.artworkUrl\)/,
+    );
+    assert.match(cssSrc, /transition: opacity 200ms/);
+  });
+});
+
+describe("Release detail hold-until-atmosphere-ready", () => {
+  beforeEach(() => {
+    clearReleaseAtmosphereCacheForTests();
+  });
+
+  it("cache hit / no artwork → do not hold; miss + artwork → hold", () => {
+    assert.equal(
+      shouldHoldReleaseDetailForAtmosphere({
+        artworkUrl: "",
+        atmosphereReady: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldHoldReleaseDetailForAtmosphere({
+        artworkUrl: null,
+        atmosphereReady: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldHoldReleaseDetailForAtmosphere({
+        artworkUrl: "https://cdn.example/art.png",
+        atmosphereReady: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldHoldReleaseDetailForAtmosphere({
+        artworkUrl: "https://cdn.example/art.png",
+        atmosphereReady: false,
+      }),
+      true,
+    );
+  });
+
+  it("detail gates content on hold; quiet skeleton; no timeout/mask", () => {
+    assert.match(detailSrc, /shouldHoldReleaseDetailForAtmosphere/);
+    assert.match(detailSrc, /holdForAtmosphere/);
+    assert.match(detailSrc, /quietPendingAtmosphere/);
+    assert.match(detailSrc, /revealContentAfterAtmosphereHold/);
+    assert.match(detailSrc, /motion-safe:fade-in-0/);
+    assert.match(detailSrc, /motion-safe:duration-200/);
+    assert.doesNotMatch(detailSrc, /setTimeout\(/);
+    assert.doesNotMatch(detailSrc, /atmosphere.*mask|mask.*atmosphere/i);
+    assert.match(cssSrc, /data-atmosphere-pending="true"/);
+    assert.match(
+      cssSrc,
+      /\[data-atmosphere-pending="true"\][\s\S]{0,80}background-image: none/,
+    );
+  });
+
+  it("cold extract reveal uses instant wash (no brand→artwork under content)", () => {
+    assert.match(
+      detailSrc,
+      /atmosphereFromExtract\.mode === "artwork" \|\|[\s\S]{0,40}atmosphereFromExtract\.mode === "neutral"/,
+    );
+  });
+
+  it("prefetch remains non-blocking", () => {
+    assert.doesNotMatch(trackerSrc, /await prefetchReleaseArtworkAtmosphere/);
+    assert.match(utilSrc, /void resolveReleaseArtworkAtmosphere\(artworkUrl\)/);
+  });
+
+  it("resolver brand fallback counts as ready (no permanent hold)", async () => {
+    const url = "https://example.invalid/hold-fallback.png";
+    const result = await resolveReleaseArtworkAtmosphere(url);
+    assert.equal(result.mode, "brand");
+    seedReleaseAtmosphereCacheForTests(url, result);
+    const boot = bootstrapReleaseAtmosphere(url);
+    assert.equal(boot.ready, true);
+    assert.equal(
+      shouldHoldReleaseDetailForAtmosphere({
+        artworkUrl: url,
+        atmosphereReady: boot.ready,
+      }),
+      false,
+    );
+  });
+});
+
+describe("Link drag surface radius polish", () => {
+  it("active row uses list radius + opaque fill; not overlay 22px surface", () => {
+    assert.match(linksSrc, /LINK_ROW_DRAG_SURFACE_CLASS/);
+    assert.match(linksSrc, /rounded-md bg-\[rgb\(20,26,48\)\]/);
+    assert.doesNotMatch(
+      linksSrc,
+      /LINK_ROW_DRAG_SURFACE_CLASS[\s\S]{0,120}APP_MATERIAL_OVERLAY_SURFACE_CLASS/,
+    );
+    assert.doesNotMatch(linksSrc, /bg-white\/\[0\.06\]/);
+    assert.match(linksSrc, /restrictToVerticalAxis/);
+  });
+
+  it("management LIST row PlatformIcon is h-5; grip stays h-4", () => {
+    assert.match(
+      linksSrc,
+      /release-link-row-edit-[\s\S]{0,280}className="h-5 w-5 object-contain"/,
+    );
+    assert.match(linksSrc, /GripVertical className="h-4 w-4"/);
   });
 });

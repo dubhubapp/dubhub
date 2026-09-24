@@ -12,6 +12,7 @@ import {
 import {
   RELEASE_FEED_ARTWORK_PX,
   RELEASE_FEED_ARTWORK_SIZE_CLASS,
+  RELEASE_FEED_ACTIONS_ROW_CLASS,
   RELEASE_FEED_BYLINE_CLASS,
   RELEASE_FEED_BYLINE_ROW_CLASS,
   RELEASE_FEED_CTA_CLASS,
@@ -33,6 +34,7 @@ import {
   RELEASE_FEED_META_STACK_BYLINE_CLASS,
   RELEASE_FEED_META_STACK_CLASS,
   RELEASE_FEED_META_STACK_SOLO_CLASS,
+  RELEASE_FEED_META_TOP_CLASS,
   RELEASE_FEED_MONTH_HEADING_CLASS,
   RELEASE_FEED_ROW_BASE_CLASS,
   RELEASE_FEED_SKELETON_VARIANT,
@@ -365,7 +367,8 @@ describe("ReleaseTracker row extras", () => {
   it("overview links are icon-led horizontal actions without Listen-on text chrome", () => {
     assert.equal(RELEASE_FEED_CTA_SHOW_EXTERNAL_ICON, false);
     assert.match(RELEASE_FEED_CTA_LIST_CLASS, /flex-wrap/);
-    assert.match(RELEASE_FEED_CTA_LIST_CLASS, /mt-auto/);
+    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_CLASS, /mt-auto/);
+    assert.match(RELEASE_FEED_ACTIONS_ROW_CLASS, /mt-auto/);
     assert.match(RELEASE_FEED_CTA_LIST_CLASS, /gap-\[3px\]/);
     assert.match(RELEASE_FEED_CTA_LIST_CLASS, /items-end/);
     assert.doesNotMatch(RELEASE_FEED_CTA_LIST_CLASS, /absolute|gap-0(?:\s|$)/);
@@ -403,7 +406,7 @@ describe("ReleaseTracker row extras", () => {
     assert.equal(solo.bylineVisible, false);
     assert.equal(solo.useTextShells, false);
     assert.equal(solo.metaStackClass, RELEASE_FEED_META_STACK_SOLO_CLASS);
-    assert.match(RELEASE_FEED_META_STACK_SOLO_CLASS, /gap-0\.5/);
+    assert.match(RELEASE_FEED_META_STACK_SOLO_CLASS, /(?:^|\s)gap-1(?:\s|$)/);
     assert.equal(solo.titleClass, RELEASE_FEED_TITLE_SOLO_CLASS);
     assert.match(RELEASE_FEED_TITLE_SOLO_CLASS, /leading-snug/);
     assert.match(RELEASE_FEED_TITLE_SOLO_CLASS, /text-\[15px\]/);
@@ -411,35 +414,38 @@ describe("ReleaseTracker row extras", () => {
     assert.match(RELEASE_FEED_DATE_SOLO_CLASS, /text-xs/);
     assert.doesNotMatch(RELEASE_FEED_DATE_SOLO_CLASS, /leading-none/);
     assert.equal(solo.statusRowClass, RELEASE_FEED_STATUS_ROW_SOLO_CLASS);
-    assert.match(RELEASE_FEED_STATUS_ROW_SOLO_CLASS, /pt-0\.5/);
+    assert.doesNotMatch(RELEASE_FEED_STATUS_ROW_SOLO_CLASS, /pt-0\.5/);
     assert.equal(solo.ctaListClass, RELEASE_FEED_CTA_LIST_SOLO_CLASS);
-    assert.match(RELEASE_FEED_CTA_LIST_SOLO_CLASS, /mt-auto/);
-    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_SOLO_CLASS, /(?:^|\s)pt-/);
+    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_SOLO_CLASS, /mt-auto|(?:^|\s)pt-/);
 
     const byline = resolveReleaseFeedCardRhythm({ showByline: true });
     assert.equal(byline.bylineVisible, true);
     assert.equal(byline.useTextShells, true);
     assert.equal(byline.metaStackClass, RELEASE_FEED_META_STACK_BYLINE_CLASS);
     assert.match(RELEASE_FEED_META_STACK_BYLINE_CLASS, /(?:^|\s)gap-1(?:\s|$)/);
-    assert.doesNotMatch(RELEASE_FEED_META_STACK_BYLINE_CLASS, /gap-0\.5/);
     assert.equal(byline.titleRowClass, RELEASE_FEED_TITLE_ROW_CLASS);
-    assert.match(RELEASE_FEED_TITLE_ROW_CLASS, /min-h-\[14px\]/);
-    assert.match(RELEASE_FEED_TITLE_CLASS, /leading-none/);
-    assert.match(RELEASE_FEED_BYLINE_ROW_CLASS, /h-\[12px\]/);
-    assert.match(RELEASE_FEED_BYLINE_ROW_CLASS, /items-start/);
+    assert.match(RELEASE_FEED_TITLE_CLASS, /leading-snug/);
+    assert.match(RELEASE_FEED_TITLE_CLASS, /truncate/);
+    assert.doesNotMatch(RELEASE_FEED_TITLE_CLASS, /·|leading-none/);
+    assert.equal(byline.bylineRowClass, RELEASE_FEED_BYLINE_ROW_CLASS);
+    assert.match(RELEASE_FEED_BYLINE_CLASS, /text-muted-foreground/);
     assert.match(RELEASE_FEED_DATE_ROW_CLASS, /items-start/);
     assert.equal(byline.ctaListClass, RELEASE_FEED_CTA_LIST_BYLINE_CLASS);
-    assert.match(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /mt-auto/);
-    assert.match(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /(?:^|\s)pt-1(?:\s|$)/);
-    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /pt-\[6px\]|pt-\[5px\]|pt-\[4px\]|pt-\[2px\]/);
+    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /mt-auto|(?:^|\s)pt-/);
 
-    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-24/);
-    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /w-24/);
+    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-\[7.5rem\]/);
+    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /w-\[7.5rem\]/);
     assert.match(RELEASE_FEED_CTA_ICON_ONLY_CLASS, /(?:^|\s)h-5(?:\s|$)/);
     assert.match(RELEASE_FEED_CTA_HIT_SLOP_CLASS, /before:h-8/);
     assert.match(feedCardSrc, /resolveReleaseFeedCardRhythm/);
-    assert.match(feedCardSrc, /rhythm\.metaStackClass/);
+    assert.match(feedCardSrc, /RELEASE_FEED_META_TOP_CLASS/);
+    assert.match(RELEASE_FEED_ACTIONS_ROW_CLASS, /mt-auto/);
+    assert.doesNotMatch(feedCardSrc, /RELEASE_FEED_SCHEDULE_ROW_CLASS/);
+    assert.match(feedCardSrc, /release-feed-status-row/);
     assert.match(feedCardSrc, /data-release-feed-rhythm/);
+    assert.match(feedCardSrc, /release-feed-title/);
+    assert.match(feedCardSrc, /release-feed-byline/);
+    assert.doesNotMatch(feedCardSrc, /formatReleaseFeedPrimaryLine|release-feed-primary-line/);
     assert.doesNotMatch(feedCardSrc, /collaboratorStatus.*CTA|isCollaboration|translate-y|-\s*mt-/);
   });
 
@@ -486,7 +492,7 @@ describe("ReleaseTracker row extras", () => {
 
   it("ReleaseFeedCard provider links stop row navigation and allow natural growth", () => {
     assert.match(feedCardSrc, /stopReleaseRowNavigation/);
-    assert.match(RELEASE_FEED_TITLE_CLASS, /line-clamp-2/);
+    assert.match(RELEASE_FEED_TITLE_CLASS, /truncate/);
     assert.match(RELEASE_FEED_TITLE_SOLO_CLASS, /line-clamp-2/);
     assert.match(feedCardSrc, /RELEASE_FEED_META_COLUMN_CLASS/);
     assert.doesNotMatch(feedCardSrc, /-mt-\[/);
@@ -552,23 +558,27 @@ describe("ReleaseTracker month headings / loading / empty / Add Release", () => 
     assert.match(RELEASE_FEED_ROW_BASE_CLASS, /items-start/);
   });
 
-  it("artwork size remains 96px; primary metadata stays top-anchored (status not mt-auto)", () => {
-    assert.equal(RELEASE_FEED_ARTWORK_PX, 96);
-    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-24/);
-    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /w-24/);
-    assert.match(RELEASE_FEED_META_COLUMN_CLASS, /min-h-24/);
-    assert.doesNotMatch(RELEASE_FEED_META_COLUMN_CLASS, /(?:^|\s)h-24(?:\s|$)/);
+  it("artwork size remains 120px; action row anchors to art bottom", () => {
+    assert.equal(RELEASE_FEED_ARTWORK_PX, 120);
+    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-\[7.5rem\]/);
+    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /w-\[7.5rem\]/);
+    assert.match(RELEASE_FEED_META_COLUMN_CLASS, /min-h-\[7.5rem\]/);
+    assert.doesNotMatch(RELEASE_FEED_META_COLUMN_CLASS, /(?:^|\s)h-24(?:\s|$)|min-h-24/);
     assert.doesNotMatch(RELEASE_FEED_META_COLUMN_CLASS, /justify-between|overflow-hidden/);
+    assert.match(RELEASE_FEED_META_TOP_CLASS, /flex-col/);
+    assert.match(RELEASE_FEED_META_TOP_CLASS, /(?:^|\s)gap-1(?:\s|$)/);
+    assert.match(RELEASE_FEED_ACTIONS_ROW_CLASS, /mt-auto/);
+    assert.match(RELEASE_FEED_STATUS_ROW_CLASS, /w-full/);
     assert.match(RELEASE_FEED_META_STACK_CLASS, /flex-col/);
-    assert.match(RELEASE_FEED_META_STACK_CLASS, /gap-0\.5/);
+    assert.match(RELEASE_FEED_META_STACK_CLASS, /(?:^|\s)gap-1(?:\s|$)/);
     assert.match(RELEASE_FEED_META_STACK_BYLINE_CLASS, /(?:^|\s)gap-1(?:\s|$)/);
     assert.doesNotMatch(RELEASE_FEED_STATUS_ROW_CLASS, /mt-auto|pt-/);
     assert.match(RELEASE_FEED_STATUS_ROW_CLASS, /flex-wrap/);
-    assert.match(RELEASE_FEED_CTA_LIST_CLASS, /mt-auto/);
-    assert.match(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /(?:^|\s)pt-1(?:\s|$)/);
-    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /pt-\[6px\]|pt-\[5px\]/);
-    assert.match(RELEASE_FEED_CTA_LIST_SOLO_CLASS, /mt-auto/);
+    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_CLASS, /mt-auto/);
+    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_BYLINE_CLASS, /(?:^|\s)pt-/);
+    assert.doesNotMatch(RELEASE_FEED_CTA_LIST_SOLO_CLASS, /mt-auto/);
     assert.match(RELEASE_FEED_ROW_BASE_CLASS, /items-start/);
+    assert.match(RELEASE_FEED_ROW_BASE_CLASS, /(?:^|\s)py-4(?:\s|$)/);
     assert.doesNotMatch(RELEASE_FEED_META_COLUMN_CLASS, /-mt-|collab/i);
     assert.doesNotMatch(RELEASE_FEED_META_STACK_CLASS, /-mt-|collab/i);
     assert.doesNotMatch(RELEASE_FEED_META_STACK_BYLINE_CLASS, /-mt-|collab/i);
@@ -621,11 +631,35 @@ describe("ReleaseTracker month headings / loading / empty / Add Release", () => 
   });
 
   it("empty states remain scope-specific", () => {
-    assert.equal(getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "my" }).title, "No upcoming releases");
-    assert.match(getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "my" }).body, /Create a release/);
-    assert.match(getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "saved" }).body, /Like posts/);
+    assert.equal(
+      getReleaseTrackerEmptyCopy({
+        view: "upcoming",
+        scope: "my",
+        hasOwnedReleaseHistory: false,
+      }).title,
+      "No releases yet",
+    );
+    assert.match(
+      getReleaseTrackerEmptyCopy({
+        view: "upcoming",
+        scope: "my",
+        hasOwnedReleaseHistory: false,
+      }).body,
+      /Create your first release/,
+    );
+    assert.match(
+      getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "saved" }).body,
+      /identified by artists/,
+    );
+    assert.doesNotMatch(
+      getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "saved" }).body,
+      /verified by artists/,
+    );
     assert.equal(getReleaseTrackerEmptyCopy({ view: "collaborations", scope: "my" }).title, "No collaborations");
-    assert.match(getReleaseTrackerEmptyCopy({ view: "past", scope: "my" }).body, /you and collaborations/);
+    assert.match(
+      getReleaseTrackerEmptyCopy({ view: "past", scope: "my" }).body,
+      /Your released music will appear here/,
+    );
     assert.match(getReleaseTrackerEmptyCopy({ view: "past", scope: "saved" }).body, /liked posts/);
   });
 
@@ -633,6 +667,8 @@ describe("ReleaseTracker month headings / loading / empty / Add Release", () => 
     assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /flex-1/);
     assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /justify-center/);
     assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /items-center/);
+    assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /min-h-full/);
+    assert.doesNotMatch(RELEASE_TRACKER_EMPTY_REGION_CLASS, /min-h-0/);
     assert.doesNotMatch(RELEASE_TRACKER_EMPTY_REGION_CLASS, /top-\[|translateY\(|\b\d+vh\b|\b\d+%/);
     assert.doesNotMatch(RELEASE_TRACKER_EMPTY_CLASS, /top-\[|translateY\(|py-14|\b\d+vh\b/);
     assert.match(trackerSrc, /isEmptyContentRegion/);
@@ -711,16 +747,17 @@ describe("ReleaseTracker month headings / loading / empty / Add Release", () => 
       1,
     );
 
-    // title/body + Saved empty copy unchanged
-    const copy = getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "my" });
-    assert.equal(copy.title, "No upcoming releases");
-    assert.equal(
-      copy.body,
-      "Create a release or accept collaboration invites to see upcoming releases here.",
-    );
+    // title/body + Saved empty copy
+    const copy = getReleaseTrackerEmptyCopy({
+      view: "upcoming",
+      scope: "my",
+      hasOwnedReleaseHistory: false,
+    });
+    assert.equal(copy.title, "No releases yet");
+    assert.match(copy.body, /identified posts/);
     assert.match(
       getReleaseTrackerEmptyCopy({ view: "upcoming", scope: "saved" }).body,
-      /Like posts/,
+      /identified by artists/,
     );
     assert.equal(MY_UPCOMING_EMPTY_CTA_FIRST, "Add your first release");
     assert.equal(MY_UPCOMING_EMPTY_CTA_NEXT, "Add your next release");

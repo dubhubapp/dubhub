@@ -59,9 +59,9 @@ describe("C3 form material opt-in (no global Input/Select rewrite)", () => {
 });
 
 describe("C3 segments + schedule + drawer", () => {
-  it("replaces generic teal accent segments with dub hub blue", () => {
-    assert.match(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /#0a83ff|dubhub-app-segment-active/);
-    assert.doesNotMatch(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /bg-accent|border-accent/);
+  it("uses dark material selected segments (no saturated blue fill)", () => {
+    assert.match(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /dubhub-app-segment-active/);
+    assert.doesNotMatch(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /#0a83ff|bg-accent|border-accent/);
     assert.match(statusSrc, /APP_MATERIAL_SEGMENT_ACTIVE_CLASS/);
     assert.doesNotMatch(statusSrc, /bg-accent|border-accent text-accent/);
     assert.match(APP_MATERIAL_SEGMENT_INACTIVE_CLASS, /bg-white\/\[0\.06\]/);

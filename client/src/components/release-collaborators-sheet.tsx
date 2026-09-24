@@ -45,7 +45,7 @@ type ReleaseCollaboratorsSheetProps = {
 };
 
 const SHEET_CONTROL_FOCUS =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:ring-offset-0";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-inset focus-visible:ring-offset-0";
 
 /**
  * Collaborators drawer: stable viewport height; search results scroll inside

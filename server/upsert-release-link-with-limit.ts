@@ -28,6 +28,7 @@ export type ReleaseLinkRow = {
   platform: string;
   url: string;
   linkType: string | null;
+  sortOrder: number;
   createdAt: string | Date | null;
 };
 
@@ -79,6 +80,7 @@ function mapLinkRow(r: {
   platform: string;
   url: string;
   link_type: string | null;
+  sort_order: number;
   created_at: string | Date | null;
 }): ReleaseLinkRow {
   return {
@@ -87,6 +89,7 @@ function mapLinkRow(r: {
     platform: r.platform,
     url: r.url,
     linkType: r.link_type,
+    sortOrder: typeof r.sort_order === "number" ? r.sort_order : 0,
     createdAt: r.created_at,
   };
 }
@@ -141,13 +144,27 @@ async function listLinks(
     platform: string;
     url: string;
     link_type: string | null;
+    sort_order: number;
     created_at: string | Date | null;
   }>(
-    `SELECT id, release_id, platform, url, link_type, created_at
-     FROM release_links WHERE release_id = $1 ORDER BY platform`,
+    `SELECT id, release_id, platform, url, link_type, sort_order, created_at
+     FROM release_links WHERE release_id = $1
+     ORDER BY sort_order ASC, platform ASC`,
     [releaseId],
   );
   return result.rows.map(mapLinkRow);
+}
+
+async function nextSortOrder(
+  client: PoolClient,
+  releaseId: string,
+): Promise<number> {
+  const result = await client.query<{ m: number | null }>(
+    `SELECT MAX(sort_order)::int AS m FROM release_links WHERE release_id = $1`,
+    [releaseId],
+  );
+  const max = result.rows[0]?.m;
+  return typeof max === "number" && Number.isFinite(max) ? max + 1 : 0;
 }
 
 async function resolvePaidAccess(
@@ -358,10 +375,11 @@ export async function upsertReleaseLinkWithLimit(
         [url, linkType, releaseId, platform],
       );
     } else {
+      const sortOrder = await nextSortOrder(client, releaseId);
       await client.query(
-        `INSERT INTO release_links (release_id, platform, url, link_type, created_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [releaseId, platform, url, linkType],
+        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [releaseId, platform, url, linkType, sortOrder],
       );
     }
 
@@ -450,10 +468,11 @@ export async function replaceReleasePrimaryLink(
         `DELETE FROM release_links WHERE release_id = $1 AND platform = $2`,
         [releaseId, fromPlatform],
       );
+      const sortOrder = await nextSortOrder(client, releaseId);
       await client.query(
-        `INSERT INTO release_links (release_id, platform, url, link_type, created_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [releaseId, platform, url, linkType],
+        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [releaseId, platform, url, linkType, sortOrder],
       );
       logLinkLimitDecision({
         releaseId,
@@ -488,10 +507,11 @@ export async function replaceReleasePrimaryLink(
         `DELETE FROM release_links WHERE release_id = $1 AND platform = $2`,
         [releaseId, fromPlatform],
       );
+      const sortOrder = await nextSortOrder(client, releaseId);
       await client.query(
-        `INSERT INTO release_links (release_id, platform, url, link_type, created_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [releaseId, platform, url, linkType],
+        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [releaseId, platform, url, linkType, sortOrder],
       );
       logLinkLimitDecision({
         releaseId,

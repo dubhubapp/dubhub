@@ -93,3 +93,18 @@ export function formatReleaseTitleLine(
   if (!cleanedTitle) return byline;
   return `${byline} — ${cleanedTitle}`;
 }
+
+/**
+ * Releases list combined line helper (not the default list layout).
+ * Prefer stacked title then @artist in ReleaseFeedCard.
+ * If combined text is needed elsewhere, separator is " - " (not ·).
+ */
+export function formatReleaseFeedPrimaryLine(
+  byline: string,
+  title: string,
+): string {
+  const attribution = sanitizeReleaseText(byline);
+  const cleanedTitle = sanitizeReleaseText(title);
+  if (attribution && cleanedTitle) return `${attribution} - ${cleanedTitle}`;
+  return attribution || cleanedTitle;
+}

@@ -14,6 +14,7 @@ import {
   parseAttachmentCapacity,
   resolveAttachmentCapacityHeader,
   resolveAttachmentLimitCardCopy,
+  resolveProjectedAttachmentCount,
 } from "./release-attachment-limit";
 
 describe("release-attachment-limit client helpers", () => {
@@ -75,6 +76,32 @@ describe("release-attachment-limit client helpers", () => {
     assert.equal(
       resolveAttachmentCapacityHeader({ unlimited: true, used: 2, limit: null }),
       null,
+    );
+  });
+
+  it("projected attachment count follows current selection (create + edit)", () => {
+    assert.equal(resolveProjectedAttachmentCount({ selectedPostIds: [] }), 0);
+    assert.equal(
+      resolveProjectedAttachmentCount({ selectedPostIds: ["a", "b", "c"] }),
+      3,
+    );
+    assert.equal(
+      resolveAttachmentCapacityHeader({
+        unlimited: false,
+        used: resolveProjectedAttachmentCount({
+          selectedPostIds: ["a", "b", "c"],
+        }),
+        limit: 3,
+      })?.title,
+      "3 of 3 free attachments used",
+    );
+    assert.equal(
+      resolveAttachmentCapacityHeader({
+        unlimited: false,
+        used: resolveProjectedAttachmentCount({ selectedPostIds: ["a", "b"] }),
+        limit: 3,
+      })?.title,
+      "2 of 3 free attachments used",
     );
   });
 

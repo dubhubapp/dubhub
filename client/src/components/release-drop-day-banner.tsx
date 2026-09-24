@@ -17,6 +17,7 @@ import {
   APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_SURFACE_CLASS,
 } from "@/lib/app-material";
+import { prefetchReleaseArtworkAtmosphere } from "@/lib/release-artwork-atmosphere";
 import {
   RELEASE_DROP_DAY_ARTWORK_FRAME_CLASS,
   RELEASE_DROP_DAY_ARTWORK_MULTI_SIZE_CLASS,
@@ -585,6 +586,9 @@ export function ReleaseDropDayBanner() {
                   releasesCount: releases.length,
                 });
                 dismiss();
+                if (releases.length === 1) {
+                  prefetchReleaseArtworkAtmosphere(releases[0]?.artworkUrl);
+                }
                 navigate(ctaRoute);
               }}
             >

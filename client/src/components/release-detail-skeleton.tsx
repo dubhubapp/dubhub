@@ -17,10 +17,15 @@ import type { CSSProperties } from "react";
 
 type ReleaseDetailSkeletonProps = {
   onBack: () => void;
+  /** Atmosphere hold: quiet navy shell (no strong brand wash under loading chrome). */
+  quietPendingAtmosphere?: boolean;
 };
 
 /** Page shell while release detail payload is loading (cold start, no placeholder). */
-export function ReleaseDetailSkeleton({ onBack }: ReleaseDetailSkeletonProps) {
+export function ReleaseDetailSkeleton({
+  onBack,
+  quietPendingAtmosphere = false,
+}: ReleaseDetailSkeletonProps) {
   return (
     <SwipeBackPage
       enabled
@@ -39,6 +44,7 @@ export function ReleaseDetailSkeleton({ onBack }: ReleaseDetailSkeletonProps) {
       data-atmosphere-ready="true"
       data-atmosphere-instant="true"
       data-release-atmosphere="brand"
+      data-atmosphere-pending={quietPendingAtmosphere ? "true" : undefined}
       data-testid="release-detail-skeleton"
     >
       <div
@@ -60,7 +66,7 @@ export function ReleaseDetailSkeleton({ onBack }: ReleaseDetailSkeletonProps) {
         </div>
 
         <div className="mb-6 flex min-w-0 gap-4 overflow-hidden">
-          <DubHubSkeletonBar tone="teal" className="h-32 w-32 shrink-0 rounded-xl" />
+          <DubHubSkeletonBar tone="mid" className="h-32 w-32 shrink-0 rounded-xl" />
           <div className="min-w-0 flex-1 space-y-2 overflow-hidden pt-0.5">
             <DubHubSkeletonBar tone="faint" className="h-3 w-24 max-w-full" />
             <DubHubSkeletonBar tone="default" className="h-5 w-full max-w-[12rem]" />
@@ -69,7 +75,7 @@ export function ReleaseDetailSkeleton({ onBack }: ReleaseDetailSkeletonProps) {
               <DubHubSkeletonBar tone="faint" className="h-[1.375rem] w-16 rounded-full" />
               <DubHubSkeletonBar tone="faint" className="h-[1.375rem] w-24 rounded" />
             </div>
-            <DubHubSkeletonBar tone="teal" className="mt-1 h-3 w-36 max-w-full" />
+            <DubHubSkeletonBar tone="faint" className="mt-1 h-3 w-36 max-w-full" />
           </div>
         </div>
 

@@ -63,7 +63,10 @@ export const PLATFORM_ICONS: Record<string, string> = {
   bandcamp: BandcampIcon,
 };
 
-/** Sort links by selectable order; legacy/unknowns at end. */
+/** Sort links by selectable catalog order; legacy/unknowns at end.
+ * Prefer API / draft array order once sort_order is persisted — do not re-sort
+ * ordered public results with this helper.
+ */
 export function sortLinksByPlatform<T extends { platform: string }>(links: T[]): T[] {
   return [...links].sort((a, b) => {
     const ia = (PLATFORM_ORDER as readonly string[]).indexOf(
@@ -74,7 +77,10 @@ export function sortLinksByPlatform<T extends { platform: string }>(links: T[]):
     );
     const ai = ia === -1 ? 999 : ia;
     const bi = ib === -1 ? 999 : ib;
-    return ai - bi;
+    if (ai !== bi) return ai - bi;
+    return normalizeReleaseLinkPlatformId(a.platform).localeCompare(
+      normalizeReleaseLinkPlatformId(b.platform),
+    );
   });
 }
 

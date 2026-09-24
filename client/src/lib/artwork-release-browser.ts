@@ -28,6 +28,7 @@ export const ARTWORK_ATTRACT_MAX_MOVE_PX = 3.25 as const;
  * Artist bottom bound = Add Release button top (anchor + gap + button block).
  * Listener bottom bound = listener feed pad (no CTA).
  * Uses 100dvh to match the app shell; not a viewport `vh` pad on the browser.
+ * Shared by empty/list pager fill and artwork well (Slice-1 settle geometry).
  */
 export const ARTWORK_VIEW_COLUMN_CLASS = "flex flex-col" as const;
 

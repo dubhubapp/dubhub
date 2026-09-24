@@ -116,13 +116,16 @@ export function nativeNavIsCoveredBySheet(input: {
   postSequenceViewerOpen?: boolean;
   /** Home profile-preview bottom sheet (not Comments floating PPC). */
   profilePreviewOpen?: boolean;
+  /** Release Create/Edit metadata drawers (title/schedule/links/collaborators). */
+  releaseFormDrawerOpen?: boolean;
 }): boolean {
   return (
     input.commentsOpen ||
     input.submitOpen ||
     input.paywallOpen === true ||
     input.postSequenceViewerOpen === true ||
-    input.profilePreviewOpen === true
+    input.profilePreviewOpen === true ||
+    input.releaseFormDrawerOpen === true
   );
 }
 
@@ -156,6 +159,7 @@ export function nativeNavShouldBeVisible(input: {
   paywallOpen?: boolean;
   postSequenceViewerOpen?: boolean;
   profilePreviewOpen?: boolean;
+  releaseFormDrawerOpen?: boolean;
 }): boolean {
   return nativeNavChromeState({
     available: nativeNavIsAvailable(input),
@@ -165,6 +169,7 @@ export function nativeNavShouldBeVisible(input: {
       paywallOpen: input.paywallOpen === true,
       postSequenceViewerOpen: input.postSequenceViewerOpen === true,
       profilePreviewOpen: input.profilePreviewOpen === true,
+      releaseFormDrawerOpen: input.releaseFormDrawerOpen === true,
     }),
   }).visuallyShown;
 }

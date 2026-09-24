@@ -73,6 +73,7 @@ import {
   hydrateTimingDraftFromRelease,
   type ReleaseTimingDraft,
 } from "@/lib/release-timing-draft";
+import { validateReleaseRequiredMetadata } from "@/lib/release-form-required-metadata";
 import {
   buildDraftScheduleHeroSummary,
   buildReleasedScheduleHeroSummary,
@@ -92,8 +93,16 @@ import {
 } from "@/lib/release-attach-clips-overview";
 import { resolveFreeQuotaNoticeProminence } from "@/lib/release-form-limit-prominence";
 import { releaseTimingApiErrorToast } from "@/lib/release-timing-api-error";
-import { resolveReleaseDetailBackPath } from "@/lib/release-detail-navigation";
 import { buildOwnerReleaseEditPatchBody } from "@/lib/release-edit-patch";
+import {
+  buildReleaseEditSnapshot,
+  editBackDecision,
+  hasUnsavedReleaseEditChanges,
+  resolveEditAttachedSummaryCount,
+  resolveEditLinksSummarySource,
+  resolveReleaseEditExitPath,
+  type ReleaseEditSnapshot,
+} from "@/lib/release-edit-dirty";
 import {
   ReleaseAttachPostsSection,
   type EligiblePostForAttach,
@@ -157,8 +166,18 @@ export default function ReleaseEdit() {
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [draftLinks, setDraftLinks] = useState<
-    { id?: string; platform: string; url: string; linkType?: string | null }[]
+    {
+      id?: string;
+      platform: string;
+      url: string;
+      linkType?: string | null;
+      sortOrder?: number | null;
+    }[]
   >([]);
+  const [draftsHydrated, setDraftsHydrated] = useState(false);
+  const [initialEditSnapshot, setInitialEditSnapshot] =
+    useState<ReleaseEditSnapshot | null>(null);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
   const [stagedCollaborators, setStagedCollaborators] = useState<{ id: string; username: string }[]>([]);
@@ -174,7 +193,8 @@ export default function ReleaseEdit() {
   const pendingAttachIdsRef = useRef<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const handleBack = () => navigate(resolveReleaseDetailBackPath(search));
+  const exitToDetail = () =>
+    navigate(resolveReleaseEditExitPath(releaseId, search));
   useIosKeyboardResizeNone(true);
   const { isNativeIos, keyboardHeight, prefersReducedMotion } = useIosKeyboardAwareScroll({
     enabled: true,
@@ -188,24 +208,61 @@ export default function ReleaseEdit() {
   });
 
   useEffect(() => {
-    if (release) {
-      setTitle(release.title ?? "");
-      setReleaseDate(release.releaseDate ? new Date(release.releaseDate).toISOString().slice(0, 10) : "");
-      setComingSoon(!!release.isComingSoon);
-      setTimingDraft(hydrateTimingDraftFromRelease(release));
-      setArtworkPath(release.artworkPath ?? (release.artworkUrl && !String(release.artworkUrl).startsWith("http") ? release.artworkUrl : null));
-      setSelectedPostIds((release.postIds as string[]) || []);
-      setStagedCollaborators([]);
-      setDraftLinks(
-        (release.links as any[] | undefined)?.map((l) => ({
-          id: l.id,
-          platform: l.platform,
-          url: l.url,
-          linkType: (l as any).linkType ?? (l as any).link_type ?? null,
-        })) || []
-      );
-    }
-  }, [release]);
+    setDraftsHydrated(false);
+    setInitialEditSnapshot(null);
+  }, [releaseId]);
+
+  useEffect(() => {
+    if (!release || draftsHydrated) return;
+
+    const nextLinks =
+      (release.links as any[] | undefined)?.map((l, index) => ({
+        id: l.id,
+        platform: l.platform,
+        url: l.url,
+        linkType: (l as any).linkType ?? (l as any).link_type ?? null,
+        sortOrder:
+          typeof (l as any).sortOrder === "number"
+            ? (l as any).sortOrder
+            : typeof (l as any).sort_order === "number"
+              ? (l as any).sort_order
+              : index,
+      })) || [];
+    const nextPostIds = (release.postIds as string[]) || [];
+    const nextTitle = release.title ?? "";
+    const nextReleaseDate = release.releaseDate
+      ? new Date(release.releaseDate).toISOString().slice(0, 10)
+      : "";
+    const nextComingSoon = !!release.isComingSoon;
+    const nextTiming = hydrateTimingDraftFromRelease(release);
+    const nextArtworkPath =
+      release.artworkPath ??
+      (release.artworkUrl && !String(release.artworkUrl).startsWith("http")
+        ? release.artworkUrl
+        : null);
+
+    setTitle(nextTitle);
+    setReleaseDate(nextReleaseDate);
+    setComingSoon(nextComingSoon);
+    setTimingDraft(nextTiming);
+    setArtworkPath(nextArtworkPath);
+    setSelectedPostIds(nextPostIds);
+    setStagedCollaborators([]);
+    setDraftLinks(nextLinks);
+    setDraftsHydrated(true);
+    setInitialEditSnapshot(
+      buildReleaseEditSnapshot({
+        title: nextTitle,
+        artworkPath: nextArtworkPath,
+        comingSoon: nextComingSoon,
+        releaseDate: nextReleaseDate,
+        timingDraft: nextTiming,
+        draftLinks: nextLinks,
+        selectedPostIds: nextPostIds,
+        stagedCollaboratorIds: [],
+      }),
+    );
+  }, [release, draftsHydrated]);
 
   useEffect(() => () => {
     if (artworkPreviewUrl) URL.revokeObjectURL(artworkPreviewUrl);
@@ -331,10 +388,6 @@ export default function ReleaseEdit() {
       releaseTimezone: timingDraft.timezone,
     });
   })();
-  const showFutureListenGuidance =
-    !linkUnlimited &&
-    releaseIsUpcoming &&
-    draftLinks.some((l) => !isPaidOnlyReleaseLink(l.platform, l.linkType));
   const platformChoices = useMemo(
     () => availablePlatformOptions(draftLinks.map((l) => l.platform)),
     [draftLinks],
@@ -358,15 +411,15 @@ export default function ReleaseEdit() {
     setPurposeTouched(false);
   };
 
-  const handleAddDraftLink = () => {
-    if (!linkPlatform || !linkUrl.trim()) return;
+  const handleAddDraftLink = (): boolean => {
+    if (!linkPlatform || !linkUrl.trim()) return false;
     if (!canAddDraftLink) {
       toast({
         title: LINK_LIMIT_TOAST.title,
         description: LINK_LIMIT_TOAST.body,
         variant: "destructive",
       });
-      return;
+      return false;
     }
     if (
       draftLinks.some(
@@ -380,18 +433,18 @@ export default function ReleaseEdit() {
         description: "Each platform can only be added once per release.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
     const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
     const purpose = unlocked.includes(linkPurpose)
       ? linkPurpose
       : (unlocked[0] ?? "listen");
-    if (isPaidOnlyReleaseLink(linkPlatform, purpose)) {
+    if (!linkUnlimited && isPaidOnlyReleaseLink(linkPlatform, purpose)) {
       openLinksPremiumUpgrade({
         platform: linkPlatform,
         requestedLinkType: purpose,
       });
-      return;
+      return false;
     }
     setDraftLinks((links) => [
       ...links,
@@ -399,12 +452,95 @@ export default function ReleaseEdit() {
         platform: linkPlatform,
         url: linkUrl.trim(),
         linkType: purpose === "listen" ? null : purpose,
+        sortOrder: links.length,
       },
     ]);
     setLinkPlatform("");
     setLinkUrl("");
     setLinkPurpose("listen");
     setPurposeTouched(false);
+    return true;
+  };
+
+  const clearLinkForm = () => {
+    setLinkPlatform("");
+    setLinkUrl("");
+    setLinkPurpose("listen");
+    setPurposeTouched(false);
+  };
+
+  const startEditDraftLink = (link: {
+    platform: string;
+    url: string;
+    linkType?: string | null;
+  }) => {
+    setLinkPlatform(link.platform);
+    setLinkUrl(link.url);
+    const raw = String(link.linkType ?? "").trim().toLowerCase();
+    const purpose: CanonicalLinkPurpose =
+      raw === "presave" || raw === "download" || raw === "listen" ? raw : "listen";
+    setLinkPurpose(purpose);
+    setPurposeTouched(true);
+  };
+
+  const handleUpdateDraftLink = (): boolean => {
+    if (!linkPlatform || !linkUrl.trim()) return false;
+    const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
+    const purpose = unlocked.includes(linkPurpose)
+      ? linkPurpose
+      : (unlocked[0] ?? "listen");
+    if (!linkUnlimited && isPaidOnlyReleaseLink(linkPlatform, purpose)) {
+      openLinksPremiumUpgrade({
+        platform: linkPlatform,
+        requestedLinkType: purpose,
+      });
+      return false;
+    }
+    const platformKey = normalizePlatformForApi(linkPlatform);
+    setDraftLinks((links) =>
+      links.map((l) =>
+        normalizePlatformForApi(l.platform) === platformKey
+          ? {
+              ...l,
+              url: linkUrl.trim(),
+              linkType: purpose === "listen" ? null : purpose,
+            }
+          : l,
+      ),
+    );
+    clearLinkForm();
+    return true;
+  };
+
+  const handleReorderDraftLinks = async (
+    next: {
+      id?: string;
+      platform: string;
+      url: string;
+      linkType?: string | null;
+      sortOrder?: number | null;
+    }[],
+  ) => {
+    const previous = draftLinks;
+    setDraftLinks(next);
+    const ids = next.map((l) => l.id).filter((id): id is string => Boolean(id));
+    if (!releaseId || ids.length === 0 || ids.length !== next.length) {
+      return;
+    }
+    try {
+      await apiRequest("PUT", `/api/releases/${releaseId}/links/order`, {
+        linkIds: ids,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] });
+    } catch (error) {
+      console.error("[ReleaseEdit] Link reorder failed", error);
+      setDraftLinks(previous);
+      toast({
+        title: "Couldn't save link order",
+        description: "Your previous order was restored. Try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleUpgrade = (source: "attachment_limit" | "link_limit") => {
@@ -549,20 +685,20 @@ export default function ReleaseEdit() {
       releaseTimezone: release.releaseTimezone,
     });
     if (isOwner) {
-      if (!liveLockedForSave && !title.trim()) {
-        toast({ title: "Title is required", variant: "destructive" });
-        return;
-      }
-      if (!liveLockedForSave && title.trim().length > INPUT_LIMITS.releaseTitle) {
-        toast({
-          title: `Title must be at most ${INPUT_LIMITS.releaseTitle} characters`,
-          variant: "destructive",
+      if (!liveLockedForSave) {
+        const requiredIssue = validateReleaseRequiredMetadata({
+          title,
+          comingSoon,
+          releaseDateYmd: releaseDate,
+          timingDraft,
+          titleMaxLength: INPUT_LIMITS.releaseTitle,
         });
-        return;
-      }
-      if (!liveLockedForSave && !comingSoon && !releaseDate) {
-        toast({ title: "Release date is required for scheduled releases", variant: "destructive" });
-        return;
+        if (requiredIssue) {
+          toast({ title: requiredIssue.message });
+          if (requiredIssue.focus === "title") setTitleSheetOpen(true);
+          else setScheduleSheetOpen(true);
+          return;
+        }
       }
       if (draftHasDuplicatePlatforms(draftLinks)) {
         toast({
@@ -582,7 +718,8 @@ export default function ReleaseEdit() {
           })
         : null;
     if (timingFields && "error" in timingFields) {
-      toast({ title: timingFields.error, variant: "destructive" });
+      toast({ title: timingFields.error });
+      setScheduleSheetOpen(true);
       return;
     }
 
@@ -714,6 +851,28 @@ export default function ReleaseEdit() {
         removals: plan.removals.length,
         primaryReplace: !!plan.primaryReplace,
       });
+
+      // Persist artist draft order (catalog sort must not overwrite).
+      try {
+        const refreshed = await apiRequest("GET", `/api/releases/${releaseId}`);
+        const serverLinks = ((refreshed as any)?.links as any[] | undefined) || [];
+        const byPlatform = new Map(
+          serverLinks.map((l) => [
+            normalizePlatformForApi(String(l.platform ?? "")),
+            String(l.id),
+          ]),
+        );
+        const linkIds = draftLinks
+          .map((l) => byPlatform.get(normalizePlatformForApi(l.platform)))
+          .filter((id): id is string => Boolean(id));
+        if (linkIds.length > 0 && linkIds.length === draftLinks.length) {
+          await apiRequest("PUT", `/api/releases/${releaseId}/links/order`, {
+            linkIds,
+          });
+        }
+      } catch (orderError) {
+        console.error("[ReleaseEdit] Link order sync failed", orderError);
+      }
       }
 
       // 4) Attachments: diff vs current (owner or accepted collaborator)
@@ -783,7 +942,7 @@ export default function ReleaseEdit() {
       playSuccessNotification();
       toast({ title: "Release updated" });
       scheduleHomeWidgetRefreshAfterAuth();
-      navigate("/releases");
+      exitToDetail();
     } catch (error) {
       console.error("[ReleaseEdit] Save failed", error);
       const timingToast = releaseTimingApiErrorToast(error);
@@ -847,6 +1006,43 @@ export default function ReleaseEdit() {
     return null;
   }
 
+  const currentEditSnapshot = buildReleaseEditSnapshot({
+    title,
+    artworkPath,
+    comingSoon,
+    releaseDate,
+    timingDraft,
+    draftLinks,
+    selectedPostIds,
+    stagedCollaboratorIds: stagedCollaborators.map((c) => c.id),
+  });
+  const isDirty = hasUnsavedReleaseEditChanges(
+    initialEditSnapshot,
+    currentEditSnapshot,
+  );
+  const handleBack = () => {
+    if (editBackDecision(isDirty) === "confirm") {
+      setDiscardDialogOpen(true);
+      return;
+    }
+    exitToDetail();
+  };
+  const handleDiscardConfirm = () => {
+    setDiscardDialogOpen(false);
+    exitToDetail();
+  };
+
+  const linksForSummary = resolveEditLinksSummarySource({
+    draftLinks,
+    releaseLinks: (release.links as { platform: string }[] | undefined) ?? [],
+    draftsHydrated,
+  });
+  const attachedSummaryCount = resolveEditAttachedSummaryCount({
+    selectedPostIds,
+    releasePostIds: (release.postIds as string[] | undefined) ?? [],
+    draftsHydrated,
+  });
+
   const releaseTimingInput = {
     isComingSoon: release.isComingSoon,
     releaseDate: release.releaseDate,
@@ -902,7 +1098,7 @@ export default function ReleaseEdit() {
           <button
             type="button"
             onClick={handleBack}
-            aria-label="Back to Releases"
+            aria-label="Back"
             className={APP_MATERIAL_BACK_BUTTON_CLASS}
             data-testid="release-edit-back"
           >
@@ -1006,7 +1202,7 @@ export default function ReleaseEdit() {
             <ReleaseToolsManagementRow
               label="Links"
               icon={LinkIcon}
-              summary={formatReleaseLinksRowSummary(draftLinks)}
+              summary={formatReleaseLinksRowSummary(linksForSummary)}
               onClick={() => setLinksSheetOpen(true)}
               testId="release-tools-links-row"
             />
@@ -1028,6 +1224,7 @@ export default function ReleaseEdit() {
               filteredEligiblePosts={filteredEligiblePosts}
               selectedPostIds={selectedPostIds}
               onSelectedPostIdsChange={setSelectedPostIds}
+              rowSummaryCount={attachedSummaryCount}
               searchTerm={searchTerm}
               onSearchTermChange={setSearchTerm}
               lockedNotice={isReleaseLocked ? RELEASE_LIVE_ATTACH_NOTICE : undefined}
@@ -1037,7 +1234,7 @@ export default function ReleaseEdit() {
               attachmentUsage={
                 attachmentCapacityQuery.data && !attachmentCapacityQuery.data.unlimited
                   ? {
-                      used: attachmentCapacityQuery.data.used,
+                      used: selectedPostIds.length,
                       limit: attachmentCapacityQuery.data.limit,
                     }
                   : null
@@ -1064,6 +1261,9 @@ export default function ReleaseEdit() {
                 }),
               )
             }
+            onStartEditLink={startEditDraftLink}
+            onClearLinkForm={clearLinkForm}
+            onReorderLinks={handleReorderDraftLinks}
             linkPlatform={linkPlatform}
             onLinkPlatformChange={(nextPlatform) => {
               setLinkPlatform(nextPlatform);
@@ -1091,6 +1291,7 @@ export default function ReleaseEdit() {
             linkTypeOptions={linkTypeOptions}
             canAddDraftLink={canAddDraftLink}
             onAddLink={handleAddDraftLink}
+            onUpdateLink={handleUpdateDraftLink}
             limitNotice={{
               show: !!linkCapacityQuery.data && linkLimitProminence !== "hidden",
               prominence: linkLimitProminence,
@@ -1099,7 +1300,6 @@ export default function ReleaseEdit() {
               showUpgrade: showLinkUpgrade,
               onUpgradeClick: () => handleUpgrade("link_limit"),
             }}
-            showFutureListenGuidance={showFutureListenGuidance}
           />
           <ReleaseCollaboratorsSheet
             open={collaboratorsSheetOpen}
@@ -1169,7 +1369,7 @@ export default function ReleaseEdit() {
           attachmentUsage={
             attachmentCapacityQuery.data && !attachmentCapacityQuery.data.unlimited
               ? {
-                  used: attachmentCapacityQuery.data.used,
+                  used: selectedPostIds.length,
                   limit: attachmentCapacityQuery.data.limit,
                 }
               : null
@@ -1334,6 +1534,37 @@ export default function ReleaseEdit() {
         </Dialog>
       </div>
       </div>
+
+      <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Discard changes?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+              Your changes haven&apos;t been saved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
+              data-testid="release-edit-discard-keep"
+            >
+              Keep editing
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
+              onClick={handleDiscardConfirm}
+              data-testid="release-edit-discard-confirm"
+            >
+              Discard changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SwipeBackPage>
   );
 }

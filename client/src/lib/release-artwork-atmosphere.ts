@@ -460,6 +460,31 @@ function cacheSet(url: string, result: AtmosphereResult): void {
 }
 
 /**
+ * Fire-and-forget warm of the in-memory atmosphere cache before detail mounts.
+ * Dedupes via resolveReleaseArtworkAtmosphere (cache + inflight). Never blocks callers.
+ */
+export function prefetchReleaseArtworkAtmosphere(
+  artworkUrl: string | null | undefined,
+): void {
+  if (typeof artworkUrl !== "string" || !artworkUrl.trim()) return;
+  void resolveReleaseArtworkAtmosphere(artworkUrl);
+}
+
+/**
+ * Hold real detail content while artwork atmosphere is still unresolved.
+ * No artwork → do not hold. Resolver brand fallback counts as ready.
+ */
+export function shouldHoldReleaseDetailForAtmosphere(args: {
+  artworkUrl: string | null | undefined;
+  atmosphereReady: boolean;
+}): boolean {
+  const url =
+    typeof args.artworkUrl === "string" ? args.artworkUrl.trim() : "";
+  if (!url) return false;
+  return !args.atmosphereReady;
+}
+
+/**
  * Resolve atmosphere for an artwork URL.
  * No URL → brand (no extraction). Failures → brand. Never throws.
  */

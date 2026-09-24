@@ -25,8 +25,12 @@ export const ATTACHED_POSTS_DIVIDER_BEFORE_ROW = true as const;
 export const ATTACHED_POSTS_VIEWER_PAGE_LEVEL = true as const;
 export const ATTACHED_POSTS_USES_VAUL_SHEET = false as const;
 
-export const ATTACH_POSTS_WARNING_COPY =
+/** Neutral info copy for the attach-policy Info popover (not a warning banner). */
+export const ATTACH_POSTS_INFO_COPY =
   "Only attach posts that genuinely feature this release. Intentionally attaching incorrect posts may result in this feature being revoked or your account being suspended.";
+
+/** @deprecated Prefer ATTACH_POSTS_INFO_COPY — same text, neutral severity. */
+export const ATTACH_POSTS_WARNING_COPY = ATTACH_POSTS_INFO_COPY;
 
 export type EligiblePostForAttach = {
   id: string;

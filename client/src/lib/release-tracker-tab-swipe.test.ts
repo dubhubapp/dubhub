@@ -18,6 +18,7 @@ import {
   RELEASE_TRACKER_TAB_PAGER_FLICK_PX_PER_MS,
   RELEASE_TRACKER_TAB_PAGER_PANEL_CLASS,
   RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS,
+  RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS,
   RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
   RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS,
   RELEASE_TRACKER_TAB_PAGER_VIEWPORT_CLASS,
@@ -393,6 +394,7 @@ describe("RELEASES-SWIPE-TABS-4 — full-height list swipe canvas", () => {
     assert.match(RELEASE_TRACKER_TAB_PAGER_PANEL_CLASS, /data-\[state=active\]:h-auto/);
     assert.match(RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS, /min-h-full/);
     assert.match(RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS, /flex-1/);
+    assert.doesNotMatch(RELEASE_TRACKER_TAB_PAGER_TRACK_CLASS, /(?:^|\s)h-full(?:\s|$)/);
   });
 
   it("C: inactive panels preserve collapsed behavior", () => {
@@ -494,11 +496,29 @@ describe("RELEASES-PRESENTATION-2 — transform resync + empty centring", () => 
     );
   });
 
-  it("F: list empty active panel becomes flex column", () => {
-    assert.equal(RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS, "flex flex-col");
+  it("F: list empty/loading uses Slice-1 PANEL_EMPTY; unlock skips VERT_UNLOCK height resets", () => {
+    assert.equal(
+      RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS,
+      "flex min-h-full flex-1 flex-col self-stretch",
+    );
+    assert.doesNotMatch(RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS, /!h-full|!min-h-full/);
     assert.match(trackerSrc, /RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS/);
-    assert.match(trackerSrc, /panelEmpty/);
+    assert.match(trackerSrc, /panelNeedsStableFill/);
+    assert.match(trackerSrc, /isActivePanel \|\| panelUnlocked/);
+    assert.match(trackerSrc, /RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS/);
+    assert.match(trackerSrc, /stableFill:\s*panelNeedsStableFill/);
+    assert.match(trackerSrc, /unlocked &&\s*!stableFill &&\s*RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS/);
+    assert.match(trackerSrc, /unlocked &&\s*stableFill &&\s*RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS/);
+    assert.match(RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS, /!h-auto/);
+    assert.match(RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS, /!min-h-0/);
+    // Stable unlock must not apply VERT_UNLOCK's min-height reset (!min-h-0).
+    assert.doesNotMatch(RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS, /!min-h-0/);
+    assert.match(RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS, /!overflow-y-visible/);
     assert.match(
+      RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS,
+      /data-\[state=inactive\]:!min-h-full/,
+    );
+    assert.doesNotMatch(
       trackerSrc,
       /isActivePanel &&\s*panelEmpty &&\s*RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS/,
     );

@@ -49,6 +49,7 @@ export const ATTACHMENT_CAPACITY_UPGRADE_HINT = "Upgrade for unlimited" as const
 /**
  * Quiet Attach Clips sheet capacity line for free artists.
  * Paid/unlimited → null (no promo).
+ * `used` must be the projected final selection count (not stale persisted-only).
  */
 export function resolveAttachmentCapacityHeader(args: {
   unlimited: boolean;
@@ -62,6 +63,17 @@ export function resolveAttachmentCapacityHeader(args: {
     title: formatAttachmentLimitTitle(used, limit),
     upgradeHint: ATTACHMENT_CAPACITY_UPGRADE_HINT,
   };
+}
+
+/**
+ * Projected final attachment count for create/edit capacity copy.
+ * Create: selection is the full set. Edit: selection already reflects
+ * persisted − pending detaches + pending attaches.
+ */
+export function resolveProjectedAttachmentCount(args: {
+  selectedPostIds: readonly string[];
+}): number {
+  return Math.max(0, args.selectedPostIds.length);
 }
 
 export type AttachmentLimitCardCopy = {

@@ -20,6 +20,7 @@ import { exportCroppedAvatar } from "@/lib/avatar-crop";
 import { exportCroppedBanner } from "@/lib/banner-crop";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { getReleaseAlertEnabledThumbnailPresentation } from "@/lib/release-alert-enabled-thumbnail";
+import { prefetchReleaseArtworkAtmosphere } from "@/lib/release-artwork-atmosphere";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidateArtistReleaseAlertsAudience } from "@/lib/artist-release-alerts-cache";
 import { ReleaseAlertsAudienceGateRow } from "@/components/release-alerts-audience-gate";
@@ -2228,6 +2229,7 @@ export default function UserProfile() {
     // Navigate to release detail when release_id is present, else to post
     const releaseId = (notification as any).releaseId ?? (notification as any).release_id ?? notification.release?.id;
     if (releaseId) {
+      prefetchReleaseArtworkAtmosphere(notification.release?.artworkUrl);
       navigate(`/releases/${releaseId}`);
     } else if (notification.postId) {
       try {

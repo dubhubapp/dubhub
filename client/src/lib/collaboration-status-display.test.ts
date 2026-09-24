@@ -103,10 +103,10 @@ describe("collaboration status pill chrome and tones", () => {
   });
 
   it("accepted is distinct from Released green/emerald", () => {
-    assert.match(RELEASE_RELEASED_PILL_CLASS, /green-500/);
+    assert.match(RELEASE_RELEASED_PILL_CLASS, /green-400|#22c55e/);
     assert.doesNotMatch(RELEASE_RELEASED_PILL_CLASS, /teal/);
     assert.match(COLLABORATION_ACCEPTED_PILL_CLASS, /teal/);
-    assert.doesNotMatch(COLLABORATION_ACCEPTED_PILL_CLASS, /green-500|emerald/);
+    assert.doesNotMatch(COLLABORATION_ACCEPTED_PILL_CLASS, /green-500|emerald|#22c55e/);
   });
 
   it("pending uses amber/orange tone", () => {
@@ -133,7 +133,7 @@ describe("collaboration status pill chrome and tones", () => {
     );
     assert.match(
       releasedSrc,
-      /RELEASE_RELEASED_PILL_CLASS =\s*"bg-green-500\/25 text-white ring-1 ring-inset ring-green-400\/35"/,
+      /RELEASE_RELEASED_PILL_CLASS =\s*"bg-\[color-mix\(in_srgb,#22c55e_25%,#0f1324\)\] text-white ring-1 ring-inset ring-green-400\/35"/,
     );
   });
 });

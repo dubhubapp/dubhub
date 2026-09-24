@@ -39,6 +39,11 @@ type ReleaseAttachPostsSectionProps = {
   onSelectedPostIdsChange: Dispatch<SetStateAction<string[]>>;
   searchTerm: string;
   onSearchTermChange: (value: string) => void;
+  /**
+   * Optional collapsed-row count when local selectedPostIds is not yet hydrated
+   * from the release (Edit first paint). Defaults to selectedPostIds.length.
+   */
+  rowSummaryCount?: number;
   helperText?: string;
   lockedNotice?: string;
   isToggleDisabled?: (postId: string) => boolean;
@@ -61,6 +66,7 @@ export function ReleaseAttachPostsSection({
   onSelectedPostIdsChange,
   searchTerm,
   onSearchTermChange,
+  rowSummaryCount,
   lockedNotice,
   isToggleDisabled,
   detachAllDisabled = false,
@@ -154,7 +160,11 @@ export function ReleaseAttachPostsSection({
       <ReleaseToolsManagementRow
         label={ATTACHED_POSTS_ROW_LABEL}
         icon={ReleaseAttachedPostsIcon}
-        summary={formatAttachedPostsRowSummary(selectedPostIds.length)}
+        summary={formatAttachedPostsRowSummary(
+          typeof rowSummaryCount === "number"
+            ? rowSummaryCount
+            : selectedPostIds.length,
+        )}
         expanded={managementOpen}
         onClick={() => setManagementOpen((open) => nextAttachedPostsManagementOpen(open))}
         testId="release-tools-attached-posts-row"

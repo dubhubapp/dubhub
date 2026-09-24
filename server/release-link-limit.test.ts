@@ -136,6 +136,20 @@ class FakeLinkDb {
                 fields: [],
               };
             }
+            if (sql.includes("MAX(sort_order)") && sql.includes("release_links")) {
+              let max = -1;
+              for (const row of db.links.values()) {
+                const so = (row as { sort_order?: number }).sort_order ?? 0;
+                if (so > max) max = so;
+              }
+              return {
+                rows: [{ m: db.links.size === 0 ? null : max }],
+                rowCount: 1,
+                command: "SELECT",
+                oid: 0,
+                fields: [],
+              };
+            }
             if (sql.startsWith("UPDATE release_links")) {
               const url = String(params?.[0]);
               const linkType = (params?.[1] as string | null) ?? null;
@@ -155,12 +169,15 @@ class FakeLinkDb {
               const platform = String(params?.[1]);
               const url = String(params?.[2]);
               const linkType = (params?.[3] as string | null) ?? null;
+              const sortOrder =
+                typeof params?.[4] === "number" ? params[4] : db.links.size;
               db.links.set(platform, {
                 id: `id-${platform}`,
                 release_id: RELEASE,
                 platform,
                 url,
                 link_type: linkType,
+                sort_order: sortOrder,
                 created_at: new Date(),
               });
               return { rows: [], rowCount: 1, command: "INSERT", oid: 0, fields: [] };
@@ -170,10 +187,16 @@ class FakeLinkDb {
               db.links.delete(platform);
               return { rows: [], rowCount: 1, command: "DELETE", oid: 0, fields: [] };
             }
-            if (sql.includes("FROM release_links") && sql.includes("ORDER BY platform")) {
-              const rows = [...db.links.values()].sort((a, b) =>
-                a.platform.localeCompare(b.platform),
-              );
+            if (
+              sql.includes("FROM release_links") &&
+              (sql.includes("ORDER BY sort_order") || sql.includes("ORDER BY platform"))
+            ) {
+              const rows = [...db.links.values()].sort((a, b) => {
+                const ao = (a as { sort_order?: number }).sort_order ?? 0;
+                const bo = (b as { sort_order?: number }).sort_order ?? 0;
+                if (ao !== bo) return ao - bo;
+                return a.platform.localeCompare(b.platform);
+              });
               return { rows, rowCount: rows.length, command: "SELECT", oid: 0, fields: [] };
             }
             throw new Error(`Unexpected SQL: ${sql}`);

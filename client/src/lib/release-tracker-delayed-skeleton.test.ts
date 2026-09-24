@@ -158,9 +158,9 @@ describe("C1.1 wiring + freeze contracts", () => {
 
   it("keeps skeleton geometry and C1 material shell", () => {
     assert.equal(RELEASE_FEED_SKELETON_VARIANT, "flat-row");
-    assert.equal(RELEASE_FEED_ARTWORK_PX, 96);
+    assert.equal(RELEASE_FEED_ARTWORK_PX, 120);
     assert.match(trackerSrc, /\[0, 1, 2\]\.map/);
-    assert.match(trackerSrc, /h-24 w-24/);
+    assert.match(trackerSrc, /h-\[7.5rem\] w-\[7.5rem\]/);
     assert.match(RELEASE_TRACKER_PAGE_CLASS, new RegExp(APP_MATERIAL_RELEASES_CANVAS_CLASS));
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /dubhub-app-releases-sticky/);
     assert.match(trackerSrc, /RELEASE_TRACKER_PAGE_CLASS/);

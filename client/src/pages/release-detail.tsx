@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { ChevronLeft, Edit2, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
+import { ChevronLeft, Pencil, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -36,6 +36,7 @@ import {
   bootstrapReleaseAtmosphere,
   releaseAtmosphereCssVarValue,
   resolveReleaseArtworkAtmosphere,
+  shouldHoldReleaseDetailForAtmosphere,
   type AtmosphereMode,
   type AtmosphereRgb,
 } from "@/lib/release-artwork-atmosphere";
@@ -47,9 +48,8 @@ import { useToast } from "@/hooks/use-toast";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
 import { formatDate } from "./release-tracker";
 import { sanitizeReleaseText } from "@/lib/release-display";
-import { sortLinksByPlatform } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
-import { getBannerFromLinks, filterPublicReleaseLinks } from "@/lib/release-cta";
+import { filterPublicReleaseLinks } from "@/lib/release-cta";
 import { resolveReleaseLinkSurfacePresentation } from "@/lib/release-link-presentation";
 import {
   RELEASE_DETAIL_LINK_CLASS,
@@ -221,10 +221,20 @@ export default function ReleaseDetail() {
   const atmosphereReady = atmosphereFromExtract
     ? true
     : atmosphereBoot.ready;
-  /** Cached/sync ready = instant; cold extract completion uses short fade. */
+  /**
+   * After hold-until-ready, paint derived wash instantly (no brand→artwork fade under content).
+   * Warm bootstrap already sets instant for cached artwork/neutral.
+   */
   const atmosphereInstant = atmosphereFromExtract
-    ? false
+    ? atmosphereFromExtract.mode === "artwork" ||
+      atmosphereFromExtract.mode === "neutral"
     : atmosphereBoot.instant;
+  const holdForAtmosphere = shouldHoldReleaseDetailForAtmosphere({
+    artworkUrl: artworkAtmosphereUrl,
+    atmosphereReady,
+  });
+  /** Cold settle → subtle content opacity only (theme already applied). */
+  const revealContentAfterAtmosphereHold = Boolean(atmosphereFromExtract);
 
   useEffect(() => {
     const url = artworkAtmosphereUrl;
@@ -374,6 +384,15 @@ export default function ReleaseDetail() {
     return <ReleaseDetailSkeleton onBack={handleBack} />;
   }
 
+  if (holdForAtmosphere) {
+    return (
+      <ReleaseDetailSkeleton
+        onBack={handleBack}
+        quietPendingAtmosphere
+      />
+    );
+  }
+
   const releaseData = release;
   const timingInput = {
     isComingSoon: releaseData.isComingSoon,
@@ -407,6 +426,7 @@ export default function ReleaseDetail() {
     isOwner: !!isOwner,
     viewerSavedRelease: releaseData.viewerSavedRelease,
   });
+  const showEditReleaseAction = canManage && isArtist;
   const firstPostLabel = formatActivityPostCalendarDate(stats?.firstClipAt ?? null);
   const latestPostLabel = formatActivityPostCalendarDate(stats?.latestClipAt ?? null);
   const announcedDuration =
@@ -466,7 +486,14 @@ export default function ReleaseDetail() {
       data-release-atmosphere={atmosphereMode}
       data-testid="release-detail-atmosphere"
     >
-      <div className={cn(APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS, "px-4 pb-4 max-w-md mx-auto")}>
+      <div
+        className={cn(
+          APP_MATERIAL_RELEASE_DETAIL_TOP_CLASS,
+          "px-4 pb-4 max-w-md mx-auto",
+          revealContentAfterAtmosphereHold &&
+            "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out",
+        )}
+      >
         <div className="mb-4 flex items-center justify-between gap-2">
           <button
             type="button"
@@ -485,22 +512,38 @@ export default function ReleaseDetail() {
                 viewerSavedRelease={releaseData.viewerSavedRelease}
               />
             ) : null}
+            {showEditReleaseAction ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ios-press h-9 w-9 shrink-0 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                aria-label={isOwner ? "Edit release" : "Manage attachments"}
+                data-testid="button-edit-release"
+                onClick={() => navigate(`/releases/${id}/edit`)}
+              >
+                <Pencil className="h-5 w-5" aria-hidden />
+              </Button>
+            ) : null}
             {showRemoveSavedRelease ? (
               <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="ios-press h-9 w-9 shrink-0"
+                    className="ios-press h-9 w-9 shrink-0 hover:bg-white/10"
                     aria-label="Release options"
                     data-testid="button-release-detail-menu"
                   >
                     <MoreHorizontal className="h-5 w-5" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[12rem]">
+                <DropdownMenuContent
+                  align="end"
+                  className="min-w-[12rem] rounded-[15px] border-white/10 bg-[#141a30]/95 p-1.5 text-foreground shadow-[0_14px_36px_rgba(0,0,0,0.45)]"
+                >
                   <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
+                    className="mx-0 my-0 cursor-pointer gap-2 px-3 py-2.5 text-red-400 focus:bg-white/[0.08] focus:text-red-400 data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-red-400"
                     onSelect={(e) => {
                       e.preventDefault();
                       setReleaseMenuOpen(false);
@@ -508,12 +551,12 @@ export default function ReleaseDetail() {
                     }}
                     data-testid="menu-remove-saved-release"
                   >
-                    <BookmarkMinus className="mr-2 h-4 w-4" />
-                    Remove from Saved Releases
+                    <BookmarkMinus className="h-4 w-4 text-red-400" aria-hidden />
+                    <span className="font-medium text-red-400">Remove from Saved Releases</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : showSavedToReleasesStatus ? null : (
+            ) : showSavedToReleasesStatus || showEditReleaseAction ? null : (
               <div className="h-9 w-9 shrink-0" aria-hidden />
             )}
           </div>
@@ -629,11 +672,6 @@ export default function ReleaseDetail() {
                 ) : null}
               </div>
             </div>
-            {!isSubscriptionPausedPublic && getBannerFromLinks(releaseData.links, upcoming) && (
-              <p className="text-sm text-primary mt-2">
-                {getBannerFromLinks(releaseData.links, upcoming)}
-              </p>
-            )}
           </div>
         </div>
 
@@ -682,9 +720,7 @@ export default function ReleaseDetail() {
 
         {!isSubscriptionPausedPublic && releaseData.links && releaseData.links.length > 0 && (
           <div className={RELEASE_DETAIL_LINK_ROW_CLASS} data-testid="release-detail-link-actions">
-            {sortLinksByPlatform(
-              filterPublicReleaseLinks((releaseData.links as ReleaseLink[]) || [], upcoming),
-            ).map((link) => {
+            {filterPublicReleaseLinks((releaseData.links as ReleaseLink[]) || [], upcoming).map((link) => {
               const presentation = resolveReleaseLinkSurfacePresentation({
                 platform: link.platform,
                 linkType: link.linkType,
@@ -774,19 +810,6 @@ export default function ReleaseDetail() {
                 Reject
               </Button>
             </div>
-          </div>
-        )}
-
-        {canManage && isArtist && (
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              className="ios-press w-full justify-start"
-              onClick={() => navigate(`/releases/${id}/edit`)}
-            >
-              <Edit2 className="w-4 h-4 mr-2" />
-              {isOwner ? "Edit release" : "Manage attachments"}
-            </Button>
           </div>
         )}
 

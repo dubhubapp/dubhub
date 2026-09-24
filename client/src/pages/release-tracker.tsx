@@ -13,6 +13,7 @@ import { apiUrl } from "@/lib/apiBase";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { prefetchReleaseDetail } from "@/lib/release-cache";
+import { prefetchReleaseArtworkAtmosphere } from "@/lib/release-artwork-atmosphere";
 import {
   isPushPromptSessionActive,
   markReleasesPushPromptHandled,
@@ -86,6 +87,7 @@ import {
   getReleaseTrackerSecondaryViews,
   getScopeFromSearch,
   getViewFromSearch,
+  hasOwnedReleaseHistory,
   resolveMyUpcomingEmptyReleaseCtaLabel,
   shouldShowReleaseFeedByline,
   type ReleaseTrackerFeedScope,
@@ -94,6 +96,7 @@ import {
 import {
   RELEASE_TRACKER_TAB_PAGER_PANEL_CLASS,
   RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS,
+  RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS,
   RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
   RELEASE_TRACKER_TAB_PAGER_SNAP_EASING,
   RELEASE_TRACKER_TAB_PAGER_SNAP_MS,
@@ -192,7 +195,7 @@ function ReleaseFeedContentLoader() {
           className="flex gap-3.5 py-3.5"
           data-testid="release-feed-row-skeleton"
         >
-          <DubHubSkeletonBar tone="mid" className="h-24 w-24 shrink-0 rounded-lg ring-1 ring-white/10" />
+          <DubHubSkeletonBar tone="mid" className="h-[7.5rem] w-[7.5rem] shrink-0 rounded-lg ring-1 ring-white/10" />
           <div className="flex-1 space-y-1.5 pt-0.5">
             <DubHubSkeletonBar tone="default" className="h-4 w-full max-w-[14rem]" />
             <DubHubSkeletonBar tone="mid" className="h-3 w-2/3 max-w-[10rem]" />
@@ -505,7 +508,6 @@ export default function ReleaseTracker() {
 
   const isFeedLoading = feed === undefined && !isFeedError;
   const feedItems = feed ?? [];
-  const emptyCopy = getReleaseTrackerEmptyCopy({ view: feedView, scope: effectiveScope });
 
   /**
    * Warm My Past in parallel for artist My Releases (same query key as Past tab).
@@ -518,12 +520,29 @@ export default function ReleaseTracker() {
     effectiveScope === "my" &&
     effectiveView !== "past";
 
-  useQuery<ReleaseFeedItem[]>({
+  const myPastWarmQuery = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", "my", "past"],
     queryFn: () => fetchReleasesFeed("my", "past"),
     enabled: shouldWarmMyPastFeed,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+
+  /** Owned history for My Upcoming empty copy — null until Past is known. */
+  const ownedReleaseHistoryKnown: boolean | null = (() => {
+    if (!isArtist || effectiveScope !== "my") return null;
+    if (effectiveView === "past") {
+      if (isFeedLoading) return null;
+      return hasOwnedReleaseHistory(feedItems, currentUser?.id);
+    }
+    if (!myPastWarmQuery.isFetched && myPastWarmQuery.data === undefined) return null;
+    return hasOwnedReleaseHistory(myPastWarmQuery.data ?? [], currentUser?.id);
+  })();
+
+  const emptyCopy = getReleaseTrackerEmptyCopy({
+    view: feedView,
+    scope: effectiveScope,
+    hasOwnedReleaseHistory: ownedReleaseHistoryKnown,
   });
 
   const showMyUpcomingEmptyCta =
@@ -553,6 +572,7 @@ export default function ReleaseTracker() {
         rememberArtworkFocus(r.id);
       }
       prefetchReleaseDetail(queryClient, r.id);
+      prefetchReleaseArtworkAtmosphere(r.artworkUrl);
       const params = new URLSearchParams();
       if (isArtist) params.set("scope", scope);
       params.set("view", feedView);
@@ -659,6 +679,12 @@ export default function ReleaseTracker() {
           artistId: r.artistId,
           collaborators: r.collaborators,
         })}
+        omitOwnHandle={
+          effectiveScope === "my" &&
+          cardView !== "collaborations" &&
+          !!currentUser?.id &&
+          r.artistId === currentUser.id
+        }
         highlight={{
           featured: opts?.featured,
           savedOutToday,
@@ -780,15 +806,21 @@ export default function ReleaseTracker() {
         return;
       }
       cachePagerPanelHeights(unlock);
+      const viewportFloor = Math.ceil(viewport.getBoundingClientRect().height);
       if (opts) {
-        const currentHeight =
+        const currentHeight = Math.max(
+          viewportFloor,
           readCachedPagerPanelHeight(opts.currentIndex) ??
-          measurePagerPanelHeight(opts.currentIndex);
+            measurePagerPanelHeight(opts.currentIndex),
+        );
         const adjacentHeight =
           opts.adjacentIndex == null
             ? null
-            : (readCachedPagerPanelHeight(opts.adjacentIndex) ??
-              measurePagerPanelHeight(opts.adjacentIndex));
+            : Math.max(
+                viewportFloor,
+                readCachedPagerPanelHeight(opts.adjacentIndex) ??
+                  measurePagerPanelHeight(opts.adjacentIndex),
+              );
         const hostH = resolveReleaseTrackerPagerHostHeightPx({
           phase,
           currentHeight,
@@ -798,7 +830,7 @@ export default function ReleaseTracker() {
         return;
       }
       // Prepare path: hold max of current ±1 so either swipe direction is safe.
-      let maxH = 0;
+      let maxH = viewportFloor;
       for (const index of unlock) {
         maxH = Math.max(
           maxH,
@@ -1117,7 +1149,11 @@ export default function ReleaseTracker() {
       isRetrying: boolean;
     },
   ) => {
-    const copy = getReleaseTrackerEmptyCopy({ view, scope: effectiveScope });
+    const copy = getReleaseTrackerEmptyCopy({
+      view,
+      scope: effectiveScope,
+      hasOwnedReleaseHistory: ownedReleaseHistoryKnown,
+    });
     const showEmptyCta =
       isArtist && view === "upcoming" && effectiveScope === "my";
     if (opts.isError) {
@@ -1136,7 +1172,14 @@ export default function ReleaseTracker() {
       );
     }
     if (opts.isLoading) {
-      return <ReleaseFeedDelayedLoader key={`${effectiveScope}-${view}`} />;
+      return (
+        <div
+          className={RELEASE_TRACKER_EMPTY_REGION_CLASS}
+          data-testid="release-feed-loading"
+        >
+          <ReleaseFeedDelayedLoader key={`${effectiveScope}-${view}`} />
+        </div>
+      );
     }
     if (items.length === 0) {
       return (
@@ -1221,13 +1264,26 @@ export default function ReleaseTracker() {
     );
   };
 
-  const pagerPanelClass = (panelIndex: number, ...extra: Array<string | undefined>) =>
-    cn(
+  const pagerPanelClass = (
+    panelIndex: number,
+    opts?: { stableFill?: boolean },
+    ...extra: Array<string | undefined>
+  ) => {
+    const unlocked = pagerVertUnlockIndices?.includes(panelIndex) === true;
+    const stableFill = opts?.stableFill === true;
+    return cn(
       RELEASE_TRACKER_TAB_PAGER_PANEL_CLASS,
-      pagerVertUnlockIndices?.includes(panelIndex) &&
+      // Populated panels: full VERT_UNLOCK (height reset OK for tall lists).
+      // Empty/loading: overflow-only unlock — never !h-auto/!min-h-0 (Slice-1 jump).
+      unlocked &&
+        !stableFill &&
         RELEASE_TRACKER_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
+      unlocked &&
+        stableFill &&
+        RELEASE_TRACKER_TAB_PAGER_PANEL_STABLE_UNLOCK_CLASS,
       ...extra,
     );
+  };
 
   return (
     <>
@@ -1417,6 +1473,11 @@ export default function ReleaseTracker() {
                   !panelLoading &&
                   !panelError &&
                   panelItems.length === 0;
+                /** Fill height for empty/loading so first paint + swipe unlock stay centred. */
+                const panelNeedsStableFill =
+                  mountContent && !panelError && (panelLoading || panelEmpty);
+                const panelUnlocked =
+                  pagerVertUnlockIndices?.includes(panelIndex) === true;
                 return (
                   <div
                     key={`${effectiveScope}-${view}`}
@@ -1425,9 +1486,11 @@ export default function ReleaseTracker() {
                     }}
                     className={pagerPanelClass(
                       panelIndex,
-                      isActivePanel &&
-                        panelEmpty &&
-                        RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS,
+                      { stableFill: panelNeedsStableFill },
+                      (isActivePanel || panelUnlocked) &&
+                        panelNeedsStableFill
+                        ? RELEASE_TRACKER_TAB_PAGER_PANEL_EMPTY_CLASS
+                        : undefined,
                     )}
                     data-state={isActivePanel ? "active" : "inactive"}
                     data-testid={`releases-pager-panel-${view}`}
@@ -1463,20 +1526,30 @@ export default function ReleaseTracker() {
             </Button>
           </div>
         ) : isFeedLoading ? (
-          <ReleaseFeedDelayedLoader key={`${effectiveScope}-${effectiveView}`} />
+          <div
+            className={RELEASE_TRACKER_EMPTY_REGION_CLASS}
+            data-testid="release-feed-loading"
+          >
+            <ReleaseFeedDelayedLoader key={`${effectiveScope}-${effectiveView}`} />
+          </div>
         ) : feedItems.length === 0 ? (
-          <div className={RELEASE_TRACKER_EMPTY_CLASS} data-testid="release-feed-empty">
-            <Disc3 className={RELEASE_TRACKER_EMPTY_ICON_CLASS} />
-            <p className={RELEASE_TRACKER_EMPTY_TITLE_CLASS}>{emptyCopy.title}</p>
-            <p className={RELEASE_TRACKER_EMPTY_BODY_CLASS}>{emptyCopy.body}</p>
-            {showMyUpcomingEmptyCta && (
-              <Button
-                className={RELEASE_TRACKER_EMPTY_CTA_CLASS}
-                onClick={() => navigate(RELEASE_TRACKER_ADD_HREF)}
-              >
-                {myUpcomingEmptyCtaLabel}
-              </Button>
-            )}
+          <div
+            className={RELEASE_TRACKER_EMPTY_REGION_CLASS}
+            data-testid="release-feed-empty"
+          >
+            <div className={RELEASE_TRACKER_EMPTY_CLASS}>
+              <Disc3 className={RELEASE_TRACKER_EMPTY_ICON_CLASS} />
+              <p className={RELEASE_TRACKER_EMPTY_TITLE_CLASS}>{emptyCopy.title}</p>
+              <p className={RELEASE_TRACKER_EMPTY_BODY_CLASS}>{emptyCopy.body}</p>
+              {showMyUpcomingEmptyCta && (
+                <Button
+                  className={RELEASE_TRACKER_EMPTY_CTA_CLASS}
+                  onClick={() => navigate(RELEASE_TRACKER_ADD_HREF)}
+                >
+                  {myUpcomingEmptyCtaLabel}
+                </Button>
+              )}
+            </div>
           </div>
         ) : (
                 <ArtworkReleaseBrowser

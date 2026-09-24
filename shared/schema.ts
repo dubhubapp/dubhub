@@ -215,6 +215,7 @@ export const releaseLinks = pgTable("release_links", {
   platform: text("platform").notNull(), // selectable: spotify | apple_music | soundcloud | beatport | bandcamp | deezer | amazon_music | tidal | youtube_music | free_download | dub_pack | other; legacy: juno
   url: text("url").notNull(),
   linkType: text("link_type"), // presave | listen | download
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

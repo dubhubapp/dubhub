@@ -73,7 +73,7 @@ export function ReleaseLinkTypeSelect({
           aria-label={`Link type, ${selected.label}`}
           className={cn(
             "inline-flex h-9 min-w-[8.5rem] items-center justify-between gap-2 rounded border bg-background px-2 py-1.5 text-sm outline-none",
-            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            "focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-1",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
         >

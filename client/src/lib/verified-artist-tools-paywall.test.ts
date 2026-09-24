@@ -10,6 +10,7 @@ import {
   subscriptionPeriodLabel,
 } from "./verified-artist-tools-offerings";
 import {
+  resolveVerifiedArtistToolsBenefitDetail,
   resolveVerifiedArtistToolsPaywallCopy,
   VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
@@ -84,6 +85,20 @@ describe("verified-artist-tools-paywall-copy", () => {
     assert.equal(
       VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify tracks anonymously"],
       "Identify the track anonymously now, then reveal yourself and the full track ID closer to release.",
+    );
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: "Identify tracks anonymously",
+        source: "settings",
+      }),
+      undefined,
+    );
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: "Identify tracks anonymously",
+        source: "anonymous_identify",
+      }),
+      VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify tracks anonymously"],
     );
     assert.equal(
       VERIFIED_ARTIST_TOOLS_BENEFITS[3],

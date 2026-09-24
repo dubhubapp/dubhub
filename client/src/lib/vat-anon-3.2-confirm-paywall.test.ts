@@ -13,6 +13,7 @@ import {
   ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
+  resolveVerifiedArtistToolsBenefitDetail,
   resolveVerifiedArtistToolsPaywallCopy,
 } from "./verified-artist-tools-paywall-copy";
 import { PAYWALL_SHELL_CLASS } from "./verified-artist-tools-paywall-lifecycle";
@@ -106,7 +107,7 @@ describe("VAT-ANON-3.2 paywall stack above Confirm", () => {
 });
 
 describe("VAT-ANON-3.2 anonymous VAT benefit + emphasis", () => {
-  it("adds Identify tracks anonymously benefit with approved detail copy", () => {
+  it("adds Identify tracks anonymously benefit; long detail only for anonymous_identify", () => {
     assert.equal(ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE, "Identify tracks anonymously");
     assert.equal(
       ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
@@ -119,7 +120,29 @@ describe("VAT-ANON-3.2 anonymous VAT benefit + emphasis", () => {
     );
     assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[2], ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE);
     assert.doesNotMatch(ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL, /credib|boost|status|paid verification/i);
-    assert.match(paywallSrc, /ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL/);
+    assert.match(paywallSrc, /resolveVerifiedArtistToolsBenefitDetail/);
+    assert.match(copySrc, /source !== "anonymous_identify"/);
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
+        source: "anonymous_identify",
+      }),
+      ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
+    );
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
+        source: "settings",
+      }),
+      undefined,
+    );
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
+        source: "attachment_limit",
+      }),
+      undefined,
+    );
   });
 
   it("anonymous_identify emphasizes the anonymous benefit; other sources do not", () => {

@@ -30,9 +30,8 @@ import {
   APP_MATERIAL_SHEET_BACKDROP_CLASS,
 } from "@/lib/app-material";
 import {
-  ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
-  ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   PAYWALL_UI_COPY,
+  resolveVerifiedArtistToolsBenefitDetail,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
   VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT,
   resolveVerifiedArtistToolsPaywallCopy,
@@ -736,10 +735,10 @@ export function VerifiedArtistToolsPaywall({
                           emphasize ===
                             "See your Release Alerts audience and send alerts to listeners waiting" &&
                           line === "See Release Alerts audience and send alerts"));
-                    const detail =
-                      line === ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE
-                        ? ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL
-                        : undefined;
+                    const detail = resolveVerifiedArtistToolsBenefitDetail({
+                      benefit: line,
+                      source,
+                    });
                     return (
                       <li
                         key={line}

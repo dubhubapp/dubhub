@@ -75,14 +75,14 @@ export function buildReleaseTimingRequestFields(args: {
     };
   }
   if (!args.releaseDateYmd) {
-    return { error: "Release date is required for scheduled releases" };
+    return { error: "Add a release date to continue." };
   }
   if (!args.draft.timeLocal) {
-    return { error: "Choose a release time" };
+    return { error: "Add a release time to continue." };
   }
   if (!args.draft.timezone) {
     return {
-      error: "Choose a timezone for this release time",
+      error: "Choose a timezone to continue.",
     };
   }
   return {

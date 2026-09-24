@@ -141,6 +141,9 @@ describe("resolveReleaseStatusPillPresentation", () => {
       assert.match(tone, /text-white/);
       assert.match(tone, /ring-1/);
       assert.match(tone, /ring-inset/);
+      assert.match(tone, /color-mix\(in_srgb,/);
+      assert.match(tone, /#0f1324/);
+      assert.doesNotMatch(tone, /bg-(amber|green|indigo|slate)-500\/25/);
       assert.doesNotMatch(tone, /text-amber|text-green|text-indigo-|text-muted|dark:text-/);
     }
 
