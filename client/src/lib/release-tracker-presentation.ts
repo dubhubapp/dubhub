@@ -331,6 +331,13 @@ export const RELEASE_TRACKER_SECONDARY_TABLIST_CLASS =
 export const RELEASE_TRACKER_EMPTY_REGION_CLASS =
   "flex min-h-full w-full flex-1 flex-col items-center justify-center py-4" as const;
 
+/**
+ * Loading skeleton region — full-width list alignment (not empty-state centering).
+ * Keeps delayed row skeletons at the top of the content band like live feed rows.
+ */
+export const RELEASE_TRACKER_LOADING_REGION_CLASS =
+  "w-full min-w-0" as const;
+
 /** Empty-state group (icon/title/body/optional CTA) — one centred block, no viewport %). */
 export const RELEASE_TRACKER_EMPTY_CLASS =
   "mx-auto w-full max-w-sm px-2 text-center" as const;

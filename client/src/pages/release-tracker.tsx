@@ -51,9 +51,16 @@ import {
   writeReleaseTrackerArtworkSession,
 } from "@/lib/release-tracker-artwork-session";
 import {
+  RELEASE_FEED_ACTIONS_LEADING_CLASS,
+  RELEASE_FEED_ACTIONS_ROW_CLASS,
+  RELEASE_FEED_ARTWORK_SIZE_CLASS,
   RELEASE_FEED_DIVIDE_CLASS,
+  RELEASE_FEED_META_COLUMN_CLASS,
+  RELEASE_FEED_META_TOP_CLASS,
   RELEASE_FEED_MONTH_HEADING_CLASS,
+  RELEASE_FEED_ROW_BASE_CLASS,
   RELEASE_FEED_SKELETON_VARIANT,
+  RELEASE_FEED_STATUS_ROW_CLASS,
   RELEASE_TRACKER_ADD_HREF,
   RELEASE_TRACKER_ADD_CTA_CLASS,
   RELEASE_TRACKER_CONTENT_TOP_GAP_CLASS,
@@ -63,6 +70,7 @@ import {
   RELEASE_TRACKER_EMPTY_ICON_CLASS,
   RELEASE_TRACKER_EMPTY_REGION_CLASS,
   RELEASE_TRACKER_EMPTY_TITLE_CLASS,
+  RELEASE_TRACKER_LOADING_REGION_CLASS,
   RELEASE_TRACKER_FAB_FADE_CLASS,
   RELEASE_TRACKER_CTA_SLAB_ATTR,
   RELEASE_TRACKER_FAB_UNDERLAY_CLASS,
@@ -184,22 +192,41 @@ function isSavedReleaseOutTodayInList(
 function ReleaseFeedContentLoader() {
   return (
     <div
-      className={cn(RELEASE_FEED_DIVIDE_CLASS, "py-1")}
+      className={cn(RELEASE_FEED_DIVIDE_CLASS, "w-full py-1")}
       aria-busy="true"
       aria-label="Loading releases"
       data-skeleton-variant={RELEASE_FEED_SKELETON_VARIANT}
+      data-testid="release-feed-content-loader"
     >
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="flex gap-3.5 py-3.5"
+          className={RELEASE_FEED_ROW_BASE_CLASS}
           data-testid="release-feed-row-skeleton"
         >
-          <DubHubSkeletonBar tone="mid" className="h-[7.5rem] w-[7.5rem] shrink-0 rounded-lg ring-1 ring-white/10" />
-          <div className="flex-1 space-y-1.5 pt-0.5">
-            <DubHubSkeletonBar tone="default" className="h-4 w-full max-w-[14rem]" />
-            <DubHubSkeletonBar tone="mid" className="h-3 w-2/3 max-w-[10rem]" />
-            <DubHubSkeletonBar tone="faint" className="h-3 w-1/3 max-w-[5.5rem]" />
+          <DubHubSkeletonBar tone="mid" className={RELEASE_FEED_ARTWORK_SIZE_CLASS} />
+          <div className={RELEASE_FEED_META_COLUMN_CLASS}>
+            <div className={RELEASE_FEED_META_TOP_CLASS}>
+              <DubHubSkeletonBar tone="default" className="h-4 w-full max-w-[14rem]" />
+              <DubHubSkeletonBar tone="mid" className="h-3 w-2/3 max-w-[10rem]" />
+              <DubHubSkeletonBar tone="faint" className="h-3 w-1/3 max-w-[5.5rem]" />
+              <div className={RELEASE_FEED_STATUS_ROW_CLASS}>
+                <DubHubSkeletonBar
+                  tone="faint"
+                  className="h-[1.375rem] w-16 rounded-full"
+                  data-testid="release-feed-row-skeleton-status"
+                />
+              </div>
+            </div>
+            <div className={RELEASE_FEED_ACTIONS_ROW_CLASS}>
+              <div className={RELEASE_FEED_ACTIONS_LEADING_CLASS}>
+                <DubHubSkeletonBar
+                  tone="mid"
+                  className="h-7 w-24 rounded-full"
+                  data-testid="release-feed-row-skeleton-cta"
+                />
+              </div>
+            </div>
           </div>
         </div>
       ))}
@@ -1174,7 +1201,7 @@ export default function ReleaseTracker() {
     if (opts.isLoading) {
       return (
         <div
-          className={RELEASE_TRACKER_EMPTY_REGION_CLASS}
+          className={RELEASE_TRACKER_LOADING_REGION_CLASS}
           data-testid="release-feed-loading"
         >
           <ReleaseFeedDelayedLoader key={`${effectiveScope}-${view}`} />
@@ -1527,7 +1554,7 @@ export default function ReleaseTracker() {
           </div>
         ) : isFeedLoading ? (
           <div
-            className={RELEASE_TRACKER_EMPTY_REGION_CLASS}
+            className={RELEASE_TRACKER_LOADING_REGION_CLASS}
             data-testid="release-feed-loading"
           >
             <ReleaseFeedDelayedLoader key={`${effectiveScope}-${effectiveView}`} />

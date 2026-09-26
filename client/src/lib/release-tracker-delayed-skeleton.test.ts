@@ -14,7 +14,12 @@ import {
 } from "@/lib/release-tracker-delayed-skeleton";
 import {
   RELEASE_FEED_ARTWORK_PX,
+  RELEASE_FEED_ARTWORK_SIZE_CLASS,
+  RELEASE_FEED_META_COLUMN_CLASS,
+  RELEASE_FEED_ROW_BASE_CLASS,
   RELEASE_FEED_SKELETON_VARIANT,
+  RELEASE_TRACKER_EMPTY_REGION_CLASS,
+  RELEASE_TRACKER_LOADING_REGION_CLASS,
   RELEASE_TRACKER_PAGE_CLASS,
   RELEASE_TRACKER_STICKY_CHROME_CLASS,
 } from "@/lib/release-tracker-presentation";
@@ -159,11 +164,42 @@ describe("C1.1 wiring + freeze contracts", () => {
   it("keeps skeleton geometry and C1 material shell", () => {
     assert.equal(RELEASE_FEED_SKELETON_VARIANT, "flat-row");
     assert.equal(RELEASE_FEED_ARTWORK_PX, 120);
+    assert.match(RELEASE_FEED_ARTWORK_SIZE_CLASS, /h-\[7.5rem\] w-\[7.5rem\]/);
     assert.match(trackerSrc, /\[0, 1, 2\]\.map/);
-    assert.match(trackerSrc, /h-\[7.5rem\] w-\[7.5rem\]/);
+    assert.match(trackerSrc, /RELEASE_FEED_ARTWORK_SIZE_CLASS/);
+    assert.match(trackerSrc, /RELEASE_FEED_ROW_BASE_CLASS/);
     assert.match(RELEASE_TRACKER_PAGE_CLASS, new RegExp(APP_MATERIAL_RELEASES_CANVAS_CLASS));
     assert.match(RELEASE_TRACKER_STICKY_CHROME_CLASS, /dubhub-app-releases-sticky/);
     assert.match(trackerSrc, /RELEASE_TRACKER_PAGE_CLASS/);
     assert.match(trackerSrc, /RELEASE_TRACKER_STICKY_CHROME_CLASS/);
+  });
+
+  it("skeleton is full-width list-aligned with status + CTA bones", () => {
+    assert.match(RELEASE_TRACKER_LOADING_REGION_CLASS, /w-full/);
+    assert.doesNotMatch(RELEASE_TRACKER_LOADING_REGION_CLASS, /justify-center|items-center/);
+    assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /justify-center/);
+    assert.match(RELEASE_TRACKER_EMPTY_REGION_CLASS, /items-center/);
+    assert.match(trackerSrc, /RELEASE_TRACKER_LOADING_REGION_CLASS/);
+    assert.match(trackerSrc, /data-testid="release-feed-loading"/);
+    assert.match(trackerSrc, /data-testid="release-feed-empty"/);
+    assert.match(trackerSrc, /className=\{cn\(RELEASE_FEED_DIVIDE_CLASS, "w-full py-1"\)\}/);
+    assert.match(RELEASE_FEED_ROW_BASE_CLASS, /gap-3\.5/);
+    assert.match(RELEASE_FEED_ROW_BASE_CLASS, /py-4/);
+    assert.match(RELEASE_FEED_META_COLUMN_CLASS, /min-h-\[7.5rem\]/);
+    assert.match(trackerSrc, /RELEASE_FEED_META_COLUMN_CLASS/);
+    assert.match(trackerSrc, /RELEASE_FEED_STATUS_ROW_CLASS/);
+    assert.match(trackerSrc, /RELEASE_FEED_ACTIONS_ROW_CLASS/);
+    assert.match(trackerSrc, /data-testid="release-feed-row-skeleton-status"/);
+    assert.match(trackerSrc, /data-testid="release-feed-row-skeleton-cta"/);
+    assert.match(trackerSrc, /rounded-full/);
+    // Loading wrappers use LOADING_REGION; empty still uses EMPTY_REGION centering.
+    assert.match(
+      trackerSrc,
+      /RELEASE_TRACKER_LOADING_REGION_CLASS[\s\S]{0,80}data-testid="release-feed-loading"/,
+    );
+    assert.match(
+      trackerSrc,
+      /RELEASE_TRACKER_EMPTY_REGION_CLASS[\s\S]{0,80}data-testid="release-feed-empty"/,
+    );
   });
 });

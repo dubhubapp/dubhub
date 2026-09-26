@@ -132,7 +132,7 @@ describe("C1 frozen geometry + anti-card rows", () => {
   it("skeleton count/geometry unchanged (3 flat rows, 120px art)", () => {
     assert.equal(RELEASE_FEED_SKELETON_VARIANT, "flat-row");
     assert.match(trackerSrc, /\[0, 1, 2\]\.map/);
-    assert.match(trackerSrc, /h-\[7.5rem\] w-\[7.5rem\]/);
+    assert.match(trackerSrc, /RELEASE_FEED_ARTWORK_SIZE_CLASS|h-\[7.5rem\] w-\[7.5rem\]/);
     assert.match(trackerSrc, /data-testid="release-feed-row-skeleton"/);
     assert.doesNotMatch(trackerSrc, /tone="teal"/);
   });
