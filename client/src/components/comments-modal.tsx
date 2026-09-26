@@ -3272,10 +3272,7 @@ export function CommentsModal({
                               side="bottom"
                               align="end"
                               className="relative z-10 h-8 w-8 shrink-0 text-white/50 hover:text-white/80 dark:text-white/50 dark:hover:text-white/80"
-                              contentClassName={cn(
-                                alertDialogStackZ,
-                                "border-border bg-popover text-popover-foreground shadow-xl",
-                              )}
+                              contentClassName={alertDialogStackZ}
                               content={
                                 <div
                                   className="space-y-1.5"

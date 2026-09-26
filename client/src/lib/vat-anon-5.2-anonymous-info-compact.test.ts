@@ -36,6 +36,17 @@ describe("VAT-ANON-5.2 Info popover stacking vs Comments drawer", () => {
     );
   });
 
+  it("StatInfoPopover uses toast material surface, not flat bg-popover", () => {
+    assert.match(statInfoSrc, /APP_MATERIAL_TOAST_SURFACE_CLASS/);
+    assert.match(statInfoSrc, /border-transparent bg-transparent/);
+    assert.match(statInfoSrc, /shadow-none/);
+    assert.doesNotMatch(statInfoSrc, /bg-popover|border-border\/80|shadow-lg/);
+  });
+
+  it("StatInfoPopover centers compact info copy by default", () => {
+    assert.match(statInfoSrc, /text-center text-foreground\/90/);
+  });
+
   it("Comments anonymous Info uses modal + alertDialogStackZ above the drawer", () => {
     const gridIdx = commentsSrc.indexOf("grid-cols-[2rem_minmax(0,1fr)_2rem]");
     assert.ok(gridIdx > 0);
@@ -45,7 +56,8 @@ describe("VAT-ANON-5.2 Info popover stacking vs Comments drawer", () => {
     );
     assert.match(row, /StatInfoPopover/);
     assert.match(row, /\bmodal\b/);
-    assert.match(row, /contentClassName=\{cn\(\s*alertDialogStackZ/);
+    assert.match(row, /contentClassName=\{alertDialogStackZ\}/);
+    assert.doesNotMatch(row, /bg-popover|border-border/);
     assert.match(row, /h-8 w-8/);
     assert.match(row, /anonymous-identification-info-content/);
   });

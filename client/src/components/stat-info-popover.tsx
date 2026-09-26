@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { APP_MATERIAL_TOAST_SURFACE_CLASS } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import { playInteractionLightThrottled } from "@/lib/haptic";
 
@@ -79,14 +80,16 @@ export function StatInfoPopover({
         sideOffset={6}
         collisionPadding={12}
         className={cn(
-          "w-[min(18rem,calc(100vw-2rem))] max-w-[18rem] border-border/80 p-3 text-sm leading-relaxed text-muted-foreground shadow-lg",
+          // Neutralise shared PopoverContent fill/border/shadow utilities; toast CSS owns the shell.
+          APP_MATERIAL_TOAST_SURFACE_CLASS,
+          "w-[min(18rem,calc(100vw-2rem))] max-w-[18rem] border-transparent bg-transparent p-3 text-sm leading-relaxed text-muted-foreground shadow-none",
           "duration-200 ease-out motion-safe:data-[state=open]:animate-in motion-safe:data-[state=closed]:animate-out",
           contentClassName,
         )}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <div className="text-foreground/90">{content}</div>
+        <div className="text-center text-foreground/90">{content}</div>
       </PopoverContent>
     </Popover>
   );
