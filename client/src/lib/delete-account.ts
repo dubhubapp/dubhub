@@ -104,6 +104,35 @@ export function resetAccountDeletedSuccessPhaseForTests(): void {
   accountDeletedSuccessPhaseActive = false;
 }
 
+let accountDeletionFlowActive = false;
+const accountDeletionFlowListeners = new Set<() => void>();
+
+function emitAccountDeletionFlow(): void {
+  for (const listener of accountDeletionFlowListeners) listener();
+}
+
+/** True while the delete-account dialog is open. */
+export function setAccountDeletionFlowActive(active: boolean): void {
+  if (accountDeletionFlowActive === active) return;
+  accountDeletionFlowActive = active;
+  emitAccountDeletionFlow();
+}
+
+export function isAccountDeletionFlowActive(): boolean {
+  return accountDeletionFlowActive;
+}
+
+export function subscribeAccountDeletionFlow(listener: () => void): () => void {
+  accountDeletionFlowListeners.add(listener);
+  return () => {
+    accountDeletionFlowListeners.delete(listener);
+  };
+}
+
+export function resetAccountDeletionFlowForTests(): void {
+  accountDeletionFlowActive = false;
+}
+
 export const ACCOUNT_DELETED_SUCCESS_COPY = {
   title: "Account deleted",
   description:

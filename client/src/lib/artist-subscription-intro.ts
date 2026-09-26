@@ -257,8 +257,11 @@ export function resolveArtistSubscriptionIntroProfileQueue(input: {
   return { queue: true };
 }
 
-/** Narrow surface blockers (paywall / lifetime gift) — not a global modal bus. */
-export type ArtistSubscriptionIntroSurfaceBlocker = "paywall" | "lifetime_gift";
+/** Narrow surface blockers — not a global modal bus. */
+export type ArtistSubscriptionIntroSurfaceBlocker =
+  | "paywall"
+  | "lifetime_gift"
+  | "cancellation_feedback";
 
 const surfaceBlockers = new Set<ArtistSubscriptionIntroSurfaceBlocker>();
 const surfaceBlockerListeners = new Set<() => void>();
@@ -279,6 +282,11 @@ export function setArtistSubscriptionIntroSurfaceBlocker(
 
 export function hasArtistSubscriptionIntroSurfaceBlocker(): boolean {
   return surfaceBlockers.size > 0;
+}
+
+/** Paywall and lifetime gift block cancellation feedback. Our own sheet does not. */
+export function hasExternalSurfaceBlockingCancellationFeedback(): boolean {
+  return surfaceBlockers.has("paywall") || surfaceBlockers.has("lifetime_gift");
 }
 
 export function subscribeArtistSubscriptionIntroSurfaceBlockers(

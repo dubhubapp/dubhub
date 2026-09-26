@@ -174,9 +174,17 @@ describe("Delete account success phase UX", () => {
     assert.doesNotMatch(settingsSrc, /data-testid="button-delete-account"/);
   });
 
-  it("Manage account path contains Change Password + Delete Account", () => {
+  it("Manage account path contains Country, Change Password, then Delete Account", () => {
+    assert.match(manageAccountSrc, /data-testid="button-settings-country"/);
     assert.match(manageAccountSrc, /data-testid="button-change-password"/);
     assert.match(manageAccountSrc, /data-testid="button-delete-account"/);
+    assert.match(manageAccountSrc, /COUNTRY_PICKER_MANAGE_ACCOUNT_HREF/);
+    assert.match(manageAccountSrc, /Country, password and account deletion/);
+    const country = manageAccountSrc.indexOf('data-testid="button-settings-country"');
+    const changePw = manageAccountSrc.indexOf('data-testid="button-change-password"');
+    const del = manageAccountSrc.indexOf('data-testid="button-delete-account"');
+    assert.ok(country > 0 && changePw > country && del > changePw);
+    assert.match(manageAccountSrc, /SETTINGS_LOGOUT_ROW_CLASS/);
   });
 
   it("registers manage-account route and deletion hard reset", () => {

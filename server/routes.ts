@@ -18,6 +18,7 @@ import {
   parseFreezeScopes,
 } from "./leaderboard-monthly-freeze";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { resolveSubscriptionCancellationFeedback, isSubscriptionCancellationCategory } from "./subscription-cancellation-feedback";
 import { normalizeSignupEmail } from "@shared/signup-email";
 import { parseReleaseCalendarDate, requestBodyAttemptsReleaseTimingMutation, RELEASE_TIMING_LOCKED_CODE, RELEASE_TIMING_LOCKED_MESSAGE, RELEASE_TITLE_LOCKED_CODE, RELEASE_TITLE_LOCKED_MESSAGE } from "@shared/release-timing";
 import { toPublicArtistProfileQuestionAnswers } from "@shared/artist-profile-questions";
@@ -5971,7 +5972,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const rawFeedback = typeof req.body?.feedback === "string" ? req.body.feedback : "";
-      const feedback = rawFeedback.trim();
+      let feedback = rawFeedback.trim();
       const rawCategory = typeof req.body?.category === "string" ? req.body.category : "";
       const normalizedCategoryInput = rawCategory.trim().toLowerCase();
       const categoryAliasToCanonical: Record<string, string> = {
@@ -5988,8 +5989,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         artist_question_suggestion: "artist_question_suggestion",
         "submit a question for your favourite artist": "artist_question_suggestion",
         other: "other",
+        subscription_cancellation: "subscription_cancellation",
+        "subscription cancellation": "subscription_cancellation",
       };
-      const category = categoryAliasToCanonical[normalizedCategoryInput];
+      let category = categoryAliasToCanonical[normalizedCategoryInput];
+      if (isSubscriptionCancellationCategory(normalizedCategoryInput)) {
+        const resolved = resolveSubscriptionCancellationFeedback({
+          reason: req.body?.reason,
+          note: req.body?.note,
+        });
+        if (!resolved.ok) {
+          return res.status(400).json({ message: resolved.message });
+        }
+        feedback = resolved.body;
+        category = "subscription_cancellation";
+      }
       const rawAppVersion = typeof req.body?.app_version === "string" ? req.body.app_version : "";
       const appVersion = rawAppVersion.trim() || "unknown";
       const rawPlatform = typeof req.body?.platform === "string" ? req.body.platform : "";
@@ -6003,6 +6017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "account_verification",
         "artist_question_suggestion",
         "other",
+        "subscription_cancellation",
       ]);
 
       if (!feedback) {

@@ -1,3 +1,5 @@
+import { clearPendingAppStoreReviewOpportunity } from "./app-store-review";
+import { clearCancellationFeedbackSession } from "./subscription-cancellation-feedback";
 import { queryClient } from "./queryClient";
 import { quarantineRevenueCatIdentity } from "./revenuecat-identity";
 import { clearHomeWidgetOnHardReset } from "./home-widget-session";
@@ -106,6 +108,8 @@ export async function hardResetLocalAuthState(options?: {
     // ignore
   }
 
+  clearPendingAppStoreReviewOpportunity();
+  clearCancellationFeedbackSession();
   // Clear shared widget payload and this user's selection before auth wipe.
   await clearHomeWidgetOnHardReset(userId);
 

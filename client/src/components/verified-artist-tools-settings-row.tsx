@@ -26,6 +26,8 @@ import {
   SETTINGS_VAT_ACTIONS_CLASS,
   SETTINGS_VAT_INSET_CLASS,
 } from "@/lib/settings-presentation";
+import { useUser } from "@/lib/user-context";
+import { armCancellationFeedbackFromSettingsRow, setCancellationFeedbackCommerceBusy } from "@/lib/subscription-cancellation-feedback";
 import { useQueryClient } from "@tanstack/react-query";
 
 type Props = {
@@ -43,6 +45,7 @@ const VAT_CARD_SURFACE_CLASS =
 
 export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Props) {
   const { toast } = useToast();
+  const { currentUser } = useUser();
   const queryClient = useQueryClient();
   const paywallEnabled = isVerifiedArtistToolsPaywallEnabled();
   const subscription = useAuthoritativeSubscriptionStatus({ enabled });
@@ -50,6 +53,29 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
   const [retrying, setRetrying] = useState(false);
   const upgradeButtonRef = useRef<HTMLButtonElement>(null);
   const liveStatusRef = useRef<string>("");
+
+  useEffect(() => {
+    setCancellationFeedbackCommerceBusy("settings_restore", restoring);
+    return () => setCancellationFeedbackCommerceBusy("settings_restore", false);
+  }, [restoring]);
+
+  const onManageSubscription = () => {
+    const status = subscription.selection.selectedStatus;
+    armCancellationFeedbackFromSettingsRow({
+      userId: currentUser?.id ?? null,
+      environment: subscription.selection.selectedEnvironment,
+      state: subscription.selection.state,
+      freshness: subscription.selection.freshness,
+      hasPaidToolAccess: subscription.selection.hasPaidToolAccess === true,
+      willRenew: status?.willRenew ?? null,
+      accessThrough: status?.accessThrough ?? null,
+      productIdentifier: status?.productIdentifier ?? null,
+      billingIssue: status?.billingIssue === true,
+      gracePeriod: status?.gracePeriod === true,
+      expiresAt: status?.expiresAt ?? null,
+    });
+    openIosManageSubscriptions();
+  };
 
   if (!enabled || !paywallEnabled) return null;
 
@@ -220,7 +246,7 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
                 type="button"
                 variant="outline"
                 className={SETTINGS_VAT_ACTION_SECONDARY_CLASS}
-                onClick={() => openIosManageSubscriptions()}
+                onClick={onManageSubscription}
                 data-testid="settings-vat-manage"
               >
                 {PAYWALL_UI_COPY.manageSubscription}

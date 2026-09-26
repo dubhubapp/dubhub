@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,7 @@ import {
   nextDeleteAccountStep,
   parseDeleteAccountErrorBody,
   shouldEnterAccountDeletedSuccessPhase,
+  setAccountDeletionFlowActive,
   userMessageForDeleteAccountCode,
   type DeleteAccountDialogStep,
 } from "@/lib/delete-account";
@@ -76,6 +77,11 @@ export function DeleteAccountDialog({
   });
   const showSubscriptionWarning =
     !!verifiedArtist && subscriptionView.showManage === true;
+
+  useEffect(() => {
+    setAccountDeletionFlowActive(open);
+    return () => setAccountDeletionFlowActive(false);
+  }, [open]);
 
   const { isNativeIos, keyboardHeight, keyboardOpen, prefersReducedMotion } =
     useIosKeyboardAwareScroll({

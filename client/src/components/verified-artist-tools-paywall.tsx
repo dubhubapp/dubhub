@@ -77,6 +77,7 @@ import {
   type NativeNavSheetPhase,
 } from "@/lib/native-nav-sheet-cover";
 import { setVerifiedArtistToolsPaywallCoveringNativeNav } from "@/lib/verified-artist-tools-paywall-native-cover";
+import { setCancellationFeedbackCommerceBusy } from "@/lib/subscription-cancellation-feedback";
 
 export type VerifiedArtistToolsPaywallProps = {
   open: boolean;
@@ -283,6 +284,13 @@ export function VerifiedArtistToolsPaywall({
     );
     return () => setVerifiedArtistToolsPaywallCoveringNativeNav(false);
   }, [sheetPhase]);
+
+  useEffect(() => {
+    const busy =
+      phase === "purchasing" || phase === "restoring" || phase === "verifying";
+    setCancellationFeedbackCommerceBusy("paywall", busy);
+    return () => setCancellationFeedbackCommerceBusy("paywall", false);
+  }, [phase]);
 
   const beginCommerceSession = (options?: { keepHapticMemory?: boolean }) => {
     commerceSessionActiveRef.current = true;

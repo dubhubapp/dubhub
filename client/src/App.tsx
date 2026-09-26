@@ -11,6 +11,7 @@ import { SubmitClipProvider } from "@/lib/submit-clip-context";
 import { SubmitClipDrawer } from "@/components/submit-clip-drawer";
 import { VerifiedArtistToolsPaywallHost } from "@/components/verified-artist-tools-paywall-host";
 import { LifetimeGiftAnnouncementHost } from "@/components/lifetime-gift-announcement-host";
+import { SubscriptionCancellationFeedbackHost } from "@/components/subscription-cancellation-feedback-host";
 import { CountryPromptHost } from "@/components/country-prompt-host";
 import { HomeWidgetRefreshHost } from "@/components/home-widget-refresh-host";
 import { HomeWidgetSetupGuideHost } from "@/components/home-widget-setup-guide-host";
@@ -20,6 +21,7 @@ import { InAppNotificationBannerHost } from "@/components/in-app-notification-ba
 import { PasswordRecoveryRedirect } from "@/components/auth/PasswordRecoveryRedirect";
 import { supabase } from "@/lib/supabaseClient";
 import { clearRecentMentionUsersForUser } from "@/lib/comment-mention-recent";
+import { clearCancellationFeedbackSession } from "@/lib/subscription-cancellation-feedback";
 
 import Home from "@/pages/home";
 import Submit from "@/pages/submit";
@@ -696,9 +698,10 @@ function App() {
       artistToolsIntro.pending
     ) {
       sessionStorage.setItem(ONBOARDING_ACTIVE_SESSION_KEY, "1");
-      return;
+    } else {
+      sessionStorage.removeItem(ONBOARDING_ACTIVE_SESSION_KEY);
     }
-    sessionStorage.removeItem(ONBOARDING_ACTIVE_SESSION_KEY);
+    window.dispatchEvent(new Event("dubhub:onboarding-active-changed"));
   }, [
     firstLoginOnboarding.open,
     artistToolsIntro.open,
@@ -745,6 +748,7 @@ function App() {
     localStorage.removeItem('userRole');
     localStorage.removeItem('dubhub-signup-role');
     clearRecentMentionUsersForUser(signingOutUserId);
+    clearCancellationFeedbackSession();
 
     // Keep device-level preferences (e.g. theme) intact across logout/login.
     sessionStorage.clear();
@@ -1021,6 +1025,7 @@ function App() {
           <SubmitClipDrawer />
           <VerifiedArtistToolsPaywallHost />
           <LifetimeGiftAnnouncementHost />
+          <SubscriptionCancellationFeedbackHost />
           <HomeWidgetRefreshHost />
           <HomeWidgetSetupGuideHost />
           {/*
