@@ -14,6 +14,15 @@ import { ReleaseFormDrawer } from "@/components/release-form-drawer";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { INPUT_LIMITS } from "@shared/input-limits";
+import { cn } from "@/lib/utils";
+import {
+  APP_MATERIAL_FIELD_CLASS,
+  APP_MATERIAL_FORM_PRIMARY_CLASS,
+  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_SELECT_CONTENT_CLASS,
+  APP_MATERIAL_SELECT_ITEM_CLASS,
+  APP_MATERIAL_SELECT_TRIGGER_CLASS,
+} from "@/lib/app-material";
 
 export const SETTINGS_FEEDBACK_CATEGORIES = [
   { label: "UX / Design", value: "ux" },
@@ -22,7 +31,7 @@ export const SETTINGS_FEEDBACK_CATEGORIES = [
   { label: "Performance", value: "performance" },
   { label: "Notifications", value: "notifications" },
   { label: "Account / Verification", value: "account_verification" },
-  { label: "Submit a question for your favourite artist", value: "artist_question_suggestion" },
+  { label: "Artist Questions", value: "artist_question_suggestion" },
   { label: "Other", value: "other" },
 ] as const;
 
@@ -30,7 +39,7 @@ export type SettingsFeedbackCategoryValue =
   (typeof SETTINGS_FEEDBACK_CATEGORIES)[number]["value"];
 
 const DEFAULT_FEEDBACK_PLACEHOLDER =
-  "Found a bug? Have an idea? Tell us what happened or what you'd love to see in dub hub.";
+  "Tell us what happened, what you expected, or what you'd like to see.";
 
 const FEEDBACK_CATEGORY_COPY: Partial<
   Record<SettingsFeedbackCategoryValue, { placeholder: string; helper?: string }>
@@ -139,24 +148,50 @@ export function SettingsFeedbackSheet({ open, onOpenChange }: Props) {
       contentTestId="settings-feedback-sheet"
     >
       <div className="space-y-4 py-3" data-testid="settings-feedback-form">
-        <Select
-          value={feedbackCategory}
-          onValueChange={(value) => {
-            setFeedbackCategory(value as SettingsFeedbackCategoryValue);
-            if (feedbackStatus) setFeedbackStatus(null);
-          }}
-        >
-          <SelectTrigger data-testid="select-feedback-category">
-            <SelectValue placeholder="Select a category" />
-          </SelectTrigger>
-          <SelectContent>
-            {SETTINGS_FEEDBACK_CATEGORIES.map((category) => (
-              <SelectItem key={category.value} value={category.value}>
-                {category.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-2">
+          <label
+            htmlFor="settings-feedback-category"
+            className="text-sm font-medium text-foreground"
+          >
+            Category
+          </label>
+          <Select
+            value={feedbackCategory}
+            onValueChange={(value) => {
+              setFeedbackCategory(value as SettingsFeedbackCategoryValue);
+              if (feedbackStatus) setFeedbackStatus(null);
+            }}
+          >
+            <SelectTrigger
+              id="settings-feedback-category"
+              className={cn(APP_MATERIAL_SELECT_TRIGGER_CLASS, "h-10 w-full")}
+              data-testid="select-feedback-category"
+            >
+              <SelectValue placeholder="Select a category" />
+            </SelectTrigger>
+            {/*
+              ReleaseFormDrawer uses z-[70]. Default SelectContent is z-50 and
+              portals under the sheet. Raise z + unlock viewport; material surface.
+            */}
+            <SelectContent
+              className={cn(
+                APP_MATERIAL_SELECT_CONTENT_CLASS,
+                "z-[100] max-h-[min(70vh,320px)]",
+              )}
+              viewportClassName="h-auto"
+            >
+              {SETTINGS_FEEDBACK_CATEGORIES.map((category) => (
+                <SelectItem
+                  key={category.value}
+                  value={category.value}
+                  className={APP_MATERIAL_SELECT_ITEM_CLASS}
+                >
+                  {category.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {FEEDBACK_CATEGORY_COPY[feedbackCategory]?.helper ? (
           <p
@@ -167,26 +202,36 @@ export function SettingsFeedbackSheet({ open, onOpenChange }: Props) {
           </p>
         ) : null}
 
-        <Textarea
-          value={feedbackBody}
-          onChange={(event) => {
-            setFeedbackBody(event.target.value);
-            if (feedbackStatus) setFeedbackStatus(null);
-          }}
-          maxLength={INPUT_LIMITS.feedbackBody}
-          placeholder={
-            FEEDBACK_CATEGORY_COPY[feedbackCategory]?.placeholder ?? DEFAULT_FEEDBACK_PLACEHOLDER
-          }
-          className="min-h-[120px]"
-          data-testid="textarea-feedback"
-        />
+        <div className="space-y-2">
+          <label
+            htmlFor="settings-feedback-message"
+            className="text-sm font-medium text-foreground"
+          >
+            Message
+          </label>
+          <Textarea
+            id="settings-feedback-message"
+            value={feedbackBody}
+            onChange={(event) => {
+              setFeedbackBody(event.target.value);
+              if (feedbackStatus) setFeedbackStatus(null);
+            }}
+            maxLength={INPUT_LIMITS.feedbackBody}
+            placeholder={
+              FEEDBACK_CATEGORY_COPY[feedbackCategory]?.placeholder ??
+              DEFAULT_FEEDBACK_PLACEHOLDER
+            }
+            className={cn(APP_MATERIAL_FIELD_CLASS, "min-h-[120px]")}
+            data-testid="textarea-feedback"
+          />
+        </div>
 
         <p className="text-xs text-muted-foreground" data-testid="feedback-char-counter">
           {feedbackBody.trim().length}/{INPUT_LIMITS.feedbackBody}
         </p>
 
         {feedbackStatus ? (
-          <p className="text-xs text-red-300" data-testid="feedback-status">
+          <p className="text-xs text-destructive" data-testid="feedback-status">
             {feedbackStatus.message}
           </p>
         ) : null}
@@ -195,7 +240,7 @@ export function SettingsFeedbackSheet({ open, onOpenChange }: Props) {
         <div className="flex items-center justify-between gap-3 pt-1 pb-2">
           <Button
             type="button"
-            variant="ghost"
+            className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
             onClick={() => onOpenChange(false)}
             disabled={isSubmittingFeedback}
             data-testid="button-cancel-feedback"
@@ -204,11 +249,12 @@ export function SettingsFeedbackSheet({ open, onOpenChange }: Props) {
           </Button>
           <Button
             type="button"
+            className={cn(APP_MATERIAL_FORM_PRIMARY_CLASS, "w-auto min-w-[7.5rem] px-5")}
             onClick={() => void handleSubmitFeedback()}
             disabled={isSubmittingFeedback}
             data-testid="button-submit-feedback"
           >
-            {isSubmittingFeedback ? "Sending..." : "Submit"}
+            {isSubmittingFeedback ? "Sending…" : "Send"}
           </Button>
         </div>
       </div>

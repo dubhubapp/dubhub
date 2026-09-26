@@ -146,25 +146,29 @@ describe("C6B Settings intro copy + IA order", () => {
   it("uses account-type intro copy and never says subscription in the intro", () => {
     assert.equal(
       SETTINGS_INTRO_ARTIST_COPY,
-      "Preferences, artist tools, support and account.",
+      "Account, preferences, artist tools and support.",
     );
-    assert.equal(SETTINGS_INTRO_COMMUNITY_COPY, "Preferences, support and account.");
+    assert.equal(SETTINGS_INTRO_COMMUNITY_COPY, "Account, preferences and support.");
     assert.match(settingsSrc, /verifiedArtist \? SETTINGS_INTRO_ARTIST_COPY : SETTINGS_INTRO_COMMUNITY_COPY/);
     assert.doesNotMatch(settingsSrc, /Account, preferences, and subscription/);
     assert.doesNotMatch(SETTINGS_INTRO_ARTIST_COPY, /subscription/i);
     assert.doesNotMatch(SETTINGS_INTRO_COMMUNITY_COPY, /subscription/i);
   });
 
-  it("keeps Preferences → Artist → Support → Personal Details → Account → Developer source order", () => {
-    const prefs = settingsSrc.indexOf("settings-section-preferences");
+  it("keeps Account & Preferences → Artist → Support → Listen → Legal → Developer → Log Out order", () => {
+    const accountPrefs = settingsSrc.indexOf("settings-section-account-preferences");
     const artist = settingsSrc.indexOf("settings-section-artist");
     const support = settingsSrc.indexOf("settings-section-support");
-    const personal = settingsSrc.indexOf("settings-section-personal-details");
-    const account = settingsSrc.indexOf("settings-section-account");
+    const listen = settingsSrc.indexOf("settings-section-listen-follow");
+    const legal = settingsSrc.indexOf("settings-section-legal");
     const developer = settingsSrc.indexOf("settings-section-developer");
-    assert.ok(prefs > 0 && artist > prefs && support > artist);
-    assert.ok(personal > support && account > personal);
-    assert.ok(developer > account);
+    const logout = settingsSrc.indexOf("settings-logout-footer");
+    assert.ok(accountPrefs > 0 && artist > accountPrefs && support > artist);
+    assert.ok(listen > support && legal > listen);
+    assert.ok(developer > legal);
+    assert.ok(logout > developer);
+    assert.doesNotMatch(settingsSrc, /settings-section-personal-details/);
+    assert.doesNotMatch(settingsSrc, /settings-section-account"/);
     assert.match(settingsSrc, /\{verifiedArtist \? \(/);
   });
 });
