@@ -3,6 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  APP_MATERIAL_COMPACT_ACTION_PRIMARY_CLASS,
+  APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS,
+  APP_MATERIAL_FIELD_CLASS,
+} from "@/lib/app-material";
 import { apiRequest } from "@/lib/queryClient";
 import {
   pickRandomUnansweredQuestionSlug,
@@ -149,7 +154,7 @@ export function ArtistProfileQuestionsPrompt({
         data-testid="artist-profile-questions-success"
       >
         <div className="flex items-start gap-2.5">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#4ae9df]" aria-hidden />
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-white" aria-hidden />
           <p className="text-sm leading-relaxed text-white break-words">{SUCCESS_MESSAGE}</p>
         </div>
       </section>
@@ -166,7 +171,7 @@ export function ArtistProfileQuestionsPrompt({
       data-testid="artist-profile-questions-prompt"
     >
       <div className="mb-4 flex items-start gap-2.5">
-        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#4ae9df]/80" aria-hidden />
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-white" aria-hidden />
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-white">Quick one…</h3>
           <p className="mt-1 text-xs leading-relaxed text-gray-400 break-words">
@@ -190,7 +195,7 @@ export function ArtistProfileQuestionsPrompt({
           }}
           maxLength={INPUT_LIMITS.artistProfileAnswer}
           placeholder="Your answer…"
-          className="min-h-[72px] text-sm"
+          className={cn(APP_MATERIAL_FIELD_CLASS, "min-h-[72px] text-sm")}
           data-testid="artist-profile-question-answer-input"
         />
         <div className="flex items-center justify-between gap-2">
@@ -200,9 +205,8 @@ export function ArtistProfileQuestionsPrompt({
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2.5 text-xs text-gray-300"
+              variant="outline"
+              className={APP_MATERIAL_COMPACT_ACTION_SECONDARY_CLASS}
               onClick={handleSkip}
               disabled={isSaving}
               data-testid="artist-profile-question-skip"
@@ -211,8 +215,8 @@ export function ArtistProfileQuestionsPrompt({
             </Button>
             <Button
               type="button"
-              size="sm"
-              className="h-8 px-3 text-xs"
+              variant="outline"
+              className={APP_MATERIAL_COMPACT_ACTION_PRIMARY_CLASS}
               onClick={handleSave}
               disabled={isSaving}
               data-testid="artist-profile-question-save"
