@@ -73,6 +73,11 @@ import {
 } from "@/lib/post-delete-cache-updates";
 import { isWideLandscapePresentation } from "@/lib/wide-landscape-presentation";
 import {
+  feedMediaIntrinsicFromNaturalSize,
+  resolveHomeFeedForegroundObjectFit,
+  type FeedMediaIntrinsic,
+} from "@/lib/home-feed-video-object-fit";
+import {
   HOME_SCRUB_FILL_CLASS,
   HOME_SCRUB_INACTIVE_CLASS,
   HOME_SCRUB_READOUT_CLASS,
@@ -100,20 +105,6 @@ import {
 } from "@/lib/full-screen-post-sequence-viewer";
 // Removed placeholder video import - now using real uploaded videos
 
-/**
- * Feed video fit: aspect-ratio tiers + estimated `object-cover` crop in the actual video stage
- * (no raw video pixel-height heuristics). Square / landscape stays contained.
- *
- * r = displayWidth / displayHeight (portrait ⇒ r < 1).
- */
-const PORTRAIT_R_9_16 = 9 / 16;
-/** Band around 9:16 for encoder rounding / slight reframings (original near-9:16 fix). */
-const NEAR_9_16_TOLERANCE = 0.03;
-/** Immersive portrait through ~3:5 and a bit beyond — always cover in the feed. */
-const IMMERSIVE_PORTRAIT_R_MAX = 0.63;
-/** If cover would crop more than this fraction of the scaled frame on either axis, use contain. */
-const MAX_ACCEPTABLE_COVER_CROP = 0.13;
-
 /** Press-and-hold on the far-right thumb strip for temporary 2× (longer = clearer vs scroll). */
 const HOLD_2X_DELAY_MS = 400;
 /** Cancel pending 2× if the finger moves farther than this (px) from the start (any direction). */
@@ -140,23 +131,6 @@ const POST_META_ICON_CLASS = "h-4 w-4 shrink-0 text-gray-300";
 /** Release-attached like save: music-note burst lifetime (matches tailwind animation). */
 const LIKE_SAVE_NOTE_BURST_MS = 1000;
 const DUB_HUB_ACCENT = "#4ae9df";
-
-function estimateCoverMaxCropFraction(
-  vw: number,
-  vh: number,
-  cw: number,
-  ch: number,
-): number {
-  if (vw <= 0 || vh <= 0 || cw <= 0 || ch <= 0) return 1;
-  const s = Math.max(cw / vw, ch / vh);
-  const dw = s * vw;
-  const dh = s * vh;
-  let fh = 0;
-  let fv = 0;
-  if (dw > cw) fh = (dw - cw) / dw;
-  if (dh > ch) fv = (dh - ch) / dh;
-  return Math.max(fh, fv);
-}
 
 function getPostFeedPosterRaw(post: PostWithUser): string | null {
   const v =
@@ -224,32 +198,6 @@ function homeFeedPosterCaptureTimeSec(duration: number): number {
   const mid = duration / 2;
   const edge = 0.05;
   return Math.min(Math.max(mid, edge), duration - edge);
-}
-
-function resolveFeedVideoObjectFit(
-  vw: number,
-  vh: number,
-  cw: number,
-  ch: number,
-): "cover" | "contain" {
-  if (vw <= 0 || vh <= 0 || cw <= 0 || ch <= 0) return "contain";
-  if (vh <= vw) return "contain";
-
-  const r = vw / vh;
-  const crop = estimateCoverMaxCropFraction(vw, vh, cw, ch);
-
-  // Taller / narrower than near-9:16 (e.g. 9:18): cover only when crop stays mild.
-  if (r < PORTRAIT_R_9_16 - NEAR_9_16_TOLERANCE) {
-    return crop <= MAX_ACCEPTABLE_COVER_CROP ? "cover" : "contain";
-  }
-
-  // True / near 9:16 through moderately tall portrait — edge-fill (fixes iPhone letterboxing).
-  if (r <= IMMERSIVE_PORTRAIT_R_MAX) {
-    return "cover";
-  }
-
-  // Squarer portrait (4:5, etc.): fill only when cover barely trims; otherwise full frame + black.
-  return crop <= MAX_ACCEPTABLE_COVER_CROP ? "cover" : "contain";
 }
 
 interface VideoCardProps {
@@ -678,8 +626,12 @@ function VideoCardInner({
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
   const videoStageRef = useRef<HTMLDivElement>(null);
-  const [videoIntrinsic, setVideoIntrinsic] = useState<{ w: number; h: number } | null>(null);
-  const [stageSize, setStageSize] = useState<{ w: number; h: number } | null>(null);
+  const [videoIntrinsic, setVideoIntrinsic] = useState<FeedMediaIntrinsic | null>(null);
+  /** Home provisional fit from poster natural size until video metadata arrives. */
+  const [posterIntrinsic, setPosterIntrinsic] = useState<
+    (FeedMediaIntrinsic & { url: string }) | null
+  >(null);
+  const [stageSize, setStageSize] = useState<FeedMediaIntrinsic | null>(null);
   const forcedLoadAtSrcRef = useRef<string | null>(null);
 
   /** Slim feed scrub bar: DOM-driven fill via ref + rAF; only mounted when active + finite duration. */
@@ -766,6 +718,29 @@ function VideoCardInner({
 
   /** Poster / thumbnail stays up until the card is both snapped-active and video can render. */
   const shouldShowPoster = !isActive || !isVideoReady;
+
+  /** Ignore stale poster dims when post/poster URL changes (no separate clear race with cached onLoad). */
+  const posterIntrinsicForFit = useMemo((): FeedMediaIntrinsic | null => {
+    if (!posterIntrinsic || posterIntrinsic.url !== displayPosterUrl) return null;
+    return { w: posterIntrinsic.w, h: posterIntrinsic.h };
+  }, [posterIntrinsic, displayPosterUrl]);
+
+  const capturePosterIntrinsicFromImg = useCallback(
+    (img: HTMLImageElement | null) => {
+      if (!img || !displayPosterUrl) return;
+      const next = feedMediaIntrinsicFromNaturalSize(img.naturalWidth, img.naturalHeight);
+      if (!next) return;
+      setPosterIntrinsic((prev) =>
+        prev &&
+        prev.url === displayPosterUrl &&
+        prev.w === next.w &&
+        prev.h === next.h
+          ? prev
+          : { url: displayPosterUrl, w: next.w, h: next.h },
+      );
+    },
+    [displayPosterUrl],
+  );
 
   useEffect(() => {
     feedPosterCaptureKeyRef.current = null;
@@ -1339,17 +1314,17 @@ function VideoCardInner({
     return () => ro.disconnect();
   }, []);
 
-  const feedVideoObjectFit = useMemo(() => {
-    if (!videoIntrinsic || !stageSize) {
-      return homeFeedPosterFallback && !embeddedFeed ? ("cover" as const) : ("contain" as const);
-    }
-    return resolveFeedVideoObjectFit(
-      videoIntrinsic.w,
-      videoIntrinsic.h,
-      stageSize.w,
-      stageSize.h,
-    );
-  }, [videoIntrinsic, stageSize, homeFeedPosterFallback, embeddedFeed]);
+  const feedVideoObjectFit = useMemo(
+    () =>
+      resolveHomeFeedForegroundObjectFit({
+        videoIntrinsic,
+        posterIntrinsic: posterIntrinsicForFit,
+        stageSize,
+        homeFeedPosterFallback,
+        embeddedFeed,
+      }),
+    [videoIntrinsic, posterIntrinsicForFit, stageSize, homeFeedPosterFallback, embeddedFeed],
+  );
 
   const feedWideLandscape =
     videoIntrinsic != null && isWideLandscapePresentation(videoIntrinsic.w, videoIntrinsic.h);
@@ -2855,6 +2830,8 @@ function VideoCardInner({
             src={displayPosterUrl}
             alt=""
             draggable={false}
+            ref={capturePosterIntrinsicFromImg}
+            onLoad={(e) => capturePosterIntrinsicFromImg(e.currentTarget)}
             className={cn(
               "pointer-events-none absolute inset-0 z-10 h-full w-full select-none transition-opacity duration-150 motion-reduce:transition-none [-webkit-touch-callout:none] [-webkit-user-select:none]",
               feedForegroundFitClass,
