@@ -18,16 +18,28 @@ import AuthPage from "@/pages/auth";
 import { AUTH_SURFACE_CLASS } from "@/lib/auth-surface";
 import { getDefaultAvatarPublicUrl } from "@/lib/default-avatar";
 import {
+  ACCOUNT_DELETED_SUCCESS_COPY,
+  clearAccountDeletedSuccessPhase,
+  isAccountDeletedSuccessPhaseActive,
+} from "@/lib/delete-account";
+import {
   getGenreChipStyle,
   getGenreGlowPillStyle,
   STATUS_GLOW_PILL_BG,
 } from "@/lib/genre-styles";
 import { peekPendingNativeAuthCallbackUrl } from "@/lib/native-auth-callback-url";
 import {
+  PRELOGIN_AUTH_PAGE_CLASS,
   PRELOGIN_CANVAS_CLASS,
   PRELOGIN_LINK_CLASS,
   PRELOGIN_PRIMARY_CTA_CLASS,
+  PRELOGIN_SIGNIN_CENTER_INNER_CLASS,
+  PRELOGIN_SIGNIN_COLUMN_CLASS,
 } from "@/lib/prelogin-material";
+import {
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
 import {
   INITIAL_PRE_LOGIN_ONBOARDING_UI,
   INITIAL_PRE_LOGIN_REVEAL_PLAYED,
@@ -1099,15 +1111,18 @@ export function UnauthenticatedEntry({
   authBanner?: string | null;
 }) {
   const [location] = useLocation();
-  const [phase, setPhase] = useState<"onboarding" | "auth">(() =>
-    shouldShowPreLoginOnboarding({
-      routePath: location,
-      hasEmailVerifiedNotice: hasPendingEmailVerifiedNotice(),
-      hasRecoveryIntent: hasPendingRecoveryIntent(),
-      hasPendingNativeAuthCallback: !!peekPendingNativeAuthCallbackUrl(),
-    })
-      ? "onboarding"
-      : "auth",
+  const [phase, setPhase] = useState<"account_deleted" | "onboarding" | "auth">(
+    () => {
+      if (isAccountDeletedSuccessPhaseActive()) return "account_deleted";
+      return shouldShowPreLoginOnboarding({
+        routePath: location,
+        hasEmailVerifiedNotice: hasPendingEmailVerifiedNotice(),
+        hasRecoveryIntent: hasPendingRecoveryIntent(),
+        hasPendingNativeAuthCallback: !!peekPendingNativeAuthCallbackUrl(),
+      })
+        ? "onboarding"
+        : "auth";
+    },
   );
   const [authEntry, setAuthEntry] = useState<{
     defaultToSignUp: boolean;
@@ -1119,6 +1134,54 @@ export function UnauthenticatedEntry({
       markPreLoginOnboardingSeen();
     }
   }, []);
+
+  // Re-read module phase if hard reset flipped auth while this shell remounts.
+  useEffect(() => {
+    if (isAccountDeletedSuccessPhaseActive() && phase !== "account_deleted") {
+      setPhase("account_deleted");
+    }
+  }, [phase]);
+
+  if (phase === "account_deleted") {
+    return (
+      <div
+        className={cn(PRELOGIN_AUTH_PAGE_CLASS, PRELOGIN_CANVAS_CLASS)}
+        data-testid="account-deleted-success"
+      >
+        <div className={PRELOGIN_SIGNIN_COLUMN_CLASS}>
+          <div className={cn(PRELOGIN_SIGNIN_CENTER_INNER_CLASS, "space-y-6")}>
+            <div className="flex flex-col items-center text-center space-y-3">
+              <div
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300"
+                aria-hidden
+              >
+                <Check className="h-6 w-6" strokeWidth={2.25} />
+              </div>
+              <h1 className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+                {ACCOUNT_DELETED_SUCCESS_COPY.title}
+              </h1>
+              <p className={cn(APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS, "max-w-sm")}>
+                {ACCOUNT_DELETED_SUCCESS_COPY.description}
+              </p>
+            </div>
+            <Button
+              type="button"
+              className={PRELOGIN_PRIMARY_CTA_CLASS}
+              data-testid="button-account-deleted-continue"
+              onClick={() => {
+                clearAccountDeletedSuccessPhase();
+                markPreLoginOnboardingSeen();
+                setAuthEntry({ defaultToSignUp: false });
+                setPhase("auth");
+              }}
+            >
+              {ACCOUNT_DELETED_SUCCESS_COPY.continueLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (phase === "onboarding") {
     return (

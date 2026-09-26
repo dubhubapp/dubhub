@@ -1,7 +1,7 @@
 # Supabase Database Schema – Source of Truth  
 Project: Dub Hub  
 Environment: Production Supabase  
-Last updated: 17-09-2026
+Last updated: 26-09-2026
 
 This file is the single source of truth for the live Supabase database.  
 All API routes, triggers, services, and frontend queries MUST match this file.  
@@ -287,7 +287,7 @@ NOT `user_id` or `from_user_id`.
 | Column                | Type        | Nullable | Default           | Notes                                   |
 | --------------------- | ----------- | -------- | ----------------- | --------------------------------------- |
 | id                    | uuid        | NO       | gen_random_uuid() | Primary key                             |
-| user_id               | uuid        | YES      | –                 | FK → profiles.id                        |
+| user_id               | uuid        | YES      | –                 | FK → auth.users.id ON DELETE CASCADE                        |
 | title                 | text        | YES      | –                 | Title                                   |
 | video_url             | text        | NO       | –                 | Video source                            |
 | thumbnail_url         | text        | YES      | –                 | Persisted post thumbnail image URL used for feed posters, profile grids, release previews, and future share previews |
@@ -300,14 +300,14 @@ NOT `user_id` or `from_user_id`.
 | is_verified_artist    | boolean     | YES      | false             | Artist verified                         |
 | is_verified_community | boolean     | YES      | false             | Community verified                      |
 | verified_by_moderator | boolean     | YES      | false             | Moderator verified                      |
-| verified_by           | uuid        | YES      | –                 | Verifier (currently used by moderators) |
-| verified_comment_id   | uuid        | YES      | –                 | Comment used for verification           |
+| verified_by           | uuid        | YES      | –                 | Attribution credit; FK → profiles.id ON DELETE SET NULL (`posts_verified_by_fkey`, migration `20260926170000`). Does not revert identification outcome flags/title. |
+| verified_comment_id   | uuid        | YES      | –                 | Pinned identification comment; FK → comments.id ON DELETE SET NULL (`posts_verified_comment_id_fkey`, migration `20260926170000`). |
 | verification_status   | text        | YES      | 'unverified'      | Documented states: see `COMMENT ON COLUMN posts.verification_status` (unverified, community = pending mod review, community_approved = mod kept community, identified, under_review). |
-| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id (pending verification queue claim) |
+| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id ON DELETE SET NULL (pending verification queue claim) |
 | assigned_at           | timestamptz | YES      | –                 | When post was claimed for moderator review |
 | denied_by_artist      | boolean     | YES      | false             | Denial flag                             |
 | denied_at             | timestamptz | YES      | –                 | Denial timestamp                        |
-| artist_verified_by    | uuid        | YES      | –                 | Artist who verified (FK → profiles.id)  |
+| artist_verified_by    | uuid        | YES      | –                 | Artist who verified; FK → profiles.id ON DELETE SET NULL  |
 
 
 ---
@@ -393,17 +393,57 @@ Allowlisted public identity projection of `profiles`. Omits private/moderation c
 | Column                | Type        | Nullable | Default           | Notes                      |
 | --------------------- | ----------- | -------- | ----------------- | -------------------------- |
 | id                    | uuid        | NO       | gen_random_uuid() | Primary key                |
-| reporter_id           | uuid        | YES      | –                 | FK → profiles.id           |
-| reported_post_id      | uuid        | YES      | –                 | FK → posts.id              |
-| reported_user_id      | uuid        | YES      | –                 | FK → profiles.id           |
+| reporter_id           | uuid        | YES      | –                 | FK → profiles.id ON DELETE SET NULL |
+| reported_post_id      | uuid        | YES      | –                 | FK → posts.id ON DELETE SET NULL (was CASCADE; migration `20260926170000`) |
+| reported_user_id      | uuid        | YES      | –                 | FK → profiles.id ON DELETE SET NULL (was CASCADE; migration `20260926170000`) |
 | reason                | text        | NO       | –                 | Report reason              |
 | description           | text        | YES      | –                 | Optional description       |
 | status                | text        | NO       | 'open'            | open / under_review / dismissed / resolved |
-| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id (moderator queue claim) |
+| assigned_moderator_id | uuid        | YES      | –                 | FK → profiles.id ON DELETE SET NULL (moderator queue claim) |
 | assigned_at           | timestamptz | YES      | –                 | When the report was claimed |
 | resolution_action     | text        | YES      | –                 | Optional resolution action |
 | resolved_at           | timestamptz | YES      | –                 | Resolved timestamp         |
 | created_at            | timestamptz | YES      | now()             | Created                    |
+
+**Account deletion / safety retention (Phase B1):**
+
+- Report rows are **not** deleted merely because the reporter, reported user, or reported post is deleted; identity FKs SET NULL.
+- Reports remain non-public; authorised moderation/admin access only.
+- **Application:** `storage.deletePost` must not `DELETE FROM reports` — post removal relies on `reported_post_id` SET NULL (Phase B2).
+- **Privacy / legal policy pass still required:** retention duration and exact retained fields are not encoded in schema. Do not invent a retention period in application code.
+
+**Drizzle note:** `shared/schema.ts` `reports` table shape is stale vs live column names; live schema here is authoritative.
+
+---
+
+## account_deletion_jobs
+
+Backend-owned staged account deletion ledger. Migration `20260926170000_account_deletion_safety.sql`.
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | uuid | NO | gen_random_uuid() | Primary key |
+| user_id | uuid | NO | – | Auth/profile UUID being deleted. **No FK** — row must survive Auth delete for idempotency/completion audit |
+| status | text | NO | – | CHECK: `pending` \| `running` \| `completed` \| `failed` |
+| current_stage | text | YES | – | Pipeline stage label |
+| failure_code | text | YES | – | Machine failure code |
+| failure_reason | text | YES | – | Short non-PII summary (no password/token/DOB/email body) |
+| created_at | timestamptz | NO | now() | Created |
+| updated_at | timestamptz | NO | now() | Updated |
+| completed_at | timestamptz | YES | – | When status became `completed` |
+
+**Indexes / access:**
+
+- Unique partial index `account_deletion_jobs_one_active_per_user_idx` on `(user_id)` WHERE `status IN ('pending','running')`
+- Indexes on `user_id`, `status`
+- RLS enabled; **no** anon/authenticated client policies — service-role / backend only
+- No delete-account API yet (table prepared for Phase B2+)
+- **Phase B3 orchestrator** (`server/account-deletion.ts`): advances stages
+  `collect_storage` → `shared_refs` → `releases` → `posts` → `comments` → `user_rows` → `storage` → `ready_for_external_cleanup`
+  and **stops before Auth / MailerLite**. Status remains `running` at the stop boundary (not `completed`).
+- Every stage transition must set `updated_at = now()`.
+- **Storage retries:** prefer deterministic `{userId}/` Storage.list sweeps over persisting collected paths as JSON on this table (no additive JSON column without authorised migration).
+- **Privacy follow-up:** completed-job `user_id` retention / pseudonymisation not decided in schema.
 
 ---
 

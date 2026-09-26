@@ -1691,7 +1691,9 @@ export class DatabaseStorage implements IStorage {
 
   async deletePost(id: string): Promise<boolean> {
     try {
-      // Delete related data first (column names must match live Supabase schema)
+      // Delete related data first (column names must match live Supabase schema).
+      // Do NOT delete moderation reports here — reports.reported_post_id is ON DELETE
+      // SET NULL (migration 20260926170000) so safety reports survive post removal.
       await db.execute(
         sql`DELETE FROM comment_votes WHERE comment_id IN (SELECT id FROM comments WHERE post_id = ${id})`,
       );
@@ -1699,7 +1701,6 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`DELETE FROM comments WHERE post_id = ${id}`);
       await db.execute(sql`DELETE FROM artist_video_tags WHERE post_id = ${id}`);
       await db.execute(sql`DELETE FROM release_posts WHERE post_id = ${id}`);
-      await db.execute(sql`DELETE FROM reports WHERE reported_post_id = ${id}`);
       await db.execute(sql`DELETE FROM notifications WHERE post_id = ${id}`);
 
       await db.execute(sql`DELETE FROM posts WHERE id = ${id}`);

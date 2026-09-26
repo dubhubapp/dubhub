@@ -114,12 +114,14 @@ describe("settings root IA slice 1", () => {
     assert.doesNotMatch(settingsSrc, /Tell us what to improve for launch/);
   });
 
-  it("keeps Change Password dialog and Log Out onSignOut path", () => {
-    assert.match(settingsSrc, /data-testid="button-change-password"/);
-    assert.match(settingsSrc, /ChangePasswordDialog/);
+  it("keeps Manage account entry and Log Out onSignOut path", () => {
+    assert.match(settingsSrc, /data-testid="button-manage-account"/);
+    assert.match(settingsSrc, /navigate\("\/settings\/manage-account"\)/);
     assert.match(settingsSrc, /data-testid="button-logout"/);
     assert.match(settingsSrc, /onSignOut/);
     assert.doesNotMatch(settingsSrc, /SETTINGS_LOGOUT_SECTION_CLASS/);
+    assert.doesNotMatch(settingsSrc, /data-testid="button-delete-account"/);
+    assert.doesNotMatch(settingsSrc, /data-testid="button-change-password"/);
   });
 });
 
@@ -150,7 +152,7 @@ describe("settings root chrome slice 3", () => {
     assert.match(settingsSrc, /CountryFlag/);
   });
 
-  it("preserves Notifications, VAT, Artist Questions, Feedback, feed sound, password, logout", () => {
+  it("preserves Notifications, VAT, Artist Questions, Feedback, feed sound, manage account, logout", () => {
     assert.match(settingsSrc, /button-settings-notifications/);
     assert.match(settingsSrc, /VerifiedArtistToolsSettingsRow/);
     assert.match(settingsSrc, /surface="inset"/);
@@ -158,8 +160,10 @@ describe("settings root chrome slice 3", () => {
     assert.match(settingsSrc, /button-settings-feedback/);
     assert.doesNotMatch(settingsSrc, /switch-light-mode/);
     assert.match(settingsSrc, /switch-feed-start-with-sound/);
-    assert.match(settingsSrc, /button-change-password/);
+    assert.match(settingsSrc, /button-manage-account/);
     assert.match(settingsSrc, /button-logout/);
+    assert.doesNotMatch(settingsSrc, /button-change-password/);
+    assert.doesNotMatch(settingsSrc, /button-delete-account/);
   });
 
   it("does not render bronze RevenueCat diagnostics on normal Settings root", () => {

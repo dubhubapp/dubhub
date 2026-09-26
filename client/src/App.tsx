@@ -40,6 +40,7 @@ import LeaderboardPage from "@/pages/leaderboard";
 import SettingsPage from "@/pages/settings";
 import SettingsNotificationsPage from "@/pages/settings-notifications";
 import SettingsCountryPage from "@/pages/settings-country";
+import SettingsManageAccountPage from "@/pages/settings-manage-account";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
@@ -762,6 +763,32 @@ function App() {
     setPostOnboardingPushPrompt({ open: false, userId: null });
   };
 
+  /** After server Auth wipe — hard reset local state; do not call RevenueCat logOut. */
+  const handleAccountDeleted = async () => {
+    void deactivateCurrentPushToken();
+    resetSilentPushRegistrationSession();
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const deletedUserId = session?.user?.id ?? null;
+    clearRecentMentionUsersForUser(deletedUserId);
+
+    await hardResetLocalAuthState({ clearSessionStorage: true });
+
+    setProfileGateBanner(null);
+    setIsAuthenticated(false);
+    setUserRole("user");
+    setFirstLoginOnboarding({
+      open: false,
+      audience: "user",
+      userId: null,
+      email: null,
+    });
+    setArtistToolsIntro({ pending: false, open: false, userId: null });
+    setPostOnboardingPushPrompt({ open: false, userId: null });
+  };
+
   const maybeOfferPostOnboardingPush = useCallback(
     async (userId: string | null) => {
       if (!userId) return;
@@ -836,6 +863,10 @@ function App() {
 
   // Wrapper for settings actions that require app-level sign-out behavior
   const SettingsWithSignOut = () => <SettingsPage onSignOut={handleSignOut} />;
+
+  const SettingsManageAccountWithDeletion = () => (
+    <SettingsManageAccountPage onAccountDeleted={handleAccountDeleted} />
+  );
 
   let appShell: React.ReactNode;
   if (isLoading) {
@@ -976,6 +1007,7 @@ function App() {
             <Route path="/profile" component={UserProfile} />
             <Route path="/settings/notifications" component={SettingsNotificationsPage} />
             <Route path="/settings/country" component={SettingsCountryPage} />
+            <Route path="/settings/manage-account" component={SettingsManageAccountWithDeletion} />
             <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
             <Route
               path="/settings/developer-diagnostics"

@@ -1,6 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import {
+  deleteOwnedPostWithStorage,
+  deleteOwnedReleaseWithStorage,
+  deletePostWithStorageById,
+} from "./owned-ugc-delete";
 import { registerPostSharePreviewRoutes } from "./postSharePreview";
 import { registerReleaseSharePreviewRoutes } from "./releaseSharePreview";
 import { registerArtistProfileSharePreviewRoutes } from "./artistProfileSharePreview";
@@ -66,6 +71,7 @@ import { sendPushToUser } from "./push/pushSend";
 import { registerSubscriptionStatusRoutes } from "./subscription-status-routes";
 import { registerHomeWidgetRoutes } from "./home-widget-routes";
 import { registerAgeGateRoutes } from "./age-gate-route";
+import { registerDeleteAccountRoutes } from "./delete-account-route";
 import { registerPendingDemographicsRoutes } from "./pending-demographics-route";
 import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { canArtistDeliverReleaseAlerts } from "./artist-release-alert-delivery";
@@ -507,9 +513,20 @@ async function enforceRemoveReportedContentFromReport(report: {
     return "comment";
   }
   if (report.reported_post_id) {
-    const ok = await storage.deletePost(report.reported_post_id);
-    if (!ok) {
+    const result = await deletePostWithStorageById({
+      postId: report.reported_post_id,
+    });
+    if (result.outcome === "forbidden" || result.outcome === "db_failed") {
       throw new Error("POST_DELETE_FAILED");
+    }
+    if (!result.dbDeleted && result.outcome !== "already_gone") {
+      throw new Error("POST_DELETE_FAILED");
+    }
+    if (result.outcome === "storage_partial") {
+      console.error("[enforceRemoveReportedContentFromReport] storage cleanup partial", {
+        postId: report.reported_post_id,
+        failed: result.storage.failed,
+      });
     }
     return "post";
   }
@@ -794,6 +811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerSubscriptionStatusRoutes(app);
   registerHomeWidgetRoutes(app);
   registerAgeGateRoutes(app);
+  registerDeleteAccountRoutes(app);
   registerPendingDemographicsRoutes(app);
   // Serve video files from processed directory
   app.use('/videos', express.static(path.join(process.cwd(), 'processed')));
@@ -2128,29 +2146,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete post (only owner can delete)
+  // Delete post (only owner can delete) — DB + owned Storage cleanup
   app.delete("/api/posts/:id", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
     try {
       const postId = req.params.id;
       if (!req.dbUser) {
         return res.status(401).json({ message: "Not authenticated" });
       }
-      const userId = req.dbUser.id;
-      
-      const post = await storage.getPost(postId);
-      if (!post) {
-        return res.status(404).json({ message: "Post not found" });
-      }
 
-      if (post.user?.id !== req.dbUser.id) {
+      const result = await deleteOwnedPostWithStorage({
+        postId,
+        ownerUserId: req.dbUser.id,
+      });
+
+      if (result.outcome === "forbidden") {
         return res.status(403).json({ message: "You can only delete your own posts" });
       }
-      
-      const success = await storage.deletePost(postId);
-      if (!success) {
+      if (result.outcome === "already_gone") {
         return res.status(404).json({ message: "Post not found" });
       }
-      
+      if (result.outcome === "db_failed") {
+        return res.status(500).json({ message: "Failed to delete post" });
+      }
+      if (result.outcome === "storage_partial") {
+        console.error("[/api/posts/:id DELETE] storage cleanup partial", {
+          postId,
+          failed: result.storage.failed,
+        });
+        return res.status(200).json({
+          message: "Post deleted successfully",
+          storageCleanup: "partial",
+        });
+      }
+
       res.json({ message: "Post deleted successfully" });
     } catch (error) {
       console.error('Post deletion error:', error);
@@ -4976,9 +5004,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "This report does not have an associated post" });
       }
 
-      const deleted = await storage.deletePost(report.reported_post_id);
-      if (!deleted) {
+      const deleted = await deletePostWithStorageById({
+        postId: report.reported_post_id,
+      });
+      if (deleted.outcome === "db_failed" || deleted.outcome === "forbidden") {
         return res.status(500).json({ message: "Failed to delete post" });
+      }
+      if (!deleted.dbDeleted && deleted.outcome !== "already_gone") {
+        return res.status(500).json({ message: "Failed to delete post" });
+      }
+      if (deleted.outcome === "storage_partial") {
+        console.error("[/api/moderator/reports/:reportId/delete-post] storage cleanup partial", {
+          postId: report.reported_post_id,
+          failed: deleted.storage.failed,
+        });
       }
 
       // Mark report as resolved
@@ -5540,7 +5579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         VALUES (${report.reported_post_id}, ${moderatorId}, 'remove_post', ${finalReason}, NOW())
       `);
 
-      await storage.deletePost(report.reported_post_id);
+      await deletePostWithStorageById({ postId: report.reported_post_id });
 
       if (report.post_owner_id) {
         const notificationMessage = composeModerationUserNotification({
@@ -6466,9 +6505,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       const release = await storage.getRelease(req.params.id);
       if (!release) return res.status(404).json({ message: "Release not found" });
-      if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Only the release owner can delete it" });
-      const ok = await storage.deleteRelease(req.params.id, req.dbUser.id);
-      if (!ok) return res.status(500).json({ message: "Failed to delete release" });
+      if (release.artistId !== req.dbUser.id) {
+        return res.status(403).json({ message: "Only the release owner can delete it" });
+      }
+
+      const result = await deleteOwnedReleaseWithStorage({
+        releaseId: req.params.id,
+        ownerArtistId: req.dbUser.id,
+      });
+
+      if (result.outcome === "forbidden") {
+        return res.status(403).json({ message: "Only the release owner can delete it" });
+      }
+      if (result.outcome === "already_gone") {
+        return res.status(404).json({ message: "Release not found" });
+      }
+      if (result.outcome === "db_failed") {
+        return res.status(500).json({ message: "Failed to delete release" });
+      }
+      if (result.outcome === "storage_partial") {
+        console.error("[/api/releases/:id DELETE] storage cleanup partial", {
+          releaseId: req.params.id,
+          failed: result.storage.failed,
+        });
+        return res.status(200).json({ ok: true, storageCleanup: "partial" });
+      }
+
       res.json({ ok: true });
     } catch (error) {
       console.error("[/api/releases/:id] DELETE Error:", error);

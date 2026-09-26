@@ -53,8 +53,10 @@ export const posts = pgTable("posts", {
   /** Artist privately claimed; identity hidden. Never pair with artistVerifiedBy while anonymous. */
   isArtistVerifiedAnonymous: boolean("is_artist_verified_anonymous").default(false),
   verifiedByModerator: boolean("verified_by_moderator").default(false),
-  verifiedCommentId: varchar("verified_comment_id"), // References comments.id (no FK to avoid circular ref)
-  verifiedBy: varchar("verified_by").references(() => profiles.id), // Moderator verification: commenter who provided the ID
+  verifiedCommentId: varchar("verified_comment_id").references((): any => comments.id, {
+    onDelete: "set null",
+  }), // Live: posts_verified_comment_id_fkey ON DELETE SET NULL
+  verifiedBy: varchar("verified_by").references(() => profiles.id, { onDelete: "set null" }), // Live: posts_verified_by_fkey ON DELETE SET NULL
   artistVerifiedBy: varchar("artist_verified_by").references(() => profiles.id), // Artist who verified (for releases)
   deniedByArtist: boolean("denied_by_artist").default(false),
   deniedAt: timestamp("denied_at"),
@@ -437,7 +439,12 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-// Reports - updated to use postId
+/**
+ * Drizzle shape below is STALE vs live `reports` (see supabase-schema.md).
+ * Live columns: reporter_id, reported_post_id, reported_user_id, assigned_moderator_id, …
+ * Live FKs (20260926170000): reporter_id / reported_user_id / assigned_moderator_id /
+ * reported_post_id all ON DELETE SET NULL → profiles or posts.
+ */
 export const reports = pgTable("reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   postId: varchar("post_id").notNull().references(() => posts.id),
@@ -504,6 +511,30 @@ export const userKarma = pgTable("user_karma", {
   score: integer("score").notNull().default(0),
   correctIds: integer("correct_ids").notNull().default(0),
 });
+
+/**
+ * Backend-owned account deletion stages.
+ * Live: no FK on user_id (must survive Auth/profile delete for idempotency/audit).
+ * RLS enabled; service-role / backend only. No password/token/DOB/email body.
+ */
+export const accountDeletionJobs = pgTable(
+  "account_deletion_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    status: text("status").notNull(), // pending | running | completed | failed
+    currentStage: text("current_stage"),
+    failureCode: text("failure_code"),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    userIdIdx: index("account_deletion_jobs_user_id_idx").on(table.userId),
+    statusIdx: index("account_deletion_jobs_status_idx").on(table.status),
+  }),
+);
 
 // Zod Schemas
 export const insertProfileSchema = createInsertSchema(profiles).pick({
@@ -614,6 +645,7 @@ export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type InsertModeratorAction = z.infer<typeof insertModeratorActionSchema>;
 export type InsertReport = z.infer<typeof insertReportSchema>;
 export type Report = typeof reports.$inferSelect;
+export type AccountDeletionJob = typeof accountDeletionJobs.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type CommentVote = typeof commentVotes.$inferSelect;
 export type ArtistVideoTag = typeof artistVideoTags.$inferSelect;

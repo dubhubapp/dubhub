@@ -13,16 +13,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe2,
-  KeyRound,
   LogOut,
   MessageSquare,
   Settings as SettingsIcon,
+  UserRound,
   Volume2,
   MessageCircleQuestion,
   Wrench,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
 import { VerifiedArtistToolsSettingsRow } from "@/components/verified-artist-tools-settings-row";
 import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
@@ -68,7 +67,6 @@ interface SettingsPageProps {
 
 export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [, navigate] = useLocation();
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
   const { verifiedArtist, countryCode } = useUser();
@@ -261,13 +259,16 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               <button
                 type="button"
                 className={SETTINGS_NAV_ROW_CLASS}
-                onClick={() => setChangePasswordOpen(true)}
-                data-testid="button-change-password"
-                aria-label="Change Password"
+                onClick={() => navigate("/settings/manage-account")}
+                data-testid="button-manage-account"
+                aria-label="Manage account"
               >
-                <KeyRound className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
-                  Change Password
+                <UserRound className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
+                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Manage account</span>
+                  <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
+                    Password and account deletion
+                  </span>
                 </span>
                 <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
               </button>
@@ -318,7 +319,6 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
         </div>
       </div>
 
-      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
       <SettingsFeedbackSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </SwipeBackPage>
   );

@@ -419,6 +419,7 @@ describe("C6B.4 Settings shell atmosphere + compact header", () => {
   it("paints premium Settings atmosphere on the authenticated shell for Settings-family routes only", () => {
     assert.equal(isSettingsUtilityRoute("/settings"), true);
     assert.equal(isSettingsUtilityRoute("/settings/notifications"), true);
+    assert.equal(isSettingsUtilityRoute("/settings/manage-account"), true);
     assert.equal(isSettingsUtilityRoute("/settings/artist-questions"), true);
     assert.equal(isSettingsUtilityRoute("/settings/developer-diagnostics"), false);
     assert.equal(isSettingsUtilityRoute("/"), false);
