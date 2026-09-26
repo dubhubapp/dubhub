@@ -3,8 +3,9 @@
  * Optional ISO 3166-1 alpha-2 picker. Stores code only; clears to NULL.
  *
  * Return path: explicit `?returnTo=` (allowlisted). Prompt opens with
- * `returnTo=/leaderboard`. Wouter `useLocation()` is pathname-only; always
- * read search via `useSearch()` / window, never pathname alone.
+ * `returnTo=/leaderboard`. Manage account opens with
+ * `returnTo=/settings/manage-account`. Wouter `useLocation()` is pathname-only;
+ * always read search via `useSearch()` / window, never pathname alone.
  */
 
 import { useEffect, useMemo, useState } from "react";

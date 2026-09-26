@@ -119,6 +119,7 @@ describe("settings root IA slice 1", () => {
     assert.match(settingsSrc, /navigate\("\/settings\/manage-account"\)/);
     assert.match(settingsSrc, /data-testid="button-logout"/);
     assert.match(settingsSrc, /onSignOut/);
+    assert.match(settingsSrc, /SETTINGS_LOGOUT_FOOTER_CLASS/);
     assert.doesNotMatch(settingsSrc, /SETTINGS_LOGOUT_SECTION_CLASS/);
     assert.doesNotMatch(settingsSrc, /data-testid="button-delete-account"/);
     assert.doesNotMatch(settingsSrc, /data-testid="button-change-password"/);
@@ -126,30 +127,107 @@ describe("settings root IA slice 1", () => {
 });
 
 describe("settings root chrome slice 3", () => {
-  it("renders Preferences / Artist / Support / Personal Details / Account groups with shared stack rhythm", () => {
+  it("renders Account & Preferences / Support / Listen & follow / Legal; no standalone Account", () => {
     assert.match(settingsSrc, /SETTINGS_SECTIONS_STACK_CLASS/);
-    assert.match(settingsSrc, /data-testid="settings-group-preferences"/);
+    assert.match(settingsSrc, /Account & Preferences/);
+    assert.match(settingsSrc, /data-testid="settings-group-account-preferences"/);
     assert.match(settingsSrc, /data-testid="settings-group-support"/);
-    assert.match(settingsSrc, /data-testid="settings-group-personal-details"/);
-    assert.match(settingsSrc, /data-testid="settings-group-account"/);
-    assert.match(settingsSrc, /settings-section-preferences/);
+    assert.match(settingsSrc, /data-testid="settings-group-listen-follow"/);
+    assert.match(settingsSrc, /data-testid="settings-group-legal"/);
+    assert.doesNotMatch(settingsSrc, /settings-group-account"/);
+    assert.doesNotMatch(settingsSrc, /settings-section-account"/);
+    assert.doesNotMatch(settingsSrc, /settings-group-preferences"/);
+    assert.doesNotMatch(settingsSrc, /settings-group-personal-details/);
+    assert.doesNotMatch(settingsSrc, /Personal Details/);
+    assert.match(settingsSrc, /settings-section-account-preferences/);
     assert.match(settingsSrc, /settings-section-support/);
-    assert.match(settingsSrc, /settings-section-personal-details/);
-    assert.match(settingsSrc, /settings-section-account/);
+    assert.match(settingsSrc, /settings-section-listen-follow/);
+    assert.match(settingsSrc, /settings-section-legal/);
+
+    const accountPrefs = settingsSrc.indexOf(
+      'data-testid="settings-group-account-preferences"',
+    );
+    const support = settingsSrc.indexOf('data-testid="settings-group-support"');
+    const listen = settingsSrc.indexOf('data-testid="settings-group-listen-follow"');
+    const legal = settingsSrc.indexOf('data-testid="settings-group-legal"');
+    assert.ok(accountPrefs > 0 && support > accountPrefs);
+    assert.ok(listen > support && legal > listen);
   });
 
-  it("places Country under Personal Details, not Preferences", () => {
-    const prefs = settingsSrc.indexOf('data-testid="settings-group-preferences"');
-    const personal = settingsSrc.indexOf('data-testid="settings-group-personal-details"');
-    const country = settingsSrc.indexOf('data-testid="button-settings-country"');
-    const support = settingsSrc.indexOf('data-testid="settings-group-support"');
-    const account = settingsSrc.indexOf('data-testid="settings-group-account"');
-    assert.ok(prefs > 0 && personal > support && country > personal && account > country);
-    assert.match(settingsSrc, /Personal Details/);
+  it("places Manage account first in Account & Preferences before Notifications and feed sound", () => {
+    const group = settingsSrc.indexOf('data-testid="settings-group-account-preferences"');
+    const manage = settingsSrc.indexOf('data-testid="button-manage-account"');
+    const notifications = settingsSrc.indexOf('data-testid="button-settings-notifications"');
+    const feedSound = settingsSrc.indexOf('data-testid="switch-feed-start-with-sound"');
+    assert.ok(group > 0 && manage > group);
+    assert.ok(notifications > manage && feedSound > notifications);
+  });
+
+  it("keeps Country off Settings root; Personal Details removed", () => {
+    assert.doesNotMatch(settingsSrc, /button-settings-country/);
+    assert.doesNotMatch(settingsSrc, /settings-group-personal-details/);
+    assert.doesNotMatch(settingsSrc, /Personal Details/);
+    assert.doesNotMatch(settingsSrc, /CountryFlag/);
     assert.doesNotMatch(settingsSrc, /Date of birth|Gender/i);
-    assert.match(settingsSrc, /button-settings-country/);
-    assert.match(settingsSrc, /navigate\("\/settings\/country"\)/);
-    assert.match(settingsSrc, /CountryFlag/);
+    assert.match(settingsSrc, /Country, password and account deletion/);
+  });
+
+  it("renders Listen & follow external rows with Settings presentation and approved order", () => {
+    assert.match(settingsSrc, /Listen & follow/);
+    assert.match(settingsSrc, /DUBHUB_LISTEN_FOLLOW_LINKS\.map/);
+    assert.match(settingsSrc, /openDubhubExternalUrl\(link\.url\)/);
+    assert.match(settingsSrc, /SETTINGS_NAV_ROW_CLASS/);
+    assert.match(settingsSrc, /SETTINGS_EXTERNAL_AFFORDANCE_CLASS/);
+    assert.match(settingsSrc, /ExternalLink/);
+    assert.match(settingsSrc, /data-testid=\{`button-settings-listen-\$\{link\.id\}`\}/);
+    assert.doesNotMatch(settingsSrc, /playlist/i);
+    assert.doesNotMatch(settingsSrc, /open\.spotify\.com\/user/);
+    assert.doesNotMatch(settingsSrc, /soundcloud\.com\/dubhub/);
+    assert.doesNotMatch(settingsSrc, /Desktop\/social_icons/);
+    assert.match(settingsSrc, /assets\/platforms\/youtube\.png/);
+    assert.match(settingsSrc, /assets\/platforms\/instagram\.png/);
+    assert.match(settingsSrc, /assets\/platforms\/tiktok\.png/);
+    assert.doesNotMatch(settingsSrc, /\bYoutube\b|\bInstagram\b/);
+    assert.doesNotMatch(settingsSrc, /assets\/social\/tiktok/);
+    assert.match(settingsSrc, /SETTINGS_PLATFORM_ICON_IMG_CLASS/);
+    assert.match(settingsSrc, /getPlatformIcon/);
+
+    const support = settingsSrc.indexOf('data-testid="settings-group-support"');
+    const listen = settingsSrc.indexOf('data-testid="settings-group-listen-follow"');
+    const legal = settingsSrc.indexOf('data-testid="settings-group-legal"');
+    assert.ok(support > 0 && listen > support && legal > listen);
+  });
+
+  it("renders Legal rows to website Privacy and Terms, not Apple EULA", () => {
+    assert.match(settingsSrc, /settings-group-legal/);
+    assert.match(settingsSrc, /button-settings-privacy/);
+    assert.match(settingsSrc, /button-settings-terms/);
+    assert.match(settingsSrc, /DUBHUB_WEBSITE_PRIVACY_URL/);
+    assert.match(settingsSrc, /DUBHUB_WEBSITE_TERMS_URL/);
+    assert.doesNotMatch(settingsSrc, /DUBHUB_TERMS_OF_USE_URL/);
+    assert.doesNotMatch(settingsSrc, /stdeula/);
+    const listen = settingsSrc.indexOf('data-testid="settings-group-listen-follow"');
+    const legal = settingsSrc.indexOf('data-testid="settings-group-legal"');
+    const developer = settingsSrc.indexOf('data-testid="settings-group-developer"');
+    assert.ok(listen > 0 && legal > listen);
+    assert.ok(developer === -1 || developer > legal);
+  });
+
+  it("feedback category Select stacks above ReleaseFormDrawer and unlocks viewport height", () => {
+    assert.match(feedbackSheetSrc, /SelectContent/);
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_SELECT_CONTENT_CLASS/);
+    assert.match(feedbackSheetSrc, /z-\[100\]/);
+    assert.match(feedbackSheetSrc, /viewportClassName="h-auto"/);
+    assert.match(feedbackSheetSrc, /SETTINGS_FEEDBACK_CATEGORIES/);
+    assert.match(feedbackSheetSrc, /value: "ux"/);
+    assert.match(feedbackSheetSrc, /value: "bug"/);
+    assert.match(feedbackSheetSrc, /value: "feature_request"/);
+    assert.match(feedbackSheetSrc, /artist_question_suggestion/);
+    // Drawer host stays at z-[70]; Select must exceed it.
+    assert.match(
+      readFileSync(join(here, "../components/release-form-drawer.tsx"), "utf8"),
+      /z-\[70\]/,
+    );
   });
 
   it("preserves Notifications, VAT, Artist Questions, Feedback, feed sound, manage account, logout", () => {
@@ -207,13 +285,20 @@ describe("settings root chrome slice 3", () => {
     assert.match(vatRowSrc, /resolveSettingsSubscriptionRowView/);
   });
 
-  it("places Log Out in Account group without a second oversized card", () => {
-    assert.match(settingsSrc, /settings-group-account/);
+  it("places Log Out after all sections including gated Developer", () => {
+    assert.match(settingsSrc, /settings-logout-footer/);
+    assert.match(settingsSrc, /SETTINGS_LOGOUT_FOOTER_CLASS/);
     assert.match(settingsSrc, /button-logout/);
     assert.match(settingsSrc, /SETTINGS_LOGOUT_ROW_CLASS/);
-    const accountIdx = settingsSrc.indexOf('data-testid="settings-group-account"');
-    const logoutIdx = settingsSrc.indexOf('data-testid="button-logout"');
-    assert.ok(accountIdx > 0 && logoutIdx > accountIdx);
+    assert.doesNotMatch(settingsSrc, /settings-group-account"/);
+
+    const legal = settingsSrc.indexOf('data-testid="settings-group-legal"');
+    const developer = settingsSrc.indexOf('data-testid="settings-group-developer"');
+    const logoutFooter = settingsSrc.indexOf('data-testid="settings-logout-footer"');
+    const logout = settingsSrc.indexOf('data-testid="button-logout"');
+    assert.ok(legal > 0 && logoutFooter > legal);
+    assert.ok(developer === -1 || (developer > legal && logoutFooter > developer));
+    assert.ok(logout > logoutFooter);
   });
 });
 
@@ -279,11 +364,36 @@ describe("settings feedback sheet slice 2", () => {
     assert.match(feedbackSheetSrc, /value: "ux"/);
     assert.match(feedbackSheetSrc, /value: "bug"/);
     assert.match(feedbackSheetSrc, /artist_question_suggestion/);
+    assert.match(feedbackSheetSrc, /label: "Artist Questions"/);
+    assert.doesNotMatch(feedbackSheetSrc, /Submit a question for your favourite artist/);
+    assert.equal(
+      (feedbackSheetSrc.match(/value: "/g) ?? []).length,
+      8,
+    );
     assert.match(feedbackSheetSrc, /INPUT_LIMITS\.feedbackBody/);
     assert.match(feedbackSheetSrc, /data-testid="feedback-char-counter"/);
     assert.match(feedbackSheetSrc, /data-testid="textarea-feedback"/);
     assert.match(feedbackSheetSrc, /data-testid="select-feedback-category"/);
     assert.match(feedbackSheetSrc, /POST", "\/api\/feedback"/);
+  });
+
+  it("uses app-material Select, field, and action tokens without turquoise ghost Cancel", () => {
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_SELECT_TRIGGER_CLASS/);
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_SELECT_CONTENT_CLASS/);
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_SELECT_ITEM_CLASS/);
+    assert.match(feedbackSheetSrc, /z-\[100\]/);
+    assert.match(feedbackSheetSrc, /viewportClassName="h-auto"/);
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_FIELD_CLASS/);
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_FORM_PRIMARY_CLASS/);
+    assert.match(feedbackSheetSrc, /APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS/);
+    assert.doesNotMatch(feedbackSheetSrc, /variant="ghost"/);
+    assert.doesNotMatch(feedbackSheetSrc, /text-red-300/);
+    assert.match(feedbackSheetSrc, /text-destructive/);
+    assert.match(feedbackSheetSrc, /text-sm font-medium text-foreground/);
+    assert.match(feedbackSheetSrc, /htmlFor="settings-feedback-category"/);
+    assert.match(feedbackSheetSrc, /htmlFor="settings-feedback-message"/);
+    assert.match(feedbackSheetSrc, />\s*Category\s*</);
+    assert.match(feedbackSheetSrc, />\s*Message\s*</);
   });
 
   it("success closes sheet + toast; failure keeps sheet open and text", () => {
@@ -300,8 +410,12 @@ describe("settings feedback sheet slice 2", () => {
     assert.match(feedbackSheetSrc, /data-testid="button-submit-feedback"/);
   });
 
-  it("uses production-valid Help us improve copy (not launch-era)", () => {
+  it("uses production-valid Help us improve copy and Send CTA", () => {
     assert.match(feedbackSheetSrc, /Help us improve dub hub/);
+    assert.match(feedbackSheetSrc, /Tell us what happened, what you expected, or what you'd like to see\./);
+    assert.match(feedbackSheetSrc, /What would you ask your favourite artist\?/);
+    assert.match(feedbackSheetSrc, /isSubmittingFeedback \? "Sending…" : "Send"/);
+    assert.doesNotMatch(feedbackSheetSrc, /: "Submit"/);
     assert.doesNotMatch(feedbackSheetSrc, /\blaunch\b/i);
     assert.doesNotMatch(feedbackSheetSrc, /\bbeta\b/i);
   });

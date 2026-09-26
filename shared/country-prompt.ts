@@ -129,16 +129,24 @@ export function isLeaderboardRouteForCountryPrompt(path: string | null | undefin
 }
 
 /** Only known internal Country-picker return targets (no external URLs). */
-export const COUNTRY_PICKER_RETURN_TARGETS = ["/leaderboard", "/settings"] as const;
+export const COUNTRY_PICKER_RETURN_TARGETS = [
+  "/leaderboard",
+  "/settings",
+  "/settings/manage-account",
+] as const;
 export type CountryPickerReturnTo = (typeof COUNTRY_PICKER_RETURN_TARGETS)[number];
 
 /** Prompt → picker href with explicit Leaderboard return. */
 export const COUNTRY_PICKER_LEADERBOARD_HREF =
   "/settings/country?returnTo=/leaderboard" as const;
 
+/** Manage account → picker href with Manage account return. */
+export const COUNTRY_PICKER_MANAGE_ACCOUNT_HREF =
+  "/settings/country?returnTo=/settings/manage-account" as const;
+
 /**
  * Resolve safe Back destination from a query string.
- * Accepts `returnTo=/leaderboard` only; anything else → `/settings`.
+ * Allowlisted: `/leaderboard`, `/settings/manage-account`; anything else → `/settings`.
  * Wouter `useLocation()` is pathname-only — pass `useSearch()` / `window.location.search`.
  */
 export function resolveCountryPickerReturnTo(
@@ -146,6 +154,8 @@ export function resolveCountryPickerReturnTo(
 ): CountryPickerReturnTo {
   const raw = (search ?? "").startsWith("?") ? (search ?? "").slice(1) : (search ?? "");
   const params = new URLSearchParams(raw);
-  if (params.get("returnTo") === "/leaderboard") return "/leaderboard";
+  const returnTo = params.get("returnTo");
+  if (returnTo === "/leaderboard") return "/leaderboard";
+  if (returnTo === "/settings/manage-account") return "/settings/manage-account";
   return "/settings";
 }

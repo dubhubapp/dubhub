@@ -8,6 +8,7 @@ import {
   COUNTRY_PROMPT_MIGRATION_ALLOWLIST,
   COUNTRY_PROMPT_MIGRATION_ALLOWLIST_COUNT,
   COUNTRY_PICKER_LEADERBOARD_HREF,
+  COUNTRY_PICKER_MANAGE_ACCOUNT_HREF,
   isLeaderboardRouteForCountryPrompt,
   resolveCountryPickerReturnTo,
   shouldShowCountryPrompt,
@@ -278,14 +279,19 @@ describe("country prompt API + UI wiring", () => {
 
 describe("country flow SVG + copy + return path", () => {
   const settingsSrc = readFileSync(join(root, "client/src/pages/settings.tsx"), "utf8");
+  const manageAccountSrc = readFileSync(
+    join(root, "client/src/pages/settings-manage-account.tsx"),
+    "utf8",
+  );
 
-  it("picker and Settings root use CountryFlag SVG; no emoji in Country flow UI", () => {
+  it("picker and Manage account use CountryFlag SVG; no emoji in Country flow UI", () => {
     assert.match(settingsCountrySrc, /CountryFlag/);
     assert.match(settingsCountrySrc, /COUNTRY_FLAG_PICKER_CLASS/);
     assert.doesNotMatch(settingsCountrySrc, /isoToFlagEmoji/);
-    assert.match(settingsSrc, /CountryFlag/);
-    assert.match(settingsSrc, /COUNTRY_FLAG_SETTINGS_ROW_CLASS/);
-    assert.doesNotMatch(settingsSrc, /isoToFlagEmoji/);
+    assert.match(manageAccountSrc, /CountryFlag/);
+    assert.match(manageAccountSrc, /COUNTRY_FLAG_SETTINGS_ROW_CLASS/);
+    assert.doesNotMatch(manageAccountSrc, /isoToFlagEmoji/);
+    assert.doesNotMatch(settingsSrc, /CountryFlag/);
     assert.doesNotMatch(hostSrc, /isoToFlagEmoji/);
   });
 
@@ -303,14 +309,16 @@ describe("country flow SVG + copy + return path", () => {
     assert.doesNotMatch(settingsCountrySrc, /Appears on Leaderboard rows/);
     assert.doesNotMatch(settingsCountrySrc, /No flag until you choose/);
     assert.doesNotMatch(settingsSrc, /Optional — shown on Leaderboard/);
-    assert.match(settingsSrc, /Shown on Leaderboard/);
+    assert.match(manageAccountSrc, /Shown on Leaderboard/);
+    assert.doesNotMatch(settingsSrc, /Shown on Leaderboard/);
   });
 
-  it("prompt-launched picker returns to Leaderboard; Settings path returns to Settings", () => {
+  it("prompt-launched picker returns to Leaderboard; Manage account path returns to Manage account", () => {
     assert.match(settingsCountrySrc, /resolveCountryPickerReturnTo/);
     assert.match(settingsCountrySrc, /useSearch/);
     assert.match(settingsCountrySrc, /returnTo/);
     assert.match(hostSrc, /COUNTRY_PICKER_LEADERBOARD_HREF|returnTo=\/leaderboard/);
+    assert.match(manageAccountSrc, /COUNTRY_PICKER_MANAGE_ACCOUNT_HREF/);
     // Save must not auto-navigate away (Back owns return).
     assert.doesNotMatch(
       settingsCountrySrc,
@@ -321,9 +329,17 @@ describe("country flow SVG + copy + return path", () => {
 });
 
 describe("country picker returnTo resolver", () => {
-  it("maps allowlisted returnTo=/leaderboard; defaults everything else to /settings", () => {
+  it("maps allowlisted returnTo values; defaults everything else to /settings", () => {
     assert.equal(resolveCountryPickerReturnTo("returnTo=/leaderboard"), "/leaderboard");
     assert.equal(resolveCountryPickerReturnTo("?returnTo=/leaderboard"), "/leaderboard");
+    assert.equal(
+      resolveCountryPickerReturnTo("returnTo=/settings/manage-account"),
+      "/settings/manage-account",
+    );
+    assert.equal(
+      resolveCountryPickerReturnTo("?returnTo=/settings/manage-account"),
+      "/settings/manage-account",
+    );
     assert.equal(resolveCountryPickerReturnTo(""), "/settings");
     assert.equal(resolveCountryPickerReturnTo(null), "/settings");
     assert.equal(resolveCountryPickerReturnTo("returnTo=/settings"), "/settings");
@@ -331,6 +347,7 @@ describe("country picker returnTo resolver", () => {
     assert.equal(resolveCountryPickerReturnTo("returnTo=/profile"), "/settings");
     assert.equal(resolveCountryPickerReturnTo("from=leaderboard"), "/settings");
     assert.match(COUNTRY_PICKER_LEADERBOARD_HREF, /returnTo=\/leaderboard/);
+    assert.match(COUNTRY_PICKER_MANAGE_ACCOUNT_HREF, /returnTo=\/settings\/manage-account/);
   });
 
   it("preserves return destination across save (captured state; no auto-nav)", () => {

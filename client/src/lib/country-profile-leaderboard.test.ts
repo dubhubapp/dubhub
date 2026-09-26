@@ -23,6 +23,10 @@ const storageSrc = readFileSync(join(root, "server/storage.ts"), "utf8");
 const routesSrc = readFileSync(join(root, "server/routes.ts"), "utf8");
 const leaderboardSrc = readFileSync(join(root, "client/src/pages/leaderboard.tsx"), "utf8");
 const settingsSrc = readFileSync(join(root, "client/src/pages/settings.tsx"), "utf8");
+const manageAccountSrc = readFileSync(
+  join(root, "client/src/pages/settings-manage-account.tsx"),
+  "utf8",
+);
 const settingsCountrySrc = readFileSync(
   join(root, "client/src/pages/settings-country.tsx"),
   "utf8",
@@ -102,22 +106,24 @@ describe("country Settings UI", () => {
   it("registers Settings → Country route and picker page", () => {
     assert.match(appSrc, /path="\/settings\/country"/);
     assert.match(appSrc, /SettingsCountryPage/);
-    assert.match(settingsSrc, /button-settings-country/);
-    assert.match(settingsSrc, /navigate\("\/settings\/country"\)/);
+    assert.match(manageAccountSrc, /button-settings-country/);
+    assert.match(manageAccountSrc, /COUNTRY_PICKER_MANAGE_ACCOUNT_HREF/);
+    assert.doesNotMatch(settingsSrc, /button-settings-country/);
     assert.match(settingsCountrySrc, /PATCH.*\/api\/user\/country|apiRequest\("PATCH", "\/api\/user\/country"/);
     assert.match(settingsCountrySrc, /button-settings-country-clear/);
     assert.match(settingsCountrySrc, /input-settings-country-search/);
     assert.doesNotMatch(settingsCountrySrc, /Nationality/);
   });
 
-  it("uses CountryFlag SVG in picker and Settings root; no emoji in Country flow", () => {
+  it("uses CountryFlag SVG in picker and Manage account; no emoji in Country flow", () => {
     assert.match(settingsCountrySrc, /from "@\/components\/country-flag"/);
     assert.match(settingsCountrySrc, /CountryFlag/);
     assert.match(settingsCountrySrc, /COUNTRY_FLAG_PICKER_CLASS/);
     assert.doesNotMatch(settingsCountrySrc, /isoToFlagEmoji/);
-    assert.match(settingsSrc, /CountryFlag/);
-    assert.match(settingsSrc, /Shown on Leaderboard/);
-    assert.doesNotMatch(settingsSrc, /isoToFlagEmoji/);
+    assert.match(manageAccountSrc, /CountryFlag/);
+    assert.match(manageAccountSrc, /Shown on Leaderboard/);
+    assert.doesNotMatch(settingsSrc, /CountryFlag/);
+    assert.doesNotMatch(manageAccountSrc, /isoToFlagEmoji/);
     assert.doesNotMatch(settingsSrc, /Optional —/);
   });
 });

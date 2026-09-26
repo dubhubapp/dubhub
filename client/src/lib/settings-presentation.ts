@@ -116,9 +116,25 @@ export const SETTINGS_ROW_TEXT_WRAP_CLASS = "min-w-0 flex-1 text-left" as const;
 
 export const SETTINGS_CHEVRON_CLASS = "w-4 h-4 shrink-0 text-muted-foreground" as const;
 
+/** External-link affordance on Settings outbound rows (same geometry as chevron). */
+export const SETTINGS_EXTERNAL_AFFORDANCE_CLASS = SETTINGS_CHEVRON_CLASS;
+
+/**
+ * Brand / platform glyph on Listen & follow rows.
+ * Sized like SETTINGS_ROW_ICON_CLASS; opacity keeps assets calm vs Lucide muted icons.
+ */
+export const SETTINGS_PLATFORM_ICON_IMG_CLASS =
+  "h-5 w-5 shrink-0 object-contain opacity-70 dark:opacity-80" as const;
+
 /** Destructive Log Out row — clear but restrained. No sticky hover wash. */
 export const SETTINGS_LOGOUT_ROW_CLASS =
   `${SETTINGS_NAV_ROW_CLASS} text-red-600 dark:text-red-300 active:bg-red-500/[0.06]` as const;
+
+/**
+ * Log Out footer below all Settings sections (including gated Developer).
+ * Extra top margin separates it from the last grouped section.
+ */
+export const SETTINGS_LOGOUT_FOOTER_CLASS = "mt-8" as const;
 
 /**
  * Theme-aware Settings Back overlay on approved geometry.
@@ -136,10 +152,10 @@ export const SETTINGS_BACK_ICON_CLASS = "text-foreground" as const;
 export const SETTINGS_VAT_INSET_CLASS = "w-full py-3" as const;
 
 export const SETTINGS_INTRO_ARTIST_COPY =
-  "Preferences, artist tools, support and account." as const;
+  "Account, preferences, artist tools and support." as const;
 
 export const SETTINGS_INTRO_COMMUNITY_COPY =
-  "Preferences, support and account." as const;
+  "Account, preferences and support." as const;
 
 export const SETTINGS_NOTIFICATIONS_INTRO_COPY =
   "Choose what appears in dub hub and what can be sent to your device." as const;

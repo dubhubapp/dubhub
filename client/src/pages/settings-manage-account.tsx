@@ -1,19 +1,26 @@
 /**
  * Settings → Manage account
- * Change password + Delete account (one intentional step off Settings root).
+ * Country, Change password, Delete account (one intentional step off Settings root).
  */
 
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ChevronLeft, ChevronRight, KeyRound, Trash2, UserRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, Globe2, KeyRound, Trash2, UserRound } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { DeleteAccountDialog } from "@/components/auth/DeleteAccountDialog";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import {
+  CountryFlag,
+  COUNTRY_FLAG_SETTINGS_ROW_CLASS,
+} from "@/components/country-flag";
 import {
   APP_MATERIAL_BACK_BUTTON_CLASS,
   APP_MATERIAL_BACK_ICON_CLASS,
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
+import { useUser } from "@/lib/user-context";
+import { getCountryDisplayName } from "@shared/country-codes";
+import { COUNTRY_PICKER_MANAGE_ACCOUNT_HREF } from "@shared/country-prompt";
 import {
   SETTINGS_BACK_BUTTON_CLASS,
   SETTINGS_BACK_ICON_CLASS,
@@ -24,6 +31,7 @@ import {
   SETTINGS_PAGE_PAD_CLASS,
   SETTINGS_PAGE_SCROLL_CLASS,
   SETTINGS_ROW_ICON_CLASS,
+  SETTINGS_ROW_SUBTITLE_CLASS,
   SETTINGS_ROW_TEXT_WRAP_CLASS,
   SETTINGS_ROW_TITLE_CLASS,
   SETTINGS_ROWS_STACK_CLASS,
@@ -40,6 +48,8 @@ export default function SettingsManageAccountPage({
   onAccountDeleted,
 }: SettingsManageAccountPageProps) {
   const [, navigate] = useLocation();
+  const { countryCode } = useUser();
+  const countryLabel = getCountryDisplayName(countryCode);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
@@ -70,12 +80,43 @@ export default function SettingsManageAccountPage({
               <h1 className="text-xl font-bold">Manage account</h1>
             </div>
             <p className={SETTINGS_SUBTITLE_CLASS}>
-              Password and account deletion.
+              Country, password and account deletion.
             </p>
           </div>
 
           <div className={`${SETTINGS_HEADER_TO_SECTIONS_CLASS} ${SETTINGS_SECTIONS_STACK_CLASS}`}>
             <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-manage-account">
+              <button
+                type="button"
+                className={SETTINGS_NAV_ROW_CLASS}
+                onClick={() => navigate(COUNTRY_PICKER_MANAGE_ACCOUNT_HREF)}
+                data-testid="button-settings-country"
+                aria-label="Country"
+              >
+                <Globe2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
+                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Country</span>
+                  <span
+                    className={`${SETTINGS_ROW_SUBTITLE_CLASS} flex items-center gap-2`}
+                  >
+                    {countryLabel && countryCode ? (
+                      <>
+                        <CountryFlag
+                          countryCode={countryCode}
+                          countryName={countryLabel}
+                          className={COUNTRY_FLAG_SETTINGS_ROW_CLASS}
+                          data-testid="settings-country-row-flag"
+                        />
+                        <span className="truncate">{countryLabel}</span>
+                      </>
+                    ) : (
+                      "Shown on Leaderboard"
+                    )}
+                  </span>
+                </span>
+                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
+              </button>
+
               <button
                 type="button"
                 className={SETTINGS_NAV_ROW_CLASS}

@@ -12,9 +12,11 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
-  Globe2,
+  ExternalLink,
+  FileText,
   LogOut,
   MessageSquare,
+  Scale,
   Settings as SettingsIcon,
   UserRound,
   Volume2,
@@ -26,11 +28,6 @@ import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
 import { VerifiedArtistToolsSettingsRow } from "@/components/verified-artist-tools-settings-row";
 import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
 import { useUser } from "@/lib/user-context";
-import { getCountryDisplayName } from "@shared/country-codes";
-import {
-  CountryFlag,
-  COUNTRY_FLAG_SETTINGS_ROW_CLASS,
-} from "@/components/country-flag";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { revenueCatIdentityDiagnosticsEnabled } from "@/lib/revenuecat-identity";
 import {
@@ -39,16 +36,32 @@ import {
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import {
+  DUBHUB_LISTEN_FOLLOW_LINKS,
+  openDubhubExternalUrl,
+  type DubhubListenFollowId,
+} from "@/lib/dubhub-social-urls";
+import {
+  DUBHUB_WEBSITE_PRIVACY_URL,
+  DUBHUB_WEBSITE_TERMS_URL,
+} from "@/lib/legal-urls";
+import { getPlatformIcon } from "@/lib/platforms";
+import YoutubeIcon from "@/assets/platforms/youtube.png?url";
+import InstagramIcon from "@/assets/platforms/instagram.png?url";
+import TikTokIcon from "@/assets/platforms/tiktok.png?url";
+import {
   SETTINGS_BACK_BUTTON_CLASS,
   SETTINGS_BACK_ICON_CLASS,
   SETTINGS_CHEVRON_CLASS,
+  SETTINGS_EXTERNAL_AFFORDANCE_CLASS,
   SETTINGS_HEADER_TO_SECTIONS_CLASS,
   SETTINGS_INTRO_ARTIST_COPY,
   SETTINGS_INTRO_COMMUNITY_COPY,
+  SETTINGS_LOGOUT_FOOTER_CLASS,
   SETTINGS_LOGOUT_ROW_CLASS,
   SETTINGS_NAV_ROW_CLASS,
   SETTINGS_PAGE_PAD_CLASS,
   SETTINGS_PAGE_SCROLL_CLASS,
+  SETTINGS_PLATFORM_ICON_IMG_CLASS,
   SETTINGS_SUBTITLE_CLASS,
   SETTINGS_TITLE_AFTER_BACK_CLASS,
   SETTINGS_ROW_ICON_CLASS,
@@ -61,6 +74,28 @@ import {
   SETTINGS_ROWS_STACK_CLASS,
 } from "@/lib/settings-presentation";
 
+const LISTEN_FOLLOW_ASSET_ICONS: Partial<Record<DubhubListenFollowId, string>> = {
+  youtube: YoutubeIcon,
+  instagram: InstagramIcon,
+  tiktok: TikTokIcon,
+};
+
+function ListenFollowRowIcon({ id }: { id: DubhubListenFollowId }) {
+  const asset =
+    id === "spotify" || id === "soundcloud"
+      ? getPlatformIcon(id)
+      : LISTEN_FOLLOW_ASSET_ICONS[id];
+  if (!asset) return null;
+  return (
+    <img
+      src={asset}
+      alt=""
+      className={SETTINGS_PLATFORM_ICON_IMG_CLASS}
+      aria-hidden
+    />
+  );
+}
+
 interface SettingsPageProps {
   onSignOut?: () => Promise<void> | void;
 }
@@ -69,10 +104,9 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [, navigate] = useLocation();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
-  const { verifiedArtist, countryCode } = useUser();
+  const { verifiedArtist } = useUser();
   /** Dev / forced-diagnostics builds only — never shown by account role. */
   const showDeveloperDiagnosticsEntry = revenueCatIdentityDiagnosticsEnabled();
-  const countryLabel = getCountryDisplayName(countryCode);
 
   const handleFeedStartWithSoundToggle = (enabled: boolean) => {
     setFeedStartWithSound(enabled);
@@ -123,11 +157,31 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
           </div>
 
           <div className={`${SETTINGS_HEADER_TO_SECTIONS_CLASS} ${SETTINGS_SECTIONS_STACK_CLASS}`}>
-          <section aria-labelledby="settings-section-preferences">
-            <h2 id="settings-section-preferences" className={SETTINGS_SECTION_LABEL_CLASS}>
-              Preferences
+          <section aria-labelledby="settings-section-account-preferences">
+            <h2 id="settings-section-account-preferences" className={SETTINGS_SECTION_LABEL_CLASS}>
+              Account & Preferences
             </h2>
-            <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-preferences">
+            <div
+              className={SETTINGS_ROWS_STACK_CLASS}
+              data-testid="settings-group-account-preferences"
+            >
+              <button
+                type="button"
+                className={SETTINGS_NAV_ROW_CLASS}
+                onClick={() => navigate("/settings/manage-account")}
+                data-testid="button-manage-account"
+                aria-label="Manage account"
+              >
+                <UserRound className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
+                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Manage account</span>
+                  <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
+                    Country, password and account deletion
+                  </span>
+                </span>
+                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
+              </button>
+
               <button
                 type="button"
                 className={SETTINGS_NAV_ROW_CLASS}
@@ -213,77 +267,60 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
             </div>
           </section>
 
-          <section aria-labelledby="settings-section-personal-details">
-            <h2 id="settings-section-personal-details" className={SETTINGS_SECTION_LABEL_CLASS}>
-              Personal Details
+          <section aria-labelledby="settings-section-listen-follow">
+            <h2 id="settings-section-listen-follow" className={SETTINGS_SECTION_LABEL_CLASS}>
+              Listen & follow
             </h2>
-            <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-personal-details">
-              <button
-                type="button"
-                className={SETTINGS_NAV_ROW_CLASS}
-                onClick={() => navigate("/settings/country")}
-                data-testid="button-settings-country"
-                aria-label="Country"
-              >
-                <Globe2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
-                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Country</span>
-                  <span
-                    className={`${SETTINGS_ROW_SUBTITLE_CLASS} flex items-center gap-2`}
-                  >
-                    {countryLabel && countryCode ? (
-                      <>
-                        <CountryFlag
-                          countryCode={countryCode}
-                          countryName={countryLabel}
-                          className={COUNTRY_FLAG_SETTINGS_ROW_CLASS}
-                          data-testid="settings-country-row-flag"
-                        />
-                        <span className="truncate">{countryLabel}</span>
-                      </>
-                    ) : (
-                      "Shown on Leaderboard"
-                    )}
+            <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-listen-follow">
+              {DUBHUB_LISTEN_FOLLOW_LINKS.map((link) => (
+                <button
+                  key={link.id}
+                  type="button"
+                  className={SETTINGS_NAV_ROW_CLASS}
+                  onClick={() => openDubhubExternalUrl(link.url)}
+                  data-testid={`button-settings-listen-${link.id}`}
+                  aria-label={link.label}
+                >
+                  <ListenFollowRowIcon id={link.id} />
+                  <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                    {link.label}
                   </span>
-                </span>
-                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
-              </button>
+                  <ExternalLink className={SETTINGS_EXTERNAL_AFFORDANCE_CLASS} aria-hidden />
+                </button>
+              ))}
             </div>
           </section>
 
-          <section aria-labelledby="settings-section-account">
-            <h2 id="settings-section-account" className={SETTINGS_SECTION_LABEL_CLASS}>
-              Account
+          <section aria-labelledby="settings-section-legal">
+            <h2 id="settings-section-legal" className={SETTINGS_SECTION_LABEL_CLASS}>
+              Legal
             </h2>
-            <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-account">
+            <div className={SETTINGS_ROWS_STACK_CLASS} data-testid="settings-group-legal">
               <button
                 type="button"
                 className={SETTINGS_NAV_ROW_CLASS}
-                onClick={() => navigate("/settings/manage-account")}
-                data-testid="button-manage-account"
-                aria-label="Manage account"
+                onClick={() => openDubhubExternalUrl(DUBHUB_WEBSITE_PRIVACY_URL)}
+                data-testid="button-settings-privacy"
+                aria-label="Privacy Policy"
               >
-                <UserRound className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
-                <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
-                  <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Manage account</span>
-                  <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
-                    Password and account deletion
-                  </span>
+                <FileText className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                  Privacy Policy
                 </span>
-                <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
+                <ExternalLink className={SETTINGS_EXTERNAL_AFFORDANCE_CLASS} aria-hidden />
               </button>
-
               <button
                 type="button"
-                className={SETTINGS_LOGOUT_ROW_CLASS}
-                onClick={() => void handleLogout()}
-                data-testid="button-logout"
-                aria-label="Log Out"
+                className={SETTINGS_NAV_ROW_CLASS}
+                onClick={() => openDubhubExternalUrl(DUBHUB_WEBSITE_TERMS_URL)}
+                data-testid="button-settings-terms"
+                aria-label="Terms of Use"
               >
-                <LogOut className="w-5 h-5 shrink-0" aria-hidden />
+                <Scale className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
                 <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
-                  Log Out
+                  Terms of Use
                 </span>
+                <ExternalLink className={SETTINGS_EXTERNAL_AFFORDANCE_CLASS} aria-hidden />
               </button>
             </div>
           </section>
@@ -315,6 +352,24 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               </div>
             </section>
           ) : null}
+          </div>
+
+          <div
+            className={SETTINGS_LOGOUT_FOOTER_CLASS}
+            data-testid="settings-logout-footer"
+          >
+            <button
+              type="button"
+              className={SETTINGS_LOGOUT_ROW_CLASS}
+              onClick={() => void handleLogout()}
+              data-testid="button-logout"
+              aria-label="Log Out"
+            >
+              <LogOut className="w-5 h-5 shrink-0" aria-hidden />
+              <span className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                Log Out
+              </span>
+            </button>
           </div>
         </div>
       </div>
