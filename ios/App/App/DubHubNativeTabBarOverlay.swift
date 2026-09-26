@@ -139,9 +139,16 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     private var profileIconRole: String = "community"
     /// PROFILE-NAV-BADGE-1: React-driven unread count (custom overlay chrome in 2A).
     private var profileBadgeCount: Int = 0
-    /// PROFILE-NAV-BADGE-2A: single reusable custom badge; never accumulate duplicates.
-    private weak var profileUnreadBadgeView: DubHubNativeProfileUnreadBadgeView?
-    private static let profileUnreadBadgeTag = 0x4E424447
+    /// PROFILE-NAV-BADGE-2H: CONFIRMED COMPLETE — mirrored dual-tree renderers.
+    /// One shared unread count; inactive `_UITabButton` (ContentView) + selected `UIImageView`
+    /// (SelectedContent). UIKit tree visibility chooses which renderer is seen.
+    private var profileInactiveUnreadBadgeView: DubHubNativeProfileUnreadBadgeView?
+    private var profileSelectedUnreadBadgeView: DubHubNativeProfileUnreadBadgeView?
+    private static let profileInactiveBadgeTag = 0x4E424447
+    private static let profileSelectedBadgeTag = 0x4E424448
+    private weak var profileInactiveBadgeHost: UIView?
+    private weak var profileSelectedBadgeHost: UIImageView?
+    private var profileBadgeHostRetryWork: DispatchWorkItem?
 
     /// PROFILE-NAV-5: read by icon animator / touch cancel without exposing mutation.
     var isArtistProfileIconRole: Bool { profileIconRole == "artist" }
@@ -205,6 +212,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
                 self.applyPresentation(on: controller)
                 self.syncDocumentFlag(on: controller)
             }
+            // PROFILE-NAV-BADGE-2E: count may have arrived while bar was hidden/unlaid-out.
+            self.ensureProfileUnreadBadgeHostedIfNeeded()
             completion?()
         }
     }
@@ -233,6 +242,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
             }
             self.selectedTabId = self.normalizedTabId(raw)
             self.applySelectedItem()
+            // PROFILE-NAV-BADGE-2H: selection may rebuild SelectedContent hosts — reassert both.
+            self.ensureProfileUnreadBadgeHostedIfNeeded()
             completion?()
         }
     }
@@ -336,12 +347,12 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         item.selectedImage = nil
     }
 
-    /// PROFILE-NAV-BADGE-2A: clear system badgeValue; draw icon-anchored custom overlay.
+    /// PROFILE-NAV-BADGE-2H: clear system badgeValue; sync mirrored dual-tree custom chips.
     private func applyProfileItemBadgeOnly() {
         assertMain("applyProfileItemBadgeOnly")
         guard let tabBar else { return }
         clearSystemProfileBadgeValue(on: tabBar)
-        syncCustomProfileUnreadBadge(in: tabBar)
+        syncProfileUnreadBadges(in: tabBar)
     }
 
     private func clearSystemProfileBadgeValue(on tabBar: UITabBar) {
@@ -360,87 +371,266 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         }
     }
 
-    private func syncCustomProfileUnreadBadge(in tabBar: UITabBar) {
-        for subview in tabBar.subviews where subview.tag == Self.profileUnreadBadgeTag {
-            if subview !== profileUnreadBadgeView {
-                subview.removeFromSuperview()
-            }
-        }
+    // MARK: - PROFILE-NAV-BADGE-2H: mirrored dual-tree badges
+
+    private static let profileBadgeHorizontalOverlap: CGFloat = 0.58
+    private static let profileBadgeHeightAboveIcon: CGFloat = 0.35
+    private static let profileBadgeOpticalIconSide: CGFloat = 24
+    private static let profileBadgeOpticalIconTopInset: CGFloat = 5
+    /// Local overlay above icon/content siblings within each tree.
+    private static let profileBadgeLocalZPosition: CGFloat = 2
+
+    /// One unread source → two renderers (inactive ContentView + selected glyph tree).
+    private func syncProfileUnreadBadges(in tabBar: UITabBar) {
+        removeOrphanProfileUnreadBadges(in: tabBar)
 
         guard let text = Self.formattedProfileBadgeValue(profileBadgeCount) else {
-            profileUnreadBadgeView?.removeFromSuperview()
-            profileUnreadBadgeView = nil
+            profileBadgeHostRetryWork?.cancel()
+            profileBadgeHostRetryWork = nil
+            clearBothProfileUnreadBadges()
             return
         }
 
-        let badge: DubHubNativeProfileUnreadBadgeView
-        if let existing = profileUnreadBadgeView, existing.superview === tabBar {
-            badge = existing
+        let inactive: DubHubNativeProfileUnreadBadgeView
+        if let existing = profileInactiveUnreadBadgeView {
+            inactive = existing
         } else {
-            profileUnreadBadgeView?.removeFromSuperview()
-            badge = DubHubNativeProfileUnreadBadgeView()
-            badge.tag = Self.profileUnreadBadgeTag
-            badge.isAccessibilityElement = false
-            badge.isUserInteractionEnabled = false
-            tabBar.addSubview(badge)
-            profileUnreadBadgeView = badge
+            let created = DubHubNativeProfileUnreadBadgeView()
+            created.tag = Self.profileInactiveBadgeTag
+            created.isAccessibilityElement = false
+            created.isUserInteractionEnabled = false
+            profileInactiveUnreadBadgeView = created
+            inactive = created
         }
-
-        badge.setCountText(text)
-        badge.isHidden = false
-        repositionCustomProfileUnreadBadge(badge, in: tabBar)
+        let selected: DubHubNativeProfileUnreadBadgeView
+        if let existing = profileSelectedUnreadBadgeView {
+            selected = existing
+        } else {
+            let created = DubHubNativeProfileUnreadBadgeView()
+            created.tag = Self.profileSelectedBadgeTag
+            created.isAccessibilityElement = false
+            created.isUserInteractionEnabled = false
+            profileSelectedUnreadBadgeView = created
+            selected = created
+        }
+        inactive.setCountText(text)
+        selected.setCountText(text)
+        inactive.isHidden = false
+        selected.isHidden = false
+        attachInactiveProfileBadge(inactive, in: tabBar)
+        attachSelectedProfileBadge(selected, in: tabBar)
     }
 
-    private func repositionCustomProfileUnreadBadge(
+    private func clearBothProfileUnreadBadges() {
+        profileInactiveUnreadBadgeView?.removeFromSuperview()
+        profileInactiveUnreadBadgeView = nil
+        profileInactiveBadgeHost = nil
+        profileSelectedUnreadBadgeView?.removeFromSuperview()
+        profileSelectedUnreadBadgeView = nil
+        profileSelectedBadgeHost = nil
+    }
+
+    private func removeOrphanProfileUnreadBadges(in tabBar: UITabBar) {
+        let keep: Set<ObjectIdentifier> = Set(
+            [profileInactiveUnreadBadgeView, profileSelectedUnreadBadgeView]
+                .compactMap { $0 }
+                .map { ObjectIdentifier($0) }
+        )
+        func purge(in root: UIView) {
+            for subview in root.subviews {
+                if (subview.tag == Self.profileInactiveBadgeTag
+                    || subview.tag == Self.profileSelectedBadgeTag),
+                   !keep.contains(ObjectIdentifier(subview))
+                {
+                    subview.removeFromSuperview()
+                } else {
+                    purge(in: subview)
+                }
+            }
+        }
+        purge(in: tabBar)
+    }
+
+    private static func profileBadgeLocalFrameOnTabButton(size: CGSize, buttonBounds: CGRect) -> CGRect {
+        let side = profileBadgeOpticalIconSide
+        let iconInButton = CGRect(
+            x: (buttonBounds.width - side) * 0.5,
+            y: profileBadgeOpticalIconTopInset,
+            width: side,
+            height: side
+        )
+        return CGRect(
+            x: iconInButton.maxX - size.width * profileBadgeHorizontalOverlap,
+            y: iconInButton.minY - size.height * profileBadgeHeightAboveIcon,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    private static func profileBadgeLocalFrameOnIcon(size: CGSize, iconBounds: CGRect) -> CGRect {
+        CGRect(
+            x: iconBounds.width - size.width * profileBadgeHorizontalOverlap,
+            y: -size.height * profileBadgeHeightAboveIcon,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    private func applyProfileBadgeFrame(
+        _ badge: DubHubNativeProfileUnreadBadgeView,
+        frame: CGRect
+    ) {
+        guard !badge.frame.equalTo(frame) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        badge.frame = frame
+        CATransaction.commit()
+    }
+
+    private func applyProfileBadgeLocalLayering(
+        _ badge: DubHubNativeProfileUnreadBadgeView,
+        on host: UIView
+    ) {
+        host.clipsToBounds = false
+        host.layer.masksToBounds = false
+        badge.layer.zPosition = Self.profileBadgeLocalZPosition
+        host.bringSubviewToFront(badge)
+    }
+
+    private func attachInactiveProfileBadge(
         _ badge: DubHubNativeProfileUnreadBadgeView,
         in tabBar: UITabBar
     ) {
-        guard profileBadgeCount > 0 else {
-            badge.isHidden = true
+        guard profileBadgeCount > 0 else { return }
+        tabBar.layoutIfNeeded()
+        guard let item = profileTabBarItem(in: tabBar) else {
+            scheduleProfileBadgeHostRetry()
             return
         }
-        guard let items = tabBar.items,
-              let profileIndex = tabIds.firstIndex(of: "profile"),
-              profileIndex < items.count,
-              let iconView = DubHubNativeTabBarIconAnimator.resolveIconImageView(
-                for: items[profileIndex],
-                in: tabBar
-              )
+        guard let button = DubHubNativeTabBarIconAnimator.resolveBadgeTabButton(
+            for: item,
+            in: tabBar,
+            requireWindow: false
+        ),
+              button.bounds.width > 1,
+              button.bounds.height > 1
         else {
-            // Icon host not ready yet; layoutSubviews will retry. Do not fall back to system badge.
-            badge.isHidden = true
+            scheduleProfileBadgeHostRetry()
             return
         }
-
-        let size = badge.preferredBadgeSize()
-        let iconInBar = iconView.convert(iconView.bounds, to: tabBar)
-        // PROFILE-NAV-BADGE-2B: ~58% horizontal overlap; ~35% of height above icon top.
-        // (2A's 1/3 / 2/3 sat too far right and too high.)
-        let horizontalOverlap: CGFloat = 0.58
-        let heightAboveIcon: CGFloat = 0.35
-        let origin = CGPoint(
-            x: iconInBar.maxX - size.width * horizontalOverlap,
-            y: iconInBar.minY - size.height * heightAboveIcon
-        )
-        let nextFrame = CGRect(origin: origin, size: size)
-        if !badge.frame.equalTo(nextFrame) {
-            badge.frame = nextFrame
-        }
-        badge.isHidden = false
-        tabBar.bringSubviewToFront(badge)
+        installProfileBadge(badge, on: button, trackInactive: true)
     }
 
-    /// Layout-safe rebind without recreating the view when count is unchanged.
-    private func repositionExistingCustomProfileBadgeIfNeeded() {
-        guard let tabBar,
-              let badge = profileUnreadBadgeView,
-              badge.superview === tabBar,
-              profileBadgeCount > 0
-        else {
+    private func attachSelectedProfileBadge(
+        _ badge: DubHubNativeProfileUnreadBadgeView,
+        in tabBar: UITabBar
+    ) {
+        guard profileBadgeCount > 0 else { return }
+        tabBar.layoutIfNeeded()
+        guard let item = profileTabBarItem(in: tabBar) else {
+            scheduleProfileBadgeHostRetry()
             return
         }
+        guard let iconView = DubHubNativeTabBarIconAnimator.resolveSelectedBadgeIconImageView(
+            for: item,
+            in: tabBar,
+            requireWindow: false
+        ) else {
+            scheduleProfileBadgeHostRetry()
+            return
+        }
+        let w = max(iconView.bounds.width, iconView.frame.width)
+        let h = max(iconView.bounds.height, iconView.frame.height)
+        guard w > 1, h > 1 else {
+            scheduleProfileBadgeHostRetry()
+            return
+        }
+        installProfileBadge(badge, on: iconView, trackInactive: false)
+    }
+
+    private func profileTabBarItem(in tabBar: UITabBar) -> UITabBarItem? {
+        guard let items = tabBar.items,
+              let profileIndex = tabIds.firstIndex(of: "profile"),
+              profileIndex < items.count
+        else {
+            return nil
+        }
+        return items[profileIndex]
+    }
+
+    private func installProfileBadge(
+        _ badge: DubHubNativeProfileUnreadBadgeView,
+        on host: UIView,
+        trackInactive: Bool
+    ) {
+        if trackInactive {
+            profileInactiveBadgeHost = host
+        } else if let icon = host as? UIImageView {
+            profileSelectedBadgeHost = icon
+        }
+
+        if badge.superview !== host {
+            badge.removeFromSuperview()
+            host.addSubview(badge)
+        }
+        let size = badge.preferredBadgeSize()
+        let frame: CGRect
+        if trackInactive {
+            frame = Self.profileBadgeLocalFrameOnTabButton(size: size, buttonBounds: host.bounds)
+        } else {
+            frame = Self.profileBadgeLocalFrameOnIcon(size: size, iconBounds: host.bounds)
+        }
+        applyProfileBadgeFrame(badge, frame: frame)
+        applyProfileBadgeLocalLayering(badge, on: host)
+        badge.isHidden = false
+    }
+
+    /// Rebind both renderers after UIKit rebuilds Profile hosts.
+    private func ensureProfileUnreadBadgeHostedIfNeeded() {
+        guard profileBadgeCount > 0 else { return }
+        guard let tabBar else { return }
         clearSystemProfileBadgeValue(on: tabBar)
-        repositionCustomProfileUnreadBadge(badge, in: tabBar)
+
+        if profileInactiveUnreadBadgeView == nil || profileSelectedUnreadBadgeView == nil {
+            syncProfileUnreadBadges(in: tabBar)
+            return
+        }
+        tabBar.layoutIfNeeded()
+        removeOrphanProfileUnreadBadges(in: tabBar)
+
+        if let inactive = profileInactiveUnreadBadgeView {
+            attachInactiveProfileBadge(inactive, in: tabBar)
+        }
+        if let selected = profileSelectedUnreadBadgeView {
+            attachSelectedProfileBadge(selected, in: tabBar)
+        }
+    }
+
+    private func scheduleProfileBadgeHostRetry() {
+        guard profileBadgeCount > 0 else { return }
+        profileBadgeHostRetryWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.tabBar?.layoutIfNeeded()
+            self.ensureProfileUnreadBadgeHostedIfNeeded()
+            let inactiveMissing =
+                self.profileInactiveUnreadBadgeView?.superview == nil
+                || self.profileInactiveBadgeHost == nil
+            let selectedMissing =
+                self.profileSelectedUnreadBadgeView?.superview == nil
+                || self.profileSelectedBadgeHost == nil
+            if self.profileBadgeCount > 0, inactiveMissing || selectedMissing {
+                let followUp = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.tabBar?.layoutIfNeeded()
+                    self.ensureProfileUnreadBadgeHostedIfNeeded()
+                }
+                self.profileBadgeHostRetryWork = followUp
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: followUp)
+            }
+        }
+        profileBadgeHostRetryWork = work
+        DispatchQueue.main.async(execute: work)
     }
 
     private var isLayoutPresent: Bool {
@@ -503,9 +693,9 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         // Do not construct a custom tab-bar appearance object (preserves system glass/platter).
         tabBar.tintColor = UIColor.white.withAlphaComponent(0.96)
         tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.50)
-        // PROFILE-NAV-BADGE-2A: custom icon-anchored badge; keep system badgeValue cleared.
+        // PROFILE-NAV-BADGE-2H: reassert mirrored dual-tree badges if UIKit rebuilds hosts.
         tabBar.onDidLayoutSubviews = { [weak self] in
-            self?.repositionExistingCustomProfileBadgeIfNeeded()
+            self?.ensureProfileUnreadBadgeHostedIfNeeded()
         }
         bindIconAnimationInteraction(on: tabBar)
         return tabBar
@@ -819,8 +1009,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         )
         #endif
         emitGeometry(host: host, tabBar: tabBar, layoutPresent: true)
-        // PROFILE-NAV-BADGE-2A: floating frame may move icon hosts — re-anchor.
-        repositionExistingCustomProfileBadgeIfNeeded()
+        // PROFILE-NAV-BADGE-2D: floating frame may rebuild icon hosts — rebind if needed.
+        ensureProfileUnreadBadgeHostedIfNeeded()
     }
 
     func geometry(completion: @escaping ([String: Any]) -> Void) {
@@ -896,6 +1086,12 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         // NATIVE-NAV-PREMIUM-2B: icon micro-anim (Submit/Home); reselect included.
         // Drag-across: pending tab updates while finger is down; one flush on release.
         requestCommittedIconAnimation(tabId: tab, item: item)
+        // PROFILE-NAV-BADGE-2H: selection rebuilds SelectedContent — reassert both renderers.
+        ensureProfileUnreadBadgeHostedIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+            self?.tabBar?.layoutIfNeeded()
+            self?.ensureProfileUnreadBadgeHostedIfNeeded()
+        }
     }
 
     private func runOnMain(_ work: @escaping () -> Void) {
@@ -1001,10 +1197,11 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
             }
         }
     }
+
 }
 
-/// PROFILE-NAV-BADGE-2A/2B: compact icon-anchored unread chip for the native Profile tab.
-/// 16pt height; vertically centered digits; ~58% glyph overlap (2B position polish).
+/// PROFILE-NAV-BADGE-2H: CONFIRMED COMPLETE — compact unread chip for the native Profile tab.
+/// Mirrored on inactive `_UITabButton` and selected `UIImageView` hosts (same unread count).
 private final class DubHubNativeProfileUnreadBadgeView: UIView {
     /// One-digit diameter / multi-digit height (system-like; 1C's 20pt was too large).
     private static let badgeHeight: CGFloat = 16

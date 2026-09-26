@@ -463,32 +463,66 @@ describe("LG-NAV-3 native nav contract", () => {
     );
   });
 
-  it("PROFILE-NAV-BADGE-2A: custom icon-anchored Profile unread badge", () => {
+  it("PROFILE-NAV-BADGE-2H: mirrored dual-tree Profile unread badges", () => {
     assert.match(overlaySrc, /DubHubNativeProfileUnreadBadgeView/);
-    assert.match(overlaySrc, /syncCustomProfileUnreadBadge/);
-    assert.match(overlaySrc, /repositionCustomProfileUnreadBadge/);
-    assert.match(overlaySrc, /repositionExistingCustomProfileBadgeIfNeeded/);
+    assert.match(overlaySrc, /syncProfileUnreadBadges/);
     assert.match(overlaySrc, /clearSystemProfileBadgeValue/);
     assert.match(overlaySrc, /item\.badgeValue = nil/);
     assert.match(overlaySrc, /accessibilityValue = "\\\(text\) unread"/);
     assert.match(overlaySrc, /isAccessibilityElement = false/);
     assert.match(overlaySrc, /isUserInteractionEnabled = false/);
-    // Compact system-like size (1C's 20pt was too large).
     assert.match(overlaySrc, /badgeHeight:\s*CGFloat\s*=\s*16/);
     assert.match(overlaySrc, /horizontalPadding:\s*CGFloat\s*=\s*5/);
     assert.match(overlaySrc, /UIColor\.systemRed/);
     assert.match(overlaySrc, /monospacedDigitSystemFont\(ofSize:\s*11,\s*weight:\s*\.semibold\)/);
     assert.match(overlaySrc, /baselineAdjustment\s*=\s*\.alignCenters/);
-    assert.match(overlaySrc, /horizontalOverlap:\s*CGFloat\s*=\s*0\.58/);
-    assert.match(overlaySrc, /heightAboveIcon:\s*CGFloat\s*=\s*0\.35/);
-    assert.match(overlaySrc, /iconInBar\.maxX - size\.width \* horizontalOverlap/);
-    assert.match(overlaySrc, /iconInBar\.minY - size\.height \* heightAboveIcon/);
+    // Dual renderers, one count — CONFIRMED COMPLETE (physical QA).
+    assert.match(overlaySrc, /PROFILE-NAV-BADGE-2H/);
+    assert.match(overlaySrc, /CONFIRMED COMPLETE/);
+    assert.match(overlaySrc, /profileInactiveUnreadBadgeView/);
+    assert.match(overlaySrc, /profileSelectedUnreadBadgeView/);
+    assert.match(overlaySrc, /profileInactiveBadgeTag/);
+    assert.match(overlaySrc, /profileSelectedBadgeTag/);
+    assert.match(overlaySrc, /attachInactiveProfileBadge/);
+    assert.match(overlaySrc, /attachSelectedProfileBadge/);
+    assert.match(overlaySrc, /clearBothProfileUnreadBadges/);
+    assert.match(overlaySrc, /resolveBadgeTabButton/);
+    assert.match(overlaySrc, /resolveSelectedBadgeIconImageView/);
+    assert.match(animatorSrc, /resolveBadgeTabButton/);
+    assert.match(animatorSrc, /resolveSelectedBadgeIconImageView/);
+    assert.match(animatorSrc, /resolveSelectedTreeTabButton/);
+    assert.match(animatorSrc, /isUnderSelectedOrMaskedTabTree/);
+    assert.match(overlaySrc, /profileBadgeHorizontalOverlap:\s*CGFloat\s*=\s*0\.58/);
+    assert.match(overlaySrc, /profileBadgeHeightAboveIcon:\s*CGFloat\s*=\s*0\.35/);
+    assert.match(overlaySrc, /profileBadgeLocalFrameOnTabButton/);
+    assert.match(overlaySrc, /profileBadgeLocalFrameOnIcon/);
+    assert.match(overlaySrc, /profileBadgeLocalZPosition:\s*CGFloat\s*=\s*2/);
+    assert.match(overlaySrc, /ensureProfileUnreadBadgeHostedIfNeeded/);
+    assert.match(overlaySrc, /scheduleProfileBadgeHostRetry/);
+    assert.match(overlaySrc, /CATransaction\.setDisableActions\(true\)/);
+    assert.match(overlaySrc, /requireWindow:\s*false/);
     assert.match(overlaySrc, /count > 99[\s\S]*?"99\+"/);
-    // Anchors to live Profile icon via existing animator resolver.
-    assert.match(
-      overlaySrc,
-      /DubHubNativeTabBarIconAnimator\.resolveIconImageView/,
-    );
+    // No single-host / global chase / leftover investigation probes.
+    assert.doesNotMatch(overlaySrc, /syncCustomProfileUnreadBadge/);
+    assert.doesNotMatch(overlaySrc, /profileUnreadBadgeView/);
+    assert.doesNotMatch(overlaySrc, /repositionCustomProfileUnreadBadge/);
+    assert.doesNotMatch(overlaySrc, /lastStableProfileBadgeFrame/);
+    assert.doesNotMatch(overlaySrc, /opticalProfileIconRect\(inSlotInBar/);
+    assert.doesNotMatch(overlaySrc, /iconView\.convert\(iconView\.bounds,\s*to:\s*tabBar\)/);
+    assert.doesNotMatch(overlaySrc, /BADGE-DUAL-6/);
+    assert.doesNotMatch(overlaySrc, /BADGE-VIS-3/);
+    assert.doesNotMatch(overlaySrc, /BADGE-ZMASK-4/);
+    assert.doesNotMatch(overlaySrc, /nearestCommonAncestor/);
+    assert.doesNotMatch(overlaySrc, /commonAncestorProbe/);
+    assert.doesNotMatch(overlaySrc, /tabButtonAncestryTags/);
+    assert.doesNotMatch(animatorSrc, /tabButtonAncestryTags/);
+    assert.doesNotMatch(overlaySrc, /zPosition = 9999/);
+    assert.doesNotMatch(overlaySrc, /tabBar\.clipsToBounds\s*=\s*false/);
+    assert.doesNotMatch(overlaySrc, /IMPLEMENTED BUT FAILED PHYSICAL QA/);
+    assert.doesNotMatch(overlaySrc, /unclipProfileBadgeOverflowAncestors/);
+    assert.doesNotMatch(overlaySrc, /profileBadgeZMaskProbePhase/);
+    assert.doesNotMatch(overlaySrc, /profileBadgeSiblingHostProbeEnabled/);
+    assert.doesNotMatch(overlaySrc, /profileBadgeCommonAncestorProbeEnabled/);
     // Survives rebuild / role / layout.
     assert.match(
       overlaySrc,
@@ -500,19 +534,28 @@ describe("LG-NAV-3 native nav contract", () => {
     );
     assert.match(animatorSrc, /onDidLayoutSubviews/);
     assert.match(overlaySrc, /onDidLayoutSubviews\s*=/);
-    // Single reusable view; orphans removed.
-    assert.match(overlaySrc, /profileUnreadBadgeTag/);
-    assert.match(overlaySrc, /subview !== profileUnreadBadgeView/);
-    assert.match(overlaySrc, /profileUnreadBadgeView\?\.removeFromSuperview\(\)/);
-    // System badgeValue chrome + 1B offset are not the visual mechanism.
+    assert.match(overlaySrc, /removeOrphanProfileUnreadBadges/);
+    assert.match(overlaySrc, /profileInactiveUnreadBadgeView\?\.removeFromSuperview\(\)/);
+    assert.match(overlaySrc, /profileSelectedUnreadBadgeView\?\.removeFromSuperview\(\)/);
     assert.doesNotMatch(
       overlaySrc,
       /badgeValue = Self\.formattedProfileBadgeValue\(profileBadgeCount\)/,
     );
     assert.doesNotMatch(overlaySrc, /UIOffset\(horizontal:\s*-10,\s*vertical:\s*-2\)/);
     assert.doesNotMatch(overlaySrc, /applyCompactBadgeAppearance|badgePositionAdjustment/);
-    // No new private badge-view class coupling beyond existing icon resolver.
     assert.doesNotMatch(overlaySrc, /_UIBadgeView/);
+  });
+
+  it("PROFILE-NAV-BADGE-2D: Profile animations remain wired; dual-tree badge hosts", () => {
+    assert.match(animatorSrc, /tabId == "profile"/);
+    assert.match(animatorSrc, /playProfile\(/);
+    assert.match(animatorSrc, /animateProfileArtist\(/);
+    assert.match(animatorSrc, /animateProfileCommunity\(/);
+    assert.match(animatorSrc, /DubHubNativeTabBarProfileArtistAnimator\.play/);
+    assert.match(animatorSrc, /DubHubNativeTabBarProfileCommunityAnimator\.play/);
+    assert.match(overlaySrc, /resolveBadgeTabButton/);
+    assert.match(overlaySrc, /resolveSelectedBadgeIconImageView/);
+    assert.doesNotMatch(animatorSrc, /profileBadgeJumpDiag/);
   });
 
   it("PROFILE-NAV-5: Artist headphone bass expansion; Community branched separately", () => {
@@ -1143,7 +1186,13 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.match(releasesVinylSrc, /"Platter"/);
     assert.match(releasesVinylSrc, /"LiquidLens"/);
     assert.doesNotMatch(releasesVinylSrc, /tabBar\.clipsToBounds\s*=/);
-    assert.doesNotMatch(overlaySrc, /clipsToBounds\s*=\s*false/);
+    // PROFILE-NAV-BADGE-2H: Profile hosts may clear clips locally; tab bar itself untouched.
+    assert.doesNotMatch(overlaySrc, /tabBar\.clipsToBounds\s*=\s*false/);
+    assert.doesNotMatch(overlaySrc, /tabBar\.layer\.masksToBounds\s*=\s*false/);
+    assert.match(overlaySrc, /applyProfileBadgeLocalLayering/);
+    assert.match(overlaySrc, /host\.clipsToBounds = false/);
+    assert.match(overlaySrc, /profileBadgeLocalZPosition/);
+    assert.match(overlaySrc, /syncProfileUnreadBadges/);
     assert.match(
       releasesVinylSrc,
       /prepareHostForOverflow\(\)[\s\S]*?applyCurrentFrame\(\)/,

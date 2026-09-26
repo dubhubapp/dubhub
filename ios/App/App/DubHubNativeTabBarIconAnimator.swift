@@ -4,7 +4,7 @@ import UIKit
 /// can wait for commit (touch end) while drag-across only updates system highlight.
 final class DubHubNativeTabBar: UITabBar {
     var onInteractionEnded: (() -> Void)?
-    /// PROFILE-NAV-BADGE-2A: re-anchor custom Profile unread badge after UIKit rebuilds tab buttons.
+    /// PROFILE-NAV-BADGE-2D: rebind Profile unread badge if UIKit rebuilds the glyph host.
     var onDidLayoutSubviews: (() -> Void)?
     private(set) var isInteractionActive = false
 
@@ -338,17 +338,41 @@ enum DubHubNativeTabBarIconAnimator {
     /// NATIVE-NAV-PREMIUM-2B-FIX: iOS 26 floating bar nests `_UITabButton` under
     /// `_UITabBarPlatterView` — never resolve from direct `tabBar.subviews` alone.
     static func resolveIconImageView(for item: UITabBarItem, in tabBar: UITabBar) -> UIImageView? {
+        resolveIconImageView(for: item, in: tabBar, requireWindow: true)
+    }
+
+    /// PROFILE-NAV-BADGE-2E: badge bind may run before tab buttons join a window / before selection.
+    static func resolveIconImageView(
+        for item: UITabBarItem,
+        in tabBar: UITabBar,
+        requireWindow: Bool
+    ) -> UIImageView? {
+        guard let button = resolveTabButton(for: item, in: tabBar, requireWindow: requireWindow) else {
+            return nil
+        }
+        return preferredIconImageView(in: button)
+    }
+
+    /// PROFILE-NAV-BADGE-2C/2E: stable tab-slot host (does not morph with glyph selection anim).
+    static func resolveTabButton(for item: UITabBarItem, in tabBar: UITabBar) -> UIView? {
+        resolveTabButton(for: item, in: tabBar, requireWindow: true)
+    }
+
+    static func resolveTabButton(
+        for item: UITabBarItem,
+        in tabBar: UITabBar,
+        requireWindow: Bool
+    ) -> UIView? {
         guard let items = tabBar.items,
               let index = items.firstIndex(of: item)
         else {
             return nil
         }
-        let buttons = dedupedTabButtons(in: tabBar)
+        let buttons = dedupedTabButtons(in: tabBar, requireWindow: requireWindow)
         guard index < buttons.count else {
             return nil
         }
-        let image = preferredIconImageView(in: buttons[index])
-        return image
+        return buttons[index]
     }
 
     /// Recursive descendants whose class name contains `TabButton` (e.g. `_UITabButton`),
@@ -392,6 +416,10 @@ enum DubHubNativeTabBarIconAnimator {
 
     /// Left→right unique tab slots after converting frames into `tabBar` space.
     static func dedupedTabButtons(in tabBar: UITabBar) -> [UIView] {
+        dedupedTabButtons(in: tabBar, requireWindow: true)
+    }
+
+    static func dedupedTabButtons(in tabBar: UITabBar, requireWindow: Bool) -> [UIView] {
         let raw = collectTabButtonCandidates(in: tabBar)
         struct Slot {
             var midX: CGFloat
@@ -399,7 +427,7 @@ enum DubHubNativeTabBarIconAnimator {
         }
         var slots: [Slot] = []
         for button in raw {
-            guard isVisuallyPresent(button) else { continue }
+            guard isPresentForResolve(button, requireWindow: requireWindow) else { continue }
             let frameInBar = button.convert(button.bounds, to: tabBar)
             guard frameInBar.width > 1, frameInBar.height > 1 else { continue }
             let midX = frameInBar.midX
@@ -449,8 +477,124 @@ enum DubHubNativeTabBarIconAnimator {
         return false
     }
 
+    /// PROFILE-NAV-BADGE-2H: SelectedContent / DestOut / liquid-lens trees that mask inactive overlays.
+    static func isUnderSelectedOrMaskedTabTree(_ view: UIView) -> Bool {
+        if isUnderLiquidCompositor(view) { return true }
+        var current: UIView? = view
+        while let node = current {
+            let name = NSStringFromClass(type(of: node))
+            if name.contains("SelectedContent")
+                || name.contains("SelectionView")
+                || name.contains("FloatingTab")
+            {
+                return true
+            }
+            current = node.superview
+        }
+        return false
+    }
+
+    /// PROFILE-NAV-BADGE-2H: inactive ContentView Profile `_UITabButton` host.
+    static func resolveBadgeTabButton(
+        for item: UITabBarItem,
+        in tabBar: UITabBar,
+        requireWindow: Bool
+    ) -> UIView? {
+        let group = collectTabButtonDuplicates(for: item, in: tabBar, requireWindow: requireWindow)
+        guard !group.isEmpty else { return nil }
+        if let preferred = group
+            .filter({ !isUnderSelectedOrMaskedTabTree($0) })
+            .max(by: { visibilityScore($0) < visibilityScore($1) })
+        {
+            return preferred
+        }
+        return group.max(by: { visibilityScore($0) < visibilityScore($1) })
+    }
+
+    /// PROFILE-NAV-BADGE-2H: SelectedContent Profile `_UITabButton`.
+    static func resolveSelectedTreeTabButton(
+        for item: UITabBarItem,
+        in tabBar: UITabBar,
+        requireWindow: Bool
+    ) -> UIView? {
+        let group = collectTabButtonDuplicates(for: item, in: tabBar, requireWindow: requireWindow)
+        if let preferred = group
+            .filter({ isUnderSelectedOrMaskedTabTree($0) })
+            .max(by: { visibilityScore($0) < visibilityScore($1) })
+        {
+            return preferred
+        }
+        return nil
+    }
+
+    /// PROFILE-NAV-BADGE-2H: glyph host inside the selected Profile tree (smooth-follow).
+    static func resolveSelectedBadgeIconImageView(
+        for item: UITabBarItem,
+        in tabBar: UITabBar,
+        requireWindow: Bool
+    ) -> UIImageView? {
+        if let button = resolveSelectedTreeTabButton(
+            for: item,
+            in: tabBar,
+            requireWindow: requireWindow
+        ),
+           let imageView = preferredIconImageView(in: button)
+        {
+            return imageView
+        }
+        // Fallback: default icon resolve only if it already sits under selected/masked tree.
+        if let imageView = resolveIconImageView(
+            for: item,
+            in: tabBar,
+            requireWindow: requireWindow
+        ),
+           isUnderSelectedOrMaskedTabTree(imageView)
+        {
+            return imageView
+        }
+        return nil
+    }
+
+    /// All TabButton duplicates for a tab index (dual Liquid Glass trees).
+    static func collectTabButtonDuplicates(
+        for item: UITabBarItem,
+        in tabBar: UITabBar,
+        requireWindow: Bool
+    ) -> [UIView] {
+        guard let items = tabBar.items,
+              let index = items.firstIndex(of: item)
+        else {
+            return []
+        }
+        let raw = collectTabButtonCandidates(in: tabBar)
+        var slots: [(midX: CGFloat, buttons: [UIView])] = []
+        for button in raw {
+            guard isPresentForResolve(button, requireWindow: requireWindow) else { continue }
+            let frameInBar = button.convert(button.bounds, to: tabBar)
+            guard frameInBar.width > 1, frameInBar.height > 1 else { continue }
+            let midX = frameInBar.midX
+            if let existingIndex = slots.firstIndex(where: {
+                abs($0.midX - midX) <= horizontalDedupeTolerance
+            }) {
+                slots[existingIndex].buttons.append(button)
+            } else {
+                slots.append((midX: midX, buttons: [button]))
+            }
+        }
+        let ordered = slots.sorted { $0.midX < $1.midX }
+        guard index < ordered.count else { return [] }
+        return ordered[index].buttons
+    }
+
     private static func isVisuallyPresent(_ view: UIView) -> Bool {
-        !view.isHidden && view.alpha > 0.01 && view.window != nil
+        isPresentForResolve(view, requireWindow: true)
+    }
+
+    /// PROFILE-NAV-BADGE-2E: allow pre-window / pre-selection resolve for badge bind only.
+    private static func isPresentForResolve(_ view: UIView, requireWindow: Bool) -> Bool {
+        guard !view.isHidden, view.alpha > 0.01 else { return false }
+        if requireWindow { return view.window != nil }
+        return true
     }
 
     private static func visibilityScore(_ view: UIView) -> CGFloat {
