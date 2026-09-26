@@ -7,6 +7,7 @@ export type PushReceivePermission = "prompt" | "denied" | "granted";
 
 export type PushPermissionRequestResult = PushReceivePermission;
 import { navigate } from "wouter/use-browser-location";
+import { armReviewOpportunity, reviewOpportunityFromPush } from "./app-store-review";
 import { apiRequest } from "./queryClient";
 import { resolveDeviceIanaTimezone } from "./release-timezone-options";
 import { shouldReportPushTimezone } from "./push-token-timezone";
@@ -243,6 +244,10 @@ function handlePushNotificationActionPerformed(event: { actionId: string; notifi
   const payload = mergePushNotificationPayload(raw);
 
   const route = payload ? resolvePushTapRoute(payload) : "/";
+  if (payload) {
+    const reviewArm = reviewOpportunityFromPush(payload);
+    if (reviewArm) armReviewOpportunity(reviewArm);
+  }
 
   if (import.meta.env.DEV) {
     console.log("[push][tap] pushNotificationActionPerformed", {

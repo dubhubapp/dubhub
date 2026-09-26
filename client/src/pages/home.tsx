@@ -16,6 +16,7 @@ import {
   getApiRequestErrorDetail,
   serializeQueryError,
 } from "@/lib/apiDiagnostics";
+import { dispatchHomeAppStoreReview } from "@/lib/app-store-review";
 import { useUser } from "@/lib/user-context";
 import {
   TOP_SCROLL_EPSILON,
@@ -3351,6 +3352,26 @@ export default function Home() {
       if (deepLinkWatchdogTimerRef.current) clearTimeout(deepLinkWatchdogTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const run = () => {
+      const q = search.startsWith("?") ? search.slice(1) : search;
+      const params = new URLSearchParams(q);
+      const deepLinkPostId = params.get("post") || params.get("track");
+      const postPresent = !!activePostId && uiPosts.some((post) => post.id === activePostId);
+      void dispatchHomeAppStoreReview({
+        userId: currentUser?.id,
+        activePostId,
+        postPresent,
+        deepLinkPostId,
+      });
+    };
+    run();
+    const root = document.documentElement;
+    const observer = new MutationObserver(run);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, [activePostId, currentUser?.id, search, uiPosts]);
 
   if (postsQuery.isError) {
     console.error("[DubHub][Home] postsQuery error", serializeQueryError(postsQuery.error));

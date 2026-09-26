@@ -110,6 +110,7 @@ import {
   parseAttachmentAllowance,
 } from "@/lib/release-attachment-limit";
 import { buildLinkTypeOptions } from "@/components/release-link-type-select";
+import { armReleaseCreatedFromExitPath } from "@/lib/app-store-review";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
 import { scheduleReleaseLinksUpgrade } from "@/lib/release-links-upgrade-flow";
 import { isVerifiedArtistToolsPaywallEnabled } from "@/lib/verified-artist-tools-paywall-flag";
@@ -640,6 +641,7 @@ export default function ReleaseCreate() {
     if (!args.skipSuccessToast) {
       toast({ title: "Release created" });
     }
+    armReleaseCreatedFromExitPath(args.exitPath);
     navigate(args.exitPath);
   }
 
@@ -1278,6 +1280,7 @@ export default function ReleaseCreate() {
           if (!open && allowanceSuccess) {
             const path = allowanceSuccess.exitPath;
             setAllowanceSuccess(null);
+            armReleaseCreatedFromExitPath(path);
             navigate(path);
           }
         }}
@@ -1324,6 +1327,7 @@ export default function ReleaseCreate() {
               onClick={() => {
                 const path = allowanceSuccess?.exitPath ?? "/releases";
                 setAllowanceSuccess(null);
+                armReleaseCreatedFromExitPath(path);
                 navigate(path);
               }}
             >

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { navigate } from "wouter/use-browser-location";
+import {
+  armReviewOpportunity,
+  reviewOpportunityFromNotification,
+  type ReviewArmDraft,
+} from "@/lib/app-store-review";
 import type { NotificationWithUser } from "@shared/schema";
 import {
   getEffectiveNotificationType,
@@ -90,6 +95,8 @@ export type InAppNotificationBannerPayload = {
   /** Person notifications (e.g. release_alert_enabled): circular avatar, no type badge. */
   avatarPresentation?: "person" | "media";
   notificationIds: string[];
+  /** Set only for a single qualifying notification. Armed on tap, not on display. */
+  reviewArm?: ReviewArmDraft | null;
 };
 
 type UseInAppNotificationToastsOptions = {
@@ -356,6 +363,12 @@ function buildPayloadFromNotifications(
     badgeKind: notificationTypeToBadgeKind(chosenType),
     avatarPresentation: preferActorAvatar ? "person" : "media",
     notificationIds: [chosen.id],
+    reviewArm: reviewOpportunityFromNotification({
+      notificationType: chosenType,
+      message: chosen.message,
+      postId: notificationRowFields(chosen).postId,
+      releaseId: notificationRowFields(chosen).releaseId,
+    }),
   };
 }
 
@@ -456,6 +469,7 @@ export function useInAppNotificationToasts({
     void markNotificationsRead(banner.notificationIds);
     clearDismissTimer();
     pendingQueueRef.current = [];
+    if (banner.reviewArm) armReviewOpportunity(banner.reviewArm);
     setBanner(null);
     if (route) {
       navigate(route);

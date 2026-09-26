@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { dispatchReleaseAppStoreReview } from "@/lib/app-store-review";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { ChevronLeft, Pencil, Check, X, MoreHorizontal, BookmarkMinus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -196,6 +197,28 @@ export default function ReleaseDetail() {
   const [releaseMenuOpen, setReleaseMenuOpen] = useState(false);
   const [galleryInitialPostId, setGalleryInitialPostId] = useState<string | null>(null);
   const [artworkLightboxOpen, setArtworkLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!id || !hasFullDetail) return;
+    if (removeSavedDialogOpen || releaseMenuOpen || artworkLightboxOpen) return;
+    let cancelled = false;
+    void dispatchReleaseAppStoreReview({
+      userId: currentUser?.id,
+      releaseId: id,
+      isCancelled: () => cancelled,
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    artworkLightboxOpen,
+    currentUser?.id,
+    hasFullDetail,
+    id,
+    releaseMenuOpen,
+    removeSavedDialogOpen,
+  ]);
+
   /**
    * C4B.2: bootstrap from current artwork URL during render (cache-first).
    * Do not lock initial atmosphere to a null-URL mount — that caused brand flash

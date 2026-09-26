@@ -14,6 +14,7 @@ import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabaseClient';
+import { armReviewOpportunity, reviewOpportunityFromNotification } from "@/lib/app-store-review";
 import { hardResetLocalAuthState } from "@/lib/auth-session-utils";
 import { withAvatarCacheBust } from "@/lib/avatar-utils";
 import { exportCroppedAvatar } from "@/lib/avatar-crop";
@@ -2207,6 +2208,15 @@ export default function UserProfile() {
     }
 
     const effectiveType = getEffectiveNotificationType(notificationRowFields(notification));
+    const reviewArm = reviewOpportunityFromNotification({
+      notificationType: effectiveType,
+      message: notification.message,
+      postId: notification.postId ?? (notification as { post_id?: string | null }).post_id,
+      releaseId:
+        (notification as { releaseId?: string | null }).releaseId ??
+        (notification as { release_id?: string | null }).release_id ??
+        notification.release?.id,
+    });
     if (effectiveType === "release_alert_enabled") {
       const username = notification.triggeredByUser?.username?.trim();
       if (username) {
@@ -2219,6 +2229,7 @@ export default function UserProfile() {
     // Navigate to release detail when release_id is present, else to post
     const releaseId = (notification as any).releaseId ?? (notification as any).release_id ?? notification.release?.id;
     if (releaseId) {
+      if (reviewArm) armReviewOpportunity(reviewArm);
       prefetchReleaseArtworkAtmosphere(notification.release?.artworkUrl);
       navigate(`/releases/${releaseId}`);
     } else if (notification.postId) {
@@ -2227,6 +2238,7 @@ export default function UserProfile() {
         if (!res.ok) {
           throw new Error(`POST_LOOKUP_${res.status}`);
         }
+        if (reviewArm) armReviewOpportunity(reviewArm);
         const openComments = shouldOpenCommentsForNotification(notification);
         const postRoute = openComments
           ? `/?post=${encodeURIComponent(notification.postId)}&openComments=1`

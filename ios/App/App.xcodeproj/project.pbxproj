@@ -29,6 +29,7 @@
 		DHLG1BF05 /* DubHubNativeTabBarProfileArtistAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR05 /* DubHubNativeTabBarProfileArtistAnimator.swift */; };
 		DHLG1BF06 /* DubHubNativeTabBarProfileCommunityAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHLG1FR06 /* DubHubNativeTabBarProfileCommunityAnimator.swift */; };
 		DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR01 /* HomeWidgetBridgePlugin.swift */; };
+		A7E1B201FED79650016851F1 /* DubHubAppStoreReviewPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1B202FED79650016851F1 /* DubHubAppStoreReviewPlugin.swift */; };
 		DHRCWBF02 /* HomeWidgetAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR02 /* HomeWidgetAppGroup.swift */; };
 		DHRCWBF03 /* HomeWidgetPayloadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR03 /* HomeWidgetPayloadModels.swift */; };
 		DHRCWBF04 /* HomeWidgetUtcCountdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = DHRCWFR04 /* HomeWidgetUtcCountdown.swift */; };
@@ -109,6 +110,7 @@
 		DHLG1FR05 /* DubHubNativeTabBarProfileArtistAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarProfileArtistAnimator.swift; sourceTree = "<group>"; };
 		DHLG1FR06 /* DubHubNativeTabBarProfileCommunityAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubNativeTabBarProfileCommunityAnimator.swift; sourceTree = "<group>"; };
 		DHRCWFR01 /* HomeWidgetBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetBridgePlugin.swift; sourceTree = "<group>"; };
+		A7E1B202FED79650016851F1 /* DubHubAppStoreReviewPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DubHubAppStoreReviewPlugin.swift; sourceTree = "<group>"; };
 		DHRCWFR02 /* HomeWidgetAppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetAppGroup.swift; sourceTree = "<group>"; };
 		DHRCWFR03 /* HomeWidgetPayloadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetPayloadModels.swift; sourceTree = "<group>"; };
 		DHRCWFR04 /* HomeWidgetUtcCountdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetUtcCountdown.swift; sourceTree = "<group>"; };
@@ -183,6 +185,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				B1C2D3E4F5061728394A5B6C /* SceneDelegate.swift */,
 				DHRCWFR01 /* HomeWidgetBridgePlugin.swift */,
+				A7E1B202FED79650016851F1 /* DubHubAppStoreReviewPlugin.swift */,
 				DHLG1FR01 /* DubHubNativeTabBarOverlay.swift */,
 				DHLG1FR02 /* DubHubNativeTabBarIconAnimator.swift */,
 				DHLG1FR03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift */,
@@ -382,6 +385,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* SceneDelegate.swift in Sources */,
 				DHRCWBF01 /* HomeWidgetBridgePlugin.swift in Sources */,
+				A7E1B201FED79650016851F1 /* DubHubAppStoreReviewPlugin.swift in Sources */,
 				DHLG1BF01 /* DubHubNativeTabBarOverlay.swift in Sources */,
 				DHLG1BF02 /* DubHubNativeTabBarIconAnimator.swift in Sources */,
 				DHLG1BF03 /* DubHubNativeTabBarLeaderboardEQOverlay.swift in Sources */,
