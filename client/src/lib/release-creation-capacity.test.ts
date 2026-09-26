@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  CREATE_RELEASE_UPGRADE_CTA,
   FREE_RELEASE_LIMIT_REACHED_CODE,
   RELEASE_LIMIT_REACHED_TOAST,
   isFreeReleaseLimitReachedError,
@@ -10,6 +9,12 @@ import {
   resolveReleaseCapacityCardCopy,
 } from "./release-creation-capacity";
 import { ApiRequestError } from "./apiDiagnostics";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const createSrc = readFileSync(join(here, "../pages/release-create.tsx"), "utf8");
 
 describe("parseReleaseCreationCapacity", () => {
   it("accepts a valid capacity payload", () => {
@@ -113,7 +118,7 @@ describe("resolveCreateReleaseBottomCapacity", () => {
     assert.equal(ux.showUpgrade, false);
   });
 
-  it("at limit blocks create and shows concise upgrade CTA", () => {
+  it("at limit shows count label; no separate Upgrade CTA (locked Create opens VAT)", () => {
     const ux = resolveCreateReleaseBottomCapacity({
       unlimited: false,
       used: 2,
@@ -123,9 +128,7 @@ describe("resolveCreateReleaseBottomCapacity", () => {
     });
     assert.equal(ux.createBlocked, true);
     assert.equal(ux.countLabel, "2 of 2 free releases used");
-    assert.equal(ux.showUpgrade, true);
-    assert.equal(ux.upgradeLabel, CREATE_RELEASE_UPGRADE_CTA);
-    assert.equal(ux.upgradeLabel, "Upgrade for unlimited releases");
+    assert.equal(ux.showUpgrade, false);
     assert.equal(ux.countLabel?.includes("You've reached"), false);
   });
 
@@ -146,6 +149,56 @@ describe("resolveCreateReleaseBottomCapacity", () => {
     const ux = resolveCreateReleaseBottomCapacity(null);
     assert.equal(ux.createBlocked, false);
     assert.equal(ux.showUpgrade, false);
+  });
+});
+
+describe("release-create locked Create CTA wiring", () => {
+  it("LIMIT REACHED: locked Create has Lock, opens release_limit VAT; no separate Upgrade button", () => {
+    assert.match(createSrc, /data-testid="release-create-submit-locked"/);
+    assert.match(createSrc, /data-testid="release-create-capacity-count"/);
+    assert.match(createSrc, /handleUpgrade\("release_limit"\)/);
+    assert.match(createSrc, /<Lock[\s\S]*Create Release/);
+    assert.doesNotMatch(createSrc, /release-create-upgrade-locked/);
+    assert.doesNotMatch(
+      createSrc,
+      /createBottomCapacity\.showUpgrade|createBottomCapacity\.upgradeLabel/,
+    );
+    // Locked CTA must stay interactive (not disabled).
+    const lockedBlock = createSrc.slice(
+      createSrc.indexOf('data-testid="release-create-submit-locked"') - 280,
+      createSrc.indexOf('data-testid="release-create-submit-locked"') + 200,
+    );
+    assert.doesNotMatch(lockedBlock, /\bdisabled\b/);
+    assert.match(lockedBlock, /onClick=\{\(\) => handleUpgrade\("release_limit"\)\}/);
+  });
+
+  it("NORMAL / PENDING: unlocked Create has no Lock; pending disables submit", () => {
+    assert.match(
+      createSrc,
+      /data-testid="release-create-submit"[\s\S]{0,120}disabled=\{saving \|\| capacityQuery\.isLoading\}|disabled=\{saving \|\| capacityQuery\.isLoading\}[\s\S]{0,120}data-testid="release-create-submit"/,
+    );
+    const unlockedSubmit = createSrc.slice(
+      createSrc.indexOf('data-testid="release-create-submit"') - 200,
+      createSrc.indexOf('data-testid="release-create-submit"') + 120,
+    );
+    assert.doesNotMatch(unlockedSubmit, /<Lock/);
+  });
+
+  it("VALIDATION: missing metadata does not open VAT; createLocked still gates submit", () => {
+    assert.match(createSrc, /validateReleaseRequiredMetadata/);
+    assert.match(createSrc, /if \(createLocked \|\| saving\) return/);
+    assert.doesNotMatch(
+      createSrc.slice(
+        createSrc.indexOf("validateReleaseRequiredMetadata"),
+        createSrc.indexOf("validateReleaseRequiredMetadata") + 400,
+      ),
+      /handleUpgrade|requestVerifiedArtistToolsUpgrade/,
+    );
+  });
+
+  it("HANDOFF: seeded attachPostId path coexists with locked Create VAT", () => {
+    assert.match(createSrc, /initialSelectedPostIdsFromSearch/);
+    assert.match(createSrc, /handleUpgrade\("release_limit"\)/);
   });
 });
 

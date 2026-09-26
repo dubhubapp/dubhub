@@ -41,7 +41,8 @@ export type CreateReleaseBottomCapacity = {
 
 /**
  * Bottom-of-page Create capacity presentation.
- * Does not change canCreate / entitlement — only where copy/CTA appear.
+ * Does not change canCreate / entitlement — only where copy appears.
+ * When blocked, the Create CTA itself opens VAT (no separate Upgrade button).
  * Top-of-page capacity card is no longer part of this contract.
  */
 export function resolveCreateReleaseBottomCapacity(
@@ -69,7 +70,7 @@ export function resolveCreateReleaseBottomCapacity(
     countLabel: capacity.unlimited
       ? null
       : `${capacity.limit} of ${capacity.limit} free releases used`,
-    showUpgrade: true,
+    showUpgrade: false,
     upgradeLabel: CREATE_RELEASE_UPGRADE_CTA,
   };
 }

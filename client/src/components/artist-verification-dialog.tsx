@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -24,11 +25,14 @@ import {
   ID_MARKING_PICKER_FIRST_PILL_CLASS,
   ID_MARKING_PICKER_META_PILL_CLASS,
   ID_MARKING_PICKER_OLDEST_PILL_CLASS,
+  ID_MARKING_PICKER_ROW_CLASS,
   ID_MARKING_PICKER_ROW_SELECTED_CLASS,
 } from "./id-marking-dialog-styles";
 import {
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
   APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
 } from "@/lib/app-material";
 import { useFeedModalKeyboardGuard } from "@/lib/use-feed-modal-keyboard-guard";
 import { useKeyboardAwareDialogContent } from "@/lib/use-keyboard-aware-dialog-content";
@@ -38,6 +42,10 @@ import {
   ATTACHMENT_LIMIT_TOAST,
   isFreeAttachmentLimitReachedError,
 } from "@/lib/release-attachment-limit";
+import {
+  RELEASE_CREATION_CAPACITY_QUERY_KEY,
+  parseReleaseCreationCapacity,
+} from "@/lib/release-creation-capacity";
 import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
 import { resolvePaidToolGateMode } from "@/lib/paid-tool-gate";
 import { requestVerifiedArtistToolsUpgrade } from "@/lib/verified-artist-tools-upgrade";
@@ -47,6 +55,15 @@ import {
   readAnonymousIdentifyErrorCode,
   resolveAnonymousIdentifyErrorCopy,
 } from "@/lib/artist-id-comments-actions";
+import {
+  ATTACH_TO_RELEASE_HANDOFF_BODY,
+  ATTACH_TO_RELEASE_HANDOFF_TITLE,
+  CREATE_RELEASE_HANDOFF_BODY,
+  CREATE_RELEASE_HANDOFF_CONFIRM,
+  CREATE_RELEASE_HANDOFF_TITLE,
+  buildCreateReleaseHandoffHref,
+  resolvePostConfirmReleaseHandoff,
+} from "@/lib/artist-id-create-release-handoff";
 
 interface ArtistVerificationDialogProps {
   postId: string;
@@ -64,8 +81,9 @@ export function ArtistVerificationDialog({
 }: ArtistVerificationDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const { verifiedArtist, currentUser } = useUser();
-  const [step, setStep] = useState<"verify" | "attach">("verify");
+  const [step, setStep] = useState<"verify" | "attach" | "create">("verify");
   const [selectedCommentId, setSelectedCommentId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [collaborators, setCollaborators] = useState("");
@@ -95,6 +113,24 @@ export function ArtistVerificationDialog({
     selection: subscription.selection,
   });
   const anonymousIdentifyEntitled = anonymousIdentifyGateMode === "available";
+
+  /** Same capacity source as ReleaseCreate `createLocked` — do not recalculate limits here. */
+  const creationCapacityQuery = useQuery({
+    queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY],
+    enabled: isOpen && !!verifiedArtist,
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/releases/creation-capacity");
+      const json = await res.json();
+      const parsed = parseReleaseCreationCapacity(json);
+      if (!parsed) throw new Error("Invalid release capacity response");
+      return parsed;
+    },
+  });
+  const createReleaseLocked =
+    creationCapacityQuery.data != null &&
+    creationCapacityQuery.data.canCreate === false;
 
   // Rail ID: empty selection. Comments Confirm ID: preselect. Never auto-submit.
   useEffect(() => {
@@ -170,12 +206,27 @@ export function ArtistVerificationDialog({
           `/api/artists/me/upcoming-releases${postId ? `?post_id=${encodeURIComponent(postId)}` : ""}`
         );
         const releases = await res.json();
-        if (Array.isArray(releases) && releases.length > 0) {
-          setAttachOptions(releases);
+        const handoff = resolvePostConfirmReleaseHandoff(releases);
+        if (handoff?.kind === "attach") {
+          setAttachOptions(
+            handoff.releases as {
+              id: string;
+              title: string;
+              release_date: string | null;
+              artwork_url: string | null;
+              is_coming_soon?: boolean;
+            }[],
+          );
           setStep("attach");
-        } else {
-          handleClose();
+          return;
         }
+        if (handoff?.kind === "create") {
+          // SUCCESS + [] only — never treat fetch failure as zero releases.
+          setStep("create");
+          return;
+        }
+        // Non-array / unexpected payload: safe close (do not claim "no releases").
+        handleClose();
       } catch (error) {
         console.error("[ArtistVerificationDialog] Failed to load upcoming releases", error);
         handleClose();
@@ -392,6 +443,24 @@ export function ArtistVerificationDialog({
 
   const handleConfirm = () => confirmMutation.mutate();
   const handleDeny = () => denyMutation.mutate();
+  const openCreateReleaseHandoff = () => {
+    if (createReleaseLocked) {
+      setVatPaywallCovering(true);
+      requestVerifiedArtistToolsUpgrade(toast, {
+        source: "release_limit",
+        onDismissed: () => setVatPaywallCovering(false),
+      });
+      return;
+    }
+    const href = buildCreateReleaseHandoffHref({
+      postId,
+      openComments: !!(
+        typeof initialCommentId === "string" && initialCommentId.trim()
+      ),
+    });
+    handleClose();
+    navigate(href);
+  };
   const handleIdentifyAnonymously = () => {
     if (!selectedCommentId) return;
     if (anonymousIdentifyEntitled) {
@@ -760,37 +829,48 @@ export function ArtistVerificationDialog({
               )}
             </div>
           </>
-        ) : (
+        ) : step === "attach" ? (
           <>
             <DialogHeader className="space-y-1 text-left">
-              <DialogTitle className="text-lg font-semibold tracking-tight text-white">Attach this post to an existing release?</DialogTitle>
-              <DialogDescription className="text-sm leading-relaxed text-white/65">
-                You have upcoming releases. Attach this post so listeners see it on your Releases tab.
+              <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+                {ATTACH_TO_RELEASE_HANDOFF_TITLE}
+              </DialogTitle>
+              <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+                {ATTACH_TO_RELEASE_HANDOFF_BODY}
               </DialogDescription>
             </DialogHeader>
             <div className="mt-4 space-y-4">
-              <RadioGroup value={selectedReleaseId} onValueChange={setSelectedReleaseId} className="max-w-full overflow-x-hidden">
+              <RadioGroup
+                value={selectedReleaseId}
+                onValueChange={setSelectedReleaseId}
+                className="max-w-full overflow-x-hidden space-y-3"
+              >
                 {attachOptions.map((rel) => (
                   <div
                     key={rel.id}
                     className={cn(
-                      "flex min-w-0 max-w-full items-start gap-3 rounded-lg border border-white/12 bg-white/[0.03] p-3 transition-colors hover:bg-white/[0.05]",
+                      ID_MARKING_PICKER_ROW_CLASS,
+                      "max-w-full",
                       selectedReleaseId === rel.id && ID_MARKING_PICKER_ROW_SELECTED_CLASS,
                     )}
                   >
                     <RadioGroupItem value={rel.id} id={rel.id} className="mt-0.5 shrink-0" />
                     <Label htmlFor={rel.id} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-black/25">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-black/25">
                         {rel.artwork_url ? (
                           <img src={rel.artwork_url} alt="" className="h-full w-full object-cover" />
                         ) : (
-                          <span className="text-xs text-white/60">No artwork</span>
+                          <span className="px-1 text-center text-[10px] leading-tight text-muted-foreground">
+                            No artwork
+                          </span>
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="break-words text-sm font-medium leading-snug text-white line-clamp-2">{rel.title}</p>
+                        <p className="break-words text-sm font-medium leading-snug text-foreground line-clamp-2">
+                          {rel.title}
+                        </p>
                         {(rel.release_date || rel.is_coming_soon) && (
-                          <p className="mt-0.5 text-xs text-white/65">
+                          <p className="mt-0.5 text-xs text-muted-foreground">
                             {rel.release_date
                               ? formatDate(rel.release_date as any)
                               : "Coming soon..."}
@@ -801,24 +881,70 @@ export function ArtistVerificationDialog({
                   </div>
                 ))}
               </RadioGroup>
-              <div className="flex flex-col-reverse gap-2 border-t border-white/15 pt-4 sm:flex-row sm:justify-end">
+              <div
+                className="space-y-3 border-t border-white/15 pt-4"
+                data-testid="artist-attach-release-actions"
+              >
                 <Button
-                  variant="outline"
-                  onClick={handleClose}
-                  className={cn("w-full sm:w-auto", APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS)}
-                  data-testid="button-attach-skip"
-                >
-                  Skip
-                </Button>
-                <Button
-                  className={cn("w-full sm:w-auto", APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS)}
+                  className={cn(APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS, "w-full")}
                   onClick={() => attachMutation.mutate()}
                   disabled={!selectedReleaseId || attachMutation.isPending}
                   data-testid="button-attach-confirm"
                 >
                   {attachMutation.isPending ? "Attaching..." : "Attach to release"}
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={openCreateReleaseHandoff}
+                  className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "w-full")}
+                  data-testid="button-attach-create-new-release"
+                  aria-label={
+                    createReleaseLocked
+                      ? "Create new release — Verified Artist Tools"
+                      : "Create new release"
+                  }
+                >
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    {createReleaseLocked ? (
+                      <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    ) : null}
+                    {CREATE_RELEASE_HANDOFF_CONFIRM}
+                  </span>
+                </Button>
               </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <DialogHeader className="space-y-1 text-left">
+              <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+                {CREATE_RELEASE_HANDOFF_TITLE}
+              </DialogTitle>
+              <DialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
+                {CREATE_RELEASE_HANDOFF_BODY}
+              </DialogDescription>
+            </DialogHeader>
+            <div
+              className="mt-4 space-y-3 border-t border-white/15 pt-4"
+              data-testid="artist-create-release-handoff-actions"
+            >
+              <Button
+                className={cn(APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS, "w-full")}
+                onClick={openCreateReleaseHandoff}
+                data-testid="button-create-release-handoff-confirm"
+                aria-label={
+                  createReleaseLocked
+                    ? "Create new release — Verified Artist Tools"
+                    : "Create new release"
+                }
+              >
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  {createReleaseLocked ? (
+                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  ) : null}
+                  {CREATE_RELEASE_HANDOFF_CONFIRM}
+                </span>
+              </Button>
             </div>
           </>
         )}

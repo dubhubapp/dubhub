@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { ChevronLeft, Link as LinkIcon } from "lucide-react";
+import { useLocation, useSearch } from "wouter";
+import { ChevronLeft, Link as LinkIcon, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -94,6 +94,15 @@ import {
 } from "@/lib/release-creation-capacity";
 import { resolveFreeQuotaNoticeProminence } from "@/lib/release-form-limit-prominence";
 import {
+  FREE_RELEASE_ALLOWANCE_SUCCESS_DONE,
+  FREE_RELEASE_ALLOWANCE_SUCCESS_TITLE,
+  FREE_RELEASE_ALLOWANCE_SUCCESS_VIEW_TOOLS,
+  resolveFreeReleaseAllowanceSuccessCopy,
+  shouldShowFreeReleaseAllowanceSuccess,
+  type FreeReleaseAllowanceSuccessUsed,
+} from "@/lib/release-create-allowance-success";
+import { FreeReleaseAllowanceUsedCount } from "@/components/free-release-allowance-used-count";
+import {
   ATTACHMENT_ALLOWANCE_QUERY_KEY,
   ATTACHMENT_LIMIT_TOAST,
   isFreeAttachmentLimitReachedError,
@@ -124,13 +133,25 @@ import {
   defaultPurposeForNewDraft,
   supportedPurposesForPlatform,
 } from "@shared/release-link-platforms";
+import {
+  initialSelectedPostIdsFromSearch,
+  resolveCreateReleaseReturnTo,
+  resolveCreateReleaseSuccessPath,
+} from "@/lib/artist-id-create-release-handoff";
 
 export default function ReleaseCreate() {
   const [, navigate] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
   const releaseCreateHapticFiredRef = useRef(false);
+  /** Capture once so save/re-renders cannot lose handoff origin. */
+  const [returnTo] = useState(() =>
+    resolveCreateReleaseReturnTo(
+      typeof window !== "undefined" ? window.location.search : search,
+    ),
+  );
   const [title, setTitle] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
   const [comingSoon, setComingSoon] = useState(false);
@@ -144,7 +165,11 @@ export default function ReleaseCreate() {
   const [linkUrl, setLinkUrl] = useState("");
   const [linkPurpose, setLinkPurpose] = useState<CanonicalLinkPurpose>("listen");
   const [purposeTouched, setPurposeTouched] = useState(false);
-  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+  const [selectedPostIds, setSelectedPostIds] = useState<string[]>(() =>
+    initialSelectedPostIdsFromSearch(
+      typeof window !== "undefined" ? window.location.search : search,
+    ),
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [draftLinks, setDraftLinks] = useState<
     { platform: string; url: string; linkType?: string | null }[]
@@ -159,11 +184,15 @@ export default function ReleaseCreate() {
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [zeroPostConfirmOpen, setZeroPostConfirmOpen] = useState(false);
   const [revealAttachConfirmOpen, setRevealAttachConfirmOpen] = useState(false);
+  const [allowanceSuccess, setAllowanceSuccess] = useState<{
+    used: FreeReleaseAllowanceSuccessUsed;
+    exitPath: string;
+  } | null>(null);
   const revealAttachApprovedRef = useRef(false);
   const createSubmitStartedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const navigateToReleases = () => navigate("/releases");
+  const navigateToExit = () => navigate(returnTo);
   const isDirty = hasUnsavedReleaseDraft({
     title,
     artworkPath,
@@ -179,12 +208,12 @@ export default function ReleaseCreate() {
       setDiscardDialogOpen(true);
       return;
     }
-    navigateToReleases();
+    navigateToExit();
   };
   const handleDiscardConfirm = () => {
     setDiscardDialogOpen(false);
     if (applyCreateDiscardChoice("discard") === "navigate") {
-      navigateToReleases();
+      navigateToExit();
     }
   };
   useIosKeyboardResizeNone(true);
@@ -570,6 +599,50 @@ export default function ReleaseCreate() {
     }
   }
 
+  /**
+   * After create (+ optional attach/links) succeeds: authoritative capacity refetch,
+   * then either show free-allowance AlertDialog or navigate to exitPath.
+   */
+  async function finishCreateSuccess(args: {
+    releaseId: string;
+    exitPath: string;
+    /** When set, skip the generic "Release created" toast (dialog owns that title). */
+    skipSuccessToast?: boolean;
+  }) {
+    await queryClient.removeQueries({ queryKey: ["/api/releases/feed"] });
+    await queryClient.invalidateQueries({ queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY] });
+    if (process.env.NODE_ENV === "development") {
+      console.log("[ReleaseCreate] Success: created release", args.releaseId, "removed feed cache");
+    }
+
+    if (!releaseCreateHapticFiredRef.current) {
+      playSuccessNotification();
+      releaseCreateHapticFiredRef.current = true;
+    }
+    scheduleHomeWidgetRefreshAfterAuth();
+
+    try {
+      const capacityRes = await apiRequest("GET", "/api/releases/creation-capacity");
+      const capacityJson = await capacityRes.json();
+      const capacity = parseReleaseCreationCapacity(capacityJson);
+      void queryClient.setQueryData([...RELEASE_CREATION_CAPACITY_QUERY_KEY], capacity);
+      if (shouldShowFreeReleaseAllowanceSuccess(capacity)) {
+        setAllowanceSuccess({
+          used: capacity.used,
+          exitPath: args.exitPath,
+        });
+        return;
+      }
+    } catch (capacityError) {
+      console.error("[ReleaseCreate] Capacity refetch after create failed", capacityError);
+    }
+
+    if (!args.skipSuccessToast) {
+      toast({ title: "Release created" });
+    }
+    navigate(args.exitPath);
+  }
+
   const submitCreatedRelease = async () => {
     if (createLocked || createSubmitStartedRef.current) return;
     const anonymousSelected = selectAnonymousEligiblePosts(
@@ -651,8 +724,11 @@ export default function ReleaseCreate() {
             description: "You can retry inviting from the release edit page.",
             variant: "destructive",
           });
-          void queryClient.invalidateQueries({ queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY] });
-          navigate(`/releases/${releaseId}/edit`);
+          await finishCreateSuccess({
+            releaseId,
+            exitPath: `/releases/${releaseId}/edit`,
+            skipSuccessToast: true,
+          });
           return;
         }
         if (process.env.NODE_ENV === "development") {
@@ -678,19 +754,10 @@ export default function ReleaseCreate() {
         console.log("[ReleaseCreate] Attached posts", { releaseId, attached: selectedPostIds });
       }
 
-      await queryClient.removeQueries({ queryKey: ["/api/releases/feed"] });
-      await queryClient.invalidateQueries({ queryKey: [...RELEASE_CREATION_CAPACITY_QUERY_KEY] });
-      if (process.env.NODE_ENV === "development") {
-        console.log("[ReleaseCreate] Success: created release", releaseId, "removed feed cache");
-      }
-
-      if (!releaseCreateHapticFiredRef.current) {
-        playSuccessNotification();
-        releaseCreateHapticFiredRef.current = true;
-      }
-      toast({ title: "Release created" });
-      scheduleHomeWidgetRefreshAfterAuth();
-      navigate("/releases");
+      await finishCreateSuccess({
+        releaseId,
+        exitPath: resolveCreateReleaseSuccessPath(releaseId),
+      });
     } catch (error) {
       console.error("[ReleaseCreate] Create failed", error);
       const timingToast = releaseTimingApiErrorToast(error);
@@ -809,6 +876,11 @@ export default function ReleaseCreate() {
     }
     await submitCreatedRelease();
   };
+
+  const allowanceSuccessCopy = allowanceSuccess
+    ? resolveFreeReleaseAllowanceSuccessCopy(allowanceSuccess.used)
+    : null;
+  const allowanceReducedMotion = prefersReducedMotion;
 
   if (userType !== "artist" || !currentUser) {
     navigate("/releases");
@@ -1033,23 +1105,16 @@ export default function ReleaseCreate() {
               <>
                 <Button
                   type="button"
-                  disabled
                   className={APP_MATERIAL_FORM_PRIMARY_CLASS}
+                  onClick={() => handleUpgrade("release_limit")}
                   data-testid="release-create-submit-locked"
+                  aria-label="Create Release — Verified Artist Tools"
                 >
-                  Create Release
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Create Release
+                  </span>
                 </Button>
-                {createBottomCapacity.showUpgrade ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => handleUpgrade("release_limit")}
-                    data-testid="release-create-upgrade-locked"
-                  >
-                    {createBottomCapacity.upgradeLabel}
-                  </Button>
-                ) : null}
                 {!isVerifiedArtistToolsPaywallEnabled() ? (
                   <p className="text-[10px] text-center text-muted-foreground">
                     {UPGRADE_PLACEHOLDER_HINT}
@@ -1203,6 +1268,82 @@ export default function ReleaseCreate() {
             >
               Discard
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={allowanceSuccess != null}
+        onOpenChange={(open) => {
+          if (!open && allowanceSuccess) {
+            const path = allowanceSuccess.exitPath;
+            setAllowanceSuccess(null);
+            navigate(path);
+          }
+        }}
+      >
+        <AlertDialogContent
+          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
+          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+          data-testid="release-allowance-success-dialog"
+        >
+          <AlertDialogHeader className="space-y-4 text-center sm:text-center">
+            <AlertDialogTitle className={cn(APP_MATERIAL_OVERLAY_TITLE_CLASS, "text-center")}>
+              {FREE_RELEASE_ALLOWANCE_SUCCESS_TITLE}
+            </AlertDialogTitle>
+            {allowanceSuccessCopy ? (
+              <>
+                <div
+                  className="flex flex-col items-center gap-1"
+                  data-testid="release-allowance-success-progress"
+                  role="status"
+                  aria-label={`${allowanceSuccessCopy.usedCount} ${allowanceSuccessCopy.progressSuffix}`}
+                >
+                  <FreeReleaseAllowanceUsedCount
+                    used={allowanceSuccessCopy.used}
+                    reducedMotion={allowanceReducedMotion}
+                    className="text-4xl font-semibold tabular-nums tracking-tight text-foreground"
+                  />
+                  <p className={cn(APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS, "text-center")}>
+                    {allowanceSuccessCopy.progressSuffix}
+                  </p>
+                </div>
+                <AlertDialogDescription
+                  className={cn(APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS, "text-center")}
+                  data-testid="release-allowance-success-supporting"
+                >
+                  {allowanceSuccessCopy.supporting}
+                </AlertDialogDescription>
+              </>
+            ) : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+            <AlertDialogAction
+              className={cn(APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS, "w-full")}
+              data-testid="release-allowance-success-done"
+              onClick={() => {
+                const path = allowanceSuccess?.exitPath ?? "/releases";
+                setAllowanceSuccess(null);
+                navigate(path);
+              }}
+            >
+              {FREE_RELEASE_ALLOWANCE_SUCCESS_DONE}
+            </AlertDialogAction>
+            {allowanceSuccessCopy?.showViewArtistTools ? (
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS, "w-full")}
+                data-testid="release-allowance-success-view-tools"
+                onClick={() => {
+                  requestVerifiedArtistToolsUpgrade(toast, {
+                    source: "release_limit",
+                  });
+                }}
+              >
+                {FREE_RELEASE_ALLOWANCE_SUCCESS_VIEW_TOOLS}
+              </Button>
+            ) : null}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

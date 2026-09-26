@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  CREATE_RELEASE_UPGRADE_CTA,
   resolveCreateReleaseBottomCapacity,
 } from "./release-creation-capacity";
 import {
@@ -71,7 +70,7 @@ describe("C2.3 create capacity bottom UX", () => {
     assert.equal(ux.countLabel, null);
   });
 
-  it("at limit keeps blocked create + upgrade CTA", () => {
+  it("at limit keeps blocked create; no separate bottom Upgrade CTA", () => {
     const ux = resolveCreateReleaseBottomCapacity({
       unlimited: false,
       used: 2,
@@ -80,8 +79,8 @@ describe("C2.3 create capacity bottom UX", () => {
       canCreate: false,
     });
     assert.equal(ux.createBlocked, true);
-    assert.equal(ux.showUpgrade, true);
-    assert.equal(ux.upgradeLabel, CREATE_RELEASE_UPGRADE_CTA);
+    assert.equal(ux.showUpgrade, false);
+    assert.equal(ux.countLabel, "2 of 2 free releases used");
   });
 });
 
