@@ -376,4 +376,21 @@ describe("runMaybeNotifyReleasePublic entitlement gate", () => {
     assert.equal(second, "skipped_already_processed");
     assert.equal(state.attachedFanoutCalls.length, 1);
   });
+
+  it("artist_release_alert includes owner emoji when delivery is allowed", async () => {
+    const state = baseState({
+      canDeliverResult: true,
+      alertSubscribers: [LISTENER_A],
+      attachedRecipients: [],
+    });
+    const deps = createDeps(state);
+    deps.getStoredNotificationEmoji = async () => "⚙️";
+    const outcome = await runMaybeNotifyReleasePublic(RELEASE_ID, deps);
+    assert.equal(outcome, "delivered");
+    assert.equal(state.notifications[0]?.message, "@dj_test ⚙️ announced a new release: Night Bus");
+    assert.equal(
+      (state.alertPushes[0] as { notificationEmojiPaidAccess?: boolean }).notificationEmojiPaidAccess,
+      true,
+    );
+  });
 });

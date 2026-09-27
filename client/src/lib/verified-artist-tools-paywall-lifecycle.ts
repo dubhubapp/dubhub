@@ -239,9 +239,10 @@ export function shouldShowPaywallRestoreButton(phase: PaywallUiPhase): boolean {
 export const PAYWALL_SUCCESS_CONFIRMATION_LINES = [
   "Unlimited releases and active future releases",
   "Unlimited attached posts and release links",
-  "Identify tracks anonymously",
+  "Identify your tracks anonymously",
   "Pre-save, Pre-add and Pre-order links",
   "See your Release Alerts audience and send alerts to listeners waiting",
+  "Custom notification emoji",
 ] as const;
 
 /**

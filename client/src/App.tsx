@@ -43,6 +43,7 @@ import SettingsPage from "@/pages/settings";
 import SettingsNotificationsPage from "@/pages/settings-notifications";
 import SettingsCountryPage from "@/pages/settings-country";
 import SettingsManageAccountPage from "@/pages/settings-manage-account";
+import SettingsArtistPage from "@/pages/settings-artist";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
@@ -1012,6 +1013,7 @@ function App() {
             <Route path="/settings/notifications" component={SettingsNotificationsPage} />
             <Route path="/settings/country" component={SettingsCountryPage} />
             <Route path="/settings/manage-account" component={SettingsManageAccountWithDeletion} />
+            <Route path="/settings/artist" component={SettingsArtistPage} />
             <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
             <Route
               path="/settings/developer-diagnostics"

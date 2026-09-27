@@ -17,6 +17,11 @@ export const profiles = pgTable("profiles", {
   verified_artist: boolean("verified_artist").notNull().default(false),
   /** Optional ISO 3166-1 alpha-2 (uppercase). User-selected; never emoji. */
   country_code: text("country_code"),
+  /**
+   * Optional single emoji for eligible artist notifications.
+   * Server-written. Omitted from public_profiles. Null when unset.
+   */
+  notification_emoji: text("notification_emoji"),
   /** One-time existing-user Country prompt eligibility (allowlist migration). */
   country_prompt_pending: boolean("country_prompt_pending").notNull().default(false),
   created_at: timestamp("created_at").notNull().defaultNow(),

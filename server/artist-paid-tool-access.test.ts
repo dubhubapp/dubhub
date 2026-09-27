@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { resolveActiveNotificationEmoji } from "@shared/notification-emoji";
 import type { ArtistSubscriptionSnapshot } from "./subscription-status-domain";
 import {
   canArtistUsePaidTools,
@@ -179,6 +180,92 @@ describe("canArtistUsePaidTools", () => {
       now: () => now,
     });
     assert.equal(result, false);
+  });
+
+  it("notification emoji follows paid access and leaves the stored value untouched", () => {
+    const stored = "⚙️";
+    const render = (snapshot: ArtistSubscriptionSnapshot | null, at = now) =>
+      resolveActiveNotificationEmoji({
+        stored,
+        paidAccess: isPaidToolAccessEnabledForSnapshot(snapshot, at),
+      });
+
+    assert.equal(render(snapshotFixture()), "⚙️");
+    assert.equal(
+      render(snapshotFixture({ willRenew: false, unsubscribeDetected: true })),
+      "⚙️",
+    );
+    assert.equal(
+      render(
+        snapshotFixture({
+          isInGracePeriod: true,
+          hasBillingIssue: true,
+          isEntitlementActive: false,
+        }),
+      ),
+      "⚙️",
+    );
+    assert.equal(
+      render(
+        snapshotFixture({
+          productIdentifier: "rc_promo_verified_artist_tools_lifetime",
+          expiresAt: null,
+          store: "promotional",
+        }),
+      ),
+      "⚙️",
+    );
+    assert.equal(
+      render(
+        snapshotFixture({
+          isEntitlementActive: false,
+          expiresAt: new Date("2026-07-01T12:00:00.000Z"),
+          productIdentifier: null,
+          store: null,
+          storeSubscriptionIdentifier: null,
+          originalPurchasedAt: null,
+          latestPurchasedAt: null,
+          overrideType: "force_active",
+          overrideStartsAt: new Date("2026-07-01T00:00:00.000Z"),
+          overrideEndsAt: new Date("2026-08-01T00:00:00.000Z"),
+        }),
+      ),
+      "⚙️",
+    );
+    assert.equal(render(snapshotFixture(), new Date("2026-07-22T12:00:00.000Z")), null);
+    assert.equal(
+      render(
+        snapshotFixture({
+          isEntitlementActive: false,
+          expiresAt: new Date("2026-07-10T12:00:00.000Z"),
+        }),
+      ),
+      null,
+    );
+    assert.equal(render(snapshotFixture({ isRefunded: true })), null);
+    assert.equal(render(snapshotFixture({ isRevoked: true })), null);
+    assert.equal(
+      render(
+        snapshotFixture({
+          hasBillingIssue: true,
+          isInGracePeriod: false,
+          isEntitlementActive: false,
+        }),
+      ),
+      null,
+    );
+    assert.equal(
+      render(
+        snapshotFixture({
+          isEntitlementActive: true,
+          overrideType: "force_inactive",
+          overrideStartsAt: new Date("2026-07-01T00:00:00.000Z"),
+          overrideEndsAt: new Date("2026-08-01T00:00:00.000Z"),
+        }),
+      ),
+      null,
+    );
+    assert.equal(stored, "⚙️");
   });
 
   it("repository failure fails closed", async () => {

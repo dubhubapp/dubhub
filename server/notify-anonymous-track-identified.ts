@@ -196,6 +196,8 @@ export async function runNotifyAnonymousTrackRevealed(
     revealedArtistId: string;
     revealedArtistUsername: string | null;
     trackTitle: string | null;
+    notificationEmoji?: string | null;
+    notificationEmojiPaidAccess?: boolean;
   },
   deps: NotifyAnonymousRevealedDeps,
 ): Promise<NotifyAnonymousRevealedResult> {
@@ -222,11 +224,16 @@ export async function runNotifyAnonymousTrackRevealed(
   let notificationCount = 0;
   let uploaderNotified = false;
   const likerRecipientIds: string[] = [];
+  const emojiInput = {
+    notificationEmoji: args.notificationEmoji,
+    paidAccess: args.notificationEmojiPaidAccess === true,
+  };
 
   if (ownerId && ownerId !== artistId) {
     const message = formatAnonymousTrackRevealedUploaderMessage(
       args.revealedArtistUsername,
       args.trackTitle,
+      emojiInput,
     );
     const notif = await deps.createNotification({
       recipientId: ownerId,
@@ -253,6 +260,7 @@ export async function runNotifyAnonymousTrackRevealed(
     const message = formatAnonymousTrackRevealedLikerMessage(
       args.revealedArtistUsername,
       args.trackTitle,
+      emojiInput,
     );
     const notif = await deps.createNotification({
       recipientId: likerId,

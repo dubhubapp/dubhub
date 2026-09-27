@@ -1,12 +1,5 @@
-import {
-  COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
-  TRACK_ID_CONFIRMED_TITLE,
-  TRACK_ID_REVEALED_TITLE,
-  TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
-  formatArtistIdentifiedPostMessage,
-  formatReleaseAnnounceMessage,
-} from "@shared/notification-messages";
 import { evaluatePushPreferenceGate } from "@shared/push-notification-preferences";
+import { buildTitleAndBody } from "./pushCopy";
 import { sendApnsNotification } from "./apns";
 import { storage } from "../storage";
 
@@ -71,7 +64,12 @@ interface UserMentionCommentPayload extends BaseEventPayload {
   actorUsername: string;
 }
 
-interface ArtistIdentifiedPayload extends BaseEventPayload {
+interface ArtistNotificationEmojiFields {
+  notificationEmoji?: string | null;
+  notificationEmojiPaidAccess?: boolean;
+}
+
+interface ArtistIdentifiedPayload extends BaseEventPayload, ArtistNotificationEmojiFields {
   type: "artist_identified_post";
   postId: string;
   artistId: string;
@@ -117,7 +115,7 @@ interface ReleaseAttachedPayload extends BaseEventPayload {
   artistId: string;
 }
 
-interface ArtistReleaseAlertPayload extends BaseEventPayload {
+interface ArtistReleaseAlertPayload extends BaseEventPayload, ArtistNotificationEmojiFields {
   type: "artist_release_alert";
   notificationId: string;
   releaseId: string;
@@ -127,7 +125,7 @@ interface ArtistReleaseAlertPayload extends BaseEventPayload {
   releaseTitle?: string;
 }
 
-interface ReleaseDayOutPayload extends BaseEventPayload {
+interface ReleaseDayOutPayload extends BaseEventPayload, ArtistNotificationEmojiFields {
   type: "release_day_out_today";
   releaseId: string;
   postId: string | null;
@@ -140,7 +138,7 @@ interface ReleaseDayOutPayload extends BaseEventPayload {
   collaboratorUsernames?: string[];
 }
 
-interface CollabWorkflowPayload extends BaseEventPayload {
+interface CollabWorkflowPayload extends BaseEventPayload, ArtistNotificationEmojiFields {
   type: "collab_invite" | "collab_accept" | "collab_reject";
   notificationId: string;
   releaseId: string;
@@ -149,7 +147,7 @@ interface CollabWorkflowPayload extends BaseEventPayload {
   releaseTitle: string;
 }
 
-interface ReleaseAnnouncePayload extends BaseEventPayload {
+interface ReleaseAnnouncePayload extends BaseEventPayload, ArtistNotificationEmojiFields {
   type: "release_announce";
   notificationId: string;
   releaseId: string;
@@ -173,7 +171,7 @@ interface ModeratorReportOpenedPayload extends BaseEventPayload {
   reportId?: string;
 }
 
-type EventPayload =
+export type EventPayload =
   | CommentOnPostPayload
   | ReplyToCommentPayload
   | ArtistTagCommentPayload
@@ -190,144 +188,6 @@ type EventPayload =
   | CollabWorkflowPayload
   | ModeratorCommunityVerificationPayload
   | ModeratorReportOpenedPayload;
-
-function buildTitleAndBody(payload: EventPayload): { title: string; body: string } {
-  switch (payload.type) {
-    case "comment_on_post":
-      return {
-        title: "New comment 💬",
-        body: `@${payload.actorUsername} commented on your post.`,
-      };
-    case "reply_to_comment":
-      return {
-        title: "New reply 💬",
-        body: `@${payload.actorUsername} replied to your comment.`,
-      };
-    case "artist_tag_comment":
-      return {
-        title: "Artist tag 🎵",
-        body: `@${payload.actorUsername} tagged you in a comment.`,
-      };
-    case "user_mention_comment":
-      return {
-        title: "Mention 💬",
-        body: `@${payload.actorUsername} mentioned you in a comment.`,
-      };
-    case "artist_identified_post":
-      return {
-        title: TRACK_ID_CONFIRMED_TITLE,
-        body: formatArtistIdentifiedPostMessage(payload.artistUsername),
-      };
-    case "community_identified_post":
-      return {
-        title: TRACK_ID_CONFIRMED_TITLE,
-        body: COMMUNITY_IDENTIFIED_UPLOADER_MESSAGE,
-      };
-    case "track_identified":
-      return {
-        title: TRACK_ID_CONFIRMED_TITLE,
-        body: TRACK_IDENTIFIED_NOTIFICATION_MESSAGE,
-      };
-    case "anonymous_track_identified":
-      return {
-        title: TRACK_ID_CONFIRMED_TITLE,
-        body: payload.message,
-      };
-    case "anonymous_track_revealed":
-      return {
-        title: TRACK_ID_REVEALED_TITLE,
-        body: payload.message,
-      };
-    case "release_attached_to_liked_or_uploaded_post":
-      return {
-        title: "🪩 Release added",
-        body: "That tune you've been waiting for? It's finally got a release date.",
-      };
-    case "artist_release_alert": {
-      const artist = toMention(payload.artistUsername) ?? "Artist";
-      const title = payload.releaseTitle?.trim();
-      const body =
-        title && title.length > 0
-          ? `${artist} announced a new release: ${title}`
-          : `${artist} announced a new release.`;
-      return {
-        title: "🔔 New Release",
-        body,
-      };
-    }
-    case "release_day_out_today": {
-      const name = payload.releaseTitle.trim() || "Release";
-      const artist = toMention(payload.artistUsername);
-      const collaborators = Array.from(
-        new Set(
-          (payload.collaboratorUsernames ?? [])
-            .map((u) => toMention(u))
-            .filter((u): u is string => Boolean(u) && u !== artist),
-        ),
-      );
-      let body = `${name} is out today.`;
-      if (artist && collaborators.length === 1) {
-        body = `${artist} & ${collaborators[0]} - ${name} just dropped.`;
-      } else if (artist && collaborators.length > 1) {
-        body = `${artist} + collaborators - ${name} just dropped.`;
-      } else if (artist) {
-        body = `${artist} - ${name} just dropped.`;
-      }
-      return {
-        title: "Out today 🎧",
-        body,
-      };
-    }
-    case "release_announce": {
-      const artistUsername = String(payload.artistUsername ?? "").trim() || "Artist";
-      const releaseTitle = payload.releaseTitle.trim() || "a release";
-      return {
-        title: "🗓️ New Release",
-        body: formatReleaseAnnounceMessage(artistUsername, releaseTitle),
-      };
-    }
-    case "collab_invite": {
-      const actor = toMention(payload.actorUsername) ?? "Someone";
-      const title = payload.releaseTitle.trim() || "a release";
-      return {
-        title: "Collaboration invite 🤝",
-        body: `${actor} invited you to collaborate on ${title}.`,
-      };
-    }
-    case "collab_accept": {
-      const actor = toMention(payload.actorUsername) ?? "Someone";
-      const title = payload.releaseTitle.trim() || "your release";
-      return {
-        title: "Collaboration accepted ✅",
-        body: `${actor} accepted your collaboration invite for ${title}.`,
-      };
-    }
-    case "collab_reject": {
-      const actor = toMention(payload.actorUsername) ?? "Someone";
-      const title = payload.releaseTitle.trim() || "your release";
-      return {
-        title: "❌ Collaboration Declined",
-        body: `${actor} declined your collaboration invite for ${title}.`,
-      };
-    }
-    case "moderator_community_verification_pending":
-      return {
-        title: "ID review 🕵️",
-        body: "A community ID needs reviewing.",
-      };
-    case "moderator_report_opened":
-      return {
-        title: "New report ⚠️",
-        body: "A new report needs review.",
-      };
-  }
-}
-
-function toMention(username: unknown): string | null {
-  const cleaned = String(username ?? "").trim().replace(/^@+/, "");
-  if (!cleaned) return null;
-  return `@${cleaned}`;
-}
 
 export async function sendPushToUser(
   recipientUserId: string,

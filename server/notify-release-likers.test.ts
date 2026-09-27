@@ -287,4 +287,27 @@ describe("runNotifyReleaseLikers paid audience gate", () => {
     await runNotifyReleaseLikers(RELEASE_ID, ARTIST_ID, createDeps(state));
     assert.equal(state.canDeliverCalls, 1);
   });
+
+  it("renders owner emoji only while release-alert delivery is allowed", async () => {
+    const paid = baseState({ canDeliverResult: true, freeRecipients: [LIKER] });
+    const paidDeps = createDeps(paid);
+    paidDeps.getStoredNotificationEmoji = async () => "⚙️";
+    await runNotifyReleaseLikers(RELEASE_ID, ARTIST_ID, paidDeps);
+    assert.equal(paid.notifications[0]?.message, "@dj_test ⚙️ just announced Night Bus.");
+    assert.equal((paid.pushes[0] as { notificationEmoji?: string }).notificationEmoji, "⚙️");
+    assert.equal(
+      (paid.pushes[0] as { notificationEmojiPaidAccess?: boolean }).notificationEmojiPaidAccess,
+      true,
+    );
+
+    const unpaid = baseState({ canDeliverResult: false, freeRecipients: [LIKER] });
+    const unpaidDeps = createDeps(unpaid);
+    unpaidDeps.getStoredNotificationEmoji = async () => "⚙️";
+    await runNotifyReleaseLikers(RELEASE_ID, ARTIST_ID, unpaidDeps);
+    assert.equal(unpaid.notifications[0]?.message, "@dj_test just announced Night Bus.");
+    assert.equal(
+      (unpaid.pushes[0] as { notificationEmojiPaidAccess?: boolean }).notificationEmojiPaidAccess,
+      false,
+    );
+  });
 });

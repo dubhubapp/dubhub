@@ -1,3 +1,8 @@
+import {
+  formatArtistIdentityMention,
+  type NotificationEmojiRenderInput,
+} from "./notification-emoji";
+
 /** Shared title for all Track ID confirmation surfaces (push, toast, list). */
 export const TRACK_ID_CONFIRMED_TITLE = "🔌 Track ID Confirmed";
 
@@ -59,10 +64,15 @@ export function formatAnonymousTrackIdentifiedLikerMessage(
 export function formatAnonymousTrackRevealedUploaderMessage(
   artistUsername: string | null | undefined,
   trackTitle?: string | null,
+  emoji?: NotificationEmojiRenderInput,
 ): string {
   const cleaned = cleanUsernameMention(artistUsername);
   const base = cleaned
-    ? `Mystery solved — it's @${cleaned}`
+    ? `Mystery solved — it's ${formatArtistIdentityMention({
+        mention: `@${cleaned}`,
+        notificationEmoji: emoji?.notificationEmoji,
+        paidAccess: emoji?.paidAccess,
+      })}`
     : "The artist has revealed this track.";
   return appendAnonymousTitleLine(base, trackTitle);
 }
@@ -71,10 +81,15 @@ export function formatAnonymousTrackRevealedUploaderMessage(
 export function formatAnonymousTrackRevealedLikerMessage(
   artistUsername: string | null | undefined,
   trackTitle?: string | null,
+  emoji?: NotificationEmojiRenderInput,
 ): string {
   const cleaned = cleanUsernameMention(artistUsername);
   const base = cleaned
-    ? `The artist behind a track you saved has revealed themselves — @${cleaned}`
+    ? `The artist behind a track you saved has revealed themselves — ${formatArtistIdentityMention({
+        mention: `@${cleaned}`,
+        notificationEmoji: emoji?.notificationEmoji,
+        paidAccess: emoji?.paidAccess,
+      })}`
     : "The artist behind a track you saved has revealed themselves.";
   return appendAnonymousTitleLine(base, trackTitle);
 }
@@ -95,14 +110,81 @@ function cleanUsernameMention(username: string | null | undefined): string | nul
 /** Uploader body when a verified artist confirms their own track. */
 export function formatArtistIdentifiedPostMessage(
   artistUsername: string | null | undefined,
+  emoji?: NotificationEmojiRenderInput,
 ): string {
   const cleaned = cleanUsernameMention(artistUsername);
   if (!cleaned) return ARTIST_IDENTIFIED_POST_FALLBACK_MESSAGE;
-  return `@${cleaned} just confirmed the track you uploaded.`;
+  const mention = formatArtistIdentityMention({
+    mention: `@${cleaned}`,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
+  return `${mention} just confirmed the track you uploaded.`;
 }
 
-export function formatReleaseAnnounceMessage(artistUsername: string, releaseTitle: string): string {
-  const mention = `@${String(artistUsername ?? "").trim().replace(/^@+/, "") || "Artist"}`;
+export function formatReleaseAnnounceMessage(
+  artistUsername: string,
+  releaseTitle: string,
+  emoji?: NotificationEmojiRenderInput,
+): string {
+  const mention = formatArtistIdentityMention({
+    mention: `@${String(artistUsername ?? "").trim().replace(/^@+/, "") || "Artist"}`,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
   const title = String(releaseTitle ?? "").trim() || "a release";
   return `${mention} just announced ${title}.`;
+}
+
+/** In-app release-day body. Owner mention only. No leading @ (existing copy). */
+export function formatReleaseDayInAppMessage(
+  artistUsername: string,
+  releaseTitle: string,
+  emoji?: NotificationEmojiRenderInput,
+): string {
+  const mention = formatArtistIdentityMention({
+    mention: artistUsername,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
+  return `${mention} released ${releaseTitle}`;
+}
+
+export function formatCollabInviteStoredMessage(
+  ownerUsername: string,
+  releaseTitle: string,
+  emoji?: NotificationEmojiRenderInput,
+): string {
+  const mention = formatArtistIdentityMention({
+    mention: `@${ownerUsername}`,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
+  return `${mention} invited you as a collaborator on ${releaseTitle}. Accept or reject.`;
+}
+
+export function formatCollabAcceptStoredMessage(
+  collabUsername: string,
+  releaseTitle: string,
+  emoji?: NotificationEmojiRenderInput,
+): string {
+  const mention = formatArtistIdentityMention({
+    mention: `@${collabUsername}`,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
+  return `${mention} accepted your collaboration invite for ${releaseTitle}`;
+}
+
+export function formatCollabRejectStoredMessage(
+  collabUsername: string,
+  releaseTitle: string,
+  emoji?: NotificationEmojiRenderInput,
+): string {
+  const mention = formatArtistIdentityMention({
+    mention: `@${collabUsername}`,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
+  return `${mention} declined your collaboration invite for ${releaseTitle}`;
 }

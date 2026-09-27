@@ -12,7 +12,8 @@ export type VerifiedArtistToolsPaywallSource =
   | "release_alerts"
   | "settings"
   | "onboarding_intro"
-  | "anonymous_identify";
+  | "anonymous_identify"
+  | "notification_emoji";
 
 export type VerifiedArtistToolsPaywallContextCopy = {
   title: string;
@@ -26,7 +27,13 @@ export type VerifiedArtistToolsPaywallContextCopy = {
  * “Waiting listeners” = opted-in Release Alerts audience (not followers).
  */
 export const ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE =
-  "Identify tracks anonymously" as const;
+  "Identify your tracks anonymously" as const;
+
+export const NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE =
+  "Custom notification emoji" as const;
+
+export const NOTIFICATION_EMOJI_VAT_BENEFIT_DETAIL =
+  "Add a signature emoji to eligible artist notifications." as const;
 
 export const ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL =
   "Identify the track anonymously now, then reveal yourself and the full track ID closer to release." as const;
@@ -37,6 +44,7 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS = [
   ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   "Pre-save, Pre-add and Pre-order links",
   "See your Release Alerts audience and send alerts to listeners waiting",
+  NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE,
 ] as const;
 
 /**
@@ -67,6 +75,7 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT = [
   ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
   "Pre-save, Pre-add and Pre-order links",
   "See Release Alerts audience and send alerts",
+  NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE,
 ] as const;
 
 const CONTEXT_COPY: Record<
@@ -119,6 +128,11 @@ const CONTEXT_COPY: Record<
     body:
       "Confirm it’s yours without revealing your identity. Reveal the full track ID when you’re ready.",
     emphasizeBenefit: ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE,
+  },
+  notification_emoji: {
+    title: "Custom notification emoji",
+    body: NOTIFICATION_EMOJI_VAT_BENEFIT_DETAIL,
+    emphasizeBenefit: NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE,
   },
 };
 

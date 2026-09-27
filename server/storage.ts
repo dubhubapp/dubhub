@@ -19,10 +19,17 @@ import { mapStoredSubgenre } from "./post-subgenre";
 import { planGetPostsGenreWhere } from "./get-posts-genre-filter";
 import type { SelectedSubgenresByGenre } from "@shared/home-feed-subgenre-filter";
 import { enableArtistReleaseAlertWithDemandDedup } from "./artist-release-alert-demand-enable";
+import { canArtistUsePaidTools } from "./artist-paid-tool-access";
 import {
   canArtistDeliverReleaseAlerts,
   resolveServerSubscriptionEnvironment,
 } from "./artist-release-alert-delivery";
+import {
+  formatCollabAcceptStoredMessage,
+  formatCollabInviteStoredMessage,
+  formatCollabRejectStoredMessage,
+  formatReleaseDayInAppMessage,
+} from "@shared/notification-messages";
 import {
   assertFreezableUtcMonth,
   formatUtcDateOnly,
@@ -517,6 +524,16 @@ export type UserNotificationPreferencesPayload = {
   updatedAt: string | null;
 };
 
+async function loadNotificationEmojiRenderInput(
+  artistId: string,
+  stored: string | null | undefined,
+): Promise<{ notificationEmoji: string | null; paidAccess: boolean }> {
+  const paidAccess = await canArtistUsePaidTools(artistId, {
+    getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+  });
+  return { notificationEmoji: stored ?? null, paidAccess };
+}
+
 export class DatabaseStorage implements IStorage {
   // Helper function to fetch avatar URLs from Supabase profiles
   private async getUserAvatars(userIds: string[]): Promise<Map<string, string | null>> {
@@ -562,7 +579,9 @@ export class DatabaseStorage implements IStorage {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url, account_type, moderator, verified_artist, created_at")
+        .select(
+          "id, username, avatar_url, account_type, moderator, verified_artist, created_at, notification_emoji",
+        )
         .eq("id", id)
         .maybeSingle();
 
@@ -2354,12 +2373,19 @@ export class DatabaseStorage implements IStorage {
       "./notify-anonymous-track-identified"
     );
     try {
+      const revealedProfile = await this.getUser(args.revealedArtistId);
+      const emojiInput = await loadNotificationEmojiRenderInput(
+        args.revealedArtistId,
+        revealedProfile?.notification_emoji,
+      );
       return await runNotifyAnonymousTrackRevealed(
         {
           postId: args.postId,
           revealedArtistId: args.revealedArtistId,
           revealedArtistUsername: args.revealedArtistUsername,
           trackTitle: args.trackTitle,
+          notificationEmoji: emojiInput.notificationEmoji,
+          notificationEmojiPaidAccess: emojiInput.paidAccess,
         },
         {
           getPostOwnerId: (id) => this.getPostOwnerId(id),
@@ -4868,6 +4894,10 @@ export class DatabaseStorage implements IStorage {
           const artistProfile = await this.getUser(ownerId);
           return artistProfile?.username ?? "Artist";
         },
+        getStoredNotificationEmoji: async (ownerId) => {
+          const artistProfile = await this.getUser(ownerId);
+          return artistProfile?.notification_emoji ?? null;
+        },
         canArtistDeliverReleaseAlerts: (ownerId) =>
           canArtistDeliverReleaseAlerts(ownerId, {
             getSnapshotsForUser: (id) =>
@@ -4893,6 +4923,8 @@ export class DatabaseStorage implements IStorage {
           artistId: ownerId,
           artistUsername,
           releaseTitle,
+          notificationEmoji,
+          notificationEmojiPaidAccess,
         }) => {
           void import("./push/pushSend").then(({ sendPushToUser }) =>
             sendPushToUser(recipientId, {
@@ -4903,15 +4935,17 @@ export class DatabaseStorage implements IStorage {
               artistUsername,
               releaseTitle,
               postId,
+              notificationEmoji,
+              notificationEmojiPaidAccess,
             }),
           );
         },
-        markNotified: async (id) => {
-          await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${id}`);
-        },
-        log: (payload) => {
-          console.log("[notifyReleaseLikers]", payload);
-        },
+    markNotified: async (id) => {
+      await db.execute(sql`UPDATE releases SET notified_at = NOW() WHERE id = ${id}`);
+    },
+    log: (payload) => {
+      console.log("[notifyReleaseLikers]", payload);
+    },
       });
       if (outcome === "skipped_suspended") {
         throw new FreeReleaseSubscriptionSuspendedError();
@@ -5149,6 +5183,10 @@ export class DatabaseStorage implements IStorage {
           const ownerProfile = await this.getUser(artistId);
           return ownerProfile?.username ?? "Artist";
         },
+        getStoredNotificationEmoji: async (artistId) => {
+          const ownerProfile = await this.getUser(artistId);
+          return ownerProfile?.notification_emoji ?? null;
+        },
         canArtistDeliverReleaseAlerts: (artistId) =>
           canArtistDeliverReleaseAlerts(artistId, {
             getSnapshotsForUser: (id) =>
@@ -5174,6 +5212,8 @@ export class DatabaseStorage implements IStorage {
           artistId,
           artistUsername,
           releaseTitle,
+          notificationEmoji,
+          notificationEmojiPaidAccess,
         }) => {
           void import("./push/pushSend").then(({ sendPushToUser }) =>
             sendPushToUser(recipientId, {
@@ -5184,6 +5224,8 @@ export class DatabaseStorage implements IStorage {
               artistId,
               artistUsername,
               releaseTitle,
+              notificationEmoji,
+              notificationEmojiPaidAccess,
             }),
           );
         },
@@ -5218,6 +5260,8 @@ export class DatabaseStorage implements IStorage {
               releaseTitle: string;
               artistUsername: string;
               collaboratorUsernames?: string[];
+              notificationEmoji?: string | null;
+              notificationEmojiPaidAccess?: boolean;
             },
           ) => Promise<void>)
         | null = null;
@@ -5244,6 +5288,8 @@ export class DatabaseStorage implements IStorage {
         artistUsername: string;
         collaboratorUsernames: string[];
         message: string;
+        notificationEmoji: string | null;
+        notificationEmojiPaidAccess: boolean;
       }): Promise<boolean> => {
         // Sticky per-recipient claim (Midnight + Exact). Concurrent cron: one winner.
         const claimed = await db.transaction(async (tx) => {
@@ -5301,6 +5347,8 @@ export class DatabaseStorage implements IStorage {
             releaseTitle,
             artistUsername: args.artistUsername,
             collaboratorUsernames: args.collaboratorUsernames,
+            notificationEmoji: args.notificationEmoji,
+            notificationEmojiPaidAccess: args.notificationEmojiPaidAccess,
           });
           console.log("[notifyReleaseDayLikers] Push dispatch resolved", {
             releaseId: args.releaseId,
@@ -5325,11 +5373,13 @@ export class DatabaseStorage implements IStorage {
         const freeRecipientIds = await this.getReleaseDayFreeRecipientIds(releaseId, artistId);
         const freeRecipientSet = new Set(freeRecipientIds);
         let paidOnlyRecipientIds: string[] = [];
+        let paidAccess = false;
         try {
-          const deliveryAllowed = await canArtistDeliverReleaseAlerts(artistId, {
-            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
-          });
-          if (deliveryAllowed) {
+          paidAccess =
+            (await canArtistDeliverReleaseAlerts(artistId, {
+              getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+            })) === true;
+          if (paidAccess) {
             const alertSubscriberIds = await this.getArtistReleaseAlertSubscriberIds(artistId);
             paidOnlyRecipientIds = alertSubscriberIds.filter((id) => !freeRecipientSet.has(id));
           }
@@ -5338,9 +5388,13 @@ export class DatabaseStorage implements IStorage {
             releaseId,
             error: entitlementError instanceof Error ? entitlementError.message : String(entitlementError),
           });
+          paidAccess = false;
           paidOnlyRecipientIds = [];
         }
-        return [...freeRecipientIds, ...paidOnlyRecipientIds].filter(Boolean);
+        return {
+          recipientIds: [...freeRecipientIds, ...paidOnlyRecipientIds].filter(Boolean),
+          paidAccess,
+        };
       };
 
       // ——— Exact: release_at gate + global release_day_notified_at; dual-write markers ———
@@ -5364,7 +5418,7 @@ export class DatabaseStorage implements IStorage {
       );
 
       for (const r of exactReleases) {
-        const recipientIds = await resolveRecipients(r.id, r.artist_id);
+        const { recipientIds, paidAccess } = await resolveRecipients(r.id, r.artist_id);
         const postIds = await this.getReleasePostIds(r.id);
         const firstPostId = postIds[0] ?? null;
         const artistProfile = await this.getUser(r.artist_id);
@@ -5374,7 +5428,11 @@ export class DatabaseStorage implements IStorage {
           .filter((c: any) => c?.status === "ACCEPTED" && typeof c?.username === "string")
           .map((c: any) => String(c.username).trim())
           .filter((name: string) => name.length > 0);
-        const message = `${artistUsername} released ${r.title}`;
+        const emojiInput = {
+          notificationEmoji: artistProfile?.notification_emoji ?? null,
+          paidAccess,
+        };
+        const message = formatReleaseDayInAppMessage(artistUsername, `${r.title}`, emojiInput);
         for (const recipientId of recipientIds) {
           await deliverToRecipient({
             releaseId: r.id,
@@ -5385,6 +5443,8 @@ export class DatabaseStorage implements IStorage {
             artistUsername,
             collaboratorUsernames,
             message,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           });
         }
         await db.execute(sql`
@@ -5418,7 +5478,7 @@ export class DatabaseStorage implements IStorage {
         const releaseYmd = midnightReleaseCalendarYmd(r.release_date);
         if (!releaseYmd) continue;
 
-        const recipientIds = await resolveRecipients(r.id, r.artist_id);
+        const { recipientIds, paidAccess } = await resolveRecipients(r.id, r.artist_id);
         if (recipientIds.length === 0) continue;
 
         const tzResult = await pool.query<{ user_id: string; timezone: string }>(
@@ -5444,7 +5504,11 @@ export class DatabaseStorage implements IStorage {
           .filter((c: any) => c?.status === "ACCEPTED" && typeof c?.username === "string")
           .map((c: any) => String(c.username).trim())
           .filter((name: string) => name.length > 0);
-        const message = `${artistUsername} released ${r.title}`;
+        const emojiInput = {
+          notificationEmoji: artistProfile?.notification_emoji ?? null,
+          paidAccess,
+        };
+        const message = formatReleaseDayInAppMessage(artistUsername, `${r.title}`, emojiInput);
 
         let deliveredAny = false;
         for (const recipientId of recipientIds) {
@@ -5467,6 +5531,8 @@ export class DatabaseStorage implements IStorage {
             artistUsername,
             collaboratorUsernames,
             message,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           });
           if (delivered) deliveredAny = true;
         }
@@ -5559,11 +5625,15 @@ export class DatabaseStorage implements IStorage {
       const ownerProfile = await this.getUser(ownerId);
       const ownerUsername = ownerProfile?.username ?? "Artist";
       const releaseTitle = release.title ?? "Release";
+      const emojiInput = await loadNotificationEmojiRenderInput(
+        ownerId,
+        ownerProfile?.notification_emoji,
+      );
       const notif = await this.createNotification({
         artistId,
         triggeredBy: ownerId,
         releaseId,
-        message: `@${ownerUsername} invited you as a collaborator on ${releaseTitle}. Accept or reject.`,
+        message: formatCollabInviteStoredMessage(ownerUsername, releaseTitle, emojiInput),
         notificationType: "collab_invite",
       } as any);
       if (artistId !== ownerId) {
@@ -5575,6 +5645,8 @@ export class DatabaseStorage implements IStorage {
             actorUserId: ownerId,
             actorUsername: ownerUsername,
             releaseTitle,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           }),
         );
       }
@@ -5598,6 +5670,10 @@ export class DatabaseStorage implements IStorage {
       const ownerProfile = await this.getUser(ownerId);
       const ownerUsername = ownerProfile?.username ?? "Artist";
       const releaseTitle = release.title ?? "Release";
+      const emojiInput = await loadNotificationEmojiRenderInput(
+        ownerId,
+        ownerProfile?.notification_emoji,
+      );
       for (const artistId of uniqueIds) {
         const artist = await this.getUser(artistId);
         if (!artist || artist.account_type !== "artist" || !artist.verified_artist) continue;
@@ -5610,7 +5686,7 @@ export class DatabaseStorage implements IStorage {
           artistId,
           triggeredBy: ownerId,
           releaseId,
-          message: `@${ownerUsername} invited you as a collaborator on ${releaseTitle}. Accept or reject.`,
+          message: formatCollabInviteStoredMessage(ownerUsername, releaseTitle, emojiInput),
           notificationType: "collab_invite",
         } as any);
         void import("./push/pushSend").then(({ sendPushToUser }) =>
@@ -5621,6 +5697,8 @@ export class DatabaseStorage implements IStorage {
             actorUserId: ownerId,
             actorUsername: ownerUsername,
             releaseTitle,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           }),
         );
       }
@@ -5701,12 +5779,16 @@ export class DatabaseStorage implements IStorage {
       if (release?.artistId && release.artistId !== artistId) {
         const collabUsername = artist.username ?? "Artist";
         const releaseTitle = release.title ?? "Release";
+        const emojiInput = await loadNotificationEmojiRenderInput(
+          artistId,
+          artist.notification_emoji,
+        );
         const notif = await this.createNotification({
           artistId: release.artistId,
           triggeredBy: artistId,
           postId: null,
           releaseId,
-          message: `@${collabUsername} accepted your collaboration invite for ${releaseTitle}`,
+          message: formatCollabAcceptStoredMessage(collabUsername, releaseTitle, emojiInput),
           notificationType: "collab_accept",
         } as any);
         void import("./push/pushSend").then(({ sendPushToUser }) =>
@@ -5717,6 +5799,8 @@ export class DatabaseStorage implements IStorage {
             actorUserId: artistId,
             actorUsername: collabUsername,
             releaseTitle,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           }),
         );
       }
@@ -5743,12 +5827,16 @@ export class DatabaseStorage implements IStorage {
       if (release?.artistId && release.artistId !== artistId) {
         const collabUsername = artist.username ?? "Artist";
         const releaseTitle = release.title ?? "Release";
+        const emojiInput = await loadNotificationEmojiRenderInput(
+          artistId,
+          artist.notification_emoji,
+        );
         const notif = await this.createNotification({
           artistId: release.artistId,
           triggeredBy: artistId,
           postId: null,
           releaseId,
-          message: `@${collabUsername} declined your collaboration invite for ${releaseTitle}`,
+          message: formatCollabRejectStoredMessage(collabUsername, releaseTitle, emojiInput),
           notificationType: "collab_reject",
         } as any);
         void import("./push/pushSend").then(({ sendPushToUser }) =>
@@ -5759,6 +5847,8 @@ export class DatabaseStorage implements IStorage {
             actorUserId: artistId,
             actorUsername: collabUsername,
             releaseTitle,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           }),
         );
       }

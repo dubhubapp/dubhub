@@ -13,6 +13,13 @@ describe("release event group copy", () => {
     );
   });
 
+  it("owner emoji before released still yields the title", () => {
+    assert.equal(
+      formatReleaseDayOutNowCopy("sota ⚙️ released Night Bus"),
+      "Night Bus is out now.",
+    );
+  });
+
   it("single row → null (use representative message)", () => {
     assert.equal(
       getReleaseEventGroupSummaryMessage({

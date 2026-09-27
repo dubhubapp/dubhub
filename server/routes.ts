@@ -59,6 +59,7 @@ import {
 import { insertCommentSchema, patchUserNotificationPreferencesSchema } from "@shared/schema";
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { parseCountryCodeInput } from "@shared/country-codes";
+import { updateNotificationEmojiForUser } from "./notification-emoji-update";
 import { db, pool } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -1552,6 +1553,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to update country",
       });
+    }
+  });
+
+  /**
+   * Optional notification emoji for verified artists with Verified Artist Tools.
+   * Body: { emoji: string | null }. null / "" clears. Does not touch other profile fields.
+   */
+  app.patch("/api/user/notification-emoji", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
+    try {
+      const result = await updateNotificationEmojiForUser({
+        user: req.dbUser
+          ? {
+              id: req.dbUser.id,
+              account_type: req.dbUser.account_type,
+              verified_artist: req.dbUser.verified_artist,
+            }
+          : null,
+        body: req.body,
+        canUsePaidTools: (userId) =>
+          canArtistUsePaidTools(userId, {
+            getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+          }),
+        saveEmoji: async (userId, emoji) => {
+          const updated = await storage.updateUser(userId, { notification_emoji: emoji });
+          return !!updated;
+        },
+      });
+      if (!result.ok) {
+        return res.status(result.status).json({
+          message: result.message,
+          ...(result.code ? { code: result.code } : {}),
+        });
+      }
+      return res.json({ success: true, notification_emoji: result.notification_emoji });
+    } catch (error) {
+      console.error("[/api/user/notification-emoji] Error:", error);
+      return res.status(500).json({ message: "Failed to update notification emoji" });
     }
   });
 
@@ -3532,7 +3570,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.warn("[artist-confirm] missing post owner id; skip notification", { postId });
         } else if (postOwnerId !== artistId) {
           excludeFromLikerFanOut.push(postOwnerId);
-          const artistMessage = formatArtistIdentifiedPostMessage(profile.username);
+          const emojiInput = {
+            notificationEmoji: profile.notification_emoji ?? null,
+            paidAccess: await canArtistUsePaidTools(artistId, {
+              getSnapshotsForUser: (id) => subscriptionStatusRepository.getSnapshotsForUser(id),
+            }),
+          };
+          const artistMessage = formatArtistIdentifiedPostMessage(profile.username, emojiInput);
           await storage.createNotification({
             artistId: postOwnerId,
             triggeredBy: artistId,
@@ -3546,6 +3590,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             artistId,
             verifiedCommentId: commentId,
             artistUsername: profile.username,
+            notificationEmoji: emojiInput.notificationEmoji,
+            notificationEmojiPaidAccess: emojiInput.paidAccess,
           });
         }
       } catch (notifyErr) {

@@ -18,6 +18,7 @@ import { APP_PAGE_SCROLL_CLASS } from "./app-shell-layout";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const settingsSrc = readFileSync(join(here, "../pages/settings.tsx"), "utf8");
+const artistSettingsSrc = readFileSync(join(here, "../pages/settings-artist.tsx"), "utf8");
 const notificationsSrc = readFileSync(join(here, "../pages/settings-notifications.tsx"), "utf8");
 const diagnosticsSrc = readFileSync(
   join(here, "../pages/settings-developer-diagnostics.tsx"),
@@ -89,11 +90,15 @@ describe("settings root IA slice 1", () => {
     assert.match(settingsSrc, /getFeedStartWithSound/);
   });
 
-  it("keeps Artist Questions route and VAT root component", () => {
-    assert.match(settingsSrc, /data-testid="button-artist-questions-settings"/);
-    assert.match(settingsSrc, /navigate\("\/settings\/artist-questions"\)/);
-    assert.match(settingsSrc, /VerifiedArtistToolsSettingsRow/);
-    assert.match(settingsSrc, /enabled=\{verifiedArtist\}/);
+  it("keeps one Artist row on root that opens Artist Settings", () => {
+    assert.match(settingsSrc, /data-testid="button-settings-artist"/);
+    assert.match(settingsSrc, /navigate\("\/settings\/artist"\)/);
+    assert.match(settingsSrc, /Manage artist tools and preferences/);
+    assert.doesNotMatch(settingsSrc, /VerifiedArtistToolsSettingsRow/);
+    assert.doesNotMatch(settingsSrc, /NotificationEmojiSettingsRow/);
+    assert.doesNotMatch(settingsSrc, /data-testid="button-artist-questions-settings"/);
+    assert.doesNotMatch(settingsSrc, /navigate\("\/settings\/artist-questions"\)/);
+    assert.match(appSrc, /path="\/settings\/artist"/);
     assert.match(vatRowSrc, /resolveSettingsSubscriptionRowView/);
   });
 
@@ -230,11 +235,9 @@ describe("settings root chrome slice 3", () => {
     );
   });
 
-  it("preserves Notifications, VAT, Artist Questions, Feedback, feed sound, manage account, logout", () => {
+  it("preserves Notifications, Artist row, Feedback, feed sound, manage account, logout", () => {
     assert.match(settingsSrc, /button-settings-notifications/);
-    assert.match(settingsSrc, /VerifiedArtistToolsSettingsRow/);
-    assert.match(settingsSrc, /surface="inset"/);
-    assert.match(settingsSrc, /button-artist-questions-settings/);
+    assert.match(settingsSrc, /button-settings-artist/);
     assert.match(settingsSrc, /button-settings-feedback/);
     assert.doesNotMatch(settingsSrc, /switch-light-mode/);
     assert.match(settingsSrc, /switch-feed-start-with-sound/);
@@ -275,10 +278,11 @@ describe("settings root chrome slice 3", () => {
     assert.match(settingsSrc, /showDeveloperDiagnosticsEntry \?/);
   });
 
-  it("verified artists share one Artist group; community users skip the section", () => {
+  it("verified artists share one Artist row; community users skip the section", () => {
     assert.match(settingsSrc, /\{verifiedArtist \? \(/);
     assert.match(settingsSrc, /settings-group-artist/);
-    assert.match(settingsSrc, /surface="inset"/);
+    assert.match(settingsSrc, /button-settings-artist/);
+    assert.doesNotMatch(settingsSrc, /surface="inset"/);
     assert.match(vatRowSrc, /surface\?: "card" \| "inset"/);
     assert.match(vatRowSrc, /SETTINGS_VAT_INSET_CLASS/);
     assert.match(vatRowSrc, /retryAuthoritativeSubscriptionStatus/);
@@ -332,7 +336,8 @@ describe("settings corrective slice — scroll + flat containers", () => {
   });
 
   it("keeps flat VAT inset without nested glass card chrome", () => {
-    assert.match(settingsSrc, /surface="inset"/);
+    assert.match(artistSettingsSrc, /surface="inset"/);
+    assert.doesNotMatch(settingsSrc, /surface="inset"/);
     assert.doesNotMatch(SETTINGS_VAT_INSET_CLASS, /rounded|border|bg-black|shadow|backdrop/);
     assert.match(vatRowSrc, /SETTINGS_VAT_INSET_CLASS/);
     assert.match(vatRowSrc, /retryAuthoritativeSubscriptionStatus/);

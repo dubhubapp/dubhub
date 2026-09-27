@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { AlertTriangle, Check, Sparkles } from "lucide-react";
+import { AlertTriangle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +27,7 @@ import {
   SETTINGS_VAT_INSET_CLASS,
 } from "@/lib/settings-presentation";
 import { useUser } from "@/lib/user-context";
+import { cn } from "@/lib/utils";
 import { armCancellationFeedbackFromSettingsRow, setCancellationFeedbackCommerceBusy } from "@/lib/subscription-cancellation-feedback";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -184,15 +185,16 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
             className="w-5 h-5 text-amber-500/90 shrink-0 mt-0.5"
             aria-hidden
           />
-        ) : (
-          <Sparkles className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
-        )}
+        ) : null}
         <div className="min-w-0 flex-1">
           <p id="settings-vat-title" className="text-sm font-medium text-foreground">
             {view.title}
           </p>
           <p
-            className="mt-0.5 text-xs font-medium text-muted-foreground"
+            className={cn(
+              "mt-0.5 text-xs font-medium text-muted-foreground",
+              view.mode === "active" && "text-[#4ae9df]",
+            )}
             data-testid="settings-vat-status"
           >
             {view.statusLabel}
@@ -218,7 +220,10 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
                     className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
                   >
                     <Check
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      className={cn(
+                        "mt-0.5 h-3.5 w-3.5 shrink-0",
+                        view.mode === "active" ? "text-[#4ae9df]" : "text-muted-foreground",
+                      )}
                       aria-hidden
                     />
                     <span>{line}</span>
@@ -279,37 +284,33 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
           </div>
 
           {view.showLegalLinks ? (
-            <div
-              className="mt-2 space-y-1 pt-2 border-t border-border dark:border-white/[0.08]"
+            <p
+              className="mt-3 text-[11px] leading-relaxed text-muted-foreground"
               data-testid="settings-vat-legal"
             >
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Billing is managed through Apple.
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                <a
-                  href={DUBHUB_TERMS_OF_USE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground"
-                  data-testid="settings-vat-terms"
-                >
-                  Terms of Use
-                </a>
-                <span aria-hidden className="mx-1.5 text-muted-foreground/60">
-                  ·
-                </span>
-                <a
-                  href={DUBHUB_PRIVACY_POLICY_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground"
-                  data-testid="settings-vat-privacy"
-                >
-                  Privacy Policy
-                </a>
-              </p>
-            </div>
+              Billing is managed through Apple.{" "}
+              <a
+                href={DUBHUB_TERMS_OF_USE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold no-underline hover:text-foreground"
+                data-testid="settings-vat-terms"
+              >
+                Terms of Use
+              </a>
+              <span aria-hidden className="mx-1.5 text-muted-foreground/60">
+                ·
+              </span>
+              <a
+                href={DUBHUB_PRIVACY_POLICY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold no-underline hover:text-foreground"
+                data-testid="settings-vat-privacy"
+              >
+                Privacy Policy
+              </a>
+            </p>
           ) : null}
         </div>
       </div>

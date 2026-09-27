@@ -35,6 +35,8 @@ export type NotifyReleaseLikersDeps = {
   /** Active artist_release_alerts members. */
   getAlertSubscriberIds: (artistId: string) => Promise<string[]>;
   getArtistUsername: (artistId: string) => Promise<string>;
+  /** Stored profiles.notification_emoji. Omitted → no emoji. */
+  getStoredNotificationEmoji?: (artistId: string) => Promise<string | null | undefined>;
   canArtistDeliverReleaseAlerts: (artistId: string) => Promise<boolean>;
   providerEnvironment: string | null;
   createNotification: (input: {
@@ -53,6 +55,8 @@ export type NotifyReleaseLikersDeps = {
     artistId: string;
     artistUsername: string;
     releaseTitle: string;
+    notificationEmoji?: string | null;
+    notificationEmojiPaidAccess?: boolean;
   }) => void;
   markNotified: (releaseId: string) => Promise<void>;
   log?: (payload: Record<string, unknown>) => void;
@@ -97,7 +101,12 @@ export async function runNotifyReleaseLikers(
 
   const artistUsername = await deps.getArtistUsername(artistId);
   const releaseTitle = release.title ?? "Release";
-  const message = formatReleaseAnnounceMessage(artistUsername, releaseTitle);
+  const storedEmoji = (await deps.getStoredNotificationEmoji?.(artistId)) ?? null;
+  const emojiInput = {
+    notificationEmoji: storedEmoji,
+    paidAccess: deliveryAllowed,
+  };
+  const message = formatReleaseAnnounceMessage(artistUsername, releaseTitle, emojiInput);
   const firstPostId = postIds[0] ?? null;
 
   let notificationCount = 0;
@@ -121,6 +130,8 @@ export async function runNotifyReleaseLikers(
       artistId,
       artistUsername,
       releaseTitle,
+      notificationEmoji: storedEmoji,
+      notificationEmojiPaidAccess: deliveryAllowed,
     });
     pushAttemptCount += 1;
   }

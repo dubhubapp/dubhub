@@ -88,6 +88,7 @@ describe("LG-NAV-3 native nav contract", () => {
     const nested = [
       "/settings",
       "/settings/notifications",
+      "/settings/artist",
       "/profile/alice",
       "/releases/rel-1",
       "/releases/new",

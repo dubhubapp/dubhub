@@ -40,10 +40,10 @@ describe("VAT-ANON-3.3 anonymous_identify copy", () => {
     assert.doesNotMatch(copy.body, /credib|boost|pay.?to.?win|more trusted/i);
   });
 
-  it("highlighted benefit uses Identify tracks anonymously title/detail", () => {
+  it("highlighted benefit uses Identify your tracks anonymously title/detail", () => {
     const copy = resolveVerifiedArtistToolsPaywallCopy("anonymous_identify");
     assert.equal(copy.emphasizeBenefit, ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE);
-    assert.equal(ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE, "Identify tracks anonymously");
+    assert.equal(ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE, "Identify your tracks anonymously");
     assert.equal(
       ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
       "Identify the track anonymously now, then reveal yourself and the full track ID closer to release.",

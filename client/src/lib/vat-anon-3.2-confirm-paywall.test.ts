@@ -107,8 +107,8 @@ describe("VAT-ANON-3.2 paywall stack above Confirm", () => {
 });
 
 describe("VAT-ANON-3.2 anonymous VAT benefit + emphasis", () => {
-  it("adds Identify tracks anonymously benefit; long detail only for anonymous_identify", () => {
-    assert.equal(ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE, "Identify tracks anonymously");
+  it("adds Identify your tracks anonymously benefit; long detail only for anonymous_identify", () => {
+    assert.equal(ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE, "Identify your tracks anonymously");
     assert.equal(
       ANONYMOUS_IDENTIFY_VAT_BENEFIT_DETAIL,
       "Identify the track anonymously now, then reveal yourself and the full track ID closer to release.",

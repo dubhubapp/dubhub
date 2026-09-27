@@ -55,6 +55,7 @@ describe("verified-artist-tools-paywall-copy", () => {
     "settings",
     "onboarding_intro",
     "anonymous_identify",
+    "notification_emoji",
   ];
 
   it("returns contextual title/body for every source", () => {
@@ -66,7 +67,7 @@ describe("verified-artist-tools-paywall-copy", () => {
   });
 
   it("keeps shared benefits identical and avoids followers/reach claims", () => {
-    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS.length, 5);
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS.length, 6);
     const joined = VERIFIED_ARTIST_TOOLS_BENEFITS.join(" ");
     assert.equal(joined.includes("follower"), false);
     assert.equal(joined.toLowerCase().includes("boost"), false);
@@ -81,24 +82,50 @@ describe("verified-artist-tools-paywall-copy", () => {
       VERIFIED_ARTIST_TOOLS_BENEFITS[1],
       "Unlimited attached posts and release links",
     );
-    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[2], "Identify tracks anonymously");
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[2], "Identify your tracks anonymously");
     assert.equal(
-      VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify tracks anonymously"],
+      VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify your tracks anonymously"],
       "Identify the track anonymously now, then reveal yourself and the full track ID closer to release.",
     );
     assert.equal(
       resolveVerifiedArtistToolsBenefitDetail({
-        benefit: "Identify tracks anonymously",
+        benefit: "Identify your tracks anonymously",
         source: "settings",
       }),
       undefined,
     );
     assert.equal(
       resolveVerifiedArtistToolsBenefitDetail({
-        benefit: "Identify tracks anonymously",
+        benefit: "Identify your tracks anonymously",
         source: "anonymous_identify",
       }),
-      VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify tracks anonymously"],
+      VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify your tracks anonymously"],
+    );
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[5], "Custom notification emoji");
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: "Custom notification emoji",
+        source: "settings",
+      }),
+      undefined,
+    );
+    assert.equal(
+      resolveVerifiedArtistToolsBenefitDetail({
+        benefit: "Custom notification emoji",
+        source: "notification_emoji",
+      }),
+      undefined,
+    );
+    const emojiPaywall = resolveVerifiedArtistToolsPaywallCopy("notification_emoji");
+    assert.equal(emojiPaywall.title, "Custom notification emoji");
+    assert.equal(
+      emojiPaywall.body,
+      "Add a signature emoji to eligible artist notifications.",
+    );
+    assert.equal(emojiPaywall.emphasizeBenefit, "Custom notification emoji");
+    assert.notEqual(
+      resolveVerifiedArtistToolsPaywallCopy("settings").emphasizeBenefit,
+      "Custom notification emoji",
     );
     assert.equal(
       VERIFIED_ARTIST_TOOLS_BENEFITS[3],

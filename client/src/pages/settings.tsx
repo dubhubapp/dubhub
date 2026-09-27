@@ -20,12 +20,11 @@ import {
   Settings as SettingsIcon,
   UserRound,
   Volume2,
-  MessageCircleQuestion,
+  Music2,
   Wrench,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
-import { VerifiedArtistToolsSettingsRow } from "@/components/verified-artist-tools-settings-row";
 import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
@@ -215,26 +214,20 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
           </section>
 
           {verifiedArtist ? (
-            <section aria-labelledby="settings-section-artist" data-testid="settings-group-artist">
-              <h2 id="settings-section-artist" className={SETTINGS_SECTION_LABEL_CLASS}>
-                Artist
-              </h2>
+            <section id="settings-section-artist" aria-label="Artist" data-testid="settings-group-artist">
               <div className={SETTINGS_ROWS_STACK_CLASS}>
-                {/* Lifecycle unchanged — flat surface only (no nested glass card). */}
-                <VerifiedArtistToolsSettingsRow enabled={verifiedArtist} surface="inset" />
-
                 <button
                   type="button"
                   className={SETTINGS_NAV_ROW_CLASS}
-                  onClick={() => navigate("/settings/artist-questions")}
-                  data-testid="button-artist-questions-settings"
-                  aria-label="Artist Questions"
+                  onClick={() => navigate("/settings/artist")}
+                  data-testid="button-settings-artist"
+                  aria-label="Artist"
                 >
-                  <MessageCircleQuestion className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                  <Music2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
                   <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
-                    <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Artist Questions</span>
+                    <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Artist</span>
                     <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
-                      Manage your public answers
+                      Manage artist tools and preferences
                     </span>
                   </span>
                   <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />

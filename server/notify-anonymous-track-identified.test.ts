@@ -28,6 +28,7 @@ const LIKER2 = "00000000-0000-0000-0000-0000000000l2";
 const here = dirname(fileURLToPath(import.meta.url));
 const routesSrc = readFileSync(join(here, "./routes.ts"), "utf8");
 const pushSendSrc = readFileSync(join(here, "./push/pushSend.ts"), "utf8");
+const pushCopySrc = readFileSync(join(here, "./push/pushCopy.ts"), "utf8");
 const revealAttachSrc = readFileSync(join(here, "./reveal-and-attach-posts.ts"), "utf8");
 
 type CreatedNotif = {
@@ -297,10 +298,76 @@ describe("VAT-ANON-5 wiring + security surface", () => {
     assert.doesNotMatch(revealAttachSrc, /notifyAnonymousTrackRevealed|\banonymous_track_revealed\b/);
   });
 
+  it("reveal copy includes emoji only when paid access is passed", async () => {
+    const notifications: CreatedNotif[] = [];
+    const deps: NotifyAnonymousRevealedDeps = {
+      getPostOwnerId: async () => UPLOADER,
+      getLikerIds: async () => [LIKER],
+      hasExistingRevealNotification: async () => false,
+      createNotification: async (input) => {
+        notifications.push({
+          recipientId: input.recipientId,
+          notificationType: input.notificationType,
+          message: input.message,
+          postId: input.postId,
+          triggeredBy: input.triggeredBy,
+        });
+        return { id: "reveal-emoji" };
+      },
+      sendPush: () => {},
+    };
+    await runNotifyAnonymousTrackRevealed(
+      {
+        postId: POST_ID,
+        revealedArtistId: ARTIST_ID,
+        revealedArtistUsername: "sota",
+        trackTitle: null,
+        notificationEmoji: "⚙️",
+        notificationEmojiPaidAccess: true,
+      },
+      deps,
+    );
+    assert.equal(
+      notifications.find((n) => n.recipientId === UPLOADER)?.message,
+      "Mystery solved — it's @sota ⚙️",
+    );
+    assert.equal(
+      notifications.find((n) => n.recipientId === LIKER)?.message,
+      "The artist behind a track you saved has revealed themselves — @sota ⚙️",
+    );
+
+    const plain: CreatedNotif[] = [];
+    await runNotifyAnonymousTrackRevealed(
+      {
+        postId: POST_ID,
+        revealedArtistId: ARTIST_ID,
+        revealedArtistUsername: "sota",
+        trackTitle: null,
+        notificationEmoji: "⚙️",
+        notificationEmojiPaidAccess: false,
+      },
+      {
+        ...deps,
+        hasExistingRevealNotification: async () => false,
+        createNotification: async (input) => {
+          plain.push({
+            recipientId: input.recipientId,
+            notificationType: input.notificationType,
+            message: input.message,
+            postId: input.postId,
+            triggeredBy: input.triggeredBy,
+          });
+          return { id: "reveal-plain" };
+        },
+      },
+    );
+    assert.equal(plain.find((n) => n.recipientId === UPLOADER)?.message, "Mystery solved — it's @sota");
+  });
+
   it("pushSend supports actor-less anonymous_track_identified payload", () => {
     assert.match(pushSendSrc, /"anonymous_track_identified"/);
     assert.match(pushSendSrc, /"anonymous_track_revealed"/);
-    assert.match(pushSendSrc, /TRACK_ID_REVEALED_TITLE/);
+    assert.match(pushCopySrc, /TRACK_ID_REVEALED_TITLE/);
     assert.match(pushSendSrc, /Actor-less: no artistId/);
   });
 });

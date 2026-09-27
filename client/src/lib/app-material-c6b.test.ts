@@ -52,6 +52,10 @@ const vatRowSrc = readFileSync(
   join(here, "../components/verified-artist-tools-settings-row.tsx"),
   "utf8",
 );
+const paywallSrc = readFileSync(
+  join(here, "../components/verified-artist-tools-paywall.tsx"),
+  "utf8",
+);
 const switchSrc = readFileSync(join(here, "../components/ui/switch.tsx"), "utf8");
 const mappingSrc = readFileSync(join(here, "./settings-subscription-row.ts"), "utf8");
 const notificationsSrc = readFileSync(join(here, "../pages/settings-notifications.tsx"), "utf8");
@@ -255,10 +259,38 @@ describe("C6B VAT presentation", () => {
     assert.doesNotMatch(vatRowSrc, /bg-black\/20/);
   });
 
-  it("keeps amber on the warning icon only and recedes plan ticks from teal", () => {
+  it("keeps amber on the warning icon only", () => {
     assert.match(vatRowSrc, /text-amber-500\/90/);
-    assert.doesNotMatch(vatRowSrc, /#4ae9df|#4ae9df/);
-    assert.match(vatRowSrc, /Check[\s\S]{0,160}text-muted-foreground/);
+    assert.match(vatRowSrc, /Check[\s\S]{0,280}text-muted-foreground/);
+  });
+
+  it("uses the paywall tick colour for Active and plan checks", () => {
+    assert.match(vatRowSrc, /view\.mode === "active" && "text-\[#4ae9df\]"/);
+    assert.match(vatRowSrc, /view\.mode === "active" \? "text-\[#4ae9df\]" : "text-muted-foreground"/);
+    assert.match(paywallSrc, /text-\[#4ae9df\]/);
+    assert.match(vatRowSrc, /text-xs leading-relaxed text-muted-foreground/);
+    assert.doesNotMatch(vatRowSrc, /text-green-500/);
+  });
+
+  it("keeps billing and legal links on one footer line without a divider", () => {
+    const legalAt = vatRowSrc.indexOf('data-testid="settings-vat-legal"');
+    const billingAt = vatRowSrc.indexOf("Billing is managed through Apple.");
+    const termsAt = vatRowSrc.indexOf('data-testid="settings-vat-terms"');
+    const privacyAt = vatRowSrc.indexOf('data-testid="settings-vat-privacy"');
+    assert.ok(legalAt > 0 && billingAt > legalAt && termsAt > billingAt && privacyAt > termsAt);
+    const legalBlock = vatRowSrc.slice(legalAt, privacyAt + 200);
+    assert.doesNotMatch(legalBlock, /border-t/);
+    assert.doesNotMatch(legalBlock, /(?<!no-)underline/);
+    assert.match(vatRowSrc, /href=\{DUBHUB_TERMS_OF_USE_URL\}/);
+    assert.match(vatRowSrc, /href=\{DUBHUB_PRIVACY_POLICY_URL\}/);
+    const termsTag = vatRowSrc.slice(termsAt - 220, termsAt);
+    const privacyTag = vatRowSrc.slice(privacyAt - 220, privacyAt);
+    assert.match(termsTag, /font-semibold no-underline/);
+    assert.match(privacyTag, /font-semibold no-underline/);
+    assert.doesNotMatch(
+      vatRowSrc.slice(legalAt, billingAt + 40),
+      /font-semibold/,
+    );
   });
 
   it("does not change VAT mapping, handlers, or action visibility flags", () => {
@@ -424,6 +456,7 @@ describe("C6B.4 Settings shell atmosphere + compact header", () => {
     assert.equal(isSettingsUtilityRoute("/settings"), true);
     assert.equal(isSettingsUtilityRoute("/settings/notifications"), true);
     assert.equal(isSettingsUtilityRoute("/settings/manage-account"), true);
+    assert.equal(isSettingsUtilityRoute("/settings/artist"), true);
     assert.equal(isSettingsUtilityRoute("/settings/artist-questions"), true);
     assert.equal(isSettingsUtilityRoute("/settings/developer-diagnostics"), false);
     assert.equal(isSettingsUtilityRoute("/"), false);

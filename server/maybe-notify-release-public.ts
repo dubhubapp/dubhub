@@ -1,3 +1,8 @@
+import {
+  formatArtistIdentityMention,
+  type NotificationEmojiRenderInput,
+} from "@shared/notification-emoji";
+
 /**
  * Initial public release announcement fan-out.
  * Free release_attached is delivered via marker-backed per-post helper
@@ -12,8 +17,13 @@ export const RELEASE_ATTACHED_NOTIFICATION_MESSAGE =
 export function formatArtistReleaseAlertMessage(
   artistUsername: string,
   releaseTitle: string | null | undefined,
+  emoji?: NotificationEmojiRenderInput,
 ): string {
-  const mention = `@${artistUsername.trim() || "Artist"}`;
+  const mention = formatArtistIdentityMention({
+    mention: `@${artistUsername.trim() || "Artist"}`,
+    notificationEmoji: emoji?.notificationEmoji,
+    paidAccess: emoji?.paidAccess,
+  });
   const title = typeof releaseTitle === "string" ? releaseTitle.trim() : "";
   if (title.length > 0) return `${mention} announced a new release: ${title}`;
   return `${mention} announced a new release.`;
@@ -52,6 +62,8 @@ export type MaybeNotifyReleasePublicDeps = {
   getAttachedRecipientIds: (releaseId: string, artistId: string) => Promise<string[]>;
   getAlertSubscriberIds: (artistId: string) => Promise<string[]>;
   getOwnerUsername: (artistId: string) => Promise<string>;
+  /** Stored profiles.notification_emoji. Omitted → no emoji. */
+  getStoredNotificationEmoji?: (artistId: string) => Promise<string | null | undefined>;
   /** Fail-closed boolean gate; do not invent lifecycle reasons from this alone. */
   canArtistDeliverReleaseAlerts: (artistId: string) => Promise<boolean>;
   /** Environment selected for the entitlement check (logging only). */
@@ -72,6 +84,8 @@ export type MaybeNotifyReleasePublicDeps = {
     artistId: string;
     artistUsername: string;
     releaseTitle: string;
+    notificationEmoji?: string | null;
+    notificationEmojiPaidAccess?: boolean;
   }) => void;
   markNotified: (releaseId: string) => Promise<void>;
   log?: (payload: Record<string, unknown>) => void;
@@ -108,7 +122,6 @@ export async function runMaybeNotifyReleasePublic(
   const alertOnlyRecipientIds = alertSubscriberIds.filter((id) => !attachedSet.has(id));
   const ownerUsername = await deps.getOwnerUsername(artistId);
   const releaseTitle = release.title ?? "Release";
-  const alertMessage = formatArtistReleaseAlertMessage(ownerUsername, releaseTitle);
   const firstPostId = postIds[0] ?? null;
 
   let deliveryAllowed = false;
@@ -117,6 +130,13 @@ export async function runMaybeNotifyReleasePublic(
   } catch {
     deliveryAllowed = false;
   }
+
+  const storedEmoji = (await deps.getStoredNotificationEmoji?.(artistId)) ?? null;
+  const emojiInput = {
+    notificationEmoji: storedEmoji,
+    paidAccess: deliveryAllowed,
+  };
+  const alertMessage = formatArtistReleaseAlertMessage(ownerUsername, releaseTitle, emojiInput);
 
   let alertNotificationCount = 0;
   let alertPushAttemptCount = 0;
@@ -146,6 +166,8 @@ export async function runMaybeNotifyReleasePublic(
         artistId,
         artistUsername: ownerUsername,
         releaseTitle,
+        notificationEmoji: storedEmoji,
+        notificationEmojiPaidAccess: deliveryAllowed,
       });
       alertPushAttemptCount += 1;
     }
