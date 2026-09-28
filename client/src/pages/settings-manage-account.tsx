@@ -5,6 +5,11 @@
 
 import { useState } from "react";
 import { useLocation } from "wouter";
+import {
+  interactiveParentNavigation,
+  popHistoryToInteractiveParent,
+} from "@/lib/interactive-page-transitions";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ChevronLeft, ChevronRight, Globe2, KeyRound, Trash2, UserRound } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { DeleteAccountDialog } from "@/components/auth/DeleteAccountDialog";
@@ -53,12 +58,14 @@ export default function SettingsManageAccountPage({
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
-  const handleBack = () => {
+  const commitBack = () => {
+    if (popHistoryToInteractiveParent("/settings")) return;
     navigate("/settings", { replace: true });
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   return (
-    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage onBack={commitBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
       <div className={SETTINGS_PAGE_PAD_CLASS}>
         <div className="max-w-md mx-auto">
           <div>
@@ -89,7 +96,12 @@ export default function SettingsManageAccountPage({
               <button
                 type="button"
                 className={SETTINGS_NAV_ROW_CLASS}
-                onClick={() => navigate(COUNTRY_PICKER_MANAGE_ACCOUNT_HREF)}
+                onClick={() =>
+                  navigate(
+                    COUNTRY_PICKER_MANAGE_ACCOUNT_HREF,
+                    interactiveParentNavigation("/settings/manage-account"),
+                  )
+                }
                 data-testid="button-settings-country"
                 aria-label="Country"
               >

@@ -1,4 +1,5 @@
 import { useLocation } from "wouter";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ChevronLeft, MessageCircleQuestion } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { ArtistProfileQuestionsManage } from "@/components/artist-profile-questions-manage";
@@ -23,13 +24,14 @@ export default function ArtistQuestionsManagePage() {
   const [, navigate] = useLocation();
   const { verifiedArtist, userType } = useUser();
 
-  const handleBack = () => {
+  const commitBack = () => {
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
     navigate("/settings", { replace: true });
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   useEffect(() => {
     if (userType !== "artist" || !verifiedArtist) {
@@ -42,7 +44,7 @@ export default function ArtistQuestionsManagePage() {
   }
 
   return (
-    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage onBack={commitBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
       <div className={SETTINGS_PAGE_PAD_CLASS}>
         <div className="max-w-md mx-auto">
           <div>

@@ -10,6 +10,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
+import { popHistoryToInteractiveParent } from "@/lib/interactive-page-transitions";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { Check, ChevronLeft, Search, X } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import {
@@ -71,8 +73,10 @@ export default function SettingsCountryPage() {
   const selectedName = getCountryDisplayName(localCode);
 
   const goBack = () => {
+    if (popHistoryToInteractiveParent(returnTo)) return;
     navigate(returnTo, { replace: true });
   };
+  const handleCountryBack = useSettingsInteractiveBack(goBack);
 
   const persist = async (next: string | null) => {
     if (saving) return;
@@ -128,7 +132,7 @@ export default function SettingsCountryPage() {
         <button
           type="button"
           className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
-          onClick={goBack}
+          onClick={handleCountryBack}
           aria-label="Back"
           data-testid="button-settings-country-back"
         >

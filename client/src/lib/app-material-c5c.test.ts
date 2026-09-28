@@ -138,7 +138,7 @@ describe("C5C public premium root + Back lane", () => {
   it("keeps ChevronLeft, aria-label Back, and handleBack", () => {
     assert.match(publicProfileSrc, /ChevronLeft/);
     assert.match(publicProfileSrc, /aria-label="Back"/);
-    assert.match(publicProfileSrc, /const handleBack = \(\) =>/);
+    assert.match(publicProfileSrc, /const handleBack = useSettingsInteractiveBack\(commitBack\)/);
     assert.match(publicProfileSrc, /onClick=\{handleBack\}/);
     assert.match(publicProfileSrc, /window\.history\.back/);
   });

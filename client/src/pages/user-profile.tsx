@@ -2581,29 +2581,6 @@ export default function UserProfile() {
     liked: Array.isArray(likedPosts) ? likedPosts.length : 0,
   });
 
-  if (!currentUser) {
-    const handleRecoverAuth = async () => {
-      await hardResetLocalAuthState({ clearSessionStorage: false });
-      navigate("/", { replace: true });
-    };
-
-    return (
-      <div className="flex-1 bg-background flex items-center justify-center px-6 py-10">
-        <div className="max-w-md w-full space-y-4 rounded-xl border border-white/10 bg-black/25 p-6 text-center">
-          <p className="text-base font-medium text-gray-100">
-            We couldn&apos;t load your dub hub profile
-          </p>
-          <p className="text-sm text-muted-foreground">
-            If you haven&apos;t verified your email yet, open the link in your dub hub email first. Otherwise your saved sign-in may be out of date—tap below to sign out, then sign in again.
-          </p>
-          <Button type="button" className="w-full" variant="secondary" onClick={() => void handleRecoverAuth()}>
-            Sign out &amp; return to sign in
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   const profileOverviewStatsLoading = statsLoading || reputationLoading;
 
   // User data from current user context - ONLY use real data from Supabase
@@ -3239,6 +3216,29 @@ export default function UserProfile() {
         PROFILE_TAB_PAGER_PANEL_VERT_UNLOCK_CLASS,
       ...extra,
     );
+
+  if (!currentUser) {
+    const handleRecoverAuth = async () => {
+      await hardResetLocalAuthState({ clearSessionStorage: false });
+      navigate("/", { replace: true });
+    };
+
+    return (
+      <div className="flex-1 bg-background flex items-center justify-center px-6 py-10">
+        <div className="max-w-md w-full space-y-4 rounded-xl border border-white/10 bg-black/25 p-6 text-center">
+          <p className="text-base font-medium text-gray-100">
+            We couldn&apos;t load your dub hub profile
+          </p>
+          <p className="text-sm text-muted-foreground">
+            If you haven&apos;t verified your email yet, open the link in your dub hub email first. Otherwise your saved sign-in may be out of date—tap below to sign out, then sign in again.
+          </p>
+          <Button type="button" className="w-full" variant="secondary" onClick={() => void handleRecoverAuth()}>
+            Sign out &amp; return to sign in
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

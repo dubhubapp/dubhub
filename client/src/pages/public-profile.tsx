@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { ChevronLeft, Check, Heart, MessageCircle, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { GoldVerifiedTick } from "@/components/verified-artist";
@@ -174,7 +175,7 @@ function PublicArtistReleasesSkeleton() {
   return <PublicArtistDiscographySkeleton />;
 }
 
-export default function PublicProfile() {
+export default function PublicProfile({ stackPath }: { stackPath?: string } = {}) {
   const [, params] = useRoute("/profile/:username");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
@@ -185,13 +186,16 @@ export default function PublicProfile() {
   const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
 
   const routeUsername = useMemo(() => {
-    const raw = params?.username ?? "";
+    const fromStack = stackPath?.startsWith("/profile/")
+      ? stackPath.slice("/profile/".length)
+      : "";
+    const raw = fromStack || params?.username || "";
     try {
       return decodeURIComponent(raw).trim();
     } catch {
       return raw.trim();
     }
-  }, [params?.username]);
+  }, [params?.username, stackPath]);
 
   const viewerNormalized = (viewerUsername ?? "").trim().toLowerCase();
   const routeNormalized = routeUsername.toLowerCase();
@@ -299,13 +303,14 @@ export default function PublicProfile() {
     [navigate, queryClient, routeUsername],
   );
 
-  const handleBack = () => {
+  const commitBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
       return;
     }
     navigate("/");
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   const enterMotionClass = playEnterAnimation
     ? "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-safe:ease-out"
@@ -318,7 +323,7 @@ export default function PublicProfile() {
 
   if (!routeUsername) {
     return (
-      <SwipeBackPage onBack={handleBack} className={publicProfilePageScrollClass(false)}>
+      <SwipeBackPage onBack={commitBack} className={publicProfilePageScrollClass(false)}>
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
           <p className="text-sm text-gray-400">Profile not found.</p>
           <button
@@ -344,7 +349,7 @@ export default function PublicProfile() {
 
   if (isError || !profile) {
     return (
-      <SwipeBackPage onBack={handleBack} className={publicProfilePageScrollClass(false)}>
+      <SwipeBackPage onBack={commitBack} className={publicProfilePageScrollClass(false)}>
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
           <p className="text-sm text-gray-400">This profile could not be found.</p>
           <button
@@ -430,7 +435,7 @@ export default function PublicProfile() {
   return (
     <SwipeBackPage
       enabled={!avatarLightboxOpen}
-      onBack={handleBack}
+      onBack={commitBack}
       className={publicProfilePageScrollClass(hasReadyUploadedBanner)}
     >
       <div

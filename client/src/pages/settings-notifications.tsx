@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ChevronLeft, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -244,16 +245,17 @@ export default function SettingsNotificationsPage() {
     Capacitor.isNativePlatform() && pushDeviceAlertsEnabled === null;
   const pushCategoriesInactive = pushPrefs !== null && !pushPrefs.devicePushAlerts;
 
-  const handleBack = () => {
+  const commitBack = () => {
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
     navigate("/settings", { replace: true });
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   return (
-    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage onBack={commitBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
       <div className={SETTINGS_PAGE_PAD_CLASS}>
         <div className="max-w-md mx-auto">
           <div>

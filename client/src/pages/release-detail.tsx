@@ -64,6 +64,7 @@ import {
 } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ReleaseDetailSkeleton } from "@/components/release-detail-skeleton";
 import {
   fetchReleaseById,
@@ -384,13 +385,14 @@ export default function ReleaseDetail() {
       toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
     }
   }, [id, toast]);
-  const handleBack = () => {
+  const commitBack = () => {
     if (releaseDetailOpenedFromProfile(search) && typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
       return;
     }
     navigate(releasesBackUrl);
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   if (!isPending && !isFetching && (error || !release)) {
     return (
@@ -493,7 +495,7 @@ export default function ReleaseDetail() {
   return (
     <SwipeBackPage
       enabled={!galleryInitialPostId && !artworkLightboxOpen}
-      onBack={handleBack}
+      onBack={commitBack}
       className={cn(
         "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,

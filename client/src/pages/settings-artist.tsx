@@ -5,6 +5,8 @@
 
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { popHistoryToInteractiveParent } from "@/lib/interactive-page-transitions";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ChevronLeft, ChevronRight, MessageCircleQuestion, Music2 } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { VerifiedArtistToolsSettingsRow } from "@/components/verified-artist-tools-settings-row";
@@ -68,9 +70,11 @@ export default function SettingsArtistPage() {
     };
   }, []);
 
-  const handleBack = () => {
+  const commitBack = () => {
+    if (popHistoryToInteractiveParent("/settings")) return;
     navigate("/settings", { replace: true });
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   useEffect(() => {
     if (userType !== "artist" || !verifiedArtist) {
@@ -83,7 +87,7 @@ export default function SettingsArtistPage() {
   }
 
   return (
-    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage onBack={commitBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
       <div
         className={SETTINGS_PAGE_PAD_CLASS}
         data-testid="settings-artist-scroll-pad"

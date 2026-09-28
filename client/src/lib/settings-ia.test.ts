@@ -312,7 +312,8 @@ describe("settings corrective slice — scroll + flat containers", () => {
     assert.match(APP_PAGE_SCROLL_CLASS, /min-h-0/);
     assert.match(APP_PAGE_SCROLL_CLASS, /overflow-y-auto/);
     assert.match(settingsSrc, /SETTINGS_PAGE_SCROLL_CLASS/);
-    assert.match(settingsSrc, /onBack=\{handleBack\}/);
+    assert.match(settingsSrc, /onBack=\{commitBack\}/);
+    assert.match(settingsSrc, /onClick=\{handleBack\}/);
     assert.doesNotMatch(settingsSrc, /className=\{`[^`]*min-h-screen/);
     assert.doesNotMatch(settingsSrc, /className="[^"]*min-h-screen/);
     assert.doesNotMatch(settingsSrc, /min-h-dvh/);

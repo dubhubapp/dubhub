@@ -46,6 +46,8 @@ import SettingsManageAccountPage from "@/pages/settings-manage-account";
 import SettingsArtistPage from "@/pages/settings-artist";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
+import { InteractiveSettingsStack } from "@/components/interactive-settings-stack";
+import { interactivePageTransitionsEnabled } from "@/lib/interactive-page-transitions";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
 import { lgNav5aMark, lgNav5aProfiledPage } from "@/lib/lg-nav-5a-timing";
 import { SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS } from "@/lib/app-material";
@@ -109,6 +111,56 @@ import { clearHomeWidgetOnLogout } from "@/lib/home-widget-session";
 const Leaderboard = lgNav5aProfiledPage("leaderboard", LeaderboardPage);
 const ReleaseTracker = lgNav5aProfiledPage("releases", ReleaseTrackerPage);
 const UserProfile = lgNav5aProfiledPage("profile", UserProfilePage);
+
+function SettingsNotificationsRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <SettingsNotificationsPage />;
+}
+
+function SettingsCountryRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <SettingsCountryPage />;
+}
+
+function SettingsArtistRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <SettingsArtistPage />;
+}
+
+function SettingsArtistQuestionsRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <ArtistQuestionsManagePage />;
+}
+
+function SettingsDeveloperDiagnosticsRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <SettingsDeveloperDiagnosticsPage />;
+}
+
+function UserProfileRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <UserProfile />;
+}
+
+function PublicProfileRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <PublicProfile />;
+}
+
+function LeaderboardRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <Leaderboard />;
+}
+
+function ReleaseTrackerRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <ReleaseTracker />;
+}
+
+function ReleaseDetailRoute() {
+  if (interactivePageTransitionsEnabled()) return null;
+  return <ReleaseDetail />;
+}
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -867,11 +919,13 @@ function App() {
   const startupOverlayActive = startupOverlayVisible !== null;
 
   // Wrapper for settings actions that require app-level sign-out behavior
-  const SettingsWithSignOut = () => <SettingsPage onSignOut={handleSignOut} />;
+  const SettingsWithSignOut = () =>
+    interactivePageTransitionsEnabled() ? null : <SettingsPage onSignOut={handleSignOut} />;
 
-  const SettingsManageAccountWithDeletion = () => (
-    <SettingsManageAccountPage onAccountDeleted={handleAccountDeleted} />
-  );
+  const SettingsManageAccountWithDeletion = () =>
+    interactivePageTransitionsEnabled() ? null : (
+      <SettingsManageAccountPage onAccountDeleted={handleAccountDeleted} />
+    );
 
   let appShell: React.ReactNode;
   if (isLoading) {
@@ -1005,24 +1059,28 @@ function App() {
             <Route path="/submit-metadata" component={SubmitMetadata} />
             <Route path="/releases/new" component={ReleaseCreate} />
             <Route path="/releases/:id/edit" component={ReleaseEdit} />
-            <Route path="/releases/:id" component={ReleaseDetail} />
-            <Route path="/releases" component={ReleaseTracker} />
-            <Route path="/leaderboard" component={Leaderboard} />
-            <Route path="/profile/:username" component={PublicProfile} />
-            <Route path="/profile" component={UserProfile} />
-            <Route path="/settings/notifications" component={SettingsNotificationsPage} />
-            <Route path="/settings/country" component={SettingsCountryPage} />
+            <Route path="/releases/:id" component={ReleaseDetailRoute} />
+            <Route path="/releases" component={ReleaseTrackerRoute} />
+            <Route path="/leaderboard" component={LeaderboardRoute} />
+            <Route path="/profile/:username" component={PublicProfileRoute} />
+            <Route path="/profile" component={UserProfileRoute} />
+            <Route path="/settings/notifications" component={SettingsNotificationsRoute} />
+            <Route path="/settings/country" component={SettingsCountryRoute} />
             <Route path="/settings/manage-account" component={SettingsManageAccountWithDeletion} />
-            <Route path="/settings/artist" component={SettingsArtistPage} />
-            <Route path="/settings/artist-questions" component={ArtistQuestionsManagePage} />
+            <Route path="/settings/artist" component={SettingsArtistRoute} />
+            <Route path="/settings/artist-questions" component={SettingsArtistQuestionsRoute} />
             <Route
               path="/settings/developer-diagnostics"
-              component={SettingsDeveloperDiagnosticsPage}
+              component={SettingsDeveloperDiagnosticsRoute}
             />
             <Route path="/settings" component={SettingsWithSignOut} />
             <Route path="/moderator" component={ModeratorPage} />
             <Route component={NotFound} />
           </Switch>
+          <InteractiveSettingsStack
+            onSignOut={handleSignOut}
+            onAccountDeleted={handleAccountDeleted}
+          />
           </AuthenticatedMainShell>
           <SubmitClipDrawer />
           <VerifiedArtistToolsPaywallHost />

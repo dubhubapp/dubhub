@@ -5,6 +5,8 @@
 
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { popHistoryToInteractiveParent } from "@/lib/interactive-page-transitions";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ArrowLeft } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -162,16 +164,18 @@ export default function SettingsDeveloperDiagnosticsPage() {
     }
   }, [showRcIdentityDiagnostics, navigate]);
 
-  const handleBack = () => {
+  const commitBack = () => {
+    if (popHistoryToInteractiveParent("/settings")) return;
     navigate("/settings", { replace: true });
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   if (!showRcIdentityDiagnostics) {
     return null;
   }
 
   return (
-    <SwipeBackPage onBack={handleBack} className={`${APP_PAGE_SCROLL_CLASS} bg-background`}>
+    <SwipeBackPage onBack={commitBack} className={`${APP_PAGE_SCROLL_CLASS} bg-background`}>
       <div className="app-page-top-pad px-6">
         <div className="max-w-md mx-auto space-y-6">
         <div>

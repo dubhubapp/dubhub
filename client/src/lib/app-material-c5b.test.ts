@@ -139,7 +139,7 @@ describe("C5B public profile Back", () => {
   it("preserves handleBack history/fallback routing", () => {
     assert.match(
       publicProfileSrc,
-      /const handleBack = \(\) => \{\s*if \(typeof window !== "undefined" && window\.history\.length > 1\) \{\s*window\.history\.back\(\);\s*return;\s*\}\s*navigate\("\/"\);\s*\};/s,
+      /const commitBack = \(\) => \{\s*if \(typeof window !== "undefined" && window\.history\.length > 1\) \{\s*window\.history\.back\(\);\s*return;\s*\}\s*navigate\("\/"\);\s*\};/s,
     );
     assert.match(publicProfileSrc, /onClick=\{handleBack\}/);
     assert.match(publicProfileSrc, /onBack=\{handleBack\}/);

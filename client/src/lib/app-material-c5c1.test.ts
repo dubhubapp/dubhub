@@ -65,7 +65,7 @@ describe("C5C.1 public Back lane + own Profile canvas visibility", () => {
     assert.match(publicProfileSrc, /pt-1\.5/);
     assert.match(publicProfileSrc, /ChevronLeft/);
     assert.match(publicProfileSrc, /aria-label="Back"/);
-    assert.match(publicProfileSrc, /const handleBack = \(\) =>/);
+    assert.match(publicProfileSrc, /const handleBack = useSettingsInteractiveBack\(commitBack\)/);
   });
 
   it("does not cover no-banner own Profile hero with a legacy opaque navy plate", () => {

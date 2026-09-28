@@ -28,6 +28,8 @@ import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
 import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { interactiveParentNavigation } from "@/lib/interactive-page-transitions";
+import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { revenueCatIdentityDiagnosticsEnabled } from "@/lib/revenuecat-identity";
 import {
   APP_MATERIAL_BACK_BUTTON_CLASS,
@@ -112,13 +114,14 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
     setFeedStartWithSoundState(enabled);
   };
 
-  const handleBack = () => {
+  const commitBack = () => {
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
     navigate("/profile");
   };
+  const handleBack = useSettingsInteractiveBack(commitBack);
 
   const handleLogout = async () => {
     if (onSignOut) {
@@ -129,7 +132,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   };
 
   return (
-    <SwipeBackPage onBack={handleBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
+    <SwipeBackPage onBack={commitBack} className={SETTINGS_PAGE_SCROLL_CLASS}>
       <div className={SETTINGS_PAGE_PAD_CLASS}>
         <div className="max-w-md mx-auto">
           <div>
@@ -167,7 +170,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
               <button
                 type="button"
                 className={SETTINGS_NAV_ROW_CLASS}
-                onClick={() => navigate("/settings/manage-account")}
+                onClick={() => navigate("/settings/manage-account", interactiveParentNavigation("/settings"))}
                 data-testid="button-manage-account"
                 aria-label="Manage account"
               >
@@ -219,7 +222,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 <button
                   type="button"
                   className={SETTINGS_NAV_ROW_CLASS}
-                  onClick={() => navigate("/settings/artist")}
+                  onClick={() => navigate("/settings/artist", interactiveParentNavigation("/settings"))}
                   data-testid="button-settings-artist"
                   aria-label="Artist"
                 >
@@ -327,7 +330,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                 <button
                   type="button"
                   className={SETTINGS_NAV_ROW_CLASS}
-                  onClick={() => navigate("/settings/developer-diagnostics")}
+                  onClick={() => navigate("/settings/developer-diagnostics", interactiveParentNavigation("/settings"))}
                   data-testid="button-settings-developer-diagnostics"
                   aria-label="Developer diagnostics"
                 >
