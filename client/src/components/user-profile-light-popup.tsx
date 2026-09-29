@@ -4,7 +4,37 @@ import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
-import { stashProfileReturnReopenComments, markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
+import { stashProfileReturnReopenComments, markPublicProfileEnterAnimation, consumePublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
+import {
+  COMMENTS_PROFILE_PUSH_FROM,
+  HOME_FEED_PROFILE_PUSH_FROM,
+  editDiscardReleaseDetailProfile,
+  holdReleaseEditReturnForProfileArrival,
+  interactiveBackTransitionsEnabled,
+  interactiveHomeTransitionsEnabled,
+  interactivePageTransitionsEnabled,
+  isInteractiveStackPair,
+  releaseEditOpenedFromDetailLocation,
+} from "@/lib/interactive-page-transitions";
+import {
+  armCommentsHomeReturnVisit,
+  armCommentsProfilePushUnderlay,
+} from "@/lib/comments-profile-push-underlay";
+import { armHomeFeedReleasePoster } from "@/lib/home-feed-release-poster";
+import {
+  activeReleaseDetailEditSessionId,
+  armReleaseDetailProfileUnderlay,
+  takeParkedReleaseDetailEditSurface,
+} from "@/lib/release-detail-profile-underlay";
+import {
+  bootstrapReleaseAtmosphere,
+  releaseAtmosphereCssVarValue,
+} from "@/lib/release-artwork-atmosphere";
+import {
+  noteDiscardedFormProfileArrival,
+  type ReleaseFormLeaveNavigation,
+} from "@/lib/release-form-leave";
+import { useReleaseFormRouteGuard } from "@/lib/release-form-route-guard";
 import {
   normalizePublicProfileResponse,
   publicProfileQueryKey,
@@ -113,6 +143,11 @@ type LightPopupOptions = {
    * Default: default (Home / Leaderboard z-[70]).
    */
   sheetStack?: ProfilePreviewSheetStack;
+  /**
+   * Own Profile Posts/Likes viewer only. Runs after the comments reopen stash
+   * is written and before the profile navigation timeout.
+   */
+  beforeOpenFullProfile?: () => void;
 };
 
 type OpenByUsernameOptions = {
@@ -130,6 +165,15 @@ type OpenByUsernameOptions = {
   reopenCommentsPostId?: string | null;
   /** Tap-context identity (Home `post.user`) for first paint without waiting on network. */
   seed?: ProfilePreviewSeed | null;
+  /**
+   * Set only by the Home feed card. Comments and Leaderboard omit this.
+   * Read at View Profile time, after the sheet close delay, while Home is still mounted.
+   */
+  homeFeedProfilePush?: (() => {
+    imageUrl: string | null;
+    objectFit: "cover" | "contain";
+    postId?: string;
+  }) | null;
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -182,7 +226,7 @@ type ProfilePopupUser = ProfilePreviewOpenUser & {
 };
 
 export function useUserProfileLightPopup(options?: LightPopupOptions) {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { username: viewerUsername, currentUser, isAuthenticated } = useUser();
   const [selectedUser, setSelectedUser] = useState<ProfilePopupUser | null>(null);
@@ -191,6 +235,11 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
   /** Increments on each `openByUsername` call so stale fetches never overwrite the active popup. */
   const profileOpenSeqRef = useRef(0);
   const lastOpenOptionsRef = useRef<OpenByUsernameOptions | undefined>(undefined);
+  const requestFormLeave = useReleaseFormRouteGuard();
+  const requestFormLeaveRef = useRef(requestFormLeave);
+  requestFormLeaveRef.current = requestFormLeave;
+  const beforeOpenFullProfileRef = useRef(options?.beforeOpenFullProfile);
+  beforeOpenFullProfileRef.current = options?.beforeOpenFullProfile;
   const presentation: ProfilePreviewPresentation = options?.presentation ?? "floating";
   const sheetStack: ProfilePreviewSheetStack = options?.sheetStack ?? "default";
 
@@ -337,21 +386,116 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
       if (reopenPostId) {
         stashProfileReturnReopenComments(reopenPostId);
       }
+      beforeOpenFullProfileRef.current?.();
 
       setShowUserPopup(false);
 
+      const homeFeedProfilePush = lastOpenOptionsRef.current?.homeFeedProfilePush;
+      const commentsOrigin = Boolean(reopenPostId);
       const navigateAfterClose = () => {
-        if (viewerNorm && targetNorm === viewerNorm) {
-          navigate("/profile");
+        const go = (navigation: ReleaseFormLeaveNavigation = "push") => {
+          if (viewerNorm && targetNorm === viewerNorm) {
+            if (navigation === "replace") {
+              holdReleaseEditReturnForProfileArrival();
+              navigate("/profile", { replace: true });
+              return;
+            }
+            navigate("/profile");
+            return;
+          }
+          const destination = `/profile/${encodeURIComponent(trimmed)}`;
+          if (navigation === "replace") {
+            holdReleaseEditReturnForProfileArrival();
+            const detailReturn = editDiscardReleaseDetailProfile({
+              formLocation: location,
+              username: trimmed,
+              isSelf: false,
+              detailLocation: releaseEditOpenedFromDetailLocation(),
+              globalEnabled: interactivePageTransitionsEnabled(),
+              homeEnabled: interactiveHomeTransitionsEnabled(),
+              backEnabled: interactiveBackTransitionsEnabled(),
+            });
+            if (detailReturn) {
+              let releaseId = detailReturn.releasePath.split("?")[0].slice("/releases/".length);
+              try {
+                releaseId = decodeURIComponent(releaseId);
+              } catch {
+                /* keep the path segment */
+              }
+              const cached = queryClient.getQueryData<{ artworkUrl?: string | null }>([
+                "/api/releases",
+                releaseId,
+              ]);
+              const artworkUrl =
+                typeof cached?.artworkUrl === "string" ? cached.artworkUrl.trim() : "";
+              const atmosphere = bootstrapReleaseAtmosphere(artworkUrl || null);
+              const taken = takeParkedReleaseDetailEditSurface({
+                releaseId,
+                releasePath: detailReturn.releasePath,
+                editSessionId: activeReleaseDetailEditSessionId(),
+              });
+              armReleaseDetailProfileUnderlay({
+                destinationPath: detailReturn.profilePath,
+                releasePath: detailReturn.releasePath,
+                imageUrl: artworkUrl || null,
+                atmosphereRgb: releaseAtmosphereCssVarValue(atmosphere.rgb),
+                atmosphereMode: atmosphere.mode,
+                atmosphereReady: atmosphere.ready,
+                atmosphereInstant: atmosphere.instant,
+                surface: taken?.node ?? null,
+                scrollTop: taken?.scrollTop ?? 0,
+              });
+              navigate(detailReturn.profilePath, { replace: true });
+              return;
+            }
+            noteDiscardedFormProfileArrival();
+            const profilePath =
+              commentsOrigin && interactiveHomeTransitionsEnabled()
+                ? `${destination}?from=${COMMENTS_PROFILE_PUSH_FROM}`
+                : destination;
+            navigate(profilePath, { replace: true });
+            return;
+          }
+          if (commentsOrigin && interactiveHomeTransitionsEnabled()) {
+            consumePublicProfileEnterAnimation();
+            const marked = `${destination}?from=${COMMENTS_PROFILE_PUSH_FROM}`;
+            if (!isInteractiveStackPair(location, marked)) {
+              armCommentsProfilePushUnderlay(marked);
+              armCommentsHomeReturnVisit({
+                destinationPath: marked,
+                postId: reopenPostId ?? "",
+                parentPath: location,
+              });
+            }
+            navigate(marked);
+            return;
+          }
+          const poster = homeFeedProfilePush?.() ?? null;
+          if (poster && interactiveHomeTransitionsEnabled()) {
+            consumePublicProfileEnterAnimation();
+            armHomeFeedReleasePoster({
+              destinationPath: `${destination}?from=${HOME_FEED_PROFILE_PUSH_FROM}`,
+              imageUrl: poster.imageUrl,
+              objectFit: poster.objectFit,
+              postId: poster.postId,
+            });
+            navigate(`${destination}?from=${HOME_FEED_PROFILE_PUSH_FROM}`);
+            return;
+          }
+          markPublicProfileEnterAnimation();
+          navigate(`/profile/${encodeURIComponent(trimmed)}`);
+        };
+        const guard = requestFormLeaveRef.current;
+        if (guard) {
+          guard(go);
           return;
         }
-        markPublicProfileEnterAnimation();
-        navigate(`/profile/${encodeURIComponent(trimmed)}`);
+        go();
       };
 
       window.setTimeout(navigateAfterClose, POPUP_CLOSE_MS);
     },
-    [navigate, viewerUsername],
+    [location, navigate, queryClient, viewerUsername],
   );
 
   const popup =

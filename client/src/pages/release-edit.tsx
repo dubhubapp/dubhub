@@ -104,6 +104,15 @@ import {
   type ReleaseEditSnapshot,
 } from "@/lib/release-edit-dirty";
 import {
+  beginReleaseFormLeave,
+  RELEASE_FORM_DISCARD_DIALOG_LAYER_CLASS,
+  releaseFormChildNavigation,
+  type ReleaseFormLeaveNavigation,
+} from "@/lib/release-form-leave";
+import { shouldPopReleaseEditToStackedDetail } from "@/lib/interactive-page-transitions";
+import { discardParkedReleaseDetailEditSurface } from "@/lib/release-detail-profile-underlay";
+import { ReleaseFormRouteGuardProvider } from "@/lib/release-form-route-guard";
+import {
   ReleaseAttachPostsSection,
   type EligiblePostForAttach,
 } from "@/components/release-attach-posts-section";
@@ -191,10 +200,21 @@ export default function ReleaseEdit() {
   const [revealAttachConfirmOpen, setRevealAttachConfirmOpen] = useState(false);
   const revealAttachApprovedRef = useRef(false);
   const pendingAttachIdsRef = useRef<string[]>([]);
+  const pendingLeaveRef = useRef<((navigation?: ReleaseFormLeaveNavigation) => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const exitToDetail = () =>
+  const exitToDetail = () => {
+    discardParkedReleaseDetailEditSurface();
+    if (
+      shouldPopReleaseEditToStackedDetail(releaseId) &&
+      typeof window !== "undefined" &&
+      window.history.length > 1
+    ) {
+      window.history.back();
+      return;
+    }
     navigate(resolveReleaseEditExitPath(releaseId, search));
+  };
   useIosKeyboardResizeNone(true);
   const { isNativeIos, keyboardHeight, prefersReducedMotion } = useIosKeyboardAwareScroll({
     enabled: true,
@@ -1021,14 +1041,33 @@ export default function ReleaseEdit() {
     currentEditSnapshot,
   );
   const handleBack = () => {
+    pendingLeaveRef.current = null;
     if (editBackDecision(isDirty) === "confirm") {
       setDiscardDialogOpen(true);
       return;
     }
     exitToDetail();
   };
+  const requestViewerLeave = (proceed: (navigation?: ReleaseFormLeaveNavigation) => void) => {
+    if (beginReleaseFormLeave(isDirty) === "confirm") {
+      pendingLeaveRef.current = proceed;
+      setDiscardDialogOpen(true);
+      return;
+    }
+    proceed(releaseFormChildNavigation("clean"));
+  };
+  const handleDiscardOpenChange = (open: boolean) => {
+    setDiscardDialogOpen(open);
+    if (!open) pendingLeaveRef.current = null;
+  };
   const handleDiscardConfirm = () => {
+    const pending = pendingLeaveRef.current;
+    pendingLeaveRef.current = null;
     setDiscardDialogOpen(false);
+    if (pending) {
+      pending(releaseFormChildNavigation("discard"));
+      return;
+    }
     exitToDetail();
   };
 
@@ -1070,11 +1109,12 @@ export default function ReleaseEdit() {
   const existingCollaboratorsCount = (release.collaborators || []).length;
 
   return (
+    <ReleaseFormRouteGuardProvider requestLeave={requestViewerLeave}>
     <SwipeBackPage
       enabled={false}
       onBack={handleBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none dubhub-app-form-canvas",
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none scrollbar-hide dubhub-app-form-canvas",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
       )}
     >
@@ -1514,6 +1554,7 @@ export default function ReleaseEdit() {
                     toast({ title: "Release deleted" });
                     setShowDeleteModal(false);
                     scheduleHomeWidgetRefreshAfterAuth();
+                    discardParkedReleaseDetailEditSurface();
                     navigate("/releases");
                   } catch (e) {
                     toast({
@@ -1535,10 +1576,16 @@ export default function ReleaseEdit() {
       </div>
       </div>
 
-      <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+      <AlertDialog open={discardDialogOpen} onOpenChange={handleDiscardOpenChange}>
         <AlertDialogContent
-          className={APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS}
-          overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
+          className={cn(
+            RELEASE_FORM_DISCARD_DIALOG_LAYER_CLASS,
+            APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+          )}
+          overlayClassName={cn(
+            RELEASE_FORM_DISCARD_DIALOG_LAYER_CLASS,
+            APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+          )}
         >
           <AlertDialogHeader>
             <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
@@ -1552,6 +1599,9 @@ export default function ReleaseEdit() {
             <AlertDialogCancel
               className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}
               data-testid="release-edit-discard-keep"
+              onClick={() => {
+                pendingLeaveRef.current = null;
+              }}
             >
               Keep editing
             </AlertDialogCancel>
@@ -1566,5 +1616,6 @@ export default function ReleaseEdit() {
         </AlertDialogContent>
       </AlertDialog>
     </SwipeBackPage>
+    </ReleaseFormRouteGuardProvider>
   );
 }

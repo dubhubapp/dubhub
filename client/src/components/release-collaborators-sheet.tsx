@@ -114,7 +114,7 @@ export function ReleaseCollaboratorsSheet({
         {hasExistingOrStaged || invitesLocked ? (
           <div
             className={cn(
-              "min-h-0 space-y-3 overflow-y-auto overscroll-contain",
+              "min-h-0 space-y-3 overflow-y-auto overscroll-contain scrollbar-hide",
               invitesLocked ? "flex-1" : "max-h-[30%] shrink-0",
             )}
             data-vaul-no-drag
@@ -225,7 +225,7 @@ export function ReleaseCollaboratorsSheet({
             </div>
 
             <div
-              className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-hide"
               data-vaul-no-drag
               data-testid="release-collaborators-search-results"
               style={{ WebkitOverflowScrolling: "touch" }}

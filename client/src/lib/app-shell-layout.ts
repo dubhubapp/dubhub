@@ -22,7 +22,7 @@ export const APP_MAIN_SHELL_CLASS = `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP
  * Do not stack page-level `pb-*` on top of this pair.
  */
 export const APP_PAGE_SCROLL_CLASS =
-  "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overscroll-y-none pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad))]";
+  "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overscroll-y-none scrollbar-hide pb-[calc(var(--app-scroll-nav-clearance)+var(--app-scroll-end-pad))]";
 
 /**
  * Opt-in alias that pins end-pad to the shared 24–32px band.

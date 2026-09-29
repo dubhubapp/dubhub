@@ -296,7 +296,7 @@ export const PRE_LOGIN_SCREEN_1_CLIP_CLASS =
 
 /** Screen 1 / generic clipped layer box — transparent so parent canvas shows through. */
 export const PRE_LOGIN_SCREEN_LAYER_CLASS =
-  "absolute inset-0 overflow-x-hidden overflow-y-auto bg-transparent";
+  "absolute inset-0 overflow-x-hidden overflow-y-auto scrollbar-hide bg-transparent";
 
 /** Screen 2 shell — clips transitions; vertical scroll lives in PRE_LOGIN_SCREEN_2_SCROLL_CLASS. */
 export const PRE_LOGIN_SCREEN_2_LAYER_CLASS =
@@ -306,7 +306,7 @@ export const PRE_LOGIN_SCREEN_2_SWITCHER_HOST_CLASS =
   "shrink-0 overflow-visible px-4 pt-4";
 /** Scrollport for perspective pager content only — switcher and CTA stay outside. */
 export const PRE_LOGIN_SCREEN_2_SCROLL_CLASS =
-  "flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto";
+  "flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto scrollbar-hide";
 
 export const PRE_LOGIN_SCREEN_TRANSITION_CLASS =
   "motion-safe:transition-[opacity,transform] motion-safe:duration-200 motion-safe:ease-out motion-reduce:transition-opacity motion-reduce:duration-150 motion-reduce:translate-x-0";

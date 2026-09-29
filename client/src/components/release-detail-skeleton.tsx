@@ -31,7 +31,7 @@ export function ReleaseDetailSkeleton({
       enabled
       onBack={onBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none pb-[clamp(0.75rem,2.5vw,1rem)]",
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none scrollbar-hide pb-[clamp(0.75rem,2.5vw,1rem)]",
         APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
       )}
       style={

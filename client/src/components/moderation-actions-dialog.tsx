@@ -296,7 +296,7 @@ export function ModerationActionsDialog({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
-        className={cn(APP_MATERIAL_DIALOG_CONTENT_CLASS, "max-h-[90vh] overflow-y-auto")}
+        className={cn(APP_MATERIAL_DIALOG_CONTENT_CLASS, "max-h-[90vh] overflow-y-auto scrollbar-hide")}
       >
         <DialogHeader>
           <DialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>Moderation Actions</DialogTitle>
@@ -333,7 +333,7 @@ export function ModerationActionsDialog({
             <div className="space-y-3 text-[11px]">
               <div>
                 <p className="text-muted-foreground font-medium mb-1.5">Warnings</p>
-                <div className="max-h-24 overflow-y-auto space-y-1.5 pr-0.5">
+                <div className="max-h-24 overflow-y-auto scrollbar-hide space-y-1.5 pr-0.5">
                   {(enforcementHistory?.history.warnings ?? []).length === 0 ? (
                     <p className="text-muted-foreground">None</p>
                   ) : (
@@ -361,7 +361,7 @@ export function ModerationActionsDialog({
               </div>
               <div>
                 <p className="text-muted-foreground font-medium mb-1.5">Suspensions</p>
-                <div className="max-h-24 overflow-y-auto space-y-1.5 pr-0.5">
+                <div className="max-h-24 overflow-y-auto scrollbar-hide space-y-1.5 pr-0.5">
                   {(enforcementHistory?.history.suspensions ?? []).length === 0 ? (
                     <p className="text-muted-foreground">None</p>
                   ) : (
@@ -394,7 +394,7 @@ export function ModerationActionsDialog({
               </div>
               <div>
                 <p className="text-muted-foreground font-medium mb-1.5">Bans</p>
-                <div className="max-h-20 overflow-y-auto space-y-1.5 pr-0.5">
+                <div className="max-h-20 overflow-y-auto scrollbar-hide space-y-1.5 pr-0.5">
                   {(enforcementHistory?.history.bans ?? []).length === 0 ? (
                     <p className="text-muted-foreground">None</p>
                   ) : (

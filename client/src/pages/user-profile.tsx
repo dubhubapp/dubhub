@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type CSSProperties } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { useToast } from "@/hooks/use-toast";
@@ -177,6 +177,16 @@ import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { FullScreenPostSequenceViewer } from "@/components/full-screen-post-sequence-viewer";
+import { OwnProfileViewerCommentsHost } from "@/lib/profile-navigation-return";
+import {
+  dismissProfileViewerReleaseReturnVisit,
+  getProfileViewerReleaseReturnVisit,
+  isProfileIdentificationFilter,
+  ProfileViewerReleaseSourceProvider,
+  profileViewerReleaseRestoreIndex,
+  rebuildProfileViewerReleaseSequence,
+} from "@/lib/profile-viewer-release-return";
+import { routePathname } from "@/lib/interactive-page-transitions";
 import { clampPostSequenceInitialIndex } from "@/lib/full-screen-post-sequence-viewer";
 import {
   consumeProfileNotificationsTabIntent,
@@ -872,7 +882,8 @@ export default function UserProfile() {
   const [isBannerMenuOpen, setIsBannerMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
-  const [, navigate] = useLocation();
+  const [profileLocation, navigate] = useLocation();
+  const profileViewerReleaseRestoredIdRef = useRef(0);
   const { data: userStats, isLoading: statsLoading, isError: statsError } = useQuery<UserStats>({
     queryKey: ["/api/user", currentUser?.id, "stats"],
     enabled: !!currentUser?.id,
@@ -1090,6 +1101,67 @@ export default function UserProfile() {
   );
   const identifiedLikedCount = useMemo(() => countIdentifiedPosts(likedPosts), [likedPosts]);
   const unidentifiedLikedCount = useMemo(() => countUnidentifiedPosts(likedPosts), [likedPosts]);
+
+  const profileViewerReleaseSource = useMemo(() => {
+    if (postsViewerStartIndex !== null && postsViewerSequence && postsViewerSequence.length > 0) {
+      return {
+        tab: "posts" as const,
+        filter: postFilter,
+        sequenceIds: postsViewerSequence.map((post) => post.id),
+      };
+    }
+    if (likesViewerStartIndex !== null && likesViewerSequence && likesViewerSequence.length > 0) {
+      return {
+        tab: "likes" as const,
+        filter: likesFilter,
+        sequenceIds: likesViewerSequence.map((post) => post.id),
+      };
+    }
+    return null;
+  }, [
+    likesFilter,
+    likesViewerSequence,
+    likesViewerStartIndex,
+    postFilter,
+    postsViewerSequence,
+    postsViewerStartIndex,
+  ]);
+
+  useLayoutEffect(() => {
+    const visit = getProfileViewerReleaseReturnVisit();
+    if (!visit || visit.presentation !== "bridging") return;
+    if (routePathname(profileLocation) !== "/profile") return;
+    if (profileViewerReleaseRestoredIdRef.current === visit.id) return;
+    const sourcePosts = visit.tab === "likes" ? likedPosts : userPosts;
+    const sourceLoading = visit.tab === "likes" ? likedLoading : postsLoading;
+    if (sourcePosts.length === 0 && sourceLoading) return;
+    if (!isProfileIdentificationFilter(visit.filter)) {
+      dismissProfileViewerReleaseReturnVisit(visit.id);
+      return;
+    }
+    const sequence = rebuildProfileViewerReleaseSequence(sourcePosts, visit.sequenceIds, visit.filter);
+    const index = profileViewerReleaseRestoreIndex(sequence, visit.activePostId);
+    if (index < 0) {
+      dismissProfileViewerReleaseReturnVisit(visit.id);
+      return;
+    }
+    profileViewerReleaseRestoredIdRef.current = visit.id;
+    if (visit.tab === "posts") {
+      setLikesViewerStartIndex(null);
+      setLikesViewerSequence(null);
+      setPostFilter(visit.filter);
+      setPostsViewerSequence(sequence);
+      setActiveTab("posts");
+      setPostsViewerStartIndex(index);
+      return;
+    }
+    setPostsViewerStartIndex(null);
+    setPostsViewerSequence(null);
+    setLikesFilter(visit.filter);
+    setLikesViewerSequence(sequence);
+    setActiveTab("liked");
+    setLikesViewerStartIndex(index);
+  }, [likedLoading, likedPosts, postsLoading, profileLocation, userPosts]);
 
   // Reset/clamp row windows on identity/filter; do NOT reset on activeTab swipe.
   useEffect(() => {
@@ -4364,6 +4436,13 @@ export default function UserProfile() {
         </div>
       </div>
 
+      <OwnProfileViewerCommentsHost
+        active={
+          (postsViewerStartIndex !== null && !!postsViewerSequence?.length) ||
+          (likesViewerStartIndex !== null && !!likesViewerSequence?.length)
+        }
+      >
+      <ProfileViewerReleaseSourceProvider value={profileViewerReleaseSource}>
       {postsViewerStartIndex !== null && postsViewerSequence && postsViewerSequence.length > 0 ? (
         <FullScreenPostSequenceViewer
           items={postsViewerSequence.map((post) => ({ id: post.id, post }))}
@@ -4385,6 +4464,8 @@ export default function UserProfile() {
           showStatusBadge
         />
       ) : null}
+      </ProfileViewerReleaseSourceProvider>
+      </OwnProfileViewerCommentsHost>
     </div>
   );
 }

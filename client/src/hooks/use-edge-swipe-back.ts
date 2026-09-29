@@ -314,6 +314,7 @@ export function useEdgeSwipeBack({
       const kind = gesture.getController().completeSettle();
       if (kind !== "commit") {
         gesture.interactionRef.current = false;
+        gesture.onCancelSettled?.();
         if (debugOn) setDebugSettle(null);
         return;
       }
@@ -323,6 +324,15 @@ export function useEdgeSwipeBack({
 
     const finishOnce = (via: "transitionend" | "fallback-timeout") => {
       if (settled || disposed) return;
+      if (gesture.abortRef.current) {
+        gesture.abortRef.current = false;
+        settled = true;
+        clearSurface();
+        gesture.getController().forceIdle();
+        gesture.interactionRef.current = false;
+        gesture.onCancelSettled?.();
+        return;
+      }
       settled = true;
       if (debugOn) logProfilePopSample(via);
       endSettle();
@@ -358,6 +368,7 @@ export function useEdgeSwipeBack({
     };
 
     const runSettle = (kind: "commit" | "cancel", source: "drag" | "button") => {
+      settled = false;
       const controller = gesture.getController();
       if (!controller.beginSettle(kind, source)) return;
       gesture.interactionRef.current = true;
@@ -405,6 +416,16 @@ export function useEdgeSwipeBack({
     };
 
     const onTouchMove = (event: TouchEvent) => {
+      if (gesture.abortRef.current) {
+        gesture.abortRef.current = false;
+        tracking = false;
+        dragging = false;
+        clearSurface();
+        gesture.getController().forceIdle();
+        gesture.interactionRef.current = false;
+        gesture.onCancelSettled?.();
+        return;
+      }
       if (!tracking) return;
       if (!dragging && !gesture.getController().canArm()) return;
       const touch = Array.from(event.touches).find((item) => item.identifier === pointerId);
@@ -428,6 +449,7 @@ export function useEdgeSwipeBack({
         }
         dragging = true;
         gesture.interactionRef.current = true;
+        gesture.onDragArmed?.();
       }
 
       const width = window.innerWidth || 1;
@@ -449,6 +471,16 @@ export function useEdgeSwipeBack({
     };
 
     const onTouchEnd = () => {
+      if (gesture.abortRef.current) {
+        gesture.abortRef.current = false;
+        tracking = false;
+        dragging = false;
+        clearSurface();
+        gesture.getController().forceIdle();
+        gesture.interactionRef.current = false;
+        gesture.onCancelSettled?.();
+        return;
+      }
       if (!tracking) return;
       if (!dragging) {
         tracking = false;
@@ -465,6 +497,16 @@ export function useEdgeSwipeBack({
     };
 
     const onTouchCancel = () => {
+      if (gesture.abortRef.current) {
+        gesture.abortRef.current = false;
+        tracking = false;
+        dragging = false;
+        clearSurface();
+        gesture.getController().forceIdle();
+        gesture.interactionRef.current = false;
+        gesture.onCancelSettled?.();
+        return;
+      }
       if (!dragging) {
         tracking = false;
         return;

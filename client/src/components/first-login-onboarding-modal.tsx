@@ -135,7 +135,7 @@ export function FirstLoginOnboardingModal({
         overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
         className={cn(
           APP_MATERIAL_DIALOG_CONTENT_CLASS,
-          "w-[calc(100%-2rem)] max-h-[min(90dvh,40rem)] gap-0 overflow-y-auto p-5 sm:p-6",
+          "w-[calc(100%-2rem)] max-h-[min(90dvh,40rem)] gap-0 overflow-y-auto scrollbar-hide p-5 sm:p-6",
         )}
         // Prevent Radix autofocus on the close control — iOS shows :focus-visible as a blue ring.
         onOpenAutoFocus={(event) => event.preventDefault()}

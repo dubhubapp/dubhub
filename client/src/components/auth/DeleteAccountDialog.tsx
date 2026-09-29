@@ -217,7 +217,7 @@ export function DeleteAccountDialog({
         ref={dialogContentRef}
         className={cn(
           APP_MATERIAL_DIALOG_CONTENT_CLASS,
-          "w-[calc(100%-2rem)] max-w-sm p-5 sm:max-w-md sm:p-6 max-h-[90vh] overflow-y-auto",
+          "w-[calc(100%-2rem)] max-w-sm p-5 sm:max-w-md sm:p-6 max-h-[90vh] overflow-y-auto scrollbar-hide",
           keyboardAwareLayoutActive
             ? "!top-[max(0.75rem,env(safe-area-inset-top,0px))] !translate-y-0"
             : "",

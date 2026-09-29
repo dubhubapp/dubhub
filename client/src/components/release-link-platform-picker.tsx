@@ -74,7 +74,7 @@ export function ReleaseLinkPlatformPicker({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-40 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-background py-1 shadow-md"
+          className="absolute z-40 mt-1 max-h-56 w-full overflow-auto scrollbar-hide rounded-md border bg-background py-1 shadow-md"
         >
           {options.length === 0 ? (
             <li className="px-2 py-1.5 text-xs text-muted-foreground">No platforms left</li>

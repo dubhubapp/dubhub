@@ -28,7 +28,7 @@ export function SwipeBackPage({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const transition = useSettingsTransitionContext();
   const role = transition?.role ?? "solo";
-  const interactive = role === "foreground";
+  const interactive = role === "foreground" || transition?.staticPop === true;
   const gestureRef = useRef<InteractiveSwipeGesture | null>(transition?.gesture ?? null);
   gestureRef.current = transition?.gesture ?? null;
   useEdgeSwipeBack({

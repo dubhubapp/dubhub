@@ -84,7 +84,7 @@ export const PRELOGIN_SIGNUP_FIELD_STACK_CLASS =
 
 /** Auth page shell — safe-area top, top-flow default (Sign Up). No negative translate. */
 export const PRELOGIN_AUTH_PAGE_CLASS =
-  "dubhub-prelogin-auth-page flex min-h-screen h-screen flex-col items-center overflow-y-auto px-4 pb-6 pt-[max(0.75rem,env(safe-area-inset-top,0px))]";
+  "dubhub-prelogin-auth-page flex min-h-screen h-screen flex-col items-center overflow-y-auto scrollbar-hide px-4 pb-6 pt-[max(0.75rem,env(safe-area-inset-top,0px))]";
 
 /** Sign Up column — stable top-flow. */
 export const PRELOGIN_SIGNUP_COLUMN_CLASS = "w-full max-w-md shrink-0";

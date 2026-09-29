@@ -64,6 +64,12 @@ import {
 } from "@/lib/release-status";
 import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { getHomeFeedReleaseReturnVisit } from "@/lib/home-feed-release-poster";
+import {
+  shouldUseHomeFeedReleaseStaticPop,
+  shouldUseProfileViewerReleaseStaticPop,
+} from "@/lib/interactive-page-transitions";
+import { getProfileViewerReleaseReturnVisit } from "@/lib/profile-viewer-release-return";
 import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ReleaseDetailSkeleton } from "@/components/release-detail-skeleton";
 import {
@@ -82,7 +88,22 @@ import {
 } from "@/lib/release-activity-copy";
 import { ReleaseAttachedPostsGallery } from "@/components/release-attached-posts-gallery";
 import { resolveReleaseDetailBackPath, releaseDetailOpenedFromProfile } from "@/lib/release-detail-navigation";
-import { markPublicProfileEnterAnimation } from "@/lib/profile-navigation-return";
+import {
+  consumePublicProfileEnterAnimation,
+  markPublicProfileEnterAnimation,
+} from "@/lib/profile-navigation-return";
+import {
+  RELEASE_DETAIL_PROFILE_PUSH_FROM,
+  interactivePageTransitionsEnabled,
+  readInteractiveHomeTransitionsFlag,
+  routePathname,
+  shouldArmReleaseDetailProfilePush,
+} from "@/lib/interactive-page-transitions";
+import {
+  armReleaseDetailProfileUnderlay,
+  captureReleaseDetailReturnSurface,
+  parkReleaseDetailEditSurface,
+} from "@/lib/release-detail-profile-underlay";
 import { ReleaseDetailArtistByline } from "@/components/release-detail-artist-byline";
 import { ReleaseArtworkLightbox } from "@/components/release-artwork-lightbox";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
@@ -134,11 +155,11 @@ const REMOVE_SAVED_RELEASE_BLOCKED =
 
 export default function ReleaseDetail() {
   const [, params] = useRoute("/releases/:id");
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const search = useSearch();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { currentUser, userType } = useUser();
+  const { currentUser, userType, username: viewerUsername } = useUser();
   const id = params?.id;
   const isArtist = userType === "artist";
 
@@ -342,10 +363,68 @@ export default function ReleaseDetail() {
     (username: string) => {
       const trimmed = username.trim().replace(/^@+/, "");
       if (!trimmed) return;
+      const viewerNorm = (viewerUsername ?? currentUser?.username ?? "").trim().toLowerCase();
+      if (viewerNorm && trimmed.toLowerCase() === viewerNorm) {
+        navigate("/profile");
+        return;
+      }
+      const destination = `/profile/${encodeURIComponent(trimmed)}`;
+      const overlaysClosed =
+        galleryInitialPostId == null &&
+        !artworkLightboxOpen &&
+        !releaseMenuOpen &&
+        !removeSavedDialogOpen;
+      if (
+        viewerNorm &&
+        shouldArmReleaseDetailProfilePush({
+          globalEnabled: interactivePageTransitionsEnabled(),
+          homeEnabled: readInteractiveHomeTransitionsFlag(
+            typeof window === "undefined" ? null : window.sessionStorage,
+          ),
+          releaseDetailOrigin: true,
+          isSelf: false,
+          overlaysClosed,
+        })
+      ) {
+        consumePublicProfileEnterAnimation();
+        const marked = `${destination}?from=${RELEASE_DETAIL_PROFILE_PUSH_FROM}`;
+        const releasePath = search
+          ? `/releases/${id}?${search.replace(/^\?/, "")}`
+          : `/releases/${id}`;
+        const captured = captureReleaseDetailReturnSurface();
+        armReleaseDetailProfileUnderlay({
+          destinationPath: marked,
+          releasePath,
+          imageUrl: artworkAtmosphereUrl || null,
+          atmosphereRgb: releaseAtmosphereCssVarValue(atmosphereRgb),
+          atmosphereMode,
+          atmosphereReady,
+          atmosphereInstant,
+          surface: captured?.node ?? null,
+          scrollTop: captured?.scrollTop ?? 0,
+        });
+        navigate(marked);
+        return;
+      }
       markPublicProfileEnterAnimation();
-      navigate(`/profile/${encodeURIComponent(trimmed)}`);
+      navigate(destination);
     },
-    [navigate],
+    [
+      artworkAtmosphereUrl,
+      artworkLightboxOpen,
+      atmosphereInstant,
+      atmosphereMode,
+      atmosphereReady,
+      atmosphereRgb,
+      currentUser?.username,
+      galleryInitialPostId,
+      id,
+      navigate,
+      releaseMenuOpen,
+      removeSavedDialogOpen,
+      search,
+      viewerUsername,
+    ],
   );
 
   if (!id || id === "new") {
@@ -389,6 +468,17 @@ export default function ReleaseDetail() {
     if (releaseDetailOpenedFromProfile(search) && typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
       return;
+    }
+    if (typeof window !== "undefined") {
+      const fullLocation = `${window.location.pathname}${window.location.search}`;
+      if (shouldUseHomeFeedReleaseStaticPop(fullLocation, getHomeFeedReleaseReturnVisit() != null)) {
+        if (window.history.length > 1) window.history.back();
+        return;
+      }
+      if (shouldUseProfileViewerReleaseStaticPop(fullLocation, getProfileViewerReleaseReturnVisit())) {
+        if (window.history.length > 1) window.history.back();
+        return;
+      }
     }
     navigate(releasesBackUrl);
   };
@@ -497,7 +587,7 @@ export default function ReleaseDetail() {
       enabled={!galleryInitialPostId && !artworkLightboxOpen}
       onBack={commitBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none",
+        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none scrollbar-hide",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
         APP_MATERIAL_RELEASE_DETAIL_CANVAS_CLASS,
       )}
@@ -545,7 +635,18 @@ export default function ReleaseDetail() {
                 className="ios-press h-9 w-9 shrink-0 text-muted-foreground hover:bg-white/10 hover:text-foreground"
                 aria-label={isOwner ? "Edit release" : "Manage attachments"}
                 data-testid="button-edit-release"
-                onClick={() => navigate(`/releases/${id}/edit`)}
+                onClick={() => {
+                  const detailPath = routePathname(location);
+                  const releasePath = search
+                    ? `${detailPath}?${search.replace(/^\?/, "")}`
+                    : detailPath;
+                  parkReleaseDetailEditSurface({
+                    releaseId: id,
+                    releasePath,
+                    surface: captureReleaseDetailReturnSurface(),
+                  });
+                  navigate(`/releases/${id}/edit`);
+                }}
               >
                 <Pencil className="h-5 w-5" aria-hidden />
               </Button>

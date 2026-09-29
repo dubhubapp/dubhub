@@ -3,6 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { ChevronLeft, Check, Heart, MessageCircle, Upload, User } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
+import { consumeDiscardedFormProfileArrival } from "@/lib/release-form-leave";
+import { getCommentsHomeReturnVisit } from "@/lib/comments-profile-push-underlay";
+import { getHomeFeedReleaseReturnVisit } from "@/lib/home-feed-release-poster";
+import {
+  shouldUseCommentsHomeStaticPop,
+  shouldUseHomeFeedReleaseStaticPop,
+} from "@/lib/interactive-page-transitions";
 import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
@@ -66,7 +73,7 @@ function publicProfilePageScrollClass(hasReadyUploadedBanner = false) {
   return cn(
     APP_PAGE_SCROLL_CLASS,
     profilePageCanvasClass(hasReadyUploadedBanner),
-    "overflow-x-hidden",
+    "overflow-x-hidden scrollbar-hide",
   );
 }
 
@@ -122,9 +129,15 @@ function PublicProfileKeyStatsSkeleton({ columns = 5 }: { columns?: 4 | 5 }) {
   );
 }
 
-function PublicProfilePageSkeleton({ onBack }: { onBack: () => void }) {
+function PublicProfilePageSkeleton({
+  onBack,
+  edgeSwipe = true,
+}: {
+  onBack: () => void;
+  edgeSwipe?: boolean;
+}) {
   return (
-    <SwipeBackPage onBack={onBack} className={publicProfilePageScrollClass(false)}>
+    <SwipeBackPage enabled={edgeSwipe} onBack={onBack} className={publicProfilePageScrollClass(false)}>
       <div className={cn("px-6")} aria-busy="true" aria-label="Loading profile">
         <div className="mx-auto max-w-md">
           <section className="relative -mx-6 overflow-hidden bg-transparent">
@@ -184,6 +197,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   const [bannerImageReady, setBannerImageReady] = useState(false);
   const [bannerImageFailed, setBannerImageFailed] = useState(false);
   const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
+  const [arrivedFromDiscardedReleaseForm] = useState(() => consumeDiscardedFormProfileArrival());
 
   const routeUsername = useMemo(() => {
     const fromStack = stackPath?.startsWith("/profile/")
@@ -304,6 +318,17 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   );
 
   const commitBack = () => {
+    if (typeof window !== "undefined") {
+      const fullLocation = `${window.location.pathname}${window.location.search}`;
+      if (shouldUseHomeFeedReleaseStaticPop(fullLocation, getHomeFeedReleaseReturnVisit() != null)) {
+        if (window.history.length > 1) window.history.back();
+        return;
+      }
+      if (shouldUseCommentsHomeStaticPop(fullLocation, getCommentsHomeReturnVisit())) {
+        if (window.history.length > 1) window.history.back();
+        return;
+      }
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
       return;
@@ -323,7 +348,11 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
 
   if (!routeUsername) {
     return (
-      <SwipeBackPage onBack={commitBack} className={publicProfilePageScrollClass(false)}>
+      <SwipeBackPage
+        enabled={!arrivedFromDiscardedReleaseForm}
+        onBack={commitBack}
+        className={publicProfilePageScrollClass(false)}
+      >
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
           <p className="text-sm text-gray-400">Profile not found.</p>
           <button
@@ -340,16 +369,30 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   }
 
   if (routeNormalized === viewerNormalized && viewerNormalized) {
-    return <PublicProfilePageSkeleton onBack={handleBack} />;
+    return (
+      <PublicProfilePageSkeleton
+        onBack={handleBack}
+        edgeSwipe={!arrivedFromDiscardedReleaseForm}
+      />
+    );
   }
 
   if (isLoading) {
-    return <PublicProfilePageSkeleton onBack={handleBack} />;
+    return (
+      <PublicProfilePageSkeleton
+        onBack={handleBack}
+        edgeSwipe={!arrivedFromDiscardedReleaseForm}
+      />
+    );
   }
 
   if (isError || !profile) {
     return (
-      <SwipeBackPage onBack={commitBack} className={publicProfilePageScrollClass(false)}>
+      <SwipeBackPage
+        enabled={!arrivedFromDiscardedReleaseForm}
+        onBack={commitBack}
+        className={publicProfilePageScrollClass(false)}
+      >
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-6 text-center">
           <p className="text-sm text-gray-400">This profile could not be found.</p>
           <button
@@ -434,7 +477,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
 
   return (
     <SwipeBackPage
-      enabled={!avatarLightboxOpen}
+      enabled={!avatarLightboxOpen && !arrivedFromDiscardedReleaseForm}
       onBack={commitBack}
       className={publicProfilePageScrollClass(hasReadyUploadedBanner)}
     >

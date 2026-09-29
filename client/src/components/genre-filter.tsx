@@ -644,7 +644,7 @@ export function GenreFilter({
         <div
           data-discover-scroll-body
           className={cn(
-            "min-h-0 overflow-y-auto",
+            "min-h-0 overflow-y-auto scrollbar-hide",
             discoverScrollBodySectionGapClass,
             discoverScrollBodyBottomClass,
           )}

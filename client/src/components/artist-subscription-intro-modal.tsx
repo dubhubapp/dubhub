@@ -52,7 +52,7 @@ export function ArtistSubscriptionIntroModal({
         overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
         className={cn(
           APP_MATERIAL_DIALOG_CONTENT_CLASS,
-          "w-[calc(100%-2rem)] max-h-[min(90dvh,40rem)] gap-0 overflow-y-auto p-5 sm:p-6",
+          "w-[calc(100%-2rem)] max-h-[min(90dvh,40rem)] gap-0 overflow-y-auto scrollbar-hide p-5 sm:p-6",
         )}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => event.preventDefault()}

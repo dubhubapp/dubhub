@@ -122,6 +122,10 @@ import {
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 import { setOpenCommentsPostId } from "@/lib/in-app-notification-suppression";
+import {
+  consumeCommentsRestoreWithoutOpenAnimation,
+  useOwnProfileViewerCommentsHost,
+} from "@/lib/profile-navigation-return";
 import { readRecentMentionUsers, writeRecentMentionUser } from "@/lib/comment-mention-recent";
 import {
   buildMentionSuggestions,
@@ -441,6 +445,12 @@ export function CommentsModal({
   onRequestArtistIdentifyAnonymously,
   artistIdentifyAnonymouslyPending = false,
 }: CommentsModalProps) {
+  const ownProfileViewerComments = useOwnProfileViewerCommentsHost();
+  const [ownProfileCommentsPushHidden, setOwnProfileCommentsPushHidden] = useState(false);
+  if (isOpen && ownProfileCommentsPushHidden) {
+    setOwnProfileCommentsPushHidden(false);
+  }
+  const concealCommentsForProfilePush = ownProfileCommentsPushHidden && !isOpen;
   const drawerStackZ = elevatedStack ? "z-[110]" : "z-[60]";
   const reportDialogStackZ = elevatedStack ? "z-[120]" : "z-[70]";
   const alertDialogStackZ = elevatedStack ? "z-[120]" : "z-[80]";
@@ -450,6 +460,7 @@ export function CommentsModal({
 
   const closeCommittedRef = useRef(false);
   const drawerContentRef = useRef<HTMLDivElement | null>(null);
+  const restoreOpenFrozenRef = useRef(false);
   const savedDrawerTouchActionRef = useRef<string | null>(null);
   const markIdLongPressSessionRef = useRef<{
     commentId: string;
@@ -465,6 +476,12 @@ export function CommentsModal({
   const handleClose = useCallback(() => {
     if (closeCommittedRef.current) return;
     closeCommittedRef.current = true;
+    if (restoreOpenFrozenRef.current) {
+      const sheet = drawerContentRef.current;
+      sheet?.style.removeProperty("animation");
+      sheet?.removeAttribute("data-vaul-animate");
+      restoreOpenFrozenRef.current = false;
+    }
     playInteractionLight();
     onClose();
   }, [onClose]);
@@ -624,10 +641,18 @@ export function CommentsModal({
   /** Set while comments viewport lock is active; used to resync offset immediately on composer focus. */
   const viewportHostVvSyncRef = useRef<(() => void) | null>(null);
 
+  const dismissOwnProfileViewerCommentsForProfilePush = useCallback(() => {
+    setOwnProfileCommentsPushHidden(true);
+    handleClose();
+  }, [handleClose]);
+
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     verifiedArtistsEnabled: isOpen,
     presentation: "sheet",
     sheetStack: "above-comments",
+    beforeOpenFullProfile: ownProfileViewerComments
+      ? dismissOwnProfileViewerCommentsForProfilePush
+      : undefined,
   });
 
   const openCommentAuthorPreview = useCallback(
@@ -706,6 +731,15 @@ export function CommentsModal({
     if (!isOpen) return;
     closeCommittedRef.current = false;
     playInteractionLight();
+  }, [isOpen]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const sheet = drawerContentRef.current;
+    if (!sheet || !consumeCommentsRestoreWithoutOpenAnimation()) return;
+    restoreOpenFrozenRef.current = true;
+    sheet.setAttribute("data-vaul-animate", "false");
+    sheet.style.setProperty("animation", "none", "important");
   }, [isOpen]);
 
   useEffect(() => {
@@ -2211,8 +2245,18 @@ export function CommentsModal({
         <DrawerContent
         ref={drawerContentRef}
         data-comments-sheet
-        overlayClassName={cn(drawerStackZ, "bg-transparent")}
-        className={cn(COMMENTS_SHEET_SURFACE_CLASS, drawerStackZ)}
+        data-comments-post-id={post.id}
+        overlayClassName={cn(
+          drawerStackZ,
+          "bg-transparent",
+          concealCommentsForProfilePush && "hidden",
+        )}
+        className={cn(
+          COMMENTS_SHEET_SURFACE_CLASS,
+          drawerStackZ,
+          concealCommentsForProfilePush && "hidden",
+        )}
+        data-own-profile-comments-concealed={concealCommentsForProfilePush ? "true" : undefined}
         style={
           commentsSheetMaxPx != null
             ? {
@@ -2279,7 +2323,7 @@ export function CommentsModal({
         <div className="relative min-h-0 flex-1">
         <div
           ref={commentsListRef}
-          className="h-full overflow-y-auto px-3.5 pb-6 sm:px-4"
+          className="h-full overflow-y-auto px-3.5 pb-6 sm:px-4 scrollbar-hide"
         >
           {/*
             Ordinary inset inside the scroll content (not on the overflow
@@ -3363,7 +3407,7 @@ export function CommentsModal({
           <div className="relative">
             {/* @mention autocomplete */}
             {showMentionAutocompleteDropdown && (
-              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-border dark:bg-popover dark:shadow-black/40">
+              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-40 overflow-y-auto scrollbar-hide rounded-lg border border-gray-200 bg-white shadow-lg dark:border-border dark:bg-popover dark:shadow-black/40">
                 {showMentionSearchLoadingRow ? (
                   <div className="px-3 py-2.5 text-xs text-gray-500 dark:text-muted-foreground">
                     Searching…
@@ -3545,7 +3589,7 @@ export function CommentsModal({
                         ? "Tag yourself if this is your ID..."
                         : "What do you think?"
                   }
-                  className="block max-h-28 min-h-[44px] min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
+                  className="block max-h-28 min-h-[44px] min-w-0 flex-1 resize-none overflow-y-auto scrollbar-hide rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
                   disabled={addCommentMutation.isPending}
                   data-testid="comment-input"
                   maxLength={INPUT_LIMITS.commentBody}

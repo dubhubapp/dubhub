@@ -187,7 +187,7 @@ export function ReleaseFormDrawer({
               "min-h-0 min-w-0 w-full max-w-full flex-1",
               disableBodyScroll
                 ? "flex flex-col overflow-hidden"
-                : "overflow-x-hidden overflow-y-auto overscroll-contain px-4",
+                : "overflow-x-hidden overflow-y-auto overscroll-contain scrollbar-hide px-4",
             )}
             style={{
               WebkitOverflowScrolling: disableBodyScroll ? undefined : "touch",

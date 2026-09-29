@@ -207,7 +207,7 @@ export default function ArtistProfile() {
     );
 
   return (
-    <div className="flex-1 bg-dark overflow-y-auto">
+    <div className="flex-1 bg-dark overflow-y-auto scrollbar-hide">
       <div className="app-page-top-pad px-6 pb-8">
         <div className="max-w-md mx-auto">
           {/* Artist Header */}

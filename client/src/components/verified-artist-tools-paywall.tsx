@@ -587,10 +587,10 @@ export function VerifiedArtistToolsPaywall({
           className={cn(
             "overscroll-contain px-5 py-4",
             compactShell
-              ? "shrink-0 overflow-y-auto"
+              ? "shrink-0 overflow-y-auto scrollbar-hide"
               : // Grow only when sheet hits max-h so overflow scrolls; no flex spacer
                 // when height is content-sized (min-h removed).
-                "min-h-0 flex-1 overflow-y-auto",
+                "min-h-0 flex-1 overflow-y-auto scrollbar-hide",
           )}
         >
           {phase === "offerings_loading" ? (

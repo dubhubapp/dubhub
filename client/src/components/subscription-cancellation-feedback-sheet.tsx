@@ -289,7 +289,7 @@ export function SubscriptionCancellationFeedbackSheet({
           <div
             data-vaul-no-drag
             data-testid="cancellation-feedback-reasons"
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain scrollbar-hide px-4 py-3"
           >
             <RadioGroup
               value={reason ?? ""}

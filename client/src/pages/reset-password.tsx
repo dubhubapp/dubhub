@@ -185,7 +185,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen h-screen overflow-y-auto bg-background flex items-center justify-center px-4 py-8 pb-24">
+    <div className="min-h-screen h-screen overflow-y-auto scrollbar-hide bg-background flex items-center justify-center px-4 py-8 pb-24">
       <Card className="w-full max-w-md mx-auto bg-background border-border">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">

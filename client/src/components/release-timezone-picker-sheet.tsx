@@ -94,7 +94,7 @@ export function ReleaseTimezonePickerPanel({
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-hide px-2 pb-4"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         {options.length === 0 ? (

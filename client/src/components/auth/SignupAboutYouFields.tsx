@@ -156,7 +156,7 @@ export function SignupAboutYouFields({
             <div
               className={cn(
                 PRELOGIN_SELECT_VIEWPORT_CLASS,
-                "max-h-56 overflow-y-auto overscroll-contain",
+                "max-h-56 overflow-y-auto overscroll-contain scrollbar-hide",
               )}
               role="listbox"
               aria-label="Countries"

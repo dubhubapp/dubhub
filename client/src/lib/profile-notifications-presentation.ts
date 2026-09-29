@@ -15,7 +15,7 @@ export const PROFILE_NOTIFICATION_INTERACTIVE_BLUE = APP_MATERIAL_INTERACTIVE_BL
  * `overscroll-y-none` + WK `[overscroll-behavior-y:none]`: custom PTR owns top pull (PROFILE-NOTIFICATIONS-PTR-2).
  */
 export const PROFILE_NOTIFICATIONS_VIEWPORT_CLASS =
-  "relative mt-12 max-h-[70dvh] overflow-y-auto overscroll-y-none [overscroll-behavior-y:none] pt-[5px] pr-1" as const;
+  "relative mt-12 max-h-[70dvh] overflow-y-auto overscroll-y-none [overscroll-behavior-y:none] scrollbar-hide pt-[5px] pr-1" as const;
 
 /** Asymptotic visual pull cap (no hard wall). */
 export const PROFILE_NOTIFICATIONS_PTR_MAX_VISUAL_PX = 108;

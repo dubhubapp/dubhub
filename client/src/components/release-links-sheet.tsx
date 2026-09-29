@@ -748,7 +748,7 @@ export function ReleaseLinksSheet({
         {panel === "platform" ? (
           <ul
             data-vaul-no-drag
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain divide-y divide-white/10 px-4 py-1 pb-8"
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-hide divide-y divide-white/10 px-4 py-1 pb-8"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {platformChoices.length === 0 ? (
@@ -785,7 +785,7 @@ export function ReleaseLinksSheet({
         {panel === "linkType" ? (
           <ul
             data-vaul-no-drag
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain divide-y divide-white/10 px-4 py-1 pb-8"
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-hide divide-y divide-white/10 px-4 py-1 pb-8"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {linkTypeOptions.map((opt) => {

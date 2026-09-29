@@ -2,6 +2,8 @@
 export const RELEASE_DETAIL_FROM_FEED_VALUE = "feed";
 /** Query value marking Release Detail opened from a public artist profile. */
 export const RELEASE_DETAIL_FROM_PROFILE_VALUE = "profile";
+/** Query value marking Release Detail opened from Own Profile Posts/Likes viewer. */
+export const RELEASE_DETAIL_FROM_PROFILE_VIEWER_VALUE = "profile-viewer";
 
 export function appendReleaseDetailFromFeedParam(path: string): string {
   const qIndex = path.indexOf("?");
@@ -17,6 +19,22 @@ export function releaseDetailOpenedFromFeed(search: string): boolean {
   const raw = search.startsWith("?") ? search.slice(1) : search;
   const params = new URLSearchParams(raw);
   return params.get("from") === RELEASE_DETAIL_FROM_FEED_VALUE;
+}
+
+export function appendReleaseDetailFromProfileViewerParam(path: string): string {
+  const qIndex = path.indexOf("?");
+  const base = qIndex === -1 ? path : path.slice(0, qIndex);
+  const existing = qIndex === -1 ? "" : path.slice(qIndex + 1);
+  const params = new URLSearchParams(existing);
+  params.set("from", RELEASE_DETAIL_FROM_PROFILE_VIEWER_VALUE);
+  const qs = params.toString();
+  return `${base}?${qs}`;
+}
+
+export function releaseDetailOpenedFromProfileViewer(search: string): boolean {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const params = new URLSearchParams(raw);
+  return params.get("from") === RELEASE_DETAIL_FROM_PROFILE_VIEWER_VALUE;
 }
 
 export function releaseDetailOpenedFromProfile(search: string): boolean {

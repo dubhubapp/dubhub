@@ -3,9 +3,21 @@
  * Enable in Safari / WKWebView console, then reload:
  * sessionStorage.setItem("dubhub_interactive_page_transitions","1"); location.reload();
  * One previous page. Home and transactional routes never enter.
+ *
+ * Home release-card push also requires:
+ * sessionStorage.setItem("dubhub_interactive_home_transitions","1"); location.reload();
  */
 
+import {
+  releaseDetailOpenedFromFeed,
+  releaseDetailOpenedFromProfileViewer,
+  resolveReleaseDetailBackPath,
+} from "./release-detail-navigation";
+
 export const INTERACTIVE_PAGE_TRANSITIONS_FLAG = "dubhub_interactive_page_transitions";
+export const INTERACTIVE_HOME_TRANSITIONS_FLAG = "dubhub_interactive_home_transitions";
+/** Gates the first static/remount Back only. Live-parent pops stay on the global flag. */
+export const INTERACTIVE_BACK_TRANSITIONS_FLAG = "dubhub_interactive_back_transitions";
 
 export const INTERACTIVE_PAGE_EASING = "cubic-bezier(0.32, 0.45, 0.42, 1)";
 export const INTERACTIVE_PUSH_MS = 280;
@@ -70,6 +82,253 @@ export function interactivePageTransitionsEnabled(): boolean {
   }
 }
 
+export function readInteractiveHomeTransitionsFlag(
+  storage: { getItem(key: string): string | null } | null | undefined,
+): boolean {
+  try {
+    return storage?.getItem(INTERACTIVE_HOME_TRANSITIONS_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function readInteractiveBackTransitionsFlag(
+  storage: { getItem(key: string): string | null } | null | undefined,
+): boolean {
+  try {
+    return storage?.getItem(INTERACTIVE_BACK_TRANSITIONS_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Static/remount Back. Requires the global flag, the contextual flag, and the
+ * back flag. Live-parent pops do not call this.
+ */
+export function interactiveBackTransitionsEnabled(): boolean {
+  if (!interactiveHomeTransitionsEnabled()) return false;
+  if (typeof window === "undefined") return false;
+  try {
+    return readInteractiveBackTransitionsFlag(window.sessionStorage);
+  } catch {
+    return false;
+  }
+}
+
+/** Home contextual push. The global flag alone does not enable it. */
+export function interactiveHomeTransitionsEnabled(): boolean {
+  if (!interactivePageTransitionsEnabled()) return false;
+  if (typeof window === "undefined") return false;
+  try {
+    return readInteractiveHomeTransitionsFlag(window.sessionStorage);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Non-owner Home release card → `/releases/:id?from=feed`.
+ * Edit, notifications, deep links, and the Releases tab do not match.
+ */
+export function isHomeFeedReleaseDetailPushLocation(location: string): boolean {
+  if (!isReleaseDetailPath(location)) return false;
+  const queryIndex = location.indexOf("?");
+  const search = queryIndex === -1 ? "" : location.slice(queryIndex);
+  return releaseDetailOpenedFromFeed(search);
+}
+
+export function shouldPlayHomeFeedReleasePosterPush(location: string): boolean {
+  return interactiveHomeTransitionsEnabled() && isHomeFeedReleaseDetailPushLocation(location);
+}
+
+/** Query set only by the Home feed profile popup. Not used by comments, notifications, or deep links. */
+export const HOME_FEED_PROFILE_PUSH_FROM = "home-popup";
+
+export function isHomeFeedPublicProfilePushLocation(location: string): boolean {
+  if (!isPublicProfilePath(location)) return false;
+  const queryIndex = location.indexOf("?");
+  const search = queryIndex === -1 ? "" : location.slice(queryIndex + 1).split("#")[0];
+  return new URLSearchParams(search).get("from") === HOME_FEED_PROFILE_PUSH_FROM;
+}
+
+/** Release-card push or Home profile-popup push. Both flags required. */
+export function shouldPlayHomeContextualPosterPush(location: string): boolean {
+  return (
+    interactiveHomeTransitionsEnabled() &&
+    (isHomeFeedReleaseDetailPushLocation(location) || isHomeFeedPublicProfilePushLocation(location))
+  );
+}
+
+/** Arm only for the Home feed popup opening someone else's public profile. */
+export function shouldArmHomeFeedPublicProfilePoster(input: {
+  globalEnabled: boolean;
+  homeEnabled: boolean;
+  homeFeedOrigin: boolean;
+  isSelf: boolean;
+}): boolean {
+  return input.globalEnabled && input.homeEnabled && input.homeFeedOrigin && !input.isSelf;
+}
+
+/** Arm the static poster only for a Home feed card opening someone else's release. */
+export function shouldArmHomeFeedReleasePoster(input: {
+  globalEnabled: boolean;
+  homeEnabled: boolean;
+  homeFeedCard: boolean;
+  isReleaseOwner: boolean;
+}): boolean {
+  return input.globalEnabled && input.homeEnabled && input.homeFeedCard && !input.isReleaseOwner;
+}
+
+/**
+ * Query set only by Comments → Profile Popup → View Profile.
+ * Not inferred from the previous pathname. Not used by Home, notifications, or deep links.
+ * Both interactive flags are required so the global flag's existing transitions stay unchanged.
+ */
+export const COMMENTS_PROFILE_PUSH_FROM = "comments-popup";
+
+export function isCommentsPublicProfilePushLocation(location: string): boolean {
+  if (!isPublicProfilePath(location)) return false;
+  const queryIndex = location.indexOf("?");
+  const search = queryIndex === -1 ? "" : location.slice(queryIndex + 1).split("#")[0];
+  return new URLSearchParams(search).get("from") === COMMENTS_PROFILE_PUSH_FROM;
+}
+
+export function shouldPlayCommentsProfilePush(location: string): boolean {
+  return interactiveHomeTransitionsEnabled() && isCommentsPublicProfilePushLocation(location);
+}
+
+/** Arm only for the Comments popup opening someone else's public profile. */
+export function shouldArmCommentsProfilePush(input: {
+  globalEnabled: boolean;
+  homeEnabled: boolean;
+  commentsOrigin: boolean;
+  isSelf: boolean;
+}): boolean {
+  return input.globalEnabled && input.homeEnabled && input.commentsOrigin && !input.isSelf;
+}
+
+/**
+ * Query set only by Release Detail artist/collaborator byline.
+ * Not inferred from the previous pathname. Not used by Home, Comments,
+ * Leaderboard, notifications, or deep links.
+ * Both interactive flags are required so existing transitions stay unchanged.
+ */
+export const RELEASE_DETAIL_PROFILE_PUSH_FROM = "release-detail";
+
+export function isReleaseDetailPublicProfilePushLocation(location: string): boolean {
+  if (!isPublicProfilePath(location)) return false;
+  const queryIndex = location.indexOf("?");
+  const search = queryIndex === -1 ? "" : location.slice(queryIndex + 1).split("#")[0];
+  return new URLSearchParams(search).get("from") === RELEASE_DETAIL_PROFILE_PUSH_FROM;
+}
+
+export function shouldPlayReleaseDetailProfilePush(location: string): boolean {
+  return interactiveHomeTransitionsEnabled() && isReleaseDetailPublicProfilePushLocation(location);
+}
+
+/**
+ * Solo public profile opened from the Release Detail byline.
+ * Live pairs do not use this. Home and Comments markers do not match.
+ */
+export function shouldUseReleaseDetailStaticPop(location: string, hasReturnVisit: boolean): boolean {
+  return (
+    interactiveBackTransitionsEnabled() &&
+    hasReturnVisit &&
+    isReleaseDetailPublicProfilePushLocation(location)
+  );
+}
+
+/**
+ * Home contextual child that can pop back onto the frozen Home card.
+ * Release-card detail and the Home profile popup only. Comments, Leaderboard,
+ * notifications, deep links, and own `/profile` do not match.
+ */
+export function isHomeFeedStaticReturnLocation(location: string): boolean {
+  return (
+    isHomeFeedReleaseDetailPushLocation(location) || isHomeFeedPublicProfilePushLocation(location)
+  );
+}
+
+/**
+ * Solo child opened from Home with a stored return still.
+ * Home itself is never a stack page.
+ */
+export function shouldUseHomeFeedReleaseStaticPop(location: string, hasReturnVisit: boolean): boolean {
+  return (
+    interactiveBackTransitionsEnabled() &&
+    hasReturnVisit &&
+    isHomeFeedStaticReturnLocation(location)
+  );
+}
+
+/**
+ * Release Detail opened from Own Profile Posts/Likes viewer.
+ * `from=profile-viewer` is not `from=feed` and not public-profile `from=profile`.
+ */
+export function isProfileViewerReleaseDetailLocation(location: string): boolean {
+  if (!isReleaseDetailPath(location)) return false;
+  const queryIndex = location.indexOf("?");
+  const search = queryIndex === -1 ? "" : location.slice(queryIndex);
+  return releaseDetailOpenedFromProfileViewer(search);
+}
+
+/** Forward slide over the frozen viewer. Requires the contextual flag. */
+export function shouldPlayProfileViewerReleasePush(location: string): boolean {
+  return interactiveHomeTransitionsEnabled() && isProfileViewerReleaseDetailLocation(location);
+}
+
+/**
+ * Static Back onto the frozen viewer. Marker alone is not enough: the stored
+ * visit must name this Release Detail and the post to restore.
+ */
+export function shouldUseProfileViewerReleaseStaticPop(
+  location: string,
+  visit: { releasePath: string; activePostId: string } | null,
+): boolean {
+  if (!visit?.activePostId.trim()) return false;
+  if (routePathname(visit.releasePath) !== routePathname(location)) return false;
+  return interactiveBackTransitionsEnabled() && isProfileViewerReleaseDetailLocation(location);
+}
+
+/**
+ * Solo public profile opened from Comments on Home, with a stored sheet still.
+ * The `from=comments-popup` marker is not enough: the visit must record parent `/`
+ * and the Home post id. Release-gallery comments, notifications, and deep links do not.
+ */
+export function shouldUseCommentsHomeStaticPop(
+  location: string,
+  visit: {
+    postId: string;
+    parentPath: string;
+    destinationPath: string;
+    sheet: unknown;
+  } | null,
+): boolean {
+  if (!visit?.sheet) return false;
+  if (!visit.postId.trim()) return false;
+  if (routePathname(visit.parentPath) !== "/") return false;
+  if (routePathname(visit.destinationPath) !== routePathname(location)) return false;
+  return interactiveBackTransitionsEnabled() && isCommentsPublicProfilePushLocation(location);
+}
+
+/** Arm only for the Release Detail byline opening someone else's public profile. */
+export function shouldArmReleaseDetailProfilePush(input: {
+  globalEnabled: boolean;
+  homeEnabled: boolean;
+  releaseDetailOrigin: boolean;
+  isSelf: boolean;
+  overlaysClosed: boolean;
+}): boolean {
+  return (
+    input.globalEnabled &&
+    input.homeEnabled &&
+    input.releaseDetailOrigin &&
+    !input.isSelf &&
+    input.overlaysClosed
+  );
+}
+
 /** History state stamped when a child is pushed from a parent that stays mounted. */
 export const INTERACTIVE_HISTORY_PARENT = "dubhubInteractiveParent";
 
@@ -118,6 +377,7 @@ export function interactiveMotionMs(
 
 const PUBLIC_PROFILE_PATH = /^\/profile\/[^/]+$/;
 const RELEASE_DETAIL_PATH = /^\/releases\/[^/]+$/;
+const RELEASE_EDIT_PATH = /^\/releases\/[^/]+\/edit$/;
 
 export function isOwnedSettingsPath(location: string): boolean {
   return OWNED_SETTINGS_PATHS.has(routePathname(location));
@@ -197,6 +457,35 @@ export function stackLayerRole(length: number, index: number): StackLayerRole {
   return "retained";
 }
 
+/**
+ * The mounted pages were swapped for an unrelated list.
+ * Prefix pushes, prefix pops, and an already-cleared stack keep their own controller reset.
+ */
+export function isWholesaleStackReplacement(
+  previous: readonly string[],
+  pages: readonly string[],
+): boolean {
+  if (
+    previous.length === pages.length &&
+    previous.every((path, index) => path === pages[index])
+  ) {
+    return false;
+  }
+  const popped =
+    previous.length === pages.length + 1 &&
+    pages.every((path, index) => path === previous[index]);
+  if (popped || pages.length < 2) return false;
+  const pushed =
+    pages.length >= 2 &&
+    pages.length === previous.length + 1 &&
+    previous.every((path, index) => path === pages[index]);
+  const cappedPush =
+    pages.length === INTERACTIVE_STACK_CAP &&
+    previous.length === INTERACTIVE_STACK_CAP &&
+    previous.slice(1).every((path, index) => path === pages[index]);
+  return !pushed && !cappedPush;
+}
+
 function capMountedStack(pages: readonly string[]): string[] {
   return pages.slice(-INTERACTIVE_STACK_CAP);
 }
@@ -230,6 +519,169 @@ export function reduceSettingsTransitionStack(
   }
 
   return [next];
+}
+
+export function isReleaseEditPath(location: string): boolean {
+  return RELEASE_EDIT_PATH.test(routePathname(location));
+}
+
+export type ReleaseEditReturnRecord = {
+  detailPath: string;
+  parentLocation: string;
+};
+
+let releaseEditReturnRecord: ReleaseEditReturnRecord | null = null;
+/** Full Detail URL present when Edit was opened. Independent of the Releases pair. */
+let editOpenedFromDetailLocation: string | null = null;
+
+export function releaseEditOpenedFromDetailLocation(): string | null {
+  return editOpenedFromDetailLocation;
+}
+
+/**
+ * Edit discard → another user's public profile, reusing the byline return.
+ * Create, own profile, a missing Detail origin, and flag-off stay on plain replace.
+ */
+export function editDiscardReleaseDetailProfile(input: {
+  formLocation: string;
+  username: string;
+  isSelf: boolean;
+  detailLocation: string | null;
+  globalEnabled: boolean;
+  homeEnabled: boolean;
+  backEnabled: boolean;
+}): { profilePath: string; releasePath: string } | null {
+  const username = input.username.trim();
+  if (!username || input.isSelf) return null;
+  if (!input.globalEnabled || !input.homeEnabled || !input.backEnabled) return null;
+  if (!isReleaseEditPath(input.formLocation)) return null;
+  const editRest = routePathname(input.formLocation).slice("/releases/".length);
+  const editId = editRest.endsWith("/edit") ? editRest.slice(0, -"/edit".length) : "";
+  const detail = (input.detailLocation ?? "").split("#")[0];
+  if (!editId || editId === "new" || !isReleaseDetailPath(detail)) return null;
+  const detailId = routePathname(detail).slice("/releases/".length);
+  let sameId = detailId === editId;
+  if (!sameId) {
+    try {
+      sameId = decodeURIComponent(detailId) === decodeURIComponent(editId);
+    } catch {
+      sameId = false;
+    }
+  }
+  if (!sameId) return null;
+  return {
+    profilePath: `/profile/${encodeURIComponent(username)}?from=${RELEASE_DETAIL_PROFILE_PUSH_FROM}`,
+    releasePath: detail,
+  };
+}
+/** Set only by a discarded-form profile replace, so an unrelated route still clears the record. */
+let releaseEditReturnHeldForProfile = false;
+
+export function holdReleaseEditReturnForProfileArrival(): void {
+  if (releaseEditReturnRecord) releaseEditReturnHeldForProfile = true;
+}
+
+function ownedStackPaths(mounted: readonly string[]): string[] {
+  return mounted
+    .map(routePathname)
+    .filter((path) => isOwnedInteractivePath(path) && path !== "/");
+}
+
+/**
+ * Remember a Releases → Detail pair only when Edit is opened while that pair
+ * is the mounted stack. Query params never create the parent on their own.
+ */
+export function noteReleaseEditTransition(args: {
+  mounted: readonly string[];
+  previousLocation: string;
+  nextLocation: string;
+}): void {
+  if (!isReleaseEditPath(args.nextLocation)) return;
+  const previous = routePathname(args.previousLocation);
+  editOpenedFromDetailLocation = isReleaseDetailPath(previous)
+    ? args.previousLocation.split("#")[0]
+    : null;
+  const clean = ownedStackPaths(args.mounted);
+  const parent = clean.length >= 2 ? clean[clean.length - 2] : "";
+  const child = clean.length >= 1 ? clean[clean.length - 1] : "";
+  if (parent !== "/releases" || child !== previous || !isReleaseDetailPath(previous)) {
+    releaseEditReturnRecord = null;
+    return;
+  }
+  if (!isInteractiveStackPair(parent, args.previousLocation)) {
+    releaseEditReturnRecord = null;
+    return;
+  }
+  const queryIndex = args.previousLocation.indexOf("?");
+  const search = queryIndex === -1 ? "" : args.previousLocation.slice(queryIndex + 1).split("#")[0];
+  const parentLocation = resolveReleaseDetailBackPath(search);
+  if (routePathname(parentLocation) !== "/releases") {
+    releaseEditReturnRecord = null;
+    return;
+  }
+  releaseEditReturnRecord = { detailPath: previous, parentLocation };
+}
+
+export function releaseEditReturnSnapshot(): ReleaseEditReturnRecord | null {
+  return releaseEditReturnRecord ? { ...releaseEditReturnRecord } : null;
+}
+
+export function shouldPopReleaseEditToStackedDetail(
+  releaseId: string | null | undefined,
+): boolean {
+  const saved = releaseEditReturnRecord;
+  const id = String(releaseId ?? "").trim();
+  if (!saved || !id) return false;
+  return saved.detailPath === routePathname(`/releases/${id}`);
+}
+
+/** Seed Releases under Detail in the same stack update. Edit stays unmounted. */
+export function pagesAfterReleaseEditReturn(
+  reduced: readonly string[],
+  nextLocation: string,
+): string[] {
+  const saved = releaseEditReturnRecord;
+  if (!saved) return reduced.slice();
+  if (isReleaseEditPath(nextLocation)) return reduced.slice();
+  const next = routePathname(nextLocation);
+  if (next === saved.detailPath && isReleaseDetailPath(nextLocation)) {
+    const already =
+      reduced.length >= 2 &&
+      routePathname(reduced[reduced.length - 2]) === "/releases" &&
+      routePathname(reduced[reduced.length - 1]) === saved.detailPath;
+    return already ? reduced.slice() : ["/releases", saved.detailPath];
+  }
+  if (
+    releaseEditReturnHeldForProfile &&
+    (next === "/profile" || isPublicProfilePath(next))
+  ) {
+    return reduced.slice();
+  }
+  releaseEditReturnRecord = null;
+  releaseEditReturnHeldForProfile = false;
+  editOpenedFromDetailLocation = null;
+  return reduced.slice();
+}
+
+export function clearReleaseEditReturnRecordIfRestored(
+  location: string,
+  pages: readonly string[],
+): void {
+  const saved = releaseEditReturnRecord;
+  if (!saved) return;
+  if (routePathname(location) !== saved.detailPath) return;
+  if (pages.length < 2) return;
+  if (routePathname(pages[pages.length - 2]) !== "/releases") return;
+  if (routePathname(pages[pages.length - 1]) !== saved.detailPath) return;
+  releaseEditReturnRecord = null;
+  releaseEditReturnHeldForProfile = false;
+  editOpenedFromDetailLocation = null;
+}
+
+export function clearReleaseEditReturnRecord(): void {
+  releaseEditReturnRecord = null;
+  releaseEditReturnHeldForProfile = false;
+  editOpenedFromDetailLocation = null;
 }
 
 export function clamp01(value: number): number {
@@ -343,6 +795,21 @@ export function createInteractivePopController() {
       phase = kind === "commit" ? "committed" : "idle";
       return kind;
     },
+    /** Drop a gesture interrupted before its route commit. */
+    forceIdle(): void {
+      phase = "idle";
+      settleKind = null;
+    },
+    /**
+     * A commit whose history pop never changed the route would otherwise stay
+     * `committed` and refuse every later gesture. A real pop replaces this
+     * controller before the caller asks.
+     */
+    releaseUnchangedCommit(): boolean {
+      if (phase !== "committed") return false;
+      phase = "idle";
+      return true;
+    },
   };
 }
 
@@ -355,4 +822,7 @@ export type InteractiveSwipeGesture = {
   popDriverRef: { current: (() => void) | null };
   finishCommit: () => void;
   interactionRef: { current: boolean };
+  abortRef: { current: boolean };
+  onDragArmed?: () => void;
+  onCancelSettled?: () => void;
 };

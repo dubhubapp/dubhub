@@ -37,6 +37,12 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
+import {
+  consumeProfileReturnReopenComments,
+  peekProfileReturnReopenComments,
+  resolveOwnProfileViewerCommentsRestore,
+  useOwnProfileViewerCommentsHost,
+} from "@/lib/profile-navigation-return";
 import { ReleasePreviewCard } from "./release-preview-card";
 import { getGenreChipStyle, getGenreGlowPillStyle, STATUS_GLOW_PILL_BG, STATUS_GLOW_PILL_CLASS } from "@/lib/genre-styles";
 import {
@@ -52,7 +58,21 @@ import { resolveMediaUrl } from "@/lib/media-url";
 import { RandomDiceButton } from "@/components/random-dice-button";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import { sharePost } from "@/lib/post-share";
-import { appendReleaseDetailFromFeedParam } from "@/lib/release-detail-navigation";
+import {
+  appendReleaseDetailFromFeedParam,
+  appendReleaseDetailFromProfileViewerParam,
+} from "@/lib/release-detail-navigation";
+import {
+  interactiveBackTransitionsEnabled,
+  interactiveHomeTransitionsEnabled,
+} from "@/lib/interactive-page-transitions";
+import { armHomeFeedReleasePoster } from "@/lib/home-feed-release-poster";
+import {
+  armProfileViewerReleaseVisit,
+  profileViewerReleaseSnapIndex,
+  useProfileViewerReleaseSource,
+} from "@/lib/profile-viewer-release-return";
+import { useReleaseFormRouteGuard } from "@/lib/release-form-route-guard";
 import { invalidateAfterAttachedReleaseSaveStateChanged, type ReleaseDetailRecord } from "@/lib/release-cache";
 import {
   HINT_ARTIST_SELF_TAG_COMPLETED_EVENT,
@@ -343,7 +363,13 @@ function VideoCardInner({
   playbackRecoveryEpoch,
   enableDoubleTapLike = false,
 }: VideoCardProps) {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const ownProfileViewerComments = useOwnProfileViewerCommentsHost();
+  const profileViewerReleaseSource = useProfileViewerReleaseSource();
+  const ownProfileCommentsLocationRef = useRef(location);
+  const requestFormLeave = useReleaseFormRouteGuard();
+  const requestFormLeaveRef = useRef(requestFormLeave);
+  requestFormLeaveRef.current = requestFormLeave;
   const releasePreview = (post as any).releasePreview as {
     id: string;
     title: string;
@@ -365,6 +391,10 @@ function VideoCardInner({
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     presentation: "sheet",
   });
+  const homeReleasePosterRef = useRef<{
+    imageUrl: string | null;
+    objectFit: "cover" | "contain";
+  }>({ imageUrl: null, objectFit: "cover" });
   const handleOpenPostAuthorProfile = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -379,9 +409,16 @@ function VideoCardInner({
           moderator: author.moderator,
           account_type: author.account_type,
         },
+        homeFeedProfilePush: homeFeedPosterFallback
+          ? () => ({
+              imageUrl: homeReleasePosterRef.current.imageUrl,
+              objectFit: homeReleasePosterRef.current.objectFit,
+              postId: post.id,
+            })
+          : undefined,
       });
     },
-    [openByUsername, post.user],
+    [homeFeedPosterFallback, openByUsername, post.id, post.user],
   );
   const debugComments =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "comments";
@@ -394,10 +431,54 @@ function VideoCardInner({
     releasePreview.ownerArtistId === contextUser.id;
   const navigateToReleasePreview = useCallback(
     (releaseId: string) => {
-      const base = isReleaseOwner ? `/releases/${releaseId}/edit` : `/releases/${releaseId}`;
-      navigate(homeFeedPosterFallback ? appendReleaseDetailFromFeedParam(base) : base);
+      const run = () => {
+        if (isReleaseOwner) {
+          navigate(`/releases/${releaseId}/edit`);
+          return;
+        }
+        if (profileViewerReleaseSource && isActive && interactiveBackTransitionsEnabled()) {
+          const activeIndex = profileViewerReleaseSnapIndex(
+            profileViewerReleaseSource.sequenceIds,
+            post.id,
+          );
+          if (activeIndex >= 0) {
+            const viewerDestination = appendReleaseDetailFromProfileViewerParam(
+              `/releases/${releaseId}`,
+            );
+            armProfileViewerReleaseVisit({
+              tab: profileViewerReleaseSource.tab,
+              filter: profileViewerReleaseSource.filter,
+              sequenceIds: profileViewerReleaseSource.sequenceIds,
+              activePostId: post.id,
+              activeIndex,
+              releasePath: viewerDestination,
+              profilePath: "/profile",
+            });
+            navigate(viewerDestination);
+            return;
+          }
+        }
+        const base = `/releases/${releaseId}`;
+        const destination = homeFeedPosterFallback ? appendReleaseDetailFromFeedParam(base) : base;
+        if (!isReleaseOwner && homeFeedPosterFallback && interactiveHomeTransitionsEnabled()) {
+          const poster = homeReleasePosterRef.current;
+          armHomeFeedReleasePoster({
+            destinationPath: destination,
+            imageUrl: poster.imageUrl,
+            objectFit: poster.objectFit,
+            postId: post.id,
+          });
+        }
+        navigate(destination);
+      };
+      const guard = requestFormLeaveRef.current;
+      if (guard) {
+        guard(run);
+        return;
+      }
+      run();
     },
-    [isReleaseOwner, homeFeedPosterFallback, navigate],
+    [isActive, isReleaseOwner, homeFeedPosterFallback, navigate, post.id, profileViewerReleaseSource],
   );
   const [showComments, setShowComments] = useState(false);
   // Freeze the post snapshot used by the comments modal to avoid mismatched post IDs
@@ -534,6 +615,24 @@ function VideoCardInner({
       return next;
     });
   }, [showComments, commentsPost, post]);
+
+  useEffect(() => {
+    const previousLocation = ownProfileCommentsLocationRef.current;
+    ownProfileCommentsLocationRef.current = location;
+    if (!ownProfileViewerComments || !isActive) return;
+    const reopen = resolveOwnProfileViewerCommentsRestore({
+      previousLocation,
+      location,
+      hostActive: ownProfileViewerComments,
+      viewerCardActive: true,
+      postId: post.id,
+      stashedPostId: peekProfileReturnReopenComments(),
+    });
+    if (!reopen) return;
+    const consumed = consumeProfileReturnReopenComments();
+    if (consumed !== post.id) return;
+    openCommentsDrawer();
+  }, [isActive, location, openCommentsDrawer, ownProfileViewerComments, post.id]);
 
   useEffect(() => {
     if (!requestOpenComments || !isActive) return;
@@ -1333,6 +1432,10 @@ function VideoCardInner({
     feedVideoObjectFit === "cover"
       ? "object-cover object-center"
       : "object-contain";
+  homeReleasePosterRef.current = {
+    imageUrl: displayPosterUrl || null,
+    objectFit: feedVideoObjectFit === "cover" ? "cover" : "contain",
+  };
 
   // Smooth progress fill without per-frame React state (active post only).
   useEffect(() => {
