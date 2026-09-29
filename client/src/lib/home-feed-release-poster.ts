@@ -1,4 +1,4 @@
-import { interactiveBackTransitionsEnabled, routePathname } from "./interactive-page-transitions";
+import { routePathname } from "./interactive-page-transitions";
 
 export type HomeFeedReleasePosterFit = "cover" | "contain";
 
@@ -32,7 +32,7 @@ export function armHomeFeedReleasePoster(input: {
     objectFit: input.objectFit === "contain" ? "contain" : "cover",
   };
   const postId = input.postId?.trim() ?? "";
-  if (postId.length > 0 && interactiveBackTransitionsEnabled()) {
+  if (postId.length > 0) {
     const surface = captureHomeFeedReleaseReturnSurface(postId);
     armHomeFeedReleaseReturnVisit({
       releasePath: snapshot.destinationPath,

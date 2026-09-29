@@ -1,14 +1,9 @@
 /**
- * Temporary measurement for the stuck Profile pop.
- * Installed only while sessionStorage dubhub_interactive_page_transitions === "1".
- * Flag off: no window helpers, no listener registry, no logs.
+ * Development-only measurement for interactive page transitions.
+ * Production builds install no window helpers, listener registry, or logs.
  * Reads only. Does not write scroll, layout, or gesture state.
  */
-import {
-  interactivePageTransitionsEnabled,
-  stackLayerRole,
-  type PopPhase,
-} from "@/lib/interactive-page-transitions";
+import { stackLayerRole, type PopPhase } from "@/lib/interactive-page-transitions";
 
 export type TransitionDebugWindow = Window & {
   __dubhubTransitionDebug?: () => TransitionDebugSnapshot;
@@ -182,8 +177,21 @@ let followUpTimer = 0;
 let followUpRaf1 = 0;
 let followUpRaf2 = 0;
 
+let diagnosticsOverride: boolean | undefined;
+
+export function transitionDiagnosticsEnabled(): boolean {
+  if (diagnosticsOverride !== undefined && import.meta.env?.PROD !== true) return diagnosticsOverride;
+  return import.meta.env?.DEV === true;
+}
+
+/** Tests only. Production builds ignore this. */
+export function setTransitionDiagnosticsForTests(enabled: boolean | undefined): void {
+  if (import.meta.env?.PROD === true) return;
+  diagnosticsOverride = enabled;
+}
+
 function debugOn(): boolean {
-  return interactivePageTransitionsEnabled();
+  return transitionDiagnosticsEnabled();
 }
 
 export function publishTransitionDebugLive(next: DebugLive | null): void {

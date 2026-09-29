@@ -1,11 +1,8 @@
 /**
- * Interactive page transitions. Default off.
- * Enable in Safari / WKWebView console, then reload:
- * sessionStorage.setItem("dubhub_interactive_page_transitions","1"); location.reload();
- * One previous page. Home and transactional routes never enter.
- *
- * Home release-card push also requires:
- * sessionStorage.setItem("dubhub_interactive_home_transitions","1"); location.reload();
+ * Interactive page transitions. Always available.
+ * Route pair eligibility, `from=` markers, and a matching stored visit decide
+ * whether a contextual push or static Back runs. Solo and deep-link routes do not.
+ * Home never enters the live stack.
  */
 
 import {
@@ -13,11 +10,6 @@ import {
   releaseDetailOpenedFromProfileViewer,
   resolveReleaseDetailBackPath,
 } from "./release-detail-navigation";
-
-export const INTERACTIVE_PAGE_TRANSITIONS_FLAG = "dubhub_interactive_page_transitions";
-export const INTERACTIVE_HOME_TRANSITIONS_FLAG = "dubhub_interactive_home_transitions";
-/** Gates the first static/remount Back only. Live-parent pops stay on the global flag. */
-export const INTERACTIVE_BACK_TRANSITIONS_FLAG = "dubhub_interactive_back_transitions";
 
 export const INTERACTIVE_PAGE_EASING = "cubic-bezier(0.32, 0.45, 0.42, 1)";
 export const INTERACTIVE_PUSH_MS = 280;
@@ -63,70 +55,6 @@ export function routePathname(location: string): string {
   return path.length > 0 ? path : "/";
 }
 
-export function readInteractivePageTransitionsFlag(
-  storage: { getItem(key: string): string | null } | null | undefined,
-): boolean {
-  try {
-    return storage?.getItem(INTERACTIVE_PAGE_TRANSITIONS_FLAG) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function interactivePageTransitionsEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return readInteractivePageTransitionsFlag(window.sessionStorage);
-  } catch {
-    return false;
-  }
-}
-
-export function readInteractiveHomeTransitionsFlag(
-  storage: { getItem(key: string): string | null } | null | undefined,
-): boolean {
-  try {
-    return storage?.getItem(INTERACTIVE_HOME_TRANSITIONS_FLAG) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function readInteractiveBackTransitionsFlag(
-  storage: { getItem(key: string): string | null } | null | undefined,
-): boolean {
-  try {
-    return storage?.getItem(INTERACTIVE_BACK_TRANSITIONS_FLAG) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Static/remount Back. Requires the global flag, the contextual flag, and the
- * back flag. Live-parent pops do not call this.
- */
-export function interactiveBackTransitionsEnabled(): boolean {
-  if (!interactiveHomeTransitionsEnabled()) return false;
-  if (typeof window === "undefined") return false;
-  try {
-    return readInteractiveBackTransitionsFlag(window.sessionStorage);
-  } catch {
-    return false;
-  }
-}
-
-/** Home contextual push. The global flag alone does not enable it. */
-export function interactiveHomeTransitionsEnabled(): boolean {
-  if (!interactivePageTransitionsEnabled()) return false;
-  if (typeof window === "undefined") return false;
-  try {
-    return readInteractiveHomeTransitionsFlag(window.sessionStorage);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Non-owner Home release card → `/releases/:id?from=feed`.
  * Edit, notifications, deep links, and the Releases tab do not match.
@@ -139,7 +67,7 @@ export function isHomeFeedReleaseDetailPushLocation(location: string): boolean {
 }
 
 export function shouldPlayHomeFeedReleasePosterPush(location: string): boolean {
-  return interactiveHomeTransitionsEnabled() && isHomeFeedReleaseDetailPushLocation(location);
+  return isHomeFeedReleaseDetailPushLocation(location);
 }
 
 /** Query set only by the Home feed profile popup. Not used by comments, notifications, or deep links. */
@@ -152,38 +80,32 @@ export function isHomeFeedPublicProfilePushLocation(location: string): boolean {
   return new URLSearchParams(search).get("from") === HOME_FEED_PROFILE_PUSH_FROM;
 }
 
-/** Release-card push or Home profile-popup push. Both flags required. */
+/** Release-card push or Home profile-popup push. */
 export function shouldPlayHomeContextualPosterPush(location: string): boolean {
   return (
-    interactiveHomeTransitionsEnabled() &&
-    (isHomeFeedReleaseDetailPushLocation(location) || isHomeFeedPublicProfilePushLocation(location))
+    isHomeFeedReleaseDetailPushLocation(location) || isHomeFeedPublicProfilePushLocation(location)
   );
 }
 
 /** Arm only for the Home feed popup opening someone else's public profile. */
 export function shouldArmHomeFeedPublicProfilePoster(input: {
-  globalEnabled: boolean;
-  homeEnabled: boolean;
   homeFeedOrigin: boolean;
   isSelf: boolean;
 }): boolean {
-  return input.globalEnabled && input.homeEnabled && input.homeFeedOrigin && !input.isSelf;
+  return input.homeFeedOrigin && !input.isSelf;
 }
 
 /** Arm the static poster only for a Home feed card opening someone else's release. */
 export function shouldArmHomeFeedReleasePoster(input: {
-  globalEnabled: boolean;
-  homeEnabled: boolean;
   homeFeedCard: boolean;
   isReleaseOwner: boolean;
 }): boolean {
-  return input.globalEnabled && input.homeEnabled && input.homeFeedCard && !input.isReleaseOwner;
+  return input.homeFeedCard && !input.isReleaseOwner;
 }
 
 /**
  * Query set only by Comments → Profile Popup → View Profile.
  * Not inferred from the previous pathname. Not used by Home, notifications, or deep links.
- * Both interactive flags are required so the global flag's existing transitions stay unchanged.
  */
 export const COMMENTS_PROFILE_PUSH_FROM = "comments-popup";
 
@@ -195,24 +117,21 @@ export function isCommentsPublicProfilePushLocation(location: string): boolean {
 }
 
 export function shouldPlayCommentsProfilePush(location: string): boolean {
-  return interactiveHomeTransitionsEnabled() && isCommentsPublicProfilePushLocation(location);
+  return isCommentsPublicProfilePushLocation(location);
 }
 
 /** Arm only for the Comments popup opening someone else's public profile. */
 export function shouldArmCommentsProfilePush(input: {
-  globalEnabled: boolean;
-  homeEnabled: boolean;
   commentsOrigin: boolean;
   isSelf: boolean;
 }): boolean {
-  return input.globalEnabled && input.homeEnabled && input.commentsOrigin && !input.isSelf;
+  return input.commentsOrigin && !input.isSelf;
 }
 
 /**
  * Query set only by Release Detail artist/collaborator byline.
  * Not inferred from the previous pathname. Not used by Home, Comments,
  * Leaderboard, notifications, or deep links.
- * Both interactive flags are required so existing transitions stay unchanged.
  */
 export const RELEASE_DETAIL_PROFILE_PUSH_FROM = "release-detail";
 
@@ -224,7 +143,7 @@ export function isReleaseDetailPublicProfilePushLocation(location: string): bool
 }
 
 export function shouldPlayReleaseDetailProfilePush(location: string): boolean {
-  return interactiveHomeTransitionsEnabled() && isReleaseDetailPublicProfilePushLocation(location);
+  return isReleaseDetailPublicProfilePushLocation(location);
 }
 
 /**
@@ -232,11 +151,7 @@ export function shouldPlayReleaseDetailProfilePush(location: string): boolean {
  * Live pairs do not use this. Home and Comments markers do not match.
  */
 export function shouldUseReleaseDetailStaticPop(location: string, hasReturnVisit: boolean): boolean {
-  return (
-    interactiveBackTransitionsEnabled() &&
-    hasReturnVisit &&
-    isReleaseDetailPublicProfilePushLocation(location)
-  );
+  return hasReturnVisit && isReleaseDetailPublicProfilePushLocation(location);
 }
 
 /**
@@ -255,11 +170,7 @@ export function isHomeFeedStaticReturnLocation(location: string): boolean {
  * Home itself is never a stack page.
  */
 export function shouldUseHomeFeedReleaseStaticPop(location: string, hasReturnVisit: boolean): boolean {
-  return (
-    interactiveBackTransitionsEnabled() &&
-    hasReturnVisit &&
-    isHomeFeedStaticReturnLocation(location)
-  );
+  return hasReturnVisit && isHomeFeedStaticReturnLocation(location);
 }
 
 /**
@@ -273,9 +184,9 @@ export function isProfileViewerReleaseDetailLocation(location: string): boolean 
   return releaseDetailOpenedFromProfileViewer(search);
 }
 
-/** Forward slide over the frozen viewer. Requires the contextual flag. */
+/** Forward slide over the frozen viewer. */
 export function shouldPlayProfileViewerReleasePush(location: string): boolean {
-  return interactiveHomeTransitionsEnabled() && isProfileViewerReleaseDetailLocation(location);
+  return isProfileViewerReleaseDetailLocation(location);
 }
 
 /**
@@ -288,7 +199,7 @@ export function shouldUseProfileViewerReleaseStaticPop(
 ): boolean {
   if (!visit?.activePostId.trim()) return false;
   if (routePathname(visit.releasePath) !== routePathname(location)) return false;
-  return interactiveBackTransitionsEnabled() && isProfileViewerReleaseDetailLocation(location);
+  return isProfileViewerReleaseDetailLocation(location);
 }
 
 /**
@@ -309,24 +220,16 @@ export function shouldUseCommentsHomeStaticPop(
   if (!visit.postId.trim()) return false;
   if (routePathname(visit.parentPath) !== "/") return false;
   if (routePathname(visit.destinationPath) !== routePathname(location)) return false;
-  return interactiveBackTransitionsEnabled() && isCommentsPublicProfilePushLocation(location);
+  return isCommentsPublicProfilePushLocation(location);
 }
 
 /** Arm only for the Release Detail byline opening someone else's public profile. */
 export function shouldArmReleaseDetailProfilePush(input: {
-  globalEnabled: boolean;
-  homeEnabled: boolean;
   releaseDetailOrigin: boolean;
   isSelf: boolean;
   overlaysClosed: boolean;
 }): boolean {
-  return (
-    input.globalEnabled &&
-    input.homeEnabled &&
-    input.releaseDetailOrigin &&
-    !input.isSelf &&
-    input.overlaysClosed
-  );
+  return input.releaseDetailOrigin && !input.isSelf && input.overlaysClosed;
 }
 
 /** History state stamped when a child is pushed from a parent that stays mounted. */
@@ -540,20 +443,16 @@ export function releaseEditOpenedFromDetailLocation(): string | null {
 
 /**
  * Edit discard → another user's public profile, reusing the byline return.
- * Create, own profile, a missing Detail origin, and flag-off stay on plain replace.
+ * Create, own profile, and a missing Detail origin stay on plain replace.
  */
 export function editDiscardReleaseDetailProfile(input: {
   formLocation: string;
   username: string;
   isSelf: boolean;
   detailLocation: string | null;
-  globalEnabled: boolean;
-  homeEnabled: boolean;
-  backEnabled: boolean;
 }): { profilePath: string; releasePath: string } | null {
   const username = input.username.trim();
   if (!username || input.isSelf) return null;
-  if (!input.globalEnabled || !input.homeEnabled || !input.backEnabled) return null;
   if (!isReleaseEditPath(input.formLocation)) return null;
   const editRest = routePathname(input.formLocation).slice("/releases/".length);
   const editId = editRest.endsWith("/edit") ? editRest.slice(0, -"/edit".length) : "";

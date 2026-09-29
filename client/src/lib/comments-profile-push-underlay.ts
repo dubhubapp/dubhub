@@ -1,4 +1,4 @@
-import { interactiveBackTransitionsEnabled, routePathname } from "./interactive-page-transitions";
+import { routePathname } from "./interactive-page-transitions";
 
 /**
  * Static underlay for a Comments → public profile push when the page under
@@ -308,7 +308,6 @@ export function armCommentsHomeReturnVisit(input: {
   sheetBox?: CommentsSheetBox | null;
   mediaBox?: CommentsMediaBox | null;
 }): CommentsHomeReturnVisit | null {
-  if (!interactiveBackTransitionsEnabled()) return null;
   if (routePathname(input.parentPath) !== "/") return null;
   const postId = input.postId.trim();
   if (!postId) return null;

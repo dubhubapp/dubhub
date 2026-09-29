@@ -4,9 +4,6 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  INTERACTIVE_BACK_TRANSITIONS_FLAG,
-  INTERACTIVE_HOME_TRANSITIONS_FLAG,
-  INTERACTIVE_PAGE_TRANSITIONS_FLAG,
   isInteractiveStackPair,
   reduceSettingsTransitionStack,
   shouldUseHomeFeedReleaseStaticPop,
@@ -50,25 +47,6 @@ const restoreEffect = profileSrc.slice(
 );
 const commitBack = detailSrc.slice(detailSrc.indexOf("const commitBack"), detailSrc.indexOf("const handleBack"));
 const marked = `/releases/abc?from=${RELEASE_DETAIL_FROM_PROFILE_VIEWER_VALUE}`;
-
-function withFlags(run: () => void): void {
-  const previous = globalThis.window;
-  const values = new Map<string, string>([
-    [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-    [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-    [INTERACTIVE_BACK_TRANSITIONS_FLAG, "1"],
-  ]);
-  globalThis.window = {
-    sessionStorage: {
-      getItem: (key: string) => values.get(key) ?? null,
-    },
-  } as unknown as Window & typeof globalThis;
-  try {
-    run();
-  } finally {
-    globalThis.window = previous;
-  }
-}
 
 function armVisit(releasePath = marked) {
   return armProfileViewerReleaseVisit({
@@ -117,15 +95,13 @@ describe("Own Profile viewer → Release Detail return", () => {
   });
 
   it("F. Detail Back uses the viewer visit, not /releases", () => {
-    withFlags(() => {
-      dismissProfileViewerReleaseReturnVisit();
-      const visit = armVisit();
-      assert.equal(shouldUseProfileViewerReleaseStaticPop(marked, visit), true);
-      assert.match(commitBack, /shouldUseProfileViewerReleaseStaticPop/);
-      assert.match(commitBack, /window\.history\.back\(\)/);
-      const viewerBack = commitBack.slice(commitBack.indexOf("shouldUseProfileViewerReleaseStaticPop"));
-      assert.doesNotMatch(viewerBack.slice(0, viewerBack.indexOf("return;")), /navigate\(releasesBackUrl\)/);
-    });
+    dismissProfileViewerReleaseReturnVisit();
+    const visit = armVisit();
+    assert.equal(shouldUseProfileViewerReleaseStaticPop(marked, visit), true);
+    assert.match(commitBack, /shouldUseProfileViewerReleaseStaticPop/);
+    assert.match(commitBack, /window\.history\.back\(\)/);
+    const viewerBack = commitBack.slice(commitBack.indexOf("shouldUseProfileViewerReleaseStaticPop"));
+    assert.doesNotMatch(viewerBack.slice(0, viewerBack.indexOf("return;")), /navigate\(releasesBackUrl\)/);
   });
 
   it("G/H. Back restores Posts or Likes", () => {
@@ -195,17 +171,15 @@ describe("Own Profile viewer → Release Detail return", () => {
   });
 
   it("P. a direct Detail does not qualify", () => {
-    withFlags(() => {
-      dismissProfileViewerReleaseReturnVisit();
-      const visit = armVisit();
-      assert.equal(shouldUseProfileViewerReleaseStaticPop("/releases/abc", visit), false);
-      assert.equal(shouldUseProfileViewerReleaseStaticPop("/releases/abc?from=notification", visit), false);
-      assert.equal(
-        shouldUseProfileViewerReleaseStaticPop("/releases/other?from=profile-viewer", visit),
-        false,
-      );
-      assert.equal(shouldUseProfileViewerReleaseStaticPop(marked, null), false);
-    });
+    dismissProfileViewerReleaseReturnVisit();
+    const visit = armVisit();
+    assert.equal(shouldUseProfileViewerReleaseStaticPop("/releases/abc", visit), false);
+    assert.equal(shouldUseProfileViewerReleaseStaticPop("/releases/abc?from=notification", visit), false);
+    assert.equal(
+      shouldUseProfileViewerReleaseStaticPop("/releases/other?from=profile-viewer", visit),
+      false,
+    );
+    assert.equal(shouldUseProfileViewerReleaseStaticPop(marked, null), false);
   });
 
   it("Q. Releases, Home, and public-profile Detail returns stay on their own checks", () => {
@@ -214,15 +188,13 @@ describe("Own Profile viewer → Release Detail return", () => {
     assert.match(publicProfileSrc, /shouldUseHomeFeedReleaseStaticPop/);
     assert.doesNotMatch(publicProfileSrc, /shouldUseProfileViewerReleaseStaticPop|profile-viewer/);
     assert.doesNotMatch(homeSrc, /shouldUseProfileViewerReleaseStaticPop/);
-    withFlags(() => {
-      assert.equal(shouldUseHomeFeedReleaseStaticPop("/releases/abc?from=feed", true), true);
-      assert.equal(shouldUseHomeFeedReleaseStaticPop(marked, true), false);
-      assert.equal(
-        shouldUseReleaseDetailStaticPop("/profile/ada?from=release-detail", true),
-        true,
-      );
-      assert.equal(shouldUseReleaseDetailStaticPop(marked, true), false);
-    });
+    assert.equal(shouldUseHomeFeedReleaseStaticPop("/releases/abc?from=feed", true), true);
+    assert.equal(shouldUseHomeFeedReleaseStaticPop(marked, true), false);
+    assert.equal(
+      shouldUseReleaseDetailStaticPop("/profile/ada?from=release-detail", true),
+      true,
+    );
+    assert.equal(shouldUseReleaseDetailStaticPop(marked, true), false);
   });
 
   it("R. Comments → Profile return stays unchanged", () => {

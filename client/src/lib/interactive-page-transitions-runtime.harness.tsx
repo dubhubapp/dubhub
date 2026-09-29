@@ -1,5 +1,5 @@
 /**
- * Runtime harness for the flag-on React #310 regression.
+ * Runtime harness for the interactive settings stack.
  * Loaded through Vite so the stack and settings pages resolve like the app.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -8,13 +8,7 @@ import { Route, Router, Switch } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { InteractiveSettingsStack } from "@/components/interactive-settings-stack";
 import { queryClient } from "@/lib/queryClient";
-import { interactivePageTransitionsEnabled } from "@/lib/interactive-page-transitions";
 import { UserProvider, setRuntimeMockUser } from "@/lib/user-context";
-import UserProfile from "@/pages/user-profile";
-import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
-import SettingsManageAccountPage from "@/pages/settings-manage-account";
-import SettingsNotificationsPage from "@/pages/settings-notifications";
-import SettingsPage from "@/pages/settings";
 
 function ProfileProbe({ nonce }: { nonce: number }) {
   const [seen, setSeen] = useState(nonce);
@@ -25,18 +19,15 @@ function ProfileProbe({ nonce }: { nonce: number }) {
 }
 
 function UserProfileGate() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <UserProfile />;
+  return null;
 }
 
 function SettingsNotificationsGate() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <SettingsNotificationsPage />;
+  return null;
 }
 
 function SettingsArtistQuestionsGate() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <ArtistQuestionsManagePage />;
+  return null;
 }
 
 const runtimeLocation = memoryLocation({ path: "/profile", record: true });
@@ -95,13 +86,9 @@ useBrowserHarnessLocation.searchHook = function useBrowserHarnessSearch() {
 export { setRuntimeMockUser };
 
 export function TransitionRuntimeHarness({ nonce }: { nonce: number }) {
-  const SettingsWithSignOut = () =>
-    interactivePageTransitionsEnabled() ? null : <SettingsPage onSignOut={() => undefined} />;
+  const SettingsWithSignOut = () => null;
 
-  const SettingsManageAccountWithDeletion = () =>
-    interactivePageTransitionsEnabled() ? null : (
-      <SettingsManageAccountPage onAccountDeleted={() => undefined} />
-    );
+  const SettingsManageAccountWithDeletion = () => null;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -130,13 +117,9 @@ export function TransitionRuntimeHarness({ nonce }: { nonce: number }) {
 
 /** Real History API commits. happy-dom's history.back() does not traverse same-document entries. */
 export function BrowserHistoryTransitionHarness({ nonce }: { nonce: number }) {
-  const SettingsWithSignOut = () =>
-    interactivePageTransitionsEnabled() ? null : <SettingsPage onSignOut={() => undefined} />;
+  const SettingsWithSignOut = () => null;
 
-  const SettingsManageAccountWithDeletion = () =>
-    interactivePageTransitionsEnabled() ? null : (
-      <SettingsManageAccountPage onAccountDeleted={() => undefined} />
-    );
+  const SettingsManageAccountWithDeletion = () => null;
 
   return (
     <QueryClientProvider client={queryClient}>

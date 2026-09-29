@@ -168,11 +168,6 @@ function sequencesByComponent() {
   return byComponent;
 }
 
-function flag(on) {
-  if (on) dom.sessionStorage.setItem("dubhub_interactive_page_transitions", "1");
-  else dom.sessionStorage.removeItem("dubhub_interactive_page_transitions");
-}
-
 function summarize(label) {
   const byComponent = sequencesByComponent();
   console.log("\n==", label);
@@ -307,7 +302,6 @@ async function clickAndSettle(selector) {
 
 async function assertNestedSettingsPopCommits() {
   const session = installSameDocumentHistory();
-  flag(true);
   await act(async () => {
     harness.setRuntimeMockUser({
       id: "user-1",
@@ -504,7 +498,6 @@ async function renderNonce(nonce) {
 }
 
 try {
-  flag(true);
   harness.setRuntimeMockUser(null);
   await renderNonce(0);
   summarize("flag on profile before user");
@@ -524,18 +517,6 @@ try {
   if (dom.document.querySelectorAll('[data-lg-nav-5a-dest="profile"]').length !== 1) {
     throw new Error("Profile did not mount once after currentUser arrived with the flag on");
   }
-
-  flag(false);
-  await renderNonce(0);
-  summarize("flag off profile mount");
-  await renderNonce(1);
-  summarize("flag off profile rerender");
-
-  flag(true);
-  await renderNonce(2);
-  summarize("flag flipped on while profile mounted");
-  await renderNonce(3);
-  summarize("flag on profile rerender");
 
   await go("/settings");
   summarize("flag on /settings");
@@ -636,23 +617,6 @@ try {
   if (scrollWrites !== 0 || scrollValue !== 240) {
     throw new Error(`Profile scroll was rewritten after the questions chain (${scrollWrites} writes, ${scrollValue})`);
   }
-
-  flag(false);
-  await renderNonce(4);
-  summarize("flag off on profile again");
-  if (dom.document.querySelector('[data-settings-stack="on"]')) {
-    throw new Error("Flag-off profile route still mounted the settings stack");
-  }
-  if (!dom.document.querySelector('[data-lg-nav-5a-dest="profile"]')) {
-    throw new Error("Flag-off profile route did not render");
-  }
-  await go("/settings/notifications");
-  summarize("flag off notifications via switch");
-  flag(true);
-  await renderNonce(5);
-  summarize("flag flipped on while notifications mounted");
-  await go("/profile");
-  summarize("return profile after flag flip on notifications");
 
   await assertNestedSettingsPopCommits();
 

@@ -27,29 +27,16 @@ import Home from "@/pages/home";
 import Submit from "@/pages/submit";
 import TrimVideo from "@/pages/trim-video";
 import SubmitMetadata from "@/pages/submit-metadata";
-import ReleaseTrackerPage from "@/pages/release-tracker";
-import ReleaseDetail from "@/pages/release-detail";
 import ReleaseCreate from "@/pages/release-create";
 import ReleaseEdit from "@/pages/release-edit";
-import UserProfilePage from "@/pages/user-profile";
-import PublicProfile from "@/pages/public-profile";
 import NotFound from "@/pages/not-found";
 import { UnauthenticatedEntry } from "@/components/pre-login-onboarding";
 import ResetPasswordPage from "@/pages/reset-password";
 import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
-import LeaderboardPage from "@/pages/leaderboard";
-import SettingsPage from "@/pages/settings";
-import SettingsNotificationsPage from "@/pages/settings-notifications";
-import SettingsCountryPage from "@/pages/settings-country";
-import SettingsManageAccountPage from "@/pages/settings-manage-account";
-import SettingsArtistPage from "@/pages/settings-artist";
-import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
-import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import { InteractiveSettingsStack } from "@/components/interactive-settings-stack";
-import { interactivePageTransitionsEnabled } from "@/lib/interactive-page-transitions";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
-import { lgNav5aMark, lgNav5aProfiledPage } from "@/lib/lg-nav-5a-timing";
+import { lgNav5aMark } from "@/lib/lg-nav-5a-timing";
 import { SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_SHELL_ATMOSPHERE_CLASS,
@@ -108,58 +95,44 @@ import {
 import { quarantineRevenueCatIdentity } from "@/lib/revenuecat-identity";
 import { clearHomeWidgetOnLogout } from "@/lib/home-widget-session";
 
-const Leaderboard = lgNav5aProfiledPage("leaderboard", LeaderboardPage);
-const ReleaseTracker = lgNav5aProfiledPage("releases", ReleaseTrackerPage);
-const UserProfile = lgNav5aProfiledPage("profile", UserProfilePage);
-
 function SettingsNotificationsRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <SettingsNotificationsPage />;
+  return null;
 }
 
 function SettingsCountryRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <SettingsCountryPage />;
+  return null;
 }
 
 function SettingsArtistRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <SettingsArtistPage />;
+  return null;
 }
 
 function SettingsArtistQuestionsRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <ArtistQuestionsManagePage />;
+  return null;
 }
 
 function SettingsDeveloperDiagnosticsRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <SettingsDeveloperDiagnosticsPage />;
+  return null;
 }
 
 function UserProfileRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <UserProfile />;
+  return null;
 }
 
 function PublicProfileRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <PublicProfile />;
+  return null;
 }
 
 function LeaderboardRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <Leaderboard />;
+  return null;
 }
 
 function ReleaseTrackerRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <ReleaseTracker />;
+  return null;
 }
 
 function ReleaseDetailRoute() {
-  if (interactivePageTransitionsEnabled()) return null;
-  return <ReleaseDetail />;
+  return null;
 }
 
 function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
@@ -919,13 +892,9 @@ function App() {
   const startupOverlayActive = startupOverlayVisible !== null;
 
   // Wrapper for settings actions that require app-level sign-out behavior
-  const SettingsWithSignOut = () =>
-    interactivePageTransitionsEnabled() ? null : <SettingsPage onSignOut={handleSignOut} />;
+  const SettingsWithSignOut = () => null;
 
-  const SettingsManageAccountWithDeletion = () =>
-    interactivePageTransitionsEnabled() ? null : (
-      <SettingsManageAccountPage onAccountDeleted={handleAccountDeleted} />
-    );
+  const SettingsManageAccountWithDeletion = () => null;
 
   let appShell: React.ReactNode;
   if (isLoading) {

@@ -10,9 +10,6 @@ import {
   HOME_FEED_PROFILE_PUSH_FROM,
   editDiscardReleaseDetailProfile,
   holdReleaseEditReturnForProfileArrival,
-  interactiveBackTransitionsEnabled,
-  interactiveHomeTransitionsEnabled,
-  interactivePageTransitionsEnabled,
   isInteractiveStackPair,
   releaseEditOpenedFromDetailLocation,
 } from "@/lib/interactive-page-transitions";
@@ -411,9 +408,6 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
               username: trimmed,
               isSelf: false,
               detailLocation: releaseEditOpenedFromDetailLocation(),
-              globalEnabled: interactivePageTransitionsEnabled(),
-              homeEnabled: interactiveHomeTransitionsEnabled(),
-              backEnabled: interactiveBackTransitionsEnabled(),
             });
             if (detailReturn) {
               let releaseId = detailReturn.releasePath.split("?")[0].slice("/releases/".length);
@@ -449,14 +443,13 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
               return;
             }
             noteDiscardedFormProfileArrival();
-            const profilePath =
-              commentsOrigin && interactiveHomeTransitionsEnabled()
-                ? `${destination}?from=${COMMENTS_PROFILE_PUSH_FROM}`
-                : destination;
+            const profilePath = commentsOrigin
+              ? `${destination}?from=${COMMENTS_PROFILE_PUSH_FROM}`
+              : destination;
             navigate(profilePath, { replace: true });
             return;
           }
-          if (commentsOrigin && interactiveHomeTransitionsEnabled()) {
+          if (commentsOrigin) {
             consumePublicProfileEnterAnimation();
             const marked = `${destination}?from=${COMMENTS_PROFILE_PUSH_FROM}`;
             if (!isInteractiveStackPair(location, marked)) {
@@ -471,7 +464,7 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
             return;
           }
           const poster = homeFeedProfilePush?.() ?? null;
-          if (poster && interactiveHomeTransitionsEnabled()) {
+          if (poster) {
             consumePublicProfileEnterAnimation();
             armHomeFeedReleasePoster({
               destinationPath: `${destination}?from=${HOME_FEED_PROFILE_PUSH_FROM}`,

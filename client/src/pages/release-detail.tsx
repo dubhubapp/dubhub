@@ -94,8 +94,6 @@ import {
 } from "@/lib/profile-navigation-return";
 import {
   RELEASE_DETAIL_PROFILE_PUSH_FROM,
-  interactivePageTransitionsEnabled,
-  readInteractiveHomeTransitionsFlag,
   routePathname,
   shouldArmReleaseDetailProfilePush,
 } from "@/lib/interactive-page-transitions";
@@ -377,10 +375,6 @@ export default function ReleaseDetail() {
       if (
         viewerNorm &&
         shouldArmReleaseDetailProfilePush({
-          globalEnabled: interactivePageTransitionsEnabled(),
-          homeEnabled: readInteractiveHomeTransitionsFlag(
-            typeof window === "undefined" ? null : window.sessionStorage,
-          ),
           releaseDetailOrigin: true,
           isSelf: false,
           overlaysClosed,

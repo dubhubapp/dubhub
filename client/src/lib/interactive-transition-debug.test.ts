@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { INTERACTIVE_PAGE_TRANSITIONS_FLAG } from "./interactive-page-transitions";
 import {
   installTransitionDebug,
   registerEdgeSwipeListener,
+  setTransitionDiagnosticsForTests,
   uninstallTransitionDebug,
   type TransitionDebugWindow,
 } from "./interactive-transition-debug";
@@ -18,13 +18,8 @@ const hookSrc = readFileSync(join(here, "../hooks/use-edge-swipe-back.ts"), "utf
 
 const originalWindow = globalThis.window;
 
-function installFakeWindow(flag: string | null): TransitionDebugWindow {
-  const storage = new Map<string, string>();
-  if (flag) storage.set(INTERACTIVE_PAGE_TRANSITIONS_FLAG, flag);
+function installFakeWindow(): TransitionDebugWindow {
   const fake = {
-    sessionStorage: {
-      getItem: (key: string) => storage.get(key) ?? null,
-    },
     document: {
       querySelector: () => null,
       querySelectorAll: () => [],
@@ -46,20 +41,26 @@ function installFakeWindow(flag: string | null): TransitionDebugWindow {
 
 afterEach(() => {
   uninstallTransitionDebug();
+  setTransitionDiagnosticsForTests(undefined);
   globalThis.window = originalWindow;
 });
 
 describe("interactive transition diagnostics", () => {
-  it("does not install helpers when the feature flag is off", () => {
-    const fake = installFakeWindow(null);
+  it("does not install helpers in production", () => {
+    setTransitionDiagnosticsForTests(false);
+    const fake = installFakeWindow();
     installTransitionDebug();
     assert.equal(fake.__dubhubTransitionDebug, undefined);
     assert.equal(fake.__dubhubHitTest, undefined);
     assert.equal(registerEdgeSwipeListener("touchmove", "interactive", "/settings"), 0);
+    assert.match(debugSrc, /import\.meta\.env\?\.DEV === true/);
+    assert.match(debugSrc, /import\.meta\.env\?\.PROD === true/);
+    assert.doesNotMatch(debugSrc, /dubhub_interactive_page_transitions|sessionStorage/);
   });
 
-  it("installs read-only helpers only when the feature flag is on", () => {
-    const fake = installFakeWindow("1");
+  it("installs read-only helpers in development", () => {
+    setTransitionDiagnosticsForTests(true);
+    const fake = installFakeWindow();
     installTransitionDebug();
     assert.equal(typeof fake.__dubhubTransitionDebug, "function");
     assert.equal(typeof fake.__dubhubHitTest, "function");
@@ -81,5 +82,6 @@ describe("interactive transition diagnostics", () => {
     assert.match(stackSrc, /data-settings-path=\{path\}/);
     assert.match(hookSrc, /event\.preventDefault\(\)/);
     assert.match(hookSrc, /if \(debugOn\) noteEdgeSwipePreventDefault/);
+    assert.match(hookSrc, /transitionDiagnosticsEnabled\(\)/);
   });
 });

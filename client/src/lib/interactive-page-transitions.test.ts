@@ -21,12 +21,8 @@ import {
   COMMENTS_PROFILE_PUSH_FROM,
   HOME_FEED_PROFILE_PUSH_FROM,
   RELEASE_DETAIL_PROFILE_PUSH_FROM,
-  INTERACTIVE_BACK_TRANSITIONS_FLAG,
-  INTERACTIVE_HOME_TRANSITIONS_FLAG,
-  INTERACTIVE_PAGE_TRANSITIONS_FLAG,
   createInteractivePopController,
   evaluateInteractiveRelease,
-  interactiveHomeTransitionsEnabled,
   interactiveMotionMs,
   interactiveParentNavigation,
   isCommentsPublicProfilePushLocation,
@@ -40,8 +36,6 @@ import {
   isWithinBackEdge,
   isWholesaleStackReplacement,
   pushVelocitySample,
-  readInteractiveHomeTransitionsFlag,
-  readInteractivePageTransitionsFlag,
   clearReleaseEditReturnRecord,
   clearReleaseEditReturnRecordIfRestored,
   editDiscardReleaseDetailProfile,
@@ -177,18 +171,7 @@ const interactiveSlice = hookSrc.slice(
   hookSrc.indexOf("/* INTERACTIVE_SWIPE_END */"),
 );
 
-describe("interactive page transitions flag", () => {
-  it("defaults off", () => {
-    assert.equal(readInteractivePageTransitionsFlag(null), false);
-    assert.equal(readInteractivePageTransitionsFlag({ getItem: () => null }), false);
-    assert.equal(readInteractivePageTransitionsFlag({ getItem: () => "0" }), false);
-    assert.equal(readInteractivePageTransitionsFlag({ getItem: () => "true" }), false);
-  });
-
-  it("turns on only for the exact session value", () => {
-    assert.equal(readInteractivePageTransitionsFlag({ getItem: () => "1" }), true);
-  });
-
+describe("interactive page transitions", () => {
   it("pops a pushed settings child instead of replacing it with a duplicate", () => {
     const entries = [
       { path: "/profile", state: null },
@@ -223,10 +206,11 @@ describe("interactive page transitions flag", () => {
     }
   });
 
-  it("keeps the legacy swipe path when the flag is off", () => {
-    assert.match(appSrc, /interactivePageTransitionsEnabled\(\) \? null/);
-    assert.match(appSrc, /<SettingsNotificationsPage \/>/);
-    assert.match(appSrc, /<SettingsPage onSignOut=\{handleSignOut\} \/>/);
+  it("keeps the legacy solo swipe path", () => {
+    assert.doesNotMatch(appSrc, /interactivePageTransitionsEnabled/);
+    assert.match(appSrc, /function ReleaseDetailRoute\(\) \{\n  return null;\n\}/);
+    assert.match(appSrc, /path="\/releases\/new"/);
+    assert.match(appSrc, /path="\/releases\/:id\/edit"/);
     assert.match(hookSrc, /const COMPLETE_PROGRESS = 0\.5/);
     assert.match(legacySlice, /COMPLETE_PROGRESS/);
     assert.doesNotMatch(interactiveSlice, /COMPLETE_PROGRESS/);
@@ -862,25 +846,17 @@ describe("home feed release poster push", () => {
     videoCardSrc.indexOf("const [showComments", videoCardSrc.indexOf("const navigateToReleasePreview")),
   );
 
-  it("keeps the home flag off unless the session value is exactly 1", () => {
-    assert.equal(readInteractiveHomeTransitionsFlag(null), false);
-    assert.equal(readInteractiveHomeTransitionsFlag({ getItem: () => null }), false);
-    assert.equal(readInteractiveHomeTransitionsFlag({ getItem: () => "0" }), false);
-    assert.equal(readInteractiveHomeTransitionsFlag({ getItem: () => "1" }), true);
+  it("arms a Home release poster for a non-owner feed card", () => {
     assert.equal(
       shouldArmHomeFeedReleasePoster({
-        globalEnabled: true,
-        homeEnabled: false,
         homeFeedCard: true,
         isReleaseOwner: false,
       }),
-      false,
+      true,
     );
     assert.equal(
       shouldArmHomeFeedReleasePoster({
-        globalEnabled: false,
-        homeEnabled: true,
-        homeFeedCard: true,
+        homeFeedCard: false,
         isReleaseOwner: false,
       }),
       false,
@@ -896,8 +872,6 @@ describe("home feed release poster push", () => {
     assert.deepEqual(reduceSettingsTransitionStack([], "/releases/abc"), ["/releases/abc"]);
     assert.equal(
       shouldArmHomeFeedReleasePoster({
-        globalEnabled: true,
-        homeEnabled: true,
         homeFeedCard: true,
         isReleaseOwner: true,
       }),
@@ -939,32 +913,14 @@ describe("home feed release poster push", () => {
     assert.equal(getHomeFeedReleasePosterSnapshot(), null);
   });
 
-  it("requires both flags before the poster push can play", () => {
-    const previous = globalThis.window;
-    const values = new Map<string, string>();
-    globalThis.window = {
-      sessionStorage: {
-        getItem(key: string) {
-          return values.get(key) ?? null;
-        },
-      },
-    } as unknown as Window & typeof globalThis;
-    try {
-      values.set(INTERACTIVE_HOME_TRANSITIONS_FLAG, "1");
-      assert.equal(interactiveHomeTransitionsEnabled(), false);
-      assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc?from=feed"), false);
-      values.set(INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1");
-      assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc?from=feed"), true);
-      assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc"), false);
-      values.set(INTERACTIVE_HOME_TRANSITIONS_FLAG, "0");
-      assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc?from=feed"), false);
-    } finally {
-      globalThis.window = previous;
-    }
+  it("plays the poster push only for a from=feed release detail", () => {
+    assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc?from=feed"), true);
+    assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc"), false);
+    assert.equal(shouldPlayHomeFeedReleasePosterPush("/releases/abc?from=notification"), false);
   });
 
   it("captures the poster in the release-card handler before navigate", () => {
-    assert.match(releaseNav, /!isReleaseOwner && homeFeedPosterFallback && interactiveHomeTransitionsEnabled\(\)/);
+    assert.match(releaseNav, /!isReleaseOwner && homeFeedPosterFallback\)/);
     assert.ok(releaseNav.indexOf("armHomeFeedReleasePoster") < releaseNav.indexOf("navigate(destination)"));
     assert.match(releaseNav, /appendReleaseDetailFromFeedParam\(base\)/);
     assert.doesNotMatch(releaseNav, /<video|video\.play|removeAttribute\("src"\)|hardDisposeVideoElement/);
@@ -1012,8 +968,6 @@ describe("home feed profile popup push", () => {
   it("arms a poster only for the Home feed popup opening another user", () => {
     assert.equal(
       shouldArmHomeFeedPublicProfilePoster({
-        globalEnabled: true,
-        homeEnabled: true,
         homeFeedOrigin: true,
         isSelf: false,
       }),
@@ -1021,8 +975,6 @@ describe("home feed profile popup push", () => {
     );
     assert.equal(
       shouldArmHomeFeedPublicProfilePoster({
-        globalEnabled: true,
-        homeEnabled: true,
         homeFeedOrigin: true,
         isSelf: true,
       }),
@@ -1030,18 +982,7 @@ describe("home feed profile popup push", () => {
     );
     assert.equal(
       shouldArmHomeFeedPublicProfilePoster({
-        globalEnabled: true,
-        homeEnabled: true,
         homeFeedOrigin: false,
-        isSelf: false,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldArmHomeFeedPublicProfilePoster({
-        globalEnabled: false,
-        homeEnabled: true,
-        homeFeedOrigin: true,
         isSelf: false,
       }),
       false,
@@ -1092,32 +1033,12 @@ describe("home feed profile popup push", () => {
     assert.deepEqual(reduceSettingsTransitionStack(["/profile"], "/releases"), ["/releases"]);
     assert.equal(isSettingsStackPair("/settings", "/settings/artist"), true);
     assert.equal(isInteractiveStackPair("/profile", "/settings"), true);
-    const previous = globalThis.window;
-    const values = new Map<string, string>();
-    globalThis.window = {
-      sessionStorage: {
-        getItem(key: string) {
-          return values.get(key) ?? null;
-        },
-      },
-    } as unknown as Window & typeof globalThis;
-    try {
-      values.set(INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1");
-      values.set(INTERACTIVE_HOME_TRANSITIONS_FLAG, "1");
-      assert.equal(
-        shouldPlayHomeContextualPosterPush(`/profile/ada?from=${HOME_FEED_PROFILE_PUSH_FROM}`),
-        true,
-      );
-      assert.equal(shouldPlayHomeContextualPosterPush("/profile/ada"), false);
-      assert.equal(shouldPlayHomeContextualPosterPush("/releases/abc?from=feed"), true);
-      values.delete(INTERACTIVE_PAGE_TRANSITIONS_FLAG);
-      assert.equal(
-        shouldPlayHomeContextualPosterPush(`/profile/ada?from=${HOME_FEED_PROFILE_PUSH_FROM}`),
-        false,
-      );
-    } finally {
-      globalThis.window = previous;
-    }
+    assert.equal(
+      shouldPlayHomeContextualPosterPush(`/profile/ada?from=${HOME_FEED_PROFILE_PUSH_FROM}`),
+      true,
+    );
+    assert.equal(shouldPlayHomeContextualPosterPush("/profile/ada"), false);
+    assert.equal(shouldPlayHomeContextualPosterPush("/releases/abc?from=feed"), true);
   });
 });
 
@@ -1131,29 +1052,10 @@ describe("comments popup public profile push", () => {
     fullProfile.indexOf("const poster ="),
   );
 
-  function withFlags(run: (values: Map<string, string>) => void): void {
-    const previous = globalThis.window;
-    const values = new Map<string, string>();
-    globalThis.window = {
-      sessionStorage: {
-        getItem(key: string) {
-          return values.get(key) ?? null;
-        },
-      },
-    } as unknown as Window & typeof globalThis;
-    try {
-      run(values);
-    } finally {
-      globalThis.window = previous;
-    }
-  }
-
   it("pushes another user from an explicit comments origin without the Home poster", () => {
     assert.equal(COMMENTS_PROFILE_PUSH_FROM, "comments-popup");
     assert.equal(
       shouldArmCommentsProfilePush({
-        globalEnabled: true,
-        homeEnabled: true,
         commentsOrigin: true,
         isSelf: false,
       }),
@@ -1171,7 +1073,7 @@ describe("comments popup public profile push", () => {
     );
     assert.equal(stackLayerRole(1, 0), "solo");
     assert.equal(isInteractiveStackPair("/", `/profile/ada?from=${COMMENTS_PROFILE_PUSH_FROM}`), false);
-    assert.match(commentsBranch, /commentsOrigin && interactiveHomeTransitionsEnabled\(\)/);
+    assert.match(commentsBranch, /if \(commentsOrigin\)/);
     assert.match(commentsBranch, /consumePublicProfileEnterAnimation\(\)/);
     assert.doesNotMatch(commentsBranch, /markPublicProfileEnterAnimation\(\)/);
     assert.doesNotMatch(commentsBranch, /armHomeFeedReleasePoster/);
@@ -1197,8 +1099,6 @@ describe("comments popup public profile push", () => {
   it("sends the current user to the root profile tab with no contextual push", () => {
     assert.equal(
       shouldArmCommentsProfilePush({
-        globalEnabled: true,
-        homeEnabled: true,
         commentsOrigin: true,
         isSelf: true,
       }),
@@ -1209,7 +1109,7 @@ describe("comments popup public profile push", () => {
     const afterClose = fullProfile.slice(fullProfile.indexOf("const navigateAfterClose"));
     assert.ok(
       afterClose.indexOf('navigate("/profile")') <
-        afterClose.indexOf("commentsOrigin && interactiveHomeTransitionsEnabled"),
+        afterClose.indexOf("if (commentsOrigin)"),
     );
     assert.equal(isInteractiveStackPair("/", "/profile"), false);
     assert.equal(stackLayerRole(1, 0), "solo");
@@ -1249,20 +1149,11 @@ describe("comments popup public profile push", () => {
     assert.equal(isCommentsPublicProfilePushLocation("/profile/ada?from=notification"), false);
     assert.equal(isCommentsPublicProfilePushLocation("/profile/ada?openComments=1"), false);
     assert.doesNotMatch(notificationRoutingSrc, /comments-popup|COMMENTS_PROFILE_PUSH_FROM/);
-    withFlags((values) => {
-      values.set(INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1");
-      values.set(INTERACTIVE_HOME_TRANSITIONS_FLAG, "1");
-      assert.equal(shouldPlayCommentsProfilePush("/profile/ada"), false);
-      assert.equal(
-        shouldPlayCommentsProfilePush(`/profile/ada?from=${COMMENTS_PROFILE_PUSH_FROM}`),
-        true,
-      );
-      values.delete(INTERACTIVE_HOME_TRANSITIONS_FLAG);
-      assert.equal(
-        shouldPlayCommentsProfilePush(`/profile/ada?from=${COMMENTS_PROFILE_PUSH_FROM}`),
-        false,
-      );
-    });
+    assert.equal(shouldPlayCommentsProfilePush("/profile/ada"), false);
+    assert.equal(
+      shouldPlayCommentsProfilePush(`/profile/ada?from=${COMMENTS_PROFILE_PUSH_FROM}`),
+      true,
+    );
   });
 
   it("keeps a mounted comments drawer open and freezes only the home snapshot", () => {
@@ -1305,29 +1196,10 @@ describe("release detail byline public profile push", () => {
   );
   const marked = `/profile/ada?from=${RELEASE_DETAIL_PROFILE_PUSH_FROM}`;
 
-  function withFlags(run: (values: Map<string, string>) => void): void {
-    const previous = globalThis.window;
-    const values = new Map<string, string>();
-    globalThis.window = {
-      sessionStorage: {
-        getItem(key: string) {
-          return values.get(key) ?? null;
-        },
-      },
-    } as unknown as Window & typeof globalThis;
-    try {
-      run(values);
-    } finally {
-      globalThis.window = previous;
-    }
-  }
-
   it("pushes another artist from the byline over a static underlay without retaining release detail", () => {
     assert.equal(RELEASE_DETAIL_PROFILE_PUSH_FROM, "release-detail");
     assert.equal(
       shouldArmReleaseDetailProfilePush({
-        globalEnabled: true,
-        homeEnabled: true,
         releaseDetailOrigin: true,
         isSelf: false,
         overlaysClosed: true,
@@ -1375,11 +1247,7 @@ describe("release detail byline public profile push", () => {
     assert.equal(getReleaseDetailProfileUnderlaySnapshot()?.id, armed.id);
     dismissReleaseDetailProfileUnderlay(armed.id);
     assert.equal(getReleaseDetailProfileUnderlaySnapshot(), null);
-    withFlags((values) => {
-      values.set(INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1");
-      values.set(INTERACTIVE_HOME_TRANSITIONS_FLAG, "1");
-      assert.equal(shouldPlayReleaseDetailProfilePush(marked), true);
-    });
+    assert.equal(shouldPlayReleaseDetailProfilePush(marked), true);
   });
 
   it("uses the same byline handler for an accepted collaborator", () => {
@@ -1391,8 +1259,6 @@ describe("release detail byline public profile push", () => {
   it("sends the current user to the root profile tab with no contextual push", () => {
     assert.equal(
       shouldArmReleaseDetailProfilePush({
-        globalEnabled: true,
-        homeEnabled: true,
         releaseDetailOrigin: true,
         isSelf: true,
         overlaysClosed: true,
@@ -1411,8 +1277,6 @@ describe("release detail byline public profile push", () => {
   it("does not arm while the gallery, lightbox, menu, or remove-saved dialog is open", () => {
     assert.equal(
       shouldArmReleaseDetailProfilePush({
-        globalEnabled: true,
-        homeEnabled: true,
         releaseDetailOrigin: true,
         isSelf: false,
         overlaysClosed: false,
@@ -1437,14 +1301,8 @@ describe("release detail byline public profile push", () => {
     assert.equal(isReleaseDetailPublicProfilePushLocation("/profile/ada?from=comments-popup"), false);
     assert.doesNotMatch(notificationRoutingSrc, /release-detail|RELEASE_DETAIL_PROFILE_PUSH_FROM/);
     assert.doesNotMatch(homeSrc, /RELEASE_DETAIL_PROFILE_PUSH_FROM/);
-    withFlags((values) => {
-      values.set(INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1");
-      values.set(INTERACTIVE_HOME_TRANSITIONS_FLAG, "1");
-      assert.equal(shouldPlayReleaseDetailProfilePush("/profile/ada"), false);
-      assert.equal(shouldPlayReleaseDetailProfilePush(marked), true);
-      values.delete(INTERACTIVE_HOME_TRANSITIONS_FLAG);
-      assert.equal(shouldPlayReleaseDetailProfilePush(marked), false);
-    });
+    assert.equal(shouldPlayReleaseDetailProfilePush("/profile/ada"), false);
+    assert.equal(shouldPlayReleaseDetailProfilePush(marked), true);
   });
 
   it("leaves existing profile and release pairs unchanged", () => {
@@ -1492,11 +1350,7 @@ describe("release detail static pop", () => {
   }
 
   function allFlags(): Map<string, string> {
-    return new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_BACK_TRANSITIONS_FLAG, "1"],
-    ]);
+    return new Map();
   }
 
   const visual = {
@@ -1666,14 +1520,6 @@ describe("release detail static pop", () => {
       assert.equal(isInteractiveStackPair("/profile", "/releases"), false);
       assert.equal(stackLayerRole(1, 0), "solo");
     });
-    const withoutBack = new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-    ]);
-    withFlags(withoutBack, () => {
-      assert.equal(shouldUseReleaseDetailStaticPop(marked, true), false);
-      assert.equal(shouldPlayReleaseDetailProfilePush(marked), true);
-    });
     assert.doesNotMatch(homeSrc, /INTERACTIVE_BACK_TRANSITIONS_FLAG|dubhub_interactive_back_transitions/);
     assert.doesNotMatch(notificationRoutingSrc, /dubhub_interactive_back_transitions/);
     assert.doesNotMatch(commentsSrc, /dubhub_interactive_back_transitions/);
@@ -1701,11 +1547,7 @@ describe("home feed release static pop", () => {
   }
 
   function allFlags(): Map<string, string> {
-    return new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_BACK_TRANSITIONS_FLAG, "1"],
-    ]);
+    return new Map();
   }
 
   it("uses the static interactive back only for a from=feed release with a return still", () => {
@@ -1726,13 +1568,6 @@ describe("home feed release static pop", () => {
       assert.equal(isInteractiveStackPair("/releases", "/releases/abc"), true);
       assert.equal(isInteractiveStackPair("/", feedRelease), false);
       assert.equal(reduceSettingsTransitionStack([], feedRelease).includes("/"), false);
-    });
-    const withoutBack = new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-    ]);
-    withFlags(withoutBack, () => {
-      assert.equal(shouldUseHomeFeedReleaseStaticPop(feedRelease, true), false);
     });
     dismissHomeFeedReleaseReturnVisit();
   });
@@ -1847,11 +1682,7 @@ describe("home profile popup static pop", () => {
   }
 
   function allFlags(): Map<string, string> {
-    return new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_BACK_TRANSITIONS_FLAG, "1"],
-    ]);
+    return new Map();
   }
 
   it("uses the same Home return still for a from=home-popup profile", () => {
@@ -1876,14 +1707,6 @@ describe("home profile popup static pop", () => {
       assert.equal(isInteractiveStackPair("/leaderboard", "/profile/ada"), true);
       assert.equal(isInteractiveStackPair("/", marked), false);
       assert.equal(reduceSettingsTransitionStack([], marked).includes("/"), false);
-    });
-    const withoutBack = new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-    ]);
-    withFlags(withoutBack, () => {
-      assert.equal(shouldUseHomeFeedReleaseStaticPop(marked, true), false);
-      assert.equal(shouldUseHomeFeedReleaseStaticPop("/releases/abc?from=feed", true), false);
     });
     dismissHomeFeedReleaseReturnVisit();
   });
@@ -1957,11 +1780,7 @@ describe("home comments profile static pop", () => {
   }
 
   function allFlags(): Map<string, string> {
-    return new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_BACK_TRANSITIONS_FLAG, "1"],
-    ]);
+    return new Map();
   }
 
   function homeVisit() {
@@ -1991,23 +1810,6 @@ describe("home comments profile static pop", () => {
       assert.equal(shouldUseHomeFeedReleaseStaticPop(marked, true), false);
       assert.equal(isInteractiveStackPair("/", marked), false);
       assert.equal(reduceSettingsTransitionStack([], marked).includes("/"), false);
-    });
-    const withoutBack = new Map([
-      [INTERACTIVE_PAGE_TRANSITIONS_FLAG, "1"],
-      [INTERACTIVE_HOME_TRANSITIONS_FLAG, "1"],
-    ]);
-    withFlags(withoutBack, () => {
-      assert.equal(shouldUseCommentsHomeStaticPop(marked, visit), false);
-      assert.equal(
-        armCommentsHomeReturnVisit({
-          destinationPath: marked,
-          postId: "post-1",
-          parentPath: "/",
-          capture: false,
-          sheet: fakeSheet(),
-        }),
-        null,
-      );
     });
     dismissCommentsHomeReturnVisit();
   });
@@ -2358,9 +2160,6 @@ describe("release edit return to releases parent", () => {
       username: "ada",
       isSelf: false,
       detailLocation: releaseEditOpenedFromDetailLocation(),
-      globalEnabled: true,
-      homeEnabled: true,
-      backEnabled: true,
     });
     assert.deepEqual(plan, {
       profilePath: `/profile/ada?from=${RELEASE_DETAIL_PROFILE_PUSH_FROM}`,
@@ -2372,9 +2171,6 @@ describe("release edit return to releases parent", () => {
         username: "ada",
         isSelf: false,
         detailLocation: detailUrl,
-        globalEnabled: true,
-        homeEnabled: true,
-        backEnabled: true,
       }),
       null,
     );
@@ -2384,9 +2180,6 @@ describe("release edit return to releases parent", () => {
         username: "ada",
         isSelf: true,
         detailLocation: detailUrl,
-        globalEnabled: true,
-        homeEnabled: true,
-        backEnabled: true,
       }),
       null,
     );
@@ -2396,21 +2189,6 @@ describe("release edit return to releases parent", () => {
         username: "ada",
         isSelf: false,
         detailLocation: null,
-        globalEnabled: true,
-        homeEnabled: true,
-        backEnabled: true,
-      }),
-      null,
-    );
-    assert.equal(
-      editDiscardReleaseDetailProfile({
-        formLocation: edit,
-        username: "ada",
-        isSelf: false,
-        detailLocation: detailUrl,
-        globalEnabled: true,
-        homeEnabled: true,
-        backEnabled: false,
       }),
       null,
     );
@@ -2428,32 +2206,13 @@ describe("release edit return to releases parent", () => {
     assert.equal(getReleaseDetailReturnVisit()?.releasePath, detailUrl);
     assert.equal(getReleaseDetailReturnVisit()?.surface, null);
     assert.equal(armed.destinationPath, plan!.profilePath);
-    const previous = globalThis.window;
-    globalThis.window = {
-      sessionStorage: {
-        getItem(key: string) {
-          if (
-            key === INTERACTIVE_PAGE_TRANSITIONS_FLAG ||
-            key === INTERACTIVE_HOME_TRANSITIONS_FLAG ||
-            key === INTERACTIVE_BACK_TRANSITIONS_FLAG
-          ) {
-            return "1";
-          }
-          return null;
-        },
-      },
-    } as unknown as Window & typeof globalThis;
-    try {
-      assert.equal(shouldUseReleaseDetailStaticPop(plan!.profilePath, true), true);
-      assert.equal(shouldUseReleaseDetailStaticPop(plan!.profilePath, false), false);
-      assert.equal(
-        shouldUseReleaseDetailStaticPop(`/profile/ada?from=${COMMENTS_PROFILE_PUSH_FROM}`, true),
-        false,
-      );
-      assert.equal(shouldUseCommentsHomeStaticPop(plan!.profilePath, null), false);
-    } finally {
-      globalThis.window = previous;
-    }
+    assert.equal(shouldUseReleaseDetailStaticPop(plan!.profilePath, true), true);
+    assert.equal(shouldUseReleaseDetailStaticPop(plan!.profilePath, false), false);
+    assert.equal(
+      shouldUseReleaseDetailStaticPop(`/profile/ada?from=${COMMENTS_PROFILE_PUSH_FROM}`, true),
+      false,
+    );
+    assert.equal(shouldUseCommentsHomeStaticPop(plan!.profilePath, null), false);
     dismissReleaseDetailReturnStill();
     holdReleaseEditReturnForProfileArrival();
     assert.deepEqual(

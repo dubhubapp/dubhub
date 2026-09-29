@@ -97,7 +97,7 @@ describe("release form viewer leave", () => {
     assert.ok(goStart !== -1 && guardAt > goStart);
     const goBody = afterClose.slice(goStart, guardAt);
     assert.match(goBody, /navigate\("\/profile"\)/);
-    assert.match(goBody, /commentsOrigin && interactiveHomeTransitionsEnabled/);
+    assert.match(goBody, /commentsOrigin/);
     assert.match(afterClose.slice(guardAt), /guard\(go\)/);
     const releaseNav = videoCardSrc.slice(
       videoCardSrc.indexOf("const navigateToReleasePreview"),
@@ -194,12 +194,12 @@ describe("discarded form profile history", () => {
     assert.doesNotMatch(ownProfile, /noteDiscardedFormProfileArrival/);
     const publicReplace = go.slice(
       go.indexOf("noteDiscardedFormProfileArrival"),
-      go.indexOf("if (commentsOrigin && interactiveHomeTransitionsEnabled())"),
+      go.indexOf("if (commentsOrigin)"),
     );
     assert.match(publicReplace, /navigate\(profilePath, \{ replace: true \}\)/);
     assert.match(publicReplace, /from=\$\{COMMENTS_PROFILE_PUSH_FROM\}/);
     assert.doesNotMatch(publicReplace, /armCommentsHomeReturnVisit|armCommentsProfilePushUnderlay|armHomeFeedReleasePoster/);
-    const pushPath = go.slice(go.indexOf("if (commentsOrigin && interactiveHomeTransitionsEnabled())"));
+    const pushPath = go.slice(go.indexOf("if (commentsOrigin)"));
     assert.match(pushPath, /armCommentsHomeReturnVisit/);
     assert.match(pushPath, /navigate\(marked\)/);
     assert.equal(go.match(/\{ replace: true \}/g)?.length, 3);

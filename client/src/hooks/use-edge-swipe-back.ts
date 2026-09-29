@@ -6,7 +6,6 @@ import {
   INTERACTIVE_POP_MS,
   evaluateInteractiveRelease,
   interactiveMotionMs,
-  interactivePageTransitionsEnabled,
   isWithinBackEdge,
   prefersReducedPageMotion,
   pushVelocitySample,
@@ -24,6 +23,7 @@ import {
   registerEdgeSwipeListener,
   setDebugSettle,
   setDebugSettleTimer,
+  transitionDiagnosticsEnabled,
   unregisterEdgeSwipeListener,
 } from "@/lib/interactive-transition-debug";
 
@@ -31,7 +31,7 @@ type UseEdgeSwipeBackOptions = {
   enabled: boolean;
   onBack: () => void;
   containerRef: RefObject<HTMLElement | null>;
-  /** Settings stack foreground. Flag-off callers omit this and keep the legacy gesture. */
+  /** Live stack foreground or a static pop. Solo routes omit this and keep the legacy gesture. */
   interactive?: boolean;
   interactiveGestureRef?: RefObject<InteractiveSwipeGesture | null>;
 };
@@ -105,7 +105,7 @@ export function useEdgeSwipeBack({
     if (interactive) return;
     const container = containerRef.current;
     if (!enabled || !container || typeof window === "undefined") return;
-    const debugOn = interactivePageTransitionsEnabled();
+    const debugOn = transitionDiagnosticsEnabled();
     const debugOwner =
       container.closest("[data-settings-path]")?.getAttribute("data-settings-path") || "unscoped";
     const listenerIds: number[] = [];
@@ -282,7 +282,7 @@ export function useEdgeSwipeBack({
     if (!interactive || !enabled || typeof window === "undefined") return;
     const gesture = interactiveGestureRef?.current;
     if (!gesture) return;
-    const debugOn = interactivePageTransitionsEnabled();
+    const debugOn = transitionDiagnosticsEnabled();
     const listenerIds: number[] = [];
 
     const surface = () => gesture.layerRef.current ?? containerRef.current;

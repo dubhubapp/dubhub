@@ -62,10 +62,6 @@ import {
   appendReleaseDetailFromFeedParam,
   appendReleaseDetailFromProfileViewerParam,
 } from "@/lib/release-detail-navigation";
-import {
-  interactiveBackTransitionsEnabled,
-  interactiveHomeTransitionsEnabled,
-} from "@/lib/interactive-page-transitions";
 import { armHomeFeedReleasePoster } from "@/lib/home-feed-release-poster";
 import {
   armProfileViewerReleaseVisit,
@@ -436,7 +432,7 @@ function VideoCardInner({
           navigate(`/releases/${releaseId}/edit`);
           return;
         }
-        if (profileViewerReleaseSource && isActive && interactiveBackTransitionsEnabled()) {
+        if (profileViewerReleaseSource && isActive) {
           const activeIndex = profileViewerReleaseSnapIndex(
             profileViewerReleaseSource.sequenceIds,
             post.id,
@@ -460,7 +456,7 @@ function VideoCardInner({
         }
         const base = `/releases/${releaseId}`;
         const destination = homeFeedPosterFallback ? appendReleaseDetailFromFeedParam(base) : base;
-        if (!isReleaseOwner && homeFeedPosterFallback && interactiveHomeTransitionsEnabled()) {
+        if (!isReleaseOwner && homeFeedPosterFallback) {
           const poster = homeReleasePosterRef.current;
           armHomeFeedReleasePoster({
             destinationPath: destination,

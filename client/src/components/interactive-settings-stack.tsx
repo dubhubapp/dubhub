@@ -106,7 +106,6 @@ import {
   INTERACTIVE_STACK_CAP,
   createInteractivePopController,
   interactiveMotionMs,
-  interactivePageTransitionsEnabled,
   isHomeFeedStaticReturnLocation,
   isProfileViewerReleaseDetailLocation,
   shouldPlayCommentsProfilePush,
@@ -287,7 +286,6 @@ export function InteractiveSettingsStack({
   const search = useSearch();
   const path = routePathname(location);
   const fullLocation = search ? `${path}?${search.replace(/^\?/, "")}` : path;
-  const flag = interactivePageTransitionsEnabled();
   const homeReturnVisit = useSyncExternalStore(
     subscribeHomeFeedReleaseReturnVisit,
     getHomeFeedReleaseReturnVisit,
@@ -621,41 +619,31 @@ export function InteractiveSettingsStack({
   const pagesRef = useRef(pages);
   const debugLocationRef = useRef(fullLocation);
 
-  publishTransitionDebugLive(
-    flag
-      ? {
-          getLocation: () => fullLocation,
-          getPages: () => pages,
-          getPhase: () => controllerRef.current.phase,
-          getInteraction: () => interactionRef.current,
-          getPopDriver: () => popDriverRef.current != null,
-          getCommit: () => commitRef.current,
-        }
-      : null,
-  );
+  publishTransitionDebugLive({
+    getLocation: () => fullLocation,
+    getPages: () => pages,
+    getPhase: () => controllerRef.current.phase,
+    getInteraction: () => interactionRef.current,
+    getPopDriver: () => popDriverRef.current != null,
+    getCommit: () => commitRef.current,
+  });
 
   useLayoutEffect(() => {
-    if (!flag) {
-      uninstallTransitionDebug();
-      return;
-    }
     installTransitionDebug();
     return () => uninstallTransitionDebug();
-  }, [flag]);
+  }, []);
 
   useLayoutEffect(() => {
-    if (!flag) return;
     if (debugLocationRef.current === fullLocation) return;
     logProfilePopSample("wouter-location");
     debugLocationRef.current = fullLocation;
-  }, [flag, fullLocation]);
+  }, [fullLocation]);
 
   useLayoutEffect(() => {
     clearReleaseEditReturnRecordIfRestored(fullLocation, pages);
   }, [fullLocation, pages]);
 
   useLayoutEffect(() => {
-    if (!flag) return;
     const previous = pagesRef.current;
     pagesRef.current = pages;
     const root = rootRef.current;
@@ -982,14 +970,14 @@ export function InteractiveSettingsStack({
       cancelAnimationFrame(frame);
       pushedKeyRef.current = "";
     };
-  }, [flag, pageKey, pages.length]);
+  }, [pageKey, pages.length]);
 
   const homeBridgeOverlay =
     routePathname(fullLocation) === "/" && homeReturnVisit?.presentation === "bridging";
   const commentsBridgeOverlay =
     routePathname(fullLocation) === "/" && commentsReturnVisit?.presentation === "bridging";
 
-  if (!flag || (pages.length === 0 && !homeBridgeOverlay && !commentsBridgeOverlay)) return null;
+  if (pages.length === 0 && !homeBridgeOverlay && !commentsBridgeOverlay) return null;
 
   if (pages.length === 0) {
     return (
