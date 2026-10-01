@@ -54,6 +54,10 @@ import {
   subscribeReleaseFormDrawerNativeNavCover,
 } from "@/lib/release-form-drawer-native-cover";
 import {
+  isHomeWidgetSetupGuideCoveringNativeNav,
+  subscribeHomeWidgetSetupGuideNativeNavCover,
+} from "@/lib/home-widget-setup-guide-native-cover";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -105,6 +109,11 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
   const releaseFormDrawerCovering = useSyncExternalStore(
     subscribeReleaseFormDrawerNativeNavCover,
     isReleaseFormDrawerCoveringNativeNav,
+    () => false,
+  );
+  const countdownSetupCovering = useSyncExternalStore(
+    subscribeHomeWidgetSetupGuideNativeNavCover,
+    isHomeWidgetSetupGuideCoveringNativeNav,
     () => false,
   );
   const [nativeEnabled, setNativeEnabled] = useState(false);
@@ -166,6 +175,7 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     postSequenceViewerOpen: postSequenceViewerCovering,
     profilePreviewOpen: profilePreviewCovering,
     releaseFormDrawerOpen: releaseFormDrawerCovering,
+    countdownSetupOpen: countdownSetupCovering,
   });
 
   useEffect(() => {

@@ -83,7 +83,7 @@ import { resolveReleaseAttachedPostsSectionState } from "@/lib/release-detail-lo
 import { ReleaseAttachedClips } from "@/components/release-attached-clips";
 import { ReleaseActivitySection } from "@/components/release-activity-section";
 import {
-  formatActivityPostCalendarDate,
+  formatActivityPostShortDate,
   resolveSignedActivityDuration,
 } from "@/lib/release-activity-copy";
 import { ReleaseAttachedPostsGallery } from "@/components/release-attached-posts-gallery";
@@ -107,7 +107,10 @@ import { ReleaseArtworkLightbox } from "@/components/release-artwork-lightbox";
 import { getApiRequestErrorDetail } from "@/lib/apiDiagnostics";
 import { ReleaseSavedToReleasesStatus } from "@/components/release-saved-to-releases-status";
 import { shouldShowViewerSavedReleaseStatus } from "@/lib/release-saved-status";
-import { HomeWidgetSelectionButton } from "@/components/home-widget-selection-button";
+import {
+  HomeWidgetSelectionButton,
+  HomeWidgetSelectionScope,
+} from "@/components/home-widget-selection-button";
 import { isHomeReleaseWidgetSelectionEnabled } from "@/lib/home-widget-selection-flag";
 import { ReleaseArtworkThumb } from "@/components/release-artwork-thumb";
 import { scheduleHomeWidgetRefreshAfterAuth } from "@/lib/home-widget-refresh";
@@ -117,9 +120,7 @@ import {
 } from "@/lib/home-widget-selection";
 import {
   RELEASE_DETAIL_ARTWORK_SIZE_CLASS,
-  RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS,
   RELEASE_DETAIL_HEADER_ACTION_ICON_CLASS,
-  RELEASE_DETAIL_METADATA_MIN_HEIGHT_CLASS,
   RELEASE_DETAIL_SHARE_ACTION_CLASS,
 } from "@/lib/release-detail-secondary-action";
 import { shareRelease } from "@/lib/release-share";
@@ -536,8 +537,8 @@ export default function ReleaseDetail() {
     viewerSavedRelease: releaseData.viewerSavedRelease,
   });
   const showEditReleaseAction = canManage && isArtist;
-  const firstPostLabel = formatActivityPostCalendarDate(stats?.firstClipAt ?? null);
-  const latestPostLabel = formatActivityPostCalendarDate(stats?.latestClipAt ?? null);
+  const firstPostLabel = formatActivityPostShortDate(stats?.firstClipAt ?? null);
+  const latestPostLabel = formatActivityPostShortDate(stats?.latestClipAt ?? null);
   const announcedDuration =
     stats?.daysToAnnouncement !== null && stats?.daysToAnnouncement !== undefined
       ? resolveSignedActivityDuration({
@@ -704,6 +705,7 @@ export default function ReleaseDetail() {
           </div>
         )}
 
+        <HomeWidgetSelectionScope enabled={showCountdownSelection} release={releaseData}>
         <div className="mb-6 flex min-w-0 items-start gap-4 overflow-hidden">
           <ReleaseArtworkThumb
             artworkUrl={releaseData.artworkUrl}
@@ -719,10 +721,7 @@ export default function ReleaseDetail() {
           />
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <div
-              className={cn(
-                "flex min-w-0 flex-col",
-                showCountdownSelection && RELEASE_DETAIL_METADATA_MIN_HEIGHT_CLASS,
-              )}
+              className="flex min-w-0 flex-col"
               data-testid="release-detail-metadata-column"
             >
               <div className="min-w-0" data-testid="release-detail-header-top">
@@ -741,10 +740,7 @@ export default function ReleaseDetail() {
                 </p>
               </div>
               <div
-                className={cn(
-                  "flex min-w-0 flex-col gap-0.5",
-                  showCountdownSelection ? "mt-auto" : "mt-2",
-                )}
+                className="mt-2 flex min-w-0 flex-col gap-0.5"
                 data-testid="release-detail-header-actions"
               >
                 <div
@@ -779,17 +775,6 @@ export default function ReleaseDetail() {
                     </button>
                   ) : null}
                 </div>
-                {showCountdownSelection ? (
-                  <div
-                    className={RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS}
-                    data-testid="release-detail-countdown-row"
-                  >
-                    <HomeWidgetSelectionButton
-                      release={releaseData}
-                      className="absolute bottom-0 left-0"
-                    />
-                  </div>
-                ) : null}
               </div>
             </div>
           </div>
@@ -872,6 +857,10 @@ export default function ReleaseDetail() {
           </div>
         )}
 
+        {showCountdownSelection ? (
+          <HomeWidgetSelectionButton className="mb-6" />
+        ) : null}
+
         {!isSubscriptionPausedPublic &&
         resolveReleaseAttachedPostsSectionState({
           hasFullDetail,
@@ -879,6 +868,7 @@ export default function ReleaseDetail() {
         }) === "ready" ? (
           <ReleaseAttachedClips clips={releaseData.attachedClips ?? []} onOpenClip={openAttachedPost} />
         ) : null}
+        </HomeWidgetSelectionScope>
 
         {!isSubscriptionPausedPublic ? (
           <ReleaseActivitySection

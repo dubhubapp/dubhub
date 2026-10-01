@@ -118,6 +118,8 @@ export function nativeNavIsCoveredBySheet(input: {
   profilePreviewOpen?: boolean;
   /** Release Create/Edit metadata drawers (title/schedule/links/collaborators). */
   releaseFormDrawerOpen?: boolean;
+  /** Release Countdown Home Screen setup sheet. */
+  countdownSetupOpen?: boolean;
 }): boolean {
   return (
     input.commentsOpen ||
@@ -125,7 +127,8 @@ export function nativeNavIsCoveredBySheet(input: {
     input.paywallOpen === true ||
     input.postSequenceViewerOpen === true ||
     input.profilePreviewOpen === true ||
-    input.releaseFormDrawerOpen === true
+    input.releaseFormDrawerOpen === true ||
+    input.countdownSetupOpen === true
   );
 }
 
@@ -160,6 +163,7 @@ export function nativeNavShouldBeVisible(input: {
   postSequenceViewerOpen?: boolean;
   profilePreviewOpen?: boolean;
   releaseFormDrawerOpen?: boolean;
+  countdownSetupOpen?: boolean;
 }): boolean {
   return nativeNavChromeState({
     available: nativeNavIsAvailable(input),
@@ -170,6 +174,7 @@ export function nativeNavShouldBeVisible(input: {
       postSequenceViewerOpen: input.postSequenceViewerOpen === true,
       profilePreviewOpen: input.profilePreviewOpen === true,
       releaseFormDrawerOpen: input.releaseFormDrawerOpen === true,
+      countdownSetupOpen: input.countdownSetupOpen === true,
     }),
   }).visuallyShown;
 }

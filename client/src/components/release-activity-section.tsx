@@ -1,9 +1,19 @@
-import type { ComponentType } from "react";
-import { Heart, MessageCircle, Radio, Users } from "lucide-react";
+import { useRef, useState, type ComponentType, type ReactNode } from "react";
+import {
+  Bell,
+  Calendar,
+  Heart,
+  Megaphone,
+  MessageCircle,
+  Radio,
+  Upload,
+  Users,
+} from "lucide-react";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import {
-  buildAnnouncedRelativeToFirstPostCopy,
-  buildReleaseAfterFirstPostCopy,
+  buildReleaseActivityTimelineStats,
+  RELEASE_ACTIVITY_EMPTY_STAT,
+  type ReleaseActivityTimelineStat,
   type SignedActivityDuration,
 } from "@/lib/release-activity-copy";
 import { cn } from "@/lib/utils";
@@ -22,6 +32,55 @@ export type ReleaseActivityStats = {
 /** Activity icons + metric values — foreground/white; labels stay muted. */
 export const RELEASE_ACTIVITY_ICON_CLASS = "text-foreground" as const;
 export const RELEASE_ACTIVITY_VALUE_CLASS = "text-foreground" as const;
+
+/** Page 1 is the spacing source of truth. Page 2 uses this same cell. */
+const RELEASE_ACTIVITY_STAT_CELL_CLASS =
+  "flex min-w-0 flex-col items-center gap-1 text-center" as const;
+const RELEASE_ACTIVITY_STAT_VALUE_CLASS =
+  "line-clamp-2 min-h-8 text-base font-bold tabular-nums leading-tight" as const;
+const RELEASE_ACTIVITY_STAT_LABEL_CLASS =
+  "text-[10px] leading-tight text-muted-foreground" as const;
+const RELEASE_ACTIVITY_STAT_CLARIFIER_CLASS =
+  "line-clamp-2 min-h-8 text-[10px] leading-tight text-muted-foreground" as const;
+const RELEASE_ACTIVITY_PAGE_CLASS = "w-full shrink-0 snap-center self-start" as const;
+const RELEASE_ACTIVITY_PAGE_GRID_CLASS = "grid grid-cols-4 items-start gap-1" as const;
+
+function ReleaseActivityStatCell({
+  testId,
+  dataIcon,
+  icon,
+  value,
+  label,
+  clarifier = "",
+  hideClarifier = false,
+  loading = false,
+}: {
+  testId?: string;
+  dataIcon?: string;
+  icon: ReactNode;
+  value: ReactNode;
+  label: string;
+  clarifier?: string;
+  hideClarifier?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <div className={RELEASE_ACTIVITY_STAT_CELL_CLASS} data-testid={testId} data-icon={dataIcon}>
+      {loading ? <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" /> : icon}
+      {loading ? (
+        <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
+      ) : (
+        <span className={cn(RELEASE_ACTIVITY_STAT_VALUE_CLASS, RELEASE_ACTIVITY_VALUE_CLASS)}>
+          {value}
+        </span>
+      )}
+      <span className={RELEASE_ACTIVITY_STAT_LABEL_CLASS}>{label || "\u00a0"}</span>
+      <span className={RELEASE_ACTIVITY_STAT_CLARIFIER_CLASS} aria-hidden={hideClarifier || undefined}>
+        {clarifier || "\u00a0"}
+      </span>
+    </div>
+  );
+}
 
 type ReleaseKeyStatDefinition = {
   key: "posts" | "saves" | "comments" | "uploaders";
@@ -67,32 +126,83 @@ function ReleaseKeyStatSlot({
 }) {
   const Icon = def.icon;
   return (
-    <div
-      className="flex min-w-0 flex-col items-center gap-1 text-center"
-      data-testid={`release-key-stat-${def.key}`}
+    <ReleaseActivityStatCell
+      testId={`release-key-stat-${def.key}`}
+      loading={!stats}
+      hideClarifier
+      label={def.label}
+      value={stats ? def.value(stats).toLocaleString() : ""}
+      icon={
+        <Icon className={cn("h-4 w-4 shrink-0", RELEASE_ACTIVITY_ICON_CLASS)} aria-hidden />
+      }
+    />
+  );
+}
+
+function LatestPostIcon({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn("relative inline-flex h-4 w-4 shrink-0 overflow-visible", className)}
+      data-icon="upload-bell"
+      aria-hidden
     >
-      {stats ? (
-        <Icon
-          className={cn("h-4 w-4 shrink-0", RELEASE_ACTIVITY_ICON_CLASS)}
-          aria-hidden
-        />
-      ) : (
-        <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
-      )}
-      {stats ? (
-        <span
-          className={cn(
-            "text-base font-bold tabular-nums leading-none",
-            RELEASE_ACTIVITY_VALUE_CLASS,
-          )}
-        >
-          {def.value(stats).toLocaleString()}
-        </span>
-      ) : (
-        <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
-      )}
-      <span className="text-[10px] leading-tight text-muted-foreground">{def.label}</span>
-    </div>
+      <Upload
+        className="h-4 w-4"
+        strokeWidth={2}
+        style={{
+          WebkitMaskImage:
+            "radial-gradient(circle at 13px 13px, transparent 4.25px, #000 5.25px)",
+          maskImage:
+            "radial-gradient(circle at 13px 13px, transparent 4.25px, #000 5.25px)",
+        }}
+      />
+      <Bell
+        className="absolute -bottom-px -right-px h-2 w-2"
+        fill="currentColor"
+        strokeWidth={2}
+        aria-hidden
+      />
+    </span>
+  );
+}
+
+const TIMELINE_ICONS = {
+  "first-post": Upload,
+  "latest-post": LatestPostIcon,
+  announced: Megaphone,
+  "release-timing": Calendar,
+} as const;
+
+const ACTIVITY_PAGES = ["activity", "timeline"] as const;
+
+function TimelineStatSlot({
+  stat,
+  loading,
+}: {
+  stat?: ReleaseActivityTimelineStat;
+  loading?: boolean;
+}) {
+  const Icon = stat ? TIMELINE_ICONS[stat.key] : Upload;
+  const dataIcon =
+    stat?.key === "first-post"
+      ? "upload"
+      : stat?.key === "latest-post"
+        ? "upload-bell"
+        : stat?.key === "announced"
+          ? "megaphone"
+          : stat?.key === "release-timing"
+            ? "calendar"
+            : undefined;
+  return (
+    <ReleaseActivityStatCell
+      testId={stat ? `release-timeline-stat-${stat.key}` : undefined}
+      dataIcon={dataIcon}
+      loading={loading || !stat}
+      label={stat?.label ?? ""}
+      clarifier={stat?.clarifier ?? ""}
+      value={stat?.value || RELEASE_ACTIVITY_EMPTY_STAT}
+      icon={<Icon className={cn("h-4 w-4 shrink-0", RELEASE_ACTIVITY_ICON_CLASS)} aria-hidden />}
+    />
   );
 }
 
@@ -120,48 +230,108 @@ export function ReleaseActivitySection({
   releasedDuration,
   releaseAfterIsUpcoming = false,
 }: ReleaseActivitySectionProps) {
-  const announcedLine = buildAnnouncedRelativeToFirstPostCopy(announcedDuration);
-  const releaseAfterFirstPostLine = releasedDuration
-    ? buildReleaseAfterFirstPostCopy({
-        durationLabel: releasedDuration.durationLabel,
-        relation: releasedDuration.relation,
-        isUpcoming: releaseAfterIsUpcoming,
-      })
-    : null;
-  const hasTimeline =
-    firstPostLabel || latestPostLabel || announcedLine || releaseAfterFirstPostLine;
   const showKeyStats = !!stats || !!isLoading;
+  const timeline = buildReleaseActivityTimelineStats({
+    firstPostLabel,
+    latestPostLabel,
+    announcedDuration,
+    releasedDuration,
+    releaseAfterIsUpcoming,
+  });
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+
+  const scrollToPage = (next: number) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const clamped = Math.max(0, Math.min(ACTIVITY_PAGES.length - 1, next));
+    el.scrollTo({ left: clamped * el.clientWidth, behavior: "smooth" });
+    setPageIndex(clamped);
+  };
 
   return (
     <section className="mb-6" data-testid="release-activity-section">
-      <h2 className="mb-3 text-sm font-medium text-muted-foreground">Release activity</h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Release activity</h2>
+        {showKeyStats ? (
+          <div
+            className="flex items-center gap-2"
+            role="tablist"
+            aria-label="Release activity pages"
+            data-testid="release-activity-pager"
+          >
+            {ACTIVITY_PAGES.map((page, index) => {
+              const active = index === pageIndex;
+              return (
+                <button
+                  key={page}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={page === "activity" ? "Activity" : "Timeline"}
+                  data-testid={`release-activity-dot-${page}`}
+                  onClick={() => scrollToPage(index)}
+                  className={`h-1.5 rounded-full transition-all ${
+                    active
+                      ? "w-4 bg-[#101828]/70 dark:bg-white/80"
+                      : "w-1.5 bg-[#101828]/25 dark:bg-white/30"
+                  }`}
+                />
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
       {showKeyStats ? (
-        <div
-          className="mb-3 grid grid-cols-4 gap-1"
-          data-testid="release-key-stats"
-          aria-busy={!stats && !!isLoading}
-        >
-          {RELEASE_ACTIVITY_KEY_STATS.map((def) => (
-            <ReleaseKeyStatSlot key={def.key} def={def} stats={stats} />
-          ))}
-        </div>
-      ) : null}
-      {stats ? (
         <>
-          {stats.postsFeaturingTrack === 0 ? (
-            <p className="mb-2 text-xs text-muted-foreground">No posts featuring this track yet.</p>
-          ) : null}
-          {hasTimeline ? (
-            <div className="space-y-1 text-xs text-muted-foreground" data-testid="release-activity-timeline">
-              {firstPostLabel ? <p>First post: {firstPostLabel}</p> : null}
-              {latestPostLabel ? <p>Latest post: {latestPostLabel}</p> : null}
-              {announcedLine ? <p>{announcedLine}</p> : null}
-              {releaseAfterFirstPostLine ? (
-                <p data-testid="release-activity-release-after-first-post">
-                  {releaseAfterFirstPostLine}
-                </p>
-              ) : null}
+          <div
+            ref={scrollerRef}
+            data-testid="release-activity-scroller"
+            className="flex items-start snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              if (el.clientWidth <= 0) return;
+              const next = Math.round(el.scrollLeft / el.clientWidth);
+              setPageIndex(Math.max(0, Math.min(ACTIVITY_PAGES.length - 1, next)));
+            }}
+          >
+            <div
+              className={RELEASE_ACTIVITY_PAGE_CLASS}
+              data-testid="release-activity-page-activity"
+            >
+              <div
+                className={RELEASE_ACTIVITY_PAGE_GRID_CLASS}
+                data-testid="release-key-stats"
+                aria-busy={!stats && !!isLoading}
+              >
+                {RELEASE_ACTIVITY_KEY_STATS.map((def) => (
+                  <ReleaseKeyStatSlot key={def.key} def={def} stats={stats} />
+                ))}
+              </div>
             </div>
+            <div
+              className={RELEASE_ACTIVITY_PAGE_CLASS}
+              data-testid="release-activity-page-timeline"
+            >
+              <div
+                className={RELEASE_ACTIVITY_PAGE_GRID_CLASS}
+                data-testid="release-activity-timeline"
+                aria-busy={!stats && !!isLoading}
+              >
+                {(stats ? timeline : [0, 1, 2, 3]).map((stat) =>
+                  typeof stat === "number" ? (
+                    <TimelineStatSlot key={stat} loading />
+                  ) : (
+                    <TimelineStatSlot key={stat.key} stat={stat} />
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+          {stats?.postsFeaturingTrack === 0 ? (
+            <p className="mb-2 mt-3 text-xs text-muted-foreground">
+              No posts featuring this track yet.
+            </p>
           ) : null}
         </>
       ) : null}

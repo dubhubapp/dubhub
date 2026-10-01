@@ -1138,7 +1138,8 @@ describe("Artwork View Countdown status-row indicator", () => {
   });
 
   it("does not change Release Detail binary control; List uses the same badge", () => {
-    assert.match(detailButtonSrc, /Add to Countdown/);
+    assert.match(detailButtonSrc, /view\.label/);
+    assert.doesNotMatch(detailButtonSrc, /variant === "icon"/);
     assert.match(detailButtonSrc, /resolveHomeWidgetSelectionButtonPresentation/);
     assert.doesNotMatch(detailButtonSrc, /DropdownMenu/);
     assert.match(listCardSrc, /CountdownStatusBadge/);

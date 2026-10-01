@@ -14,6 +14,7 @@ import {
   HOME_WIDGET_UNDATED_COPY,
   resolveHomeWidgetSelectionActionVisibility,
 } from "./home-widget-selection-eligibility";
+import { shouldOfferHomeWidgetSetupGuide } from "./home-widget-setup-guide";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -32,8 +33,24 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("home widget selection flag", () => {
-  it("defaults false and enables only on exact true", () => {
-    assert.equal(isHomeReleaseWidgetSelectionEnabled({}), false);
+  it("is on when the env var is missing", () => {
+    assert.equal(isHomeReleaseWidgetSelectionEnabled({}), true);
+    assert.equal(isHomeReleaseWidgetSelectionEnabled(null), true);
+    assert.equal(
+      isHomeReleaseWidgetSelectionEnabled({
+        VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: "",
+      }),
+      true,
+    );
+    assert.equal(
+      isHomeReleaseWidgetSelectionEnabled({
+        VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: "   ",
+      }),
+      true,
+    );
+  });
+
+  it("stays on for explicit true", () => {
     assert.equal(
       isHomeReleaseWidgetSelectionEnabled({
         VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: "true",
@@ -42,7 +59,28 @@ describe("home widget selection flag", () => {
     );
     assert.equal(
       isHomeReleaseWidgetSelectionEnabled({
-        VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: "1",
+        VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: " TRUE ",
+      }),
+      true,
+    );
+  });
+
+  it("turns off only for explicit false", () => {
+    assert.equal(
+      isHomeReleaseWidgetSelectionEnabled({
+        VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: "false",
+      }),
+      false,
+    );
+    assert.equal(
+      isHomeReleaseWidgetSelectionEnabled({
+        VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: " FALSE ",
+      }),
+      false,
+    );
+    assert.equal(
+      isHomeReleaseWidgetSelectionEnabled({
+        HOME_RELEASE_WIDGET_SELECTION_ENABLED: "false",
       }),
       false,
     );
@@ -146,25 +184,67 @@ describe("home widget selection eligibility UI", () => {
     viewerSavedRelease: true,
   };
 
-  it("shows Add to Countdown for saved dated releases when enabled", () => {
+  it("shows Add to Countdown for saved dated releases when the launch flag is on", () => {
+    const enabled = isHomeReleaseWidgetSelectionEnabled({});
+    assert.equal(enabled, true);
     assert.deepEqual(
       resolveHomeWidgetSelectionActionVisibility({
-        enabled: true,
+        enabled,
         authenticated: true,
         release: dated,
       }),
       { show: true, canSelect: true },
     );
+    const storage = memoryStorage();
+    assert.equal(
+      shouldOfferHomeWidgetSetupGuide({
+        userId: "user-a",
+        selectionSucceeded: true,
+        enabled,
+        storage,
+      }),
+      true,
+    );
   });
 
-  it("hides for unsaved, suspended, private, and flag-off", () => {
+  it("hides the selector and setup guide when the kill switch is false", () => {
+    const enabled = isHomeReleaseWidgetSelectionEnabled({
+      VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED: "false",
+    });
+    const hidden = resolveHomeWidgetSelectionActionVisibility({
+      enabled,
+      authenticated: true,
+      release: dated,
+    });
+    assert.equal(hidden.show, false);
+    if (!hidden.show) assert.equal(hidden.reason, "flag_disabled");
+    assert.equal(
+      shouldOfferHomeWidgetSetupGuide({
+        userId: "user-a",
+        selectionSucceeded: true,
+        enabled,
+        storage: memoryStorage(),
+      }),
+      false,
+    );
+  });
+
+  it("hides for signed-out, unsaved, suspended, private, and flag-off", () => {
+    assert.equal(
+      resolveHomeWidgetSelectionActionVisibility({
+        enabled: true,
+        authenticated: false,
+        release: dated,
+      }).reason,
+      "unauthenticated",
+    );
     assert.equal(
       resolveHomeWidgetSelectionActionVisibility({
         enabled: false,
         authenticated: true,
         release: dated,
-      }).show,
-      false,
+      }).reason,
+      "flag_disabled",
     );
     assert.equal(
       resolveHomeWidgetSelectionActionVisibility({

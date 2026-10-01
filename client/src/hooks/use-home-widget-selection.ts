@@ -98,10 +98,11 @@ export function useHomeWidgetSelection(args: {
         description: result.toastMessage,
         variant: result.selectionSaved ? "default" : "destructive",
       });
-      if (result.selectionSaved && !result.refreshFailed) {
+      if (result.selectionSaved && !result.refreshFailed && result.refresh.ok) {
         maybeRequestHomeWidgetSetupGuide({
           userId,
           selectionSucceeded: true,
+          release: result.refresh.payload.dto.release,
         });
       }
     } finally {

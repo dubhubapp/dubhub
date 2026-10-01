@@ -29,7 +29,6 @@ import {
   RELEASE_FEED_ROW_BASE_CLASS,
   RELEASE_FEED_SECONDARY_ICON_CLASS,
   RELEASE_FEED_SECONDARY_ICON_SLOT_CLASS,
-  RELEASE_FEED_WIDGET_SLOT_CLASS,
   resolveReleaseFeedCardRhythm,
   stopReleaseRowNavigation,
 } from "@/lib/release-tracker-presentation";
@@ -111,8 +110,8 @@ export function isReleaseCardUpcoming(d: string | null) {
 }
 
 /**
- * Status-only: when true, show Countdown indicator in the bottom-right widget slot.
- * Configuration (add/remove) lives on Release Detail only.
+ * Status-only: when true, show the Countdown indicator at the top-right of the row,
+ * aligned with the artwork. Configuration (add/remove) lives on Release Detail only.
  */
 type ReleaseFeedCardProps = {
   release: ReleaseFeedCardData;
@@ -281,7 +280,7 @@ export function ReleaseFeedCard({
             <CollaborationStatusPill status={r.collaboratorStatus} />
           </div>
         </div>
-        {hasLinkActions || showCountdownSelectedIndicator ? (
+        {hasLinkActions ? (
           <div
             className={RELEASE_FEED_ACTIONS_ROW_CLASS}
             data-testid="release-feed-link-actions"
@@ -342,19 +341,17 @@ export function ReleaseFeedCard({
                 </button>
               ) : null}
             </div>
-            <div className={RELEASE_FEED_WIDGET_SLOT_CLASS} data-testid="release-feed-widget-slot">
-              {showCountdownSelectedIndicator ? (
-                <CountdownStatusBadge
-                  testId={`release-countdown-selected-indicator-${r.id}`}
-                />
-              ) : null}
-            </div>
           </div>
         ) : (
           /* Keep column height contract even without links — spacer uses mt-auto. */
           <div className="mt-auto" aria-hidden data-testid="release-feed-actions-spacer" />
         )}
       </div>
+      {showCountdownSelectedIndicator ? (
+        <CountdownStatusBadge
+          testId={`release-countdown-selected-indicator-${r.id}`}
+        />
+      ) : null}
     </div>
   );
 }

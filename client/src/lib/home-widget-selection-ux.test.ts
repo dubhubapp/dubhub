@@ -48,7 +48,7 @@ describe("release artwork canonical fallback contract", () => {
 
 describe("Release Countdown product copy", () => {
   it("uses Release Countdown product language, not Widget", () => {
-    assert.equal(HOME_WIDGET_SELECTION_COPY.useInWidget, "Add to Countdown");
+    assert.equal(HOME_WIDGET_SELECTION_COPY.useInWidget, "Add to Release Countdown");
     assert.equal(HOME_WIDGET_SELECTION_COPY.selectedForWidget, "In your Countdown");
     assert.equal(HOME_WIDGET_SELECTION_COPY.removeFromWidget, "Remove from Countdown");
     assert.equal(
@@ -98,9 +98,9 @@ describe("Release Countdown accessibility copy", () => {
 });
 
 describe("Release Detail Countdown binary control", () => {
-  it("unselected renders Add to Countdown with aria-pressed false", () => {
+  it("unselected renders Add to Release Countdown with aria-pressed false", () => {
     const idle = resolveHomeWidgetSelectionButtonPresentation("idle");
-    assert.equal(idle.label, "Add to Countdown");
+    assert.equal(idle.label, "Add to Release Countdown");
     assert.equal(idle.ariaPressed, false);
     assert.equal(idle.action, "select");
     assert.equal(idle.ariaLabel, HOME_WIDGET_COUNTDOWN_A11Y.addAction);
@@ -239,5 +239,33 @@ describe("Saved Releases Countdown status-only indicator", () => {
       countdownSelected: false,
     });
     assert.doesNotMatch(unselected, /Countdown/i);
+  });
+});
+
+describe("Release Detail countdown placement", () => {
+  const detailSrc = readFileSync(join(here, "../pages/release-detail.tsx"), "utf8");
+  const setupSrc = readFileSync(
+    join(here, "../components/home-widget-setup-guide-host.tsx"),
+    "utf8",
+  );
+
+  it("keeps one full-width CTA under streaming links and no header icon", () => {
+    const links = detailSrc.indexOf('data-testid="release-detail-link-actions"');
+    const cta = detailSrc.indexOf("<HomeWidgetSelectionButton");
+    const posts = detailSrc.indexOf("<ReleaseAttachedClips");
+    assert.ok(links > 0 && cta > links && posts > cta);
+    assert.equal(detailSrc.split("<HomeWidgetSelectionButton").length - 1, 1);
+    assert.doesNotMatch(detailSrc, /release-detail-countdown-icon/);
+    assert.doesNotMatch(detailSrc, /variant="icon"/);
+    assert.match(detailSrc, /HomeWidgetSelectionScope/);
+  });
+
+  it("presents the setup sheet with the shared sheet surface above the native bar", () => {
+    assert.match(setupSrc, /APP_MATERIAL_SHEET_SURFACE_CLASS/);
+    assert.match(setupSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS/);
+    assert.match(setupSrc, /z-\[70\]/);
+    assert.match(setupSrc, /rounded-full bg-\[#101828\]\/25 dark:bg-white\/30/);
+    assert.match(setupSrc, /acquireHomeWidgetSetupGuideNativeNavCover/);
+    assert.doesNotMatch(setupSrc, /DrawerContent/);
   });
 });

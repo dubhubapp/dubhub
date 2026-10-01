@@ -1,24 +1,48 @@
 /**
- * One-time drawer teaching how to add the Release Countdown Home Screen widget.
+ * Contextual sheet for adding the Release Countdown Home Screen widget.
+ * “Got it” and swipe dismiss close only. “Don’t show again” opts out.
  * Does not claim the widget was auto-added.
  */
 
 import { useEffect, useRef, useState } from "react";
+import { Drawer as DrawerPrimitive } from "vaul";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
-  DrawerContent,
-  DrawerHeader,
+  DrawerOverlay,
+  DrawerPortal,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import { HomeWidgetSetupPreview } from "@/components/home-widget-setup-preview";
 import { useUser } from "@/lib/user-context";
+import { readHomeWidgetPayload } from "@/lib/home-widget-bridge";
 import { isHomeReleaseWidgetSelectionEnabled } from "@/lib/home-widget-selection-flag";
+import {
+  buildHomeWidgetSetupPreview,
+  type HomeWidgetSetupPreviewModel,
+} from "@/lib/home-widget-setup-preview";
+import {
+  APP_MATERIAL_FORM_PRIMARY_CLASS,
+  APP_MATERIAL_SHEET_BACKDROP_CLASS,
+  APP_MATERIAL_SHEET_SURFACE_CLASS,
+} from "@/lib/app-material";
+import { acquireHomeWidgetSetupGuideNativeNavCover } from "@/lib/home-widget-setup-guide-native-cover";
+import {
+  nativeNavSheetCoversBar,
+  nativeNavSheetPhaseOnAnimationEnd,
+  nativeNavSheetPhaseOnOpenChange,
+  type NativeNavSheetPhase,
+} from "@/lib/native-nav-sheet-cover";
 import {
   HOME_WIDGET_SETUP_GUIDE_COPY,
   HOME_WIDGET_SETUP_GUIDE_REQUEST_EVENT,
-  hasAcknowledgedHomeWidgetSetupGuide,
-  markHomeWidgetSetupGuideAcknowledged,
+  hasOptedOutOfHomeWidgetSetupGuide,
+  homeWidgetSetupGuideDismissWritesMarker,
+  markHomeWidgetSetupGuideOptedOut,
+  type HomeWidgetSetupGuideDismissKind,
+  type HomeWidgetSetupGuideRequestDetail,
 } from "@/lib/home-widget-setup-guide";
+import { cn } from "@/lib/utils";
 
 export function HomeWidgetSetupGuideHost() {
   const enabled = isHomeReleaseWidgetSelectionEnabled();
@@ -26,19 +50,39 @@ export function HomeWidgetSetupGuideHost() {
   const userId = currentUser?.id ?? null;
 
   const [open, setOpen] = useState(false);
+  const [sheetPhase, setSheetPhase] = useState<NativeNavSheetPhase>("closed");
+  const [preview, setPreview] = useState<HomeWidgetSetupPreviewModel | null>(null);
   const dismissedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!enabled) return;
 
     const onRequest = (event: Event) => {
-      const detail = (event as CustomEvent<{ userId?: string }>).detail;
+      const detail = (event as CustomEvent<HomeWidgetSetupGuideRequestDetail>).detail;
       const requestUserId = detail?.userId ?? userId;
       if (!requestUserId) return;
       if (!isAuthenticated) return;
+      if (!hasOptedOutOfHomeWidgetSetupGuide(requestUserId)) {
+        dismissedRef.current.delete(requestUserId);
+      }
       if (dismissedRef.current.has(requestUserId)) return;
-      if (hasAcknowledgedHomeWidgetSetupGuide(requestUserId)) return;
-      setOpen(true);
+      if (hasOptedOutOfHomeWidgetSetupGuide(requestUserId)) return;
+      const openWithRelease = (release: HomeWidgetSetupGuideRequestDetail["release"]) => {
+        setPreview(buildHomeWidgetSetupPreview(release ?? null));
+        setSheetPhase("open");
+        setOpen(true);
+      };
+      if (detail && "release" in detail) {
+        openWithRelease(detail.release);
+        return;
+      }
+      void readHomeWidgetPayload()
+        .then((payload) => {
+          openWithRelease(payload?.dto.release ?? null);
+        })
+        .catch(() => {
+          openWithRelease(null);
+        });
     };
 
     window.addEventListener(HOME_WIDGET_SETUP_GUIDE_REQUEST_EVENT, onRequest);
@@ -47,11 +91,18 @@ export function HomeWidgetSetupGuideHost() {
     };
   }, [enabled, isAuthenticated, userId]);
 
-  const acknowledgeAndClose = () => {
-    if (userId) {
-      markHomeWidgetSetupGuideAcknowledged(userId);
+  const coversNativeNav = nativeNavSheetCoversBar(sheetPhase);
+  useEffect(() => {
+    if (!coversNativeNav) return;
+    return acquireHomeWidgetSetupGuideNativeNavCover();
+  }, [coversNativeNav]);
+
+  const closeSheet = (kind: HomeWidgetSetupGuideDismissKind) => {
+    if (homeWidgetSetupGuideDismissWritesMarker(kind) && userId) {
+      markHomeWidgetSetupGuideOptedOut(userId);
       dismissedRef.current.add(userId);
     }
+    setSheetPhase("closing");
     setOpen(false);
   };
 
@@ -60,45 +111,63 @@ export function HomeWidgetSetupGuideHost() {
   return (
     <Drawer
       open={open}
+      shouldScaleBackground={false}
       onOpenChange={(next) => {
-        if (!next) acknowledgeAndClose();
+        setSheetPhase(nativeNavSheetPhaseOnOpenChange(next));
+        if (!next) setOpen(false);
         else setOpen(true);
       }}
+      onAnimationEnd={(animationOpen) => {
+        setSheetPhase(nativeNavSheetPhaseOnAnimationEnd(animationOpen));
+      }}
     >
-      <DrawerContent className="border-border/60 bg-background">
-        <DrawerHeader className="text-left">
-          <DrawerTitle className="text-xl font-semibold tracking-tight">
-            {HOME_WIDGET_SETUP_GUIDE_COPY.title}
-          </DrawerTitle>
-          <p className="text-sm text-muted-foreground pt-1">
-            {HOME_WIDGET_SETUP_GUIDE_COPY.body}
-          </p>
-        </DrawerHeader>
-        <ol className="list-decimal space-y-2 px-4 pb-2 text-sm text-foreground/90 pl-8">
-          {HOME_WIDGET_SETUP_GUIDE_COPY.steps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-        <div className="flex flex-col gap-2 px-4 pb-6 pt-2">
-          <Button
-            type="button"
-            className="w-full"
-            onClick={acknowledgeAndClose}
-            data-testid="button-home-widget-setup-guide-got-it"
-          >
-            {HOME_WIDGET_SETUP_GUIDE_COPY.primaryCta}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full"
-            onClick={acknowledgeAndClose}
-            data-testid="button-home-widget-setup-guide-not-now"
-          >
-            {HOME_WIDGET_SETUP_GUIDE_COPY.secondaryCta}
-          </Button>
-        </div>
-      </DrawerContent>
+      <DrawerPortal>
+        <DrawerOverlay className={cn("z-[70]", APP_MATERIAL_SHEET_BACKDROP_CLASS)} />
+        <DrawerPrimitive.Content
+          className={cn(
+            APP_MATERIAL_SHEET_SURFACE_CLASS,
+            "fixed inset-x-0 bottom-0 z-[70] flex max-h-[92dvh] w-full flex-col overflow-y-auto border outline-none",
+          )}
+          style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 0px))" }}
+          data-testid="home-widget-setup-guide-sheet"
+        >
+          <div className="flex justify-center pt-2.5 pb-1" aria-hidden>
+            <div className="h-1 w-10 rounded-full bg-[#101828]/25 dark:bg-white/30" />
+          </div>
+          <div className="px-5 pb-2 pt-2 text-left">
+            <DrawerTitle className="text-xl font-semibold tracking-tight text-foreground">
+              {HOME_WIDGET_SETUP_GUIDE_COPY.title}
+            </DrawerTitle>
+            <p className="pt-1.5 text-sm leading-relaxed text-muted-foreground">
+              {HOME_WIDGET_SETUP_GUIDE_COPY.body}
+            </p>
+            <HomeWidgetSetupPreview model={preview} />
+          </div>
+          <ol className="mt-4 list-decimal space-y-2.5 px-5 pb-4 pl-9 text-sm leading-snug text-foreground">
+            {HOME_WIDGET_SETUP_GUIDE_COPY.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <div className="flex flex-col gap-2 px-5">
+            <Button
+              type="button"
+              className={APP_MATERIAL_FORM_PRIMARY_CLASS}
+              onClick={() => closeSheet("temporary")}
+              data-testid="button-home-widget-setup-guide-got-it"
+            >
+              {HOME_WIDGET_SETUP_GUIDE_COPY.primaryCta}
+            </Button>
+            <button
+              type="button"
+              className="dubhub-app-secondary-action ios-press h-11 w-full rounded-[15px] border text-sm font-medium"
+              onClick={() => closeSheet("opt-out")}
+              data-testid="button-home-widget-setup-guide-dont-show-again"
+            >
+              {HOME_WIDGET_SETUP_GUIDE_COPY.secondaryCta}
+            </button>
+          </div>
+        </DrawerPrimitive.Content>
+      </DrawerPortal>
     </Drawer>
   );
 }

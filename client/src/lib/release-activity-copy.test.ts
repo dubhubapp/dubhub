@@ -6,17 +6,18 @@ import { fileURLToPath } from "node:url";
 import { COUNTDOWN_STATUS_BADGE_CLASS } from "./countdown-status-badge";
 import {
   buildAnnouncedRelativeToFirstPostCopy,
+  buildReleaseActivityTimelineStats,
   buildReleaseAfterFirstPostCopy,
   formatActivityPostCalendarDate,
+  formatActivityPostShortDate,
+  formatCompactActivityDurationLabel,
   formatDayOrdinal,
   formatUnsignedActivityDurationLabel,
   resolveSignedActivityDuration,
 } from "./release-activity-copy";
 import {
   RELEASE_DETAIL_ARTWORK_SIZE_CLASS,
-  RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS,
-  RELEASE_DETAIL_COUNTDOWN_ACTION_ICON_CLASS,
-  RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS,
+  RELEASE_DETAIL_COUNTDOWN_CTA_CLASS,
   RELEASE_DETAIL_HEADER_ACTION_ICON_CLASS,
   RELEASE_DETAIL_METADATA_MIN_HEIGHT_CLASS,
   RELEASE_DETAIL_SHARE_ACTION_CLASS,
@@ -326,8 +327,9 @@ describe("signed activity duration formatting", () => {
 
 describe("activity section and Countdown colour ownership", () => {
   it("does not hardcode after-only announced copy", () => {
-    assert.match(activitySectionSrc, /buildAnnouncedRelativeToFirstPostCopy/);
+    assert.match(activitySectionSrc, /buildReleaseActivityTimelineStats/);
     assert.doesNotMatch(activitySectionSrc, /Announced \{.*\} after first post/);
+    assert.doesNotMatch(activitySectionSrc, /clarifier: "after first post"/);
   });
 
   it("removes turquoise/accent from the Detail Countdown icon helper", () => {
@@ -398,14 +400,31 @@ describe("First/Latest post ordinal calendar dates", () => {
 
   it("uses the ordinal formatter for First post and Latest post on Release Detail", () => {
     const detailSrc = readFileSync(join(here, "../pages/release-detail.tsx"), "utf8");
-    assert.match(detailSrc, /formatActivityPostCalendarDate\(stats\?\.firstClipAt/);
-    assert.match(detailSrc, /formatActivityPostCalendarDate\(stats\?\.latestClipAt/);
+    assert.match(detailSrc, /formatActivityPostShortDate\(stats\?\.firstClipAt/);
+    assert.match(detailSrc, /formatActivityPostShortDate\(stats\?\.latestClipAt/);
     assert.doesNotMatch(detailSrc, /formatMonthYear/);
   });
 
   it("keeps First post / Latest post as absolute labels and signed relative copy separate", () => {
-    assert.match(activitySectionSrc, /First post: \{firstPostLabel\}/);
-    assert.match(activitySectionSrc, /Latest post: \{latestPostLabel\}/);
+    const stats = buildReleaseActivityTimelineStats({
+      firstPostLabel: "01/08/26",
+      latestPostLabel: "17/08/26",
+      announcedDuration: resolveSignedActivityDuration({ fallbackDays: -7 }),
+      releasedDuration: resolveSignedActivityDuration({ fallbackDays: 85 }),
+      releaseAfterIsUpcoming: true,
+    });
+    assert.deepEqual(
+      stats.map((stat) => stat.label),
+      ["First post", "Latest post", "Announced", "Releasing"],
+    );
+    assert.equal(stats[0]?.value, "01/08/26");
+    assert.equal(stats[1]?.value, "17/08/26");
+    assert.equal(stats[2]?.value, "7 days");
+    assert.equal(stats[2]?.clarifier, "before first post");
+    assert.equal(stats[3]?.label, "Releasing");
+    assert.equal(stats[3]?.value, "85 days");
+    assert.equal(stats[3]?.clarifier, "after first post");
+    assert.match(activitySectionSrc, /release-activity-page-timeline/);
     assert.equal(
       buildAnnouncedRelativeToFirstPostCopy(
         resolveSignedActivityDuration({ fallbackDays: -7 }),
@@ -422,7 +441,137 @@ describe("First/Latest post ordinal calendar dates", () => {
   });
 });
 
+describe("release activity timeline page", () => {
+  it("compacts hour labels and keeps day labels", () => {
+    assert.equal(formatCompactActivityDurationLabel("1 hour 47 mins"), "1h 47m");
+    assert.equal(formatCompactActivityDurationLabel("2 hours"), "2h");
+    assert.equal(formatCompactActivityDurationLabel("5 mins"), "5m");
+    assert.equal(formatCompactActivityDurationLabel("39 days"), "39 days");
+  });
+
+  it("states after first post and uses a placeholder when a timeline stat is missing", () => {
+    const announced = resolveSignedActivityDuration({
+      start: "2026-08-01T12:00:00.000Z",
+      end: "2026-08-01T13:47:00.000Z",
+    });
+    const released = resolveSignedActivityDuration({ fallbackDays: 39 });
+    const stats = buildReleaseActivityTimelineStats({
+      firstPostLabel: null,
+      latestPostLabel: "17th Aug 2026",
+      announcedDuration: announced,
+      releasedDuration: released,
+      releaseAfterIsUpcoming: false,
+    });
+    assert.equal(stats[0]?.value, "—");
+    assert.equal(stats[2]?.label, "Announced");
+    assert.equal(stats[2]?.value, "1h 47m");
+    assert.equal(stats[2]?.clarifier, "after first post");
+    assert.equal(stats[3]?.label, "Released");
+    assert.equal(stats[3]?.value, "39 days");
+    assert.equal(stats[3]?.clarifier, "after first post");
+    assert.equal(
+      formatActivityPostShortDate(new Date(2026, 8, 22, 12, 0, 0)),
+      "22/09/26",
+    );
+    assert.equal(
+      formatActivityPostShortDate(new Date(2026, 0, 1, 12, 0, 0)),
+      "01/01/26",
+    );
+  });
+
+  it("swipes two equal grids with dots and keeps foreground stat colours", () => {
+    assert.match(activitySectionSrc, /release-activity-page-activity/);
+    assert.match(activitySectionSrc, /release-activity-page-timeline/);
+    assert.match(activitySectionSrc, /snap-x snap-mandatory/);
+    assert.match(activitySectionSrc, /release-activity-dot-\$\{page\}/);
+    assert.match(activitySectionSrc, /ACTIVITY_PAGES = \["activity", "timeline"\]/);
+    assert.match(activitySectionSrc, /aria-selected=\{active\}/);
+    assert.match(activitySectionSrc, /grid grid-cols-4 items-start gap-1/);
+    assert.equal(
+      activitySectionSrc.split("RELEASE_ACTIVITY_PAGE_GRID_CLASS").length - 1,
+      3,
+    );
+    assert.match(activitySectionSrc, /RELEASE_ACTIVITY_ICON_CLASS/);
+    assert.match(activitySectionSrc, /RELEASE_ACTIVITY_VALUE_CLASS/);
+    assert.match(activitySectionSrc, /data-testid="release-activity-pager"/);
+    assert.match(activitySectionSrc, /"upload-bell"/);
+    assert.match(activitySectionSrc, /"upload"/);
+    assert.match(activitySectionSrc, /"first-post": Upload/);
+    assert.doesNotMatch(activitySectionSrc, /Film/);
+    assert.match(activitySectionSrc, /"megaphone"/);
+    assert.match(activitySectionSrc, /"calendar"/);
+    assert.match(activitySectionSrc, /Megaphone/);
+    assert.match(activitySectionSrc, /text-muted-foreground/);
+  });
+
+  it("uses the Posts tab Upload icon, numeric dates, and the widget-sheet pager above the pages", () => {
+    const profileSrc = readFileSync(join(here, "../pages/user-profile.tsx"), "utf8");
+    const widgetSrc = readFileSync(
+      join(here, "../components/home-widget-setup-preview.tsx"),
+      "utf8",
+    );
+    const postsTab = profileSrc.slice(profileSrc.indexOf('data-testid="tab-posts"'));
+    assert.match(postsTab.slice(0, 500), /<Upload /);
+    assert.match(activitySectionSrc, /"first-post": Upload/);
+    assert.match(activitySectionSrc, /data-icon="upload-bell"/);
+    assert.doesNotMatch(activitySectionSrc, /Clock/);
+    const latestIcon = activitySectionSrc.slice(
+      activitySectionSrc.indexOf("function LatestPostIcon"),
+      activitySectionSrc.indexOf("const TIMELINE_ICONS"),
+    );
+    assert.equal(latestIcon.split("<line ").length - 1, 0);
+    assert.match(latestIcon, /<Upload[\s\S]*className="h-4 w-4"[\s\S]*strokeWidth=\{2\}/);
+    assert.match(latestIcon, /<Bell[\s\S]*absolute -bottom-px -right-px h-2 w-2[\s\S]*fill="currentColor"/);
+    assert.match(latestIcon, /maskImage:/);
+    assert.doesNotMatch(latestIcon, /h-3\.5/);
+    assert.equal(formatActivityPostShortDate(new Date(2026, 8, 22, 12, 0, 0)), "22/09/26");
+
+    const heading = activitySectionSrc.indexOf(">Release activity<");
+    const pager = activitySectionSrc.indexOf('data-testid="release-activity-pager"');
+    const scroller = activitySectionSrc.indexOf('data-testid="release-activity-scroller"');
+    assert.ok(heading > 0 && pager > heading && pager < scroller);
+    const activeDot = "w-4 bg-[#101828]/70 dark:bg-white/80";
+    const inactiveDot = "w-1.5 bg-[#101828]/25 dark:bg-white/30";
+    assert.match(widgetSrc, new RegExp(activeDot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(activitySectionSrc, new RegExp(activeDot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(widgetSrc, new RegExp(inactiveDot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(activitySectionSrc, new RegExp(inactiveDot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(activitySectionSrc, /h-1\.5 rounded-full/);
+    assert.match(activitySectionSrc, /useState\(0\)/);
+    assert.match(activitySectionSrc, /onClick=\{\(\) => scrollToPage\(index\)\}/);
+    assert.match(activitySectionSrc, /role="tablist"/);
+  });
+
+  it("gives page 2 the same stat-cell rows as page 1", () => {
+    assert.match(activitySectionSrc, /function ReleaseKeyStatSlot[\s\S]*<ReleaseActivityStatCell/);
+    assert.match(activitySectionSrc, /function TimelineStatSlot[\s\S]*<ReleaseActivityStatCell/);
+    assert.equal(activitySectionSrc.split("<ReleaseActivityStatCell").length - 1, 2);
+    assert.match(
+      activitySectionSrc,
+      /line-clamp-2 min-h-8 text-base font-bold tabular-nums leading-tight/,
+    );
+    assert.doesNotMatch(activitySectionSrc, /text-\[13px\]/);
+    assert.match(activitySectionSrc, /flex items-start snap-x snap-mandatory/);
+    assert.match(activitySectionSrc, /w-full shrink-0 snap-center self-start/);
+    assert.equal(activitySectionSrc.split("RELEASE_ACTIVITY_PAGE_CLASS").length - 1, 3);
+    assert.match(activitySectionSrc, /RELEASE_ACTIVITY_STAT_LABEL_CLASS/);
+    assert.match(activitySectionSrc, /RELEASE_ACTIVITY_STAT_CLARIFIER_CLASS/);
+  });
+});
+
 describe("release detail header action chrome", () => {
+  it("keeps Share release beside the status pill", () => {
+    const detailSrc = readFileSync(join(here, "../pages/release-detail.tsx"), "utf8");
+    const row = detailSrc.indexOf('data-testid="release-detail-status-row"');
+    const share = detailSrc.indexOf('data-testid="button-share-release"');
+    const actionsEnd = detailSrc.indexOf('data-testid="release-detail-header-actions"');
+    assert.ok(actionsEnd > 0 && row > actionsEnd && share > row);
+    assert.match(
+      detailSrc.slice(row, share + 40),
+      /ReleaseStatusPill[\s\S]*button-share-release/,
+    );
+  });
+
   it("keeps Share compact and unfilled", () => {
     assert.match(RELEASE_DETAIL_SHARE_ACTION_CLASS, /min-h-\[1\.375rem\]/);
     assert.match(RELEASE_DETAIL_SHARE_ACTION_CLASS, /bg-transparent/);
@@ -430,23 +579,21 @@ describe("release detail header action chrome", () => {
     assert.doesNotMatch(RELEASE_DETAIL_SHARE_ACTION_CLASS, /min-h-11/);
   });
 
-  it("keeps Countdown as a 44pt hit target with visible content on the bottom edge", () => {
-    assert.match(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /min-h-11/);
-    assert.match(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /items-end/);
-    assert.match(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /bg-transparent/);
-    assert.doesNotMatch(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /bg-muted\/80/);
-    assert.doesNotMatch(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /border/);
-    assert.doesNotMatch(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /items-center/);
+  it("does not mount a second countdown icon on Release Detail", () => {
+    const detailSrc = readFileSync(join(here, "../pages/release-detail.tsx"), "utf8");
     assert.equal(RELEASE_DETAIL_HEADER_ACTION_ICON_CLASS, "h-3 w-3 shrink-0");
-    assert.equal(RELEASE_DETAIL_COUNTDOWN_ACTION_ICON_CLASS, "h-3.5 w-3.5 shrink-0");
+    assert.doesNotMatch(detailSrc, /release-detail-countdown-icon/);
+    assert.doesNotMatch(detailSrc, /variant="icon"/);
+    assert.match(detailSrc, /HomeWidgetSelectionButton/);
   });
 
-  it("uses a compact flow slot so Countdown sits under Coming Soon without overflowing artwork", () => {
-    assert.match(RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS, /h-\[1\.375rem\]/);
-    assert.match(RELEASE_DETAIL_COUNTDOWN_FLOW_SLOT_CLASS, /relative/);
+  it("keeps the countdown CTA a full-width secondary action under the artwork row", () => {
+    assert.match(RELEASE_DETAIL_COUNTDOWN_CTA_CLASS, /h-11/);
+    assert.match(RELEASE_DETAIL_COUNTDOWN_CTA_CLASS, /w-full/);
+    assert.match(RELEASE_DETAIL_COUNTDOWN_CTA_CLASS, /dubhub-app-secondary-action/);
+    assert.doesNotMatch(RELEASE_DETAIL_COUNTDOWN_CTA_CLASS, /h-12/);
     assert.equal(RELEASE_DETAIL_ARTWORK_SIZE_CLASS, "h-32 w-32");
     assert.equal(RELEASE_DETAIL_METADATA_MIN_HEIGHT_CLASS, "min-h-32");
-    assert.doesNotMatch(RELEASE_DETAIL_COUNTDOWN_ACTION_CLASS, /-mt-/);
     assert.doesNotMatch(RELEASE_DETAIL_SHARE_ACTION_CLASS, /-mt-/);
   });
 });

@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { homeWidgetSelectionStorageKey } from "./home-widget-selection-store";
 import {
   HOME_WIDGET_SETUP_GUIDE_COPY,
-  hasAcknowledgedHomeWidgetSetupGuide,
+  hasOptedOutOfHomeWidgetSetupGuide,
+  homeWidgetSetupGuideDismissWritesMarker,
   homeWidgetSetupGuideStorageKey,
-  markHomeWidgetSetupGuideAcknowledged,
+  markHomeWidgetSetupGuideOptedOut,
+  resetHomeWidgetSetupGuideOptOut,
   shouldOfferHomeWidgetSetupGuide,
 } from "./home-widget-setup-guide";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 function memoryStorage(seed: Record<string, string> = {}): Storage {
   const map = new Map(Object.entries(seed));
@@ -72,10 +80,21 @@ describe("home widget setup guide", () => {
     );
   });
 
-  it("acknowledgement suppresses replay for same user", () => {
+  it("offers again after a temporary close and hides only after opt-out", () => {
     const storage = memoryStorage();
-    markHomeWidgetSetupGuideAcknowledged("user-a", storage);
-    assert.equal(hasAcknowledgedHomeWidgetSetupGuide("user-a", storage), true);
+    assert.equal(homeWidgetSetupGuideDismissWritesMarker("temporary"), false);
+    assert.equal(homeWidgetSetupGuideDismissWritesMarker("opt-out"), true);
+    assert.equal(
+      shouldOfferHomeWidgetSetupGuide({
+        userId: "user-a",
+        selectionSucceeded: true,
+        enabled: true,
+        storage,
+      }),
+      true,
+    );
+    markHomeWidgetSetupGuideOptedOut("user-a", storage);
+    assert.equal(hasOptedOutOfHomeWidgetSetupGuide("user-a", storage), true);
     assert.equal(
       shouldOfferHomeWidgetSetupGuide({
         userId: "user-a",
@@ -87,9 +106,9 @@ describe("home widget setup guide", () => {
     );
   });
 
-  it("keeps User A and User B acknowledgements independent", () => {
+  it("keeps User A and User B opt-outs independent", () => {
     const storage = memoryStorage();
-    markHomeWidgetSetupGuideAcknowledged("user-a", storage);
+    markHomeWidgetSetupGuideOptedOut("user-a", storage);
     assert.equal(
       shouldOfferHomeWidgetSetupGuide({
         userId: "user-b",
@@ -116,6 +135,35 @@ describe("home widget setup guide", () => {
     assert.doesNotMatch(blob, /widget added|now on your home screen|automatically/i);
   });
 
+  it("reset clears only this user’s guide marker and offers the guide again", () => {
+    const storage = memoryStorage({
+      [homeWidgetSetupGuideStorageKey("user-a")]: "1",
+      [homeWidgetSetupGuideStorageKey("user-b")]: "1",
+      [homeWidgetSelectionStorageKey("user-a")]: JSON.stringify({
+        schemaVersion: 1,
+        selectedReleaseId: "rel-1",
+        selectedAt: "2026-10-01T00:00:00.000Z",
+      }),
+    });
+    assert.equal(resetHomeWidgetSetupGuideOptOut("user-a", storage), true);
+    assert.equal(hasOptedOutOfHomeWidgetSetupGuide("user-a", storage), false);
+    assert.equal(hasOptedOutOfHomeWidgetSetupGuide("user-b", storage), true);
+    assert.equal(
+      storage.getItem(homeWidgetSelectionStorageKey("user-a"))?.includes("rel-1"),
+      true,
+    );
+    assert.equal(
+      shouldOfferHomeWidgetSetupGuide({
+        userId: "user-a",
+        selectionSucceeded: true,
+        enabled: true,
+        storage,
+      }),
+      true,
+    );
+    assert.equal(resetHomeWidgetSetupGuideOptOut("", storage), false);
+  });
+
   it("uses lowercase dub hub brand and countdown in steps", () => {
     assert.equal(
       HOME_WIDGET_SETUP_GUIDE_COPY.steps[1],
@@ -128,5 +176,52 @@ describe("home widget setup guide", () => {
     const blob = HOME_WIDGET_SETUP_GUIDE_COPY.steps.join(" ");
     assert.doesNotMatch(blob, /Dub Hub/);
     assert.doesNotMatch(blob, /your Countdown/);
+  });
+});
+
+describe("home widget setup guide dev reset surface", () => {
+  const diagnosticsSrc = readFileSync(
+    join(here, "../pages/settings-developer-diagnostics.tsx"),
+    "utf8",
+  );
+  const settingsSrc = readFileSync(join(here, "../pages/settings.tsx"), "utf8");
+  const hostSrc = readFileSync(
+    join(here, "../components/home-widget-setup-guide-host.tsx"),
+    "utf8",
+  );
+  const guideSrc = readFileSync(join(here, "./home-widget-setup-guide.ts"), "utf8");
+
+  it("does not expose a diagnostics reset and keeps production opt-out", () => {
+    assert.doesNotMatch(diagnosticsSrc, /Reset Release Countdown guide/);
+    assert.doesNotMatch(diagnosticsSrc, /resetHomeWidgetSetupGuideOptOut/);
+    assert.doesNotMatch(settingsSrc, /isCancellationFeedbackLocalQaBuild/);
+    assert.match(diagnosticsSrc, /revenueCatIdentityDiagnosticsEnabled\(\)/);
+    assert.match(settingsSrc, /revenueCatIdentityDiagnosticsEnabled\(\)/);
+    assert.match(guideSrc, /storage\.removeItem\(homeWidgetSetupGuideStorageKey\(userId\)\)/);
+    assert.doesNotMatch(guideSrc, /revenuecat-identity|isCancellationFeedbackLocalQaBuild/);
+    assert.doesNotMatch(guideSrc, /clearHomeWidget|writeHomeWidgetPayload|reloadTimelines|selectedReleaseId/);
+    assert.match(hostSrc, /dismissedRef\.current\.delete\(requestUserId\)/);
+    assert.match(hostSrc, /markHomeWidgetSetupGuideOptedOut/);
+  });
+
+  it("writes the marker only for Don’t show again", () => {
+    const hookSrc = readFileSync(
+      join(here, "../hooks/use-home-widget-selection.ts"),
+      "utf8",
+    );
+    assert.equal(HOME_WIDGET_SETUP_GUIDE_COPY.primaryCta, "Got it");
+    assert.equal(HOME_WIDGET_SETUP_GUIDE_COPY.secondaryCta, "Don't show again");
+    assert.match(hostSrc, /closeSheet\("temporary"\)/);
+    assert.match(hostSrc, /closeSheet\("opt-out"\)/);
+    assert.match(hostSrc, /if \(!next\) setOpen\(false\)/);
+    assert.doesNotMatch(hostSrc, /Not now/);
+    const selectStart = hookSrc.indexOf("const select = useCallback");
+    const clearStart = hookSrc.indexOf("const clear = useCallback");
+    assert.ok(selectStart > 0 && clearStart > selectStart);
+    assert.match(
+      hookSrc.slice(selectStart, clearStart),
+      /maybeRequestHomeWidgetSetupGuide/,
+    );
+    assert.doesNotMatch(hookSrc.slice(clearStart), /maybeRequestHomeWidgetSetupGuide/);
   });
 });

@@ -191,12 +191,16 @@ describe("release feed card media-row chrome", () => {
     assert.doesNotMatch(RELEASE_FEED_ROW_BASE_CLASS, /backdrop-blur/);
     assert.doesNotMatch(RELEASE_FEED_ROW_BASE_CLASS, /bg-black\/\d+/);
     assert.match(feedCardSrc, /RELEASE_FEED_PRIMARY_CTA_CLASS/);
-    assert.match(feedCardSrc, /RELEASE_FEED_WIDGET_SLOT_CLASS/);
+    assert.doesNotMatch(feedCardSrc, /RELEASE_FEED_WIDGET_SLOT_CLASS/);
+    const listBadge = feedCardSrc.indexOf("<CountdownStatusBadge");
+    const listActions = feedCardSrc.indexOf('data-testid="release-feed-link-actions"');
+    assert.ok(listBadge > listActions);
     assert.match(feedCardSrc, /release-feed-links-overflow/);
     assert.match(feedCardSrc, /omitOwnHandle/);
     assert.doesNotMatch(feedCardSrc, /MoreHorizontal/);
     assert.match(RELEASE_FEED_PRIMARY_CTA_CLASS, /rounded-full/);
     assert.match(RELEASE_FEED_WIDGET_SLOT_CLASS, /shrink-0/);
+    assert.match(RELEASE_FEED_ROW_BASE_CLASS, /items-start/);
     assert.equal(RELEASE_FEED_ARTWORK_PX, 120);
   });
 

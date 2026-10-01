@@ -230,7 +230,7 @@ describe("home widget selection actions", () => {
       assert.equal(getCurrentHomeWidgetSelectedReleaseId(USER), null);
       assert.equal(isSelectedFor(RELEASE_A), false);
       const after = buttonViewFor(RELEASE_A);
-      assert.equal(after.label, "Add to Countdown");
+      assert.equal(after.label, "Add to Release Countdown");
       assert.equal(after.ariaPressed, false);
       assert.equal(after.action, "select");
     } finally {

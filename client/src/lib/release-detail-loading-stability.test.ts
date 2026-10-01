@@ -40,8 +40,9 @@ describe("Release Detail loading stability", () => {
     );
     assert.match(activitySrc, /data-testid="release-key-stats"/);
     assert.match(activitySrc, /showKeyStats/);
-    assert.match(activitySrc, /stats \? \([\s\S]*Icon[\s\S]*\) : \([\s\S]*DubHubSkeletonBar/);
-    assert.match(activitySrc, /\{def\.label\}/);
+    assert.match(activitySrc, /loading=\{!stats\}/);
+    assert.match(activitySrc, /loading \? <DubHubSkeletonBar tone="faint"/);
+    assert.match(activitySrc, /label=\{def\.label\}/);
     assert.doesNotMatch(activitySrc, /ReleaseKeyStatsSkeleton/);
   });
 

@@ -1,6 +1,9 @@
 /**
- * Client rollout flag for Home Screen widget listener selection UI.
+ * Launch kill switch for Home Screen widget listener selection UI.
  * Does not alter server widget endpoint or eligibility rules.
+ *
+ * Opt-out: missing or any value other than explicit "false" leaves selection on.
+ * Set VITE_HOME_RELEASE_WIDGET_SELECTION_ENABLED=false to hide it.
  */
 
 function readFlagRaw(
@@ -26,5 +29,9 @@ export function isHomeReleaseWidgetSelectionEnabled(
       source = null;
     }
   }
-  return String(readFlagRaw(source) ?? "").trim().toLowerCase() === "true";
+  const raw = readFlagRaw(source);
+  if (raw == null) return true;
+  const normalized = String(raw).trim().toLowerCase();
+  if (normalized === "") return true;
+  return normalized !== "false";
 }

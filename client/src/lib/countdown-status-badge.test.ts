@@ -55,9 +55,13 @@ describe("Countdown overview status badge chrome", () => {
     assert.doesNotMatch(badgeSrc, /In your Countdown/);
   });
 
-  it("Artwork and List both mount the shared badge beside the status pill", () => {
+  it("Artwork keeps the badge on the status row; List pins it to the row top-right", () => {
     assert.match(artworkSrc, /artwork-release-status-row[\s\S]*ReleaseStatusPill[\s\S]*CountdownStatusBadge/);
-    assert.match(listSrc, /release-feed-widget-slot[\s\S]*CountdownStatusBadge/);
+    const listArtwork = listSrc.indexOf("<ReleaseArtworkThumb");
+    const listMetaEnd = listSrc.lastIndexOf("release-feed-actions-spacer");
+    const listBadge = listSrc.indexOf("<CountdownStatusBadge");
+    assert.ok(listArtwork > 0 && listBadge > listMetaEnd);
+    assert.doesNotMatch(listSrc, /release-feed-widget-slot/);
     assert.match(listSrc, /release-feed-status-row[\s\S]*ReleaseStatusPill/);
     assert.match(artworkSrc, /artwork-countdown-selected-indicator-/);
     assert.match(listSrc, /release-countdown-selected-indicator-/);
@@ -69,7 +73,8 @@ describe("Countdown overview status badge chrome", () => {
   });
 
   it("preserves Release Detail toggle and Artwork physics source", () => {
-    assert.match(detailSrc, /Add to Countdown/);
+    assert.match(detailSrc, /view\.label/);
+    assert.doesNotMatch(detailSrc, /variant === "icon"/);
     assert.match(detailSrc, /resolveHomeWidgetSelectionButtonPresentation/);
     assert.doesNotMatch(detailSrc, /DropdownMenu/);
     assert.match(physicsSrc, /export function resolveArtworkEmblaOptions/);

@@ -38,7 +38,7 @@ export function isHomeWidgetSelectionReleaseDated(
 }
 
 /**
- * Whether the local UI may offer Add to Countdown / In your Countdown.
+ * Whether the local UI may offer Add to Release Countdown / In your Countdown.
  * Feed items from scope=saved are already currently saved for the viewer.
  */
 export function resolveHomeWidgetSelectionActionVisibility(args: {
@@ -78,7 +78,7 @@ export function resolveHomeWidgetSelectionActionVisibility(args: {
 /** Customer-facing product copy. Internal module names may still say “widget”. */
 export const HOME_WIDGET_SELECTION_COPY = {
   productName: "Release Countdown",
-  useInWidget: "Add to Countdown",
+  useInWidget: "Add to Release Countdown",
   selectedForWidget: "In your Countdown",
   removeFromWidget: "Remove from Countdown",
   successSelected: "Added to your Release Countdown.",

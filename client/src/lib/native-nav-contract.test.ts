@@ -177,6 +177,23 @@ describe("LG-NAV-3 native nav contract", () => {
       }),
       true,
     );
+    assert.equal(
+      nativeNavIsCoveredBySheet({
+        commentsOpen: false,
+        submitOpen: false,
+        countdownSetupOpen: true,
+      }),
+      true,
+    );
+    assert.equal(
+      nativeNavShouldBeVisible({
+        ...available,
+        commentsOpen: false,
+        submitOpen: false,
+        countdownSetupOpen: true,
+      }),
+      false,
+    );
     assert.deepEqual(nativeNavChromeState({ available: true, coveredBySheet: true }), {
       layoutPresent: true,
       visuallyShown: false,
