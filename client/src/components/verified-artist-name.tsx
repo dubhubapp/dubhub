@@ -1,7 +1,5 @@
-import {
-  GoldVerifiedTick,
-  goldTextClass,
-} from "@/components/verified-artist";
+import { GoldVerifiedTick } from "@/components/verified-artist";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -22,15 +20,19 @@ export function VerifiedArtistName({
 }) {
   return (
     <span
-      className={cn("inline-flex min-w-0 max-w-full items-center gap-0.5", className)}
+      className={cn(
+        ARTIST_IDENTITY_COMPACT_CLASS,
+        "inline-flex min-w-0 max-w-full items-center gap-0.5",
+        className,
+      )}
       data-testid={dataTestId}
     >
-      <span className={cn("truncate font-medium", goldTextClass)}>
+      <span className="truncate font-medium">
         {formatUsernameDisplay(username)}
       </span>
       <GoldVerifiedTick
         className={cn(
-          "ml-0.5 inline h-3.5 w-3.5 shrink-0 align-[-0.1em] text-[#FFD700]",
+          "ml-0.5 inline h-3.5 w-3.5 shrink-0 text-[#FFD700]",
           tickClassName,
         )}
         glow="inline"

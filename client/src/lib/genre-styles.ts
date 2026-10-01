@@ -106,6 +106,14 @@ export const STATUS_GLOW_PILL_BG = {
 export const STATUS_GLOW_PILL_CLASS =
   "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
 
+/**
+ * Light page/sheet Identified contrast. Same green family as the media pill.
+ * Applied only under `:root:not(.dark) .dubhub-identified-pill-page`.
+ */
+export const IDENTIFIED_PILL_PAGE_LABEL_COLOR = "#166534";
+export const IDENTIFIED_PILL_PAGE_FILL =
+  "linear-gradient(180deg, rgba(34,197,94,0.78), rgba(21,128,61,0.62))";
+
 export function getGenreGlowPillStyle(bgColor: string, _textClass: string): CSSProperties {
   const { r, g, b } = hexToRgb(bgColor);
   const lum = relativeLuminance(r, g, b);

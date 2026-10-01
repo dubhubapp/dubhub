@@ -99,8 +99,8 @@ describe("C2 opt-in overlay material (not global primitive rewrite)", () => {
   it("backdrop blur is restrained (≤2px) and surface has no backdrop-filter", () => {
     assert.match(cssSrc, /\.dubhub-app-overlay-backdrop[\s\S]*?backdrop-filter:\s*blur\(2px\)/);
     const surfaceBlock = cssSrc.slice(
-      cssSrc.indexOf(".dark .dubhub-app-overlay-surface"),
-      cssSrc.indexOf(".dark .dubhub-app-sheet-surface"),
+      cssSrc.indexOf(".dubhub-app-overlay-surface {"),
+      cssSrc.indexOf(".dubhub-app-sheet-surface {"),
     );
     assert.doesNotMatch(surfaceBlock, /backdrop-filter/);
   });

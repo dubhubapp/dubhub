@@ -154,8 +154,8 @@ export function ArtistProfileQuestionsPrompt({
         data-testid="artist-profile-questions-success"
       >
         <div className="flex items-start gap-2.5">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-white" aria-hidden />
-          <p className="text-sm leading-relaxed text-white break-words">{SUCCESS_MESSAGE}</p>
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-foreground dark:text-white" aria-hidden />
+          <p className="text-sm leading-relaxed text-foreground break-words dark:text-white">{SUCCESS_MESSAGE}</p>
         </div>
       </section>
     );
@@ -171,10 +171,10 @@ export function ArtistProfileQuestionsPrompt({
       data-testid="artist-profile-questions-prompt"
     >
       <div className="mb-4 flex items-start gap-2.5">
-        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-white" aria-hidden />
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-foreground dark:text-white" aria-hidden />
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-white">Quick one…</h3>
-          <p className="mt-1 text-xs leading-relaxed text-gray-400 break-words">
+          <h3 className="text-sm font-semibold text-foreground dark:text-white">Quick one…</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground break-words dark:text-gray-400">
             Answer one question so listeners can get to know you beyond the music.
           </p>
         </div>
@@ -182,9 +182,9 @@ export function ArtistProfileQuestionsPrompt({
 
       <div className="space-y-3" data-testid="artist-profile-question-editor">
         <div className="min-w-0 space-y-1.5">
-          <p className="text-sm font-medium leading-snug text-white break-words">{promptQuestion.question}</p>
+          <p className="text-sm font-medium leading-snug text-foreground break-words dark:text-white">{promptQuestion.question}</p>
           {promptQuestion.helper ? (
-            <p className="text-xs leading-relaxed text-gray-400 break-words">{promptQuestion.helper}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground break-words dark:text-gray-400">{promptQuestion.helper}</p>
           ) : null}
         </div>
         <Textarea
@@ -199,7 +199,7 @@ export function ArtistProfileQuestionsPrompt({
           data-testid="artist-profile-question-answer-input"
         />
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] text-gray-400 tabular-nums">
+          <p className="text-[11px] text-muted-foreground tabular-nums dark:text-gray-400">
             {draftAnswer.trim().length} / {INPUT_LIMITS.artistProfileAnswer}
           </p>
           <div className="flex flex-wrap justify-end gap-2">

@@ -178,3 +178,16 @@ export const SETTINGS_VAT_ACTIONS_CLASS =
 /** OS push-denied warning — semantic amber, not a Settings group card. */
 export const SETTINGS_OS_WARNING_CLASS =
   "rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 space-y-2" as const;
+
+/** Readable on the pale canvas. Dark keeps the existing amber wash copy. */
+export const SETTINGS_INLINE_WARNING_CLASS =
+  "mb-2 text-xs text-amber-900 dark:text-amber-200/90" as const;
+
+export const SETTINGS_INLINE_ERROR_CLASS =
+  "mb-2 text-xs text-red-700 dark:text-red-300" as const;
+
+export const SETTINGS_OS_WARNING_TEXT_CLASS =
+  "text-xs leading-relaxed text-amber-900 dark:text-amber-100/90" as const;
+
+export const SETTINGS_OS_WARNING_ACTION_CLASS =
+  "h-8 border-amber-700/35 text-amber-900 hover:bg-amber-400/10 dark:border-amber-400/40 dark:text-amber-50" as const;

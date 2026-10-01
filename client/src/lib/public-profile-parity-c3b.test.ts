@@ -58,7 +58,10 @@ describe("PROFILE-REFINEMENT-C3B — public stat strip white chrome (preserved)"
 
   it("stat labels remain muted", () => {
     assert.match(publicProfileSrc, /PUBLIC_KEY_STAT_LABEL_CLASS/);
-    assert.match(publicProfileSrc, /text-\[10px\] leading-tight text-gray-300\/90/);
+    assert.match(
+      publicProfileSrc,
+      /text-\[10px\] leading-tight text-muted-foreground dark:text-gray-300\/90/,
+    );
   });
 
   it("Artist IDs remains in public Community stat strip; Artist verified keeps four core stats", () => {

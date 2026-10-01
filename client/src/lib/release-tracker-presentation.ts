@@ -26,21 +26,24 @@ export const RELEASE_FEED_SKELETON_VARIANT = "flat-row" as const;
 
 /** Route-scoped page shell — atmosphere only on Releases (not Home). */
 export const RELEASE_TRACKER_PAGE_CLASS =
-  `${APP_MATERIAL_RELEASES_CANVAS_CLASS} flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none scrollbar-hide` as const;
+  `${APP_MATERIAL_RELEASES_CANVAS_CLASS} dubhub-releases-list flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-none scrollbar-hide` as const;
 
-/** Flat media row — no per-item glass card shell. Top-align artwork with metadata. */
+/** Flat media row — no per-item glass card shell. Top-align artwork with metadata.
+ * Overflow stays visible so the artwork drop shadow can paint into the list gutter.
+ */
 export const RELEASE_FEED_ROW_BASE_CLASS =
-  "ios-press relative flex items-start w-full min-w-0 gap-3.5 overflow-hidden py-4 text-left transition-colors" as const;
+  "ios-press relative flex items-start w-full min-w-0 gap-3.5 py-4 text-left transition-colors" as const;
 
 /** Restrained list separators (not card chrome). */
-export const RELEASE_FEED_DIVIDE_CLASS = "divide-y divide-white/[0.08]" as const;
+export const RELEASE_FEED_DIVIDE_CLASS =
+  "divide-y divide-[#DCE3EC] dark:divide-white/[0.08]" as const;
 
 /**
  * Artwork size — 120px (+8 from 112) for stronger presence without dominating.
  * Meta min-height must stay in lockstep with artwork.
  */
 export const RELEASE_FEED_ARTWORK_SIZE_CLASS =
-  "h-[7.5rem] w-[7.5rem] shrink-0 rounded-lg ring-1 ring-white/10 shadow-[0_2px_8px_rgba(0,0,0,0.22)]" as const;
+  "h-[7.5rem] w-[7.5rem] shrink-0 rounded-lg ring-1 ring-[#DCE3EC] shadow-[0_2px_8px_rgba(0,0,0,0.22)] dark:ring-white/10" as const;
 export const RELEASE_FEED_ARTWORK_PX = 120 as const;
 export const RELEASE_FEED_ARTWORK_FALLBACK_ICON_CLASS = "h-12 w-12" as const;
 
@@ -198,7 +201,7 @@ export const RELEASE_PREVIEW_DATE_STATUS_ROW_CLASS =
 
 /** Month / section headings — title case, near-white (not muted uppercase). */
 export const RELEASE_FEED_MONTH_HEADING_CLASS =
-  "mb-1.5 text-sm font-semibold tracking-tight text-white/95" as const;
+  "mb-1.5 text-sm font-semibold tracking-tight text-foreground dark:text-white/95" as const;
 
 /**
  * Expanded provider hit area (Release Detail Countdown pattern).
@@ -214,11 +217,11 @@ export const RELEASE_FEED_CTA_HIT_SLOP_CLASS =
  * artwork edge. Hit slop expands to h-8 without growing the meta column.
  */
 export const RELEASE_FEED_CTA_ICON_ONLY_CLASS =
-  `ios-press ios-press-soft relative inline-flex h-5 min-w-8 shrink-0 items-end justify-start pl-0 text-foreground hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
+  `ios-press ios-press-soft relative inline-flex h-5 min-w-8 shrink-0 items-end justify-start pl-0 text-foreground hover:text-foreground dark:hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
 
 /** Semantic overview action (Free DL / Dub Pack / Other) — icon + short label. */
 export const RELEASE_FEED_CTA_SEMANTIC_CLASS =
-  `ios-press ios-press-soft relative inline-flex h-5 max-w-full min-w-0 shrink-0 items-end gap-1 pl-0 text-left text-xs font-medium leading-none text-foreground hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
+  `ios-press ios-press-soft relative inline-flex h-5 max-w-full min-w-0 shrink-0 items-end gap-1 pl-0 text-left text-xs font-medium leading-none text-foreground hover:text-foreground dark:hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
 
 /** @deprecated Prefer RELEASE_FEED_CTA_ICON_ONLY_CLASS / SEMANTIC — kept for older imports. */
 export const RELEASE_FEED_CTA_CLASS = RELEASE_FEED_CTA_SEMANTIC_CLASS;
@@ -232,14 +235,14 @@ export const RELEASE_FEED_CTA_SHOW_EXTERNAL_ICON = false as const;
 
 /** Primary streaming / pre-save pill — content-sized, no forced width. */
 export const RELEASE_FEED_PRIMARY_CTA_CLASS =
-  "ios-press ios-press-soft relative inline-flex w-auto max-w-full shrink-0 items-center gap-1.5 rounded-full bg-white/[0.12] px-2.5 py-1.5 text-xs font-semibold leading-none text-foreground ring-1 ring-white/10 hover:bg-white/[0.16] hover:text-white" as const;
+  "ios-press ios-press-soft relative inline-flex w-auto max-w-full shrink-0 items-center gap-1.5 rounded-full bg-[#EEF3FF] px-2.5 py-1.5 text-xs font-semibold leading-none text-foreground ring-1 ring-[#DCE3EC] hover:bg-[#E7EDF5] dark:bg-white/[0.12] dark:ring-white/10 dark:hover:bg-white/[0.16] dark:hover:text-white" as const;
 
 export const RELEASE_FEED_PRIMARY_CTA_ICON_SLOT_CLASS =
   "flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden" as const;
 
 /** Plain secondary platform glyphs — no per-icon containers. */
 export const RELEASE_FEED_SECONDARY_ICON_CLASS =
-  `ios-press ios-press-soft relative inline-flex h-5 w-5 shrink-0 items-center justify-center text-foreground/80 hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
+  `ios-press ios-press-soft relative inline-flex h-5 w-5 shrink-0 items-center justify-center text-foreground/80 hover:text-foreground dark:hover:text-white ${RELEASE_FEED_CTA_HIT_SLOP_CLASS}` as const;
 
 export const RELEASE_FEED_SECONDARY_ICON_SLOT_CLASS =
   "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden" as const;
@@ -342,7 +345,7 @@ export const RELEASE_TRACKER_LOADING_REGION_CLASS =
 export const RELEASE_TRACKER_EMPTY_CLASS =
   "mx-auto w-full max-w-sm px-2 text-center" as const;
 export const RELEASE_TRACKER_EMPTY_ICON_CLASS =
-  "mx-auto mb-4 h-12 w-12 text-white/40" as const;
+  "mx-auto mb-4 h-12 w-12 text-muted-foreground dark:text-white/40" as const;
 export const RELEASE_TRACKER_EMPTY_TITLE_CLASS =
   "mb-2 text-base font-semibold text-foreground" as const;
 export const RELEASE_TRACKER_EMPTY_BODY_CLASS =

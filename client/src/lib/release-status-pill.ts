@@ -61,6 +61,32 @@ export const RELEASE_PAUSED_PILL_CLASS =
 
 export type ReleaseStatusPillVariant = "paused" | "coming_soon" | "upcoming" | "released";
 
+/** Post/media keeps the navy chip. Page pills pick up the Light CSS variant. */
+export type ReleaseStatusPillSurface = "media" | "page";
+
+export const RELEASE_STATUS_LIGHT_PAGE_TONE = {
+  upcoming: {
+    backgroundColor: "color-mix(in srgb, #6366f1 22%, #ffffff)",
+    color: "#312e81",
+    boxShadow: "inset 0 0 0 1px #6366f1",
+  },
+  coming_soon: {
+    backgroundColor: "color-mix(in srgb, #f59e0b 22%, #ffffff)",
+    color: "#92400e",
+    boxShadow: "inset 0 0 0 1px #d97706",
+  },
+  released: {
+    backgroundColor: "color-mix(in srgb, #22c55e 22%, #ffffff)",
+    color: "#166534",
+    boxShadow: "inset 0 0 0 1px #16a34a",
+  },
+  paused: {
+    backgroundColor: "color-mix(in srgb, #64748b 22%, #ffffff)",
+    color: "#334155",
+    boxShadow: "inset 0 0 0 1px #64748b",
+  },
+} as const;
+
 export function resolveReleaseStatusPillPresentation(args: {
   paused?: boolean;
   isComingSoon?: boolean;

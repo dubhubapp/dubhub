@@ -6,7 +6,7 @@
 
 /** Full-width glass track — same 24px content box as primary nav / pager panel. */
 export const PROFILE_METRIC_SELECTOR_TRACK_CLASS =
-  "flex w-full min-h-11 items-center gap-1 rounded-full border border-white/10 bg-black/30 p-1 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" as const;
+  "flex w-full min-h-11 items-center gap-1 rounded-full border border-[#DCE3EC] bg-[#EEF3FF] p-1 shadow-none dark:border-white/10 dark:bg-black/30 dark:backdrop-blur-md dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" as const;
 
 /**
  * Equal-width segment hit target inside the track.
@@ -17,10 +17,10 @@ export const PROFILE_METRIC_SELECTOR_SEGMENT_CLASS =
 
 /** Brighter ice-glass platter — no solid #0a83ff CTA fill. */
 export const PROFILE_METRIC_SELECTOR_ACTIVE_CLASS =
-  "bg-gradient-to-b from-white/[0.16] to-white/[0.06] font-semibold text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),inset_0_-0.5px_0_0_rgba(0,0,0,0.35)]" as const;
+  "bg-white font-semibold text-[#101828] shadow-[0_1px_2px_rgba(16,24,40,0.08),0_0_0_1px_rgba(16,24,40,0.06)] dark:bg-transparent dark:bg-gradient-to-b dark:from-white/[0.16] dark:to-white/[0.06] dark:font-semibold dark:text-white dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),inset_0_-0.5px_0_0_rgba(0,0,0,0.35)]" as const;
 
 export const PROFILE_METRIC_SELECTOR_INACTIVE_CLASS =
-  "bg-transparent font-medium text-white/55 hover:text-white/80" as const;
+  "bg-transparent font-medium text-[#667085] hover:text-[#101828] dark:text-white/55 dark:hover:text-white/80" as const;
 
 /** Gap from metric selector → first section heading (both modes). */
 export const PROFILE_OVERVIEW_AFTER_SELECTOR_CLASS = "mb-3" as const;

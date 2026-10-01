@@ -82,10 +82,10 @@ describe("settings root IA slice 1", () => {
     assert.doesNotMatch(settingsSrc, /fetchPushNotificationPreferences/);
   });
 
-  it("keeps Start feed with sound inline on root; Light mode removed for launch", () => {
-    assert.doesNotMatch(settingsSrc, /data-testid="switch-light-mode"/);
-    assert.doesNotMatch(settingsSrc, /Light mode/);
-    assert.doesNotMatch(settingsSrc, /getStoredTheme/);
+  it("keeps Start feed with sound and the semantic Light Mode switch on root", () => {
+    assert.match(settingsSrc, /data-testid="switch-light-mode"/);
+    assert.match(settingsSrc, /Light Mode/);
+    assert.match(settingsSrc, /getStoredTheme/);
     assert.match(settingsSrc, /data-testid="switch-feed-start-with-sound"/);
     assert.match(settingsSrc, /getFeedStartWithSound/);
   });
@@ -239,7 +239,7 @@ describe("settings root chrome slice 3", () => {
     assert.match(settingsSrc, /button-settings-notifications/);
     assert.match(settingsSrc, /button-settings-artist/);
     assert.match(settingsSrc, /button-settings-feedback/);
-    assert.doesNotMatch(settingsSrc, /switch-light-mode/);
+    assert.match(settingsSrc, /switch-light-mode/);
     assert.match(settingsSrc, /switch-feed-start-with-sound/);
     assert.match(settingsSrc, /button-manage-account/);
     assert.match(settingsSrc, /button-logout/);

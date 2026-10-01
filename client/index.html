@@ -2,11 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <style>
+    <style id="dubhub-shell-safety">
       /*
        * STARTUP-CONTINUITY-4: native splash is now held with
        * @capacitor/splash-screen until the React startup overlay commits.
-       * Raw HTML should keep only the dark underlay safety colour.
+       * Default underlay is the canonical Dark shell. The bootstrap below
+       * retargets this only for an explicit semantic Light preference.
        */
       html,
       body {
@@ -25,9 +26,33 @@
     <script>
       (function () {
         try {
-          // Dark-first bootstrap: preserve saved light preference only.
-          if (localStorage.getItem("dubhub-theme") !== "light") {
-            document.documentElement.classList.add("dark");
+          /*
+           * Must match theme.ts: THEME_STORAGE_KEY, THEME_EPOCH_KEY,
+           * THEME_EPOCH_SEMANTIC_LIGHT. Legacy "light" has no epoch and
+           * must paint Dark before CSS, so the old blue palette cannot flash.
+           */
+          var themeKey = "dubhub-theme";
+          var epochKey = "dubhub-theme-epoch";
+          var semanticLightEpoch = "semantic-light-1";
+          var theme = localStorage.getItem(themeKey);
+          var epoch = localStorage.getItem(epochKey);
+          var explicitLight = theme === "light" && epoch === semanticLightEpoch;
+          var root = document.documentElement;
+          if (explicitLight) {
+            root.classList.remove("dark");
+            root.style.colorScheme = "light";
+            var safety = document.getElementById("dubhub-shell-safety");
+            if (safety) {
+              safety.textContent =
+                "html, body { margin: 0; padding: 0; background-color: #F6F8FC; }";
+            }
+          } else {
+            if (theme === "light") {
+              localStorage.setItem(themeKey, "dark");
+              localStorage.removeItem(epochKey);
+            }
+            root.classList.add("dark");
+            root.style.colorScheme = "dark";
           }
         } catch (e) {}
       })();

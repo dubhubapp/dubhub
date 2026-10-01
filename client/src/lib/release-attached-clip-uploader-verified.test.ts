@@ -97,11 +97,11 @@ describe("ReleaseAttachedClipCard uploader tick presentation", () => {
     assert.doesNotMatch(titleRow, /items-start gap-1 text-\[11px\]/);
   });
 
-  it("verified uploader username uses goldTextClass; non-verified stays muted", () => {
-    assert.match(clipsSrc, /goldTextClass/);
+  it("verified uploader username uses compact identity; non-verified stays muted", () => {
+    assert.match(clipsSrc, /ARTIST_IDENTITY_COMPACT_CLASS/);
     assert.match(
       clipsSrc,
-      /clip\.isVerifiedArtist \? goldTextClass : "text-muted-foreground"/,
+      /clip\.isVerifiedArtist \? ARTIST_IDENTITY_COMPACT_CLASS : "text-muted-foreground"/,
     );
   });
 });

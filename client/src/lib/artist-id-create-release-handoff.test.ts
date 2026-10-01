@@ -241,7 +241,7 @@ describe("artist-id create-release handoff wiring", () => {
     const attachThroughEnd = dialogSrc.slice(attachStepIdx);
     assert.doesNotMatch(
       attachThroughEnd,
-      /DialogTitle className="text-lg font-semibold tracking-tight text-white"/,
+      /DialogTitle className="text-lg font-semibold tracking-tight text-foreground dark:text-white"/,
     );
   });
 

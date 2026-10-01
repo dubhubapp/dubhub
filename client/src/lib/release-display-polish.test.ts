@@ -63,7 +63,7 @@ describe("attached post uploader username display", () => {
   it("attached clip card uses helper without a second @ prefix", () => {
     assert.match(clipsSrc, /formatUsernameDisplay\(clip\.uploaderUsername\)/);
     assert.doesNotMatch(clipsSrc, /@\{formatUsernameDisplay/);
-    assert.match(clipsSrc, /goldTextClass/);
+    assert.match(clipsSrc, /ARTIST_IDENTITY_COMPACT_CLASS/);
     assert.match(clipsSrc, /GoldVerifiedTick/);
   });
 });
@@ -154,7 +154,10 @@ describe("remove saved — single menu shell", () => {
     const idx = detailSrc.indexOf("menu-remove-saved-release");
     assert.ok(idx > 0);
     const block = detailSrc.slice(idx - 550, idx + 300);
-    assert.match(detailSrc, /rounded-\[15px\] border-white\/10 bg-\[#141a30\]\/95/);
+    assert.match(
+      detailSrc,
+      /rounded-\[15px\] border-\[#DCE3EC\] bg-white[\s\S]*dark:border-white\/10 dark:bg-\[#141a30\]\/95/,
+    );
     assert.doesNotMatch(block, /APP_MATERIAL_DESTRUCTIVE_ACTION_SURFACE_CLASS/);
     assert.doesNotMatch(block, /dubhub-app-destructive-action-surface/);
     assert.match(block, /text-red-400/);

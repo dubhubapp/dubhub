@@ -112,18 +112,20 @@ describe("ID-marking artist mentions — shared renderer semantics", () => {
       u.toLowerCase() === "artist1",
     );
     const html = renderToStaticMarkup(React.createElement(React.Fragment, null, ...nodes));
-    assert.match(html, /text-yellow-500/);
+    assert.match(html, /dubhub-artist-identity-compact/);
+    assert.match(html, /text-foreground/);
+    assert.match(html, /text-\[#FFD700\]/);
     assert.match(html, /@Artist1/);
     assert.match(html, /Verified Artist Profile|title="Verified Artist Profile"/);
     assert.match(html, /is this you\?/);
-    assert.doesNotMatch(html, /text-yellow-500[^>]*>is this you/);
+    assert.doesNotMatch(html, /dubhub-artist-identity-compact[^>]*>is this you/);
   });
 
   it("non-verified mention inherits body color (text-inherit) without tick", () => {
     const nodes = renderCommentMentionNodes("@Listener1 hello", () => false);
     const html = renderToStaticMarkup(React.createElement(React.Fragment, null, ...nodes));
     assert.match(html, /text-inherit/);
-    assert.doesNotMatch(html, /text-yellow-500/);
+    assert.doesNotMatch(html, /text-yellow-500|dubhub-gold-text-surface|dubhub-artist-identity-compact/);
     assert.doesNotMatch(html, /Verified Artist Profile/);
   });
 

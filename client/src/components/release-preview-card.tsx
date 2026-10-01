@@ -93,6 +93,7 @@ export function ReleasePreviewCard({
             releaseTimezone={releasePreview.releaseTimezone}
             upcoming={upcoming}
             size="compact"
+            surface="media"
             data-testid="release-preview-status-pill"
           />
         </div>

@@ -130,7 +130,7 @@ export const PROFILE_NOTIFICATION_UNREAD_DOT_CLASS =
  * Replaces legacy `bg-gray-800` + sharp `rounded`.
  */
 export const PROFILE_NOTIFICATION_MEDIA_FRAME_CLASS =
-  "relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/25" as const;
+  "relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg border border-border bg-muted dark:border-white/10 dark:bg-black/25" as const;
 
 /** Centered Bell on empty media — muted, no glow. */
 export const PROFILE_NOTIFICATION_MEDIA_FALLBACK_CLASS =
@@ -143,7 +143,7 @@ export const PROFILE_NOTIFICATION_MEDIA_FALLBACK_ICON_CLASS =
  * Quiet group-count pill — material wash, no bright border / glow.
  */
 export const PROFILE_NOTIFICATION_GROUP_COUNT_CLASS =
-  "rounded-full bg-white/[0.08] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground" as const;
+  "rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:bg-white/[0.08]" as const;
 
 /** Primary body — compact; unread may use medium weight via caller. */
 export const PROFILE_NOTIFICATION_BODY_CLASS = "text-sm whitespace-pre-line text-foreground/90" as const;
@@ -157,11 +157,11 @@ export const PROFILE_NOTIFICATION_SKELETON_ROW_CLASS =
 
 /** Square media placeholder for loading skeleton. */
 export const PROFILE_NOTIFICATION_SKELETON_MEDIA_SQUARE_CLASS =
-  "h-14 w-14 flex-shrink-0 animate-pulse rounded-lg border border-white/10 bg-white/10" as const;
+  "h-14 w-14 flex-shrink-0 animate-pulse rounded-lg border border-border bg-foreground/10 dark:border-white/10 dark:bg-white/10" as const;
 
 /** Circle media placeholder (person-event skeleton variety). */
 export const PROFILE_NOTIFICATION_SKELETON_MEDIA_CIRCLE_CLASS =
-  "h-14 w-14 flex-shrink-0 animate-pulse rounded-full border border-white/10 bg-white/10" as const;
+  "h-14 w-14 flex-shrink-0 animate-pulse rounded-full border border-border bg-foreground/10 dark:border-white/10 dark:bg-white/10" as const;
 
 export function getProfileNotificationUnreadSurfaceClass(hasUnread: boolean): string {
   return hasUnread ? PROFILE_NOTIFICATION_UNREAD_SURFACE_CLASS : "";

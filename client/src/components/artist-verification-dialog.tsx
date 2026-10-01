@@ -13,6 +13,8 @@ import type { CommentWithUser } from "@shared/schema";
 import { useUser } from "@/lib/user-context";
 import { formatDate } from "@/pages/release-tracker";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { commentMentionsUsername } from "@shared/mentionParsing";
 import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
@@ -606,8 +608,8 @@ export function ArtistVerificationDialog({
         {step === "verify" ? (
           <>
             <DialogHeader className="space-y-1 text-center">
-              <DialogTitle className="text-lg font-semibold tracking-tight text-white">Artist Identification</DialogTitle>
-              <DialogDescription className="text-sm leading-relaxed text-white/65">
+              <DialogTitle className="text-lg font-semibold tracking-tight text-foreground dark:text-white">Artist Identification</DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-muted-foreground dark:text-white/65">
                 You were tagged in this post. Select the correct ID, then confirm or mark Not my
                 track.
               </DialogDescription>
@@ -616,12 +618,12 @@ export function ArtistVerificationDialog({
             <div className="mt-4 min-h-[24rem]">
               {isLoading ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
-                  <p className="text-sm leading-relaxed text-white/65">
+                  <p className="text-sm leading-relaxed text-muted-foreground dark:text-white/65">
                     Confirm the first or most relevant comment that tagged you, or mark Not my
                     track.
                   </p>
-                  <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15">
-                    <div className="flex flex-col items-center gap-2 text-white/75">
+                  <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-[#DCE3EC] bg-[#F6F8FC] dark:border-white/10 dark:bg-black/15">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground dark:text-white/75">
                       <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
                       <p className="text-xs">Loading comments...</p>
                     </div>
@@ -629,17 +631,17 @@ export function ArtistVerificationDialog({
                 </div>
               ) : commentsList.length === 0 ? (
                 <div className="flex h-full min-h-[24rem] flex-col">
-                  <p className="text-sm leading-relaxed text-white/65">
+                  <p className="text-sm leading-relaxed text-muted-foreground dark:text-white/65">
                     Confirm the first or most relevant comment that tagged you, or mark Not my
                     track.
                   </p>
-                  <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
+                  <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-[#DCE3EC] bg-[#F6F8FC] dark:border-white/10 dark:bg-black/15 py-8 text-center text-muted-foreground dark:text-white/70">
                     <p>No comments yet. Select a comment to respond to.</p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <p className="text-sm leading-relaxed text-white/65">
+                  <p className="text-sm leading-relaxed text-muted-foreground dark:text-white/65">
                     Confirm the first or most relevant comment that tagged you, or mark Not my
                     track.
                   </p>
@@ -657,7 +659,7 @@ export function ArtistVerificationDialog({
                         <div
                           key={comment.id}
                           className={cn(
-                            "flex min-w-0 max-w-full items-start space-x-3 rounded-lg border border-white/12 bg-white/[0.03] transition-colors hover:bg-white/[0.05]",
+                            "flex min-w-0 max-w-full items-start space-x-3 rounded-lg border border-[#DCE3EC] bg-white transition-colors hover:bg-[#F6F8FC] dark:border-white/12 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]",
                             isSelected && ID_MARKING_PICKER_ROW_SELECTED_CLASS,
                             isReply ? "border-l-2 border-l-white/25 pb-3 pl-6 pr-3 pt-3" : "p-3",
                           )}
@@ -668,6 +670,8 @@ export function ArtistVerificationDialog({
                               <div className="flex min-w-0 items-center gap-2">
                                 <div
                                   className={`w-8 h-8 shrink-0 rounded-full overflow-hidden flex items-center justify-center border ${
+                                    isDefaultAvatarUrl(comment.user.avatar_url) ? "bg-[#0f1324] " : ""
+                                  }${
                                     comment.user.verified_artist ? "border-[#FFD700] " + goldAvatarGlowShadowClass : "border-primary/20"
                                   }`}
                                 >
@@ -675,7 +679,11 @@ export function ArtistVerificationDialog({
                                     <img
                                       src={comment.user.avatar_url}
                                       alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
-                                      className="w-full h-full object-cover"
+                                      className={`h-full w-full object-cover${
+                                        isDefaultAvatarUrl(comment.user.avatar_url)
+                                          ? " avatar-media avatar-default-media"
+                                          : ""
+                                      }`}
                                     />
                                   ) : (
                                     <User className="w-4 h-4 text-primary" />
@@ -684,7 +692,7 @@ export function ArtistVerificationDialog({
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span
                                     className={`min-w-0 break-words text-sm font-semibold ${
-                                      comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
+                                      comment.user.verified_artist ? ARTIST_IDENTITY_COMPACT_CLASS : "text-foreground dark:text-white"
                                     }`}
                                   >
                                     {formatUsernameDisplay(comment.user.username)}
@@ -715,24 +723,24 @@ export function ArtistVerificationDialog({
                                 )}
                               </div>
                             </div>
-                            <p className="break-words text-sm text-white/92">
+                            <p className="break-words text-sm text-foreground dark:text-white/92">
                               {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
                             </p>
                             {comment.taggedArtist && (
-                              <p className="mt-1 break-words text-xs text-white/65">
+                              <p className="mt-1 break-words text-xs text-muted-foreground dark:text-white/65">
                                 Tagged artist:{" "}
                                 <span
                                   className={
                                     isVerifiedArtistUsername(comment.taggedArtist.username ?? "")
-                                      ? "font-medium text-[#FFD700]"
-                                      : "text-white/92"
+                                      ? `${ARTIST_IDENTITY_COMPACT_CLASS} font-medium`
+                                      : "text-foreground dark:text-white/92"
                                   }
                                 >
                                   {formatUsernameDisplay(comment.taggedArtist.username)}
                                 </span>
                               </p>
                             )}
-                            <div className="mt-2 flex items-center gap-1 text-[11px] text-white/50">
+                            <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground dark:text-white/50">
                               <Clock3 className="h-3.5 w-3.5 shrink-0" />
                               <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                             </div>
@@ -743,28 +751,28 @@ export function ArtistVerificationDialog({
                   </RadioGroup>
 
                   <div className="space-y-2">
-                    <Label htmlFor="artist-title" className="text-sm text-white/75">Title (optional)</Label>
+                    <Label htmlFor="artist-title" className="text-sm text-muted-foreground dark:text-white/75">Title (optional)</Label>
                     <Input
                       id="artist-title"
                       placeholder="Track title"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      className="h-10 min-w-0 rounded-[15px] border border-white/15 bg-white/[0.06] text-white placeholder:text-white/40 focus-visible:ring-1 focus-visible:ring-[#0a83ff]/50 focus-visible:ring-offset-0"
+                      className="h-10 min-w-0 rounded-[15px] border border-[#DCE3EC] bg-white text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-[#0a83ff]/50 focus-visible:ring-offset-0 dark:border-white/15 dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/40"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="artist-collaborators" className="text-sm text-white/75">Collaborators (optional)</Label>
+                    <Label htmlFor="artist-collaborators" className="text-sm text-muted-foreground dark:text-white/75">Collaborators (optional)</Label>
                     <Input
                       id="artist-collaborators"
                       placeholder="e.g. Artist A, Artist B"
                       value={collaborators}
                       onChange={(e) => setCollaborators(e.target.value)}
-                      className="h-10 min-w-0 rounded-[15px] border border-white/15 bg-white/[0.06] text-white placeholder:text-white/40 focus-visible:ring-1 focus-visible:ring-[#0a83ff]/50 focus-visible:ring-offset-0"
+                      className="h-10 min-w-0 rounded-[15px] border border-[#DCE3EC] bg-white text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-[#0a83ff]/50 focus-visible:ring-offset-0 dark:border-white/15 dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/40"
                     />
                   </div>
 
                   <div
-                    className="space-y-3 border-t border-white/15 pt-4"
+                    className="space-y-3 border-t border-[#DCE3EC] dark:border-white/15 pt-4"
                     data-testid="artist-verification-actions"
                   >
                     <Button
@@ -799,7 +807,7 @@ export function ArtistVerificationDialog({
                       )}
                     </Button>
                     <p
-                      className="px-0.5 text-center text-[11px] leading-snug text-white/45"
+                      className="px-0.5 text-center text-[11px] leading-snug text-muted-foreground dark:text-white/45"
                       data-testid="artist-anonymous-metadata-helper"
                     >
                       Title is optional and public. Collaborators are not saved on anonymous IDs —
@@ -809,7 +817,7 @@ export function ArtistVerificationDialog({
                       <Button
                         variant="ghost"
                         onClick={handleClose}
-                        className="h-9 px-2 text-sm font-medium text-white/55 hover:bg-white/5 hover:text-white/80"
+                        className="h-9 px-2 text-sm font-medium text-muted-foreground hover:bg-black/[0.04] hover:text-foreground dark:text-white/55 dark:hover:bg-white/5 dark:hover:text-white/80"
                         data-testid="button-cancel-artist-verification"
                       >
                         Cancel
@@ -818,7 +826,7 @@ export function ArtistVerificationDialog({
                         variant="ghost"
                         onClick={handleDeny}
                         disabled={!selectedCommentId || verifyActionsPending}
-                        className="h-9 px-2 text-sm font-medium text-red-400/90 hover:bg-white/5 hover:text-red-300"
+                        className="h-9 px-2 text-sm font-medium text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400/90 dark:hover:bg-white/5 dark:hover:text-red-300"
                         data-testid="button-artist-deny"
                       >
                         {denyMutation.isPending ? "Saving…" : "Not my track"}
@@ -856,7 +864,7 @@ export function ArtistVerificationDialog({
                   >
                     <RadioGroupItem value={rel.id} id={rel.id} className="mt-0.5 shrink-0" />
                     <Label htmlFor={rel.id} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-black/25">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#DCE3EC] bg-[#F6F8FC] dark:border-white/10 dark:bg-black/25">
                         {rel.artwork_url ? (
                           <img src={rel.artwork_url} alt="" className="h-full w-full object-cover" />
                         ) : (
@@ -882,7 +890,7 @@ export function ArtistVerificationDialog({
                 ))}
               </RadioGroup>
               <div
-                className="space-y-3 border-t border-white/15 pt-4"
+                className="space-y-3 border-t border-[#DCE3EC] dark:border-white/15 pt-4"
                 data-testid="artist-attach-release-actions"
               >
                 <Button
@@ -925,7 +933,7 @@ export function ArtistVerificationDialog({
               </DialogDescription>
             </DialogHeader>
             <div
-              className="mt-4 space-y-3 border-t border-white/15 pt-4"
+              className="mt-4 space-y-3 border-t border-[#DCE3EC] dark:border-white/15 pt-4"
               data-testid="artist-create-release-handoff-actions"
             >
               <Button

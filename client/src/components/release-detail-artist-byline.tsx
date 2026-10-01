@@ -1,5 +1,9 @@
 import { GoldVerifiedTick } from "@/components/verified-artist";
 import {
+  ARTIST_IDENTITY_COMPACT_CLASS,
+  ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS,
+} from "@/lib/artist-identity-presentation";
+import {
   getReleaseBylineSegments,
   type CollaboratorLike,
 } from "@/lib/release-display";
@@ -33,19 +37,27 @@ export function ReleaseDetailArtistByline({
         {ownerNavUsername ? (
           <button
             type="button"
-            className={ARTIST_LINK_CLASS}
+            className={cn(
+              ARTIST_LINK_CLASS,
+              ARTIST_IDENTITY_COMPACT_CLASS,
+              ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS,
+            )}
             onClick={() => onArtistPress(ownerNavUsername)}
             data-testid={`release-detail-artist-link-${ownerNavUsername}`}
           >
             {owner.label}
           </button>
         ) : (
-          <span>{owner.label}</span>
+          <span className={cn(ARTIST_IDENTITY_COMPACT_CLASS, ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS)}>
+            {owner.label}
+          </span>
         )}
-        <GoldVerifiedTick
-          className="ml-0.5 inline h-3 w-3 shrink-0 align-[-0.1em] text-[#FFD700]"
-          glow="inline"
-        />
+        <span className="inline-flex">
+          <GoldVerifiedTick
+            className="ml-0.5 inline h-3 w-3 shrink-0 text-[#FFD700]"
+            glow="inline"
+          />
+        </span>
         {acceptedCollabs.map((collab) => (
           <span key={collab.username} className="inline-flex max-w-full items-center">
             <span className="mx-0.5" aria-hidden>

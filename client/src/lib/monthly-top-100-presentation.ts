@@ -38,11 +38,11 @@ export const MONTHLY_TOP_100_BADGE_POPUP_CLASS =
 
 /** Leaderboard: compact ice chip in the username identity cluster. */
 export const MONTHLY_TOP_100_BADGE_LEADERBOARD_CLASS =
-  `${MONTHLY_TOP_100_BADGE_BASE_CLASS} gap-[2px] py-[2px] pl-[4px] pr-[7px] text-[10px] leading-none` as const;
+  `${MONTHLY_TOP_100_BADGE_BASE_CLASS} dubhub-hundred-club-on-surface gap-[2px] py-[2px] pl-[4px] pr-[7px] text-[10px] leading-none` as const;
 
 /** Label optical nudge — sits with the icon as one centered unit. */
 export const MONTHLY_TOP_100_BADGE_LABEL_CLASS =
-  "whitespace-nowrap leading-none tracking-tight text-white/88 translate-y-[0.5px]" as const;
+  "dubhub-hundred-club-label whitespace-nowrap leading-none tracking-tight text-white/88 translate-y-[0.5px]" as const;
 
 /** Accessible name — visible copy is icon + “Club”. */
 export const MONTHLY_TOP_100_ACHIEVEMENT_A11Y_LABEL =

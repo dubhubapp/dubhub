@@ -83,6 +83,7 @@ export function HomeFeedInitialSkeleton() {
           className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[var(--video-card-overlay-bottom,0px)] bg-background"
         />
         <div
+          data-home-feed-skeleton-fade
           className={cn(
             "pointer-events-none absolute inset-x-0 bottom-[var(--video-card-overlay-bottom,0px)] z-20",
             "bg-gradient-to-t from-background from-30% via-background/65 to-transparent",

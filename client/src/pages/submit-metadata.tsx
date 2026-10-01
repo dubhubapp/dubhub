@@ -46,7 +46,7 @@ import {
   wideLandscapeCssBackgroundCoverStyle,
   wideLandscapeReadabilityOverlayClass,
 } from "@/lib/wide-landscape-presentation";
-import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
+import { cancelPostAndReturnToHome } from "@/lib/post-flow";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 import {
@@ -80,15 +80,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_ICON_CLASS,
   APP_MATERIAL_FIELD_CLASS,
   APP_MATERIAL_FIELD_SUCCESS_CLASS,
   APP_MATERIAL_FORM_PRIMARY_TALL_CLASS,
   APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
   APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS,
   APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
-  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS,
+  APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
   APP_MATERIAL_TOAST_SURFACE_CLASS,
   APP_MATERIAL_SELECT_CONTENT_CLASS,
@@ -261,12 +263,12 @@ function FieldCompleteCheck({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-green-500/25 bg-green-700/35",
+        "pointer-events-none absolute z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#15803d]/40 bg-[#dcfce7] dark:border-green-500/25 dark:bg-green-700/35",
         className,
       )}
       aria-hidden
     >
-      <Check className="h-3 w-3 text-green-400/90" strokeWidth={2.25} />
+      <Check className="h-3 w-3 text-[#15803d] dark:text-green-400/90" strokeWidth={2.25} />
     </span>
   );
 }
@@ -1595,7 +1597,10 @@ export default function SubmitMetadata() {
     }
     dubhubVideoDebugLog("[DubHub][SubmitDetails]", "cancel post cleanup done", {});
     dubhubVideoDebugLog("[DubHub][SubmitDetails]", "navigate home", { route: "/" });
-    await cancelPostAndHardResetToHome("submit-details-cancel-post");
+    await cancelPostAndReturnToHome({
+      reason: "submit-details-cancel-post",
+      navigateHome: () => setLocation("/"),
+    });
   };
 
   const watched = form.watch();
@@ -1658,7 +1663,7 @@ export default function SubmitMetadata() {
                 <>
                   <Progress
                     value={uploadHandoff ? 100 : uploadProgress}
-                    className="h-1 bg-white/10"
+                    className="h-1 bg-black/10 dark:bg-white/10"
                   />
                   <p className="text-center text-sm font-medium text-foreground tabular-nums">
                     {uploadHandoff || uploadProgress >= 99
@@ -1668,7 +1673,7 @@ export default function SubmitMetadata() {
                 </>
               ) : (
                 <div className="flex items-center justify-center gap-2.5 py-0.5">
-                  <InlineSpinner className="border-white" sizeClassName="h-4 w-4" />
+                  <InlineSpinner className="border-foreground dark:border-white" sizeClassName="h-4 w-4" />
                   <p className="text-sm font-medium text-foreground">
                     Opening post…
                   </p>
@@ -1683,12 +1688,12 @@ export default function SubmitMetadata() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, "shrink-0")}
+              className={cn(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, "shrink-0")}
               onClick={handleBack}
               aria-label="Back"
               data-testid="button-back-metadata"
             >
-              <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+              <ChevronLeft className={APP_MATERIAL_PAGE_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
             </button>
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-bold tracking-tight text-foreground">Track details</h1>
@@ -1696,7 +1701,7 @@ export default function SubmitMetadata() {
             <Button
               type="button"
               variant="ghost"
-              className="text-white/75 hover:text-white hover:bg-white/10"
+              className="text-muted-foreground hover:bg-black/[0.04] hover:text-foreground dark:text-white/75 dark:hover:bg-white/10 dark:hover:text-white"
               onClick={() => setShowCancelDialog(true)}
               data-testid="button-cancel-metadata"
             >
@@ -2071,7 +2076,7 @@ export default function SubmitMetadata() {
                             max={getTodayInputValue()}
                             className={cn(
                               APP_MATERIAL_FIELD_CLASS,
-                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start px-3 py-0 pr-12 text-white text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
+                              "dubhub-date-input h-10 min-w-0 w-full max-w-full items-center justify-start px-3 py-0 pr-12 text-left transition-[border-color,box-shadow,background-color] [color-scheme:light] dark:text-white dark:[color-scheme:dark] md:text-sm",
                               "focus-visible:ring-offset-0",
                               success && fieldSuccessOutlineClass,
                               success && "ring-inset",
@@ -2264,12 +2269,15 @@ export default function SubmitMetadata() {
               Your current clip and edits will be discarded.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}>
+          <AlertDialogFooter className={APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS}>
+            <AlertDialogCancel className={APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS}>
               Keep editing
             </AlertDialogCancel>
             <AlertDialogAction
-              className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
+              className={cn(
+                APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+                APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS,
+              )}
               onClick={() => {
                 void handleCancelPost();
               }}

@@ -12,7 +12,7 @@ export const ID_MARKING_DIALOG_OVERLAY_CLASS =
   `${APP_MATERIAL_OVERLAY_BACKDROP_CLASS} fixed inset-0 z-[120] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200 motion-reduce:animate-none motion-reduce:transition-none`;
 
 export const ID_MARKING_DIALOG_CONTENT_CLASS =
-  `${APP_MATERIAL_OVERLAY_SURFACE_CLASS} z-[120] w-[calc(100%-2rem)] max-w-[30rem] max-h-[80vh] overflow-y-auto scrollbar-hide p-5 text-white sm:p-6 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] duration-200 motion-reduce:animate-none motion-reduce:transition-none`;
+  `${APP_MATERIAL_OVERLAY_SURFACE_CLASS} dubhub-id-marking-atmosphere z-[120] w-[calc(100%-2rem)] max-w-[30rem] max-h-[80vh] overflow-y-auto scrollbar-hide p-5 text-foreground dark:text-white sm:p-6 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] duration-200 motion-reduce:animate-none motion-reduce:transition-none`;
 
 /**
  * Picker chrome. Cue pills are the frozen C8D.1 semantic system
@@ -21,15 +21,16 @@ export const ID_MARKING_DIALOG_CONTENT_CLASS =
  * Dialog surface tokens above compose app-material; preserve z-[120] + max-w-[30rem].
  */
 export const ID_MARKING_PICKER_ROW_CLASS =
-  "flex min-w-0 items-start space-x-3 rounded-lg border border-white/12 bg-white/[0.03] p-3 transition-colors hover:bg-white/[0.05]";
+  "flex min-w-0 items-start space-x-3 rounded-lg border border-[#DCE3EC] bg-white p-3 transition-colors hover:bg-[#F6F8FC] dark:border-white/12 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]";
 
 export const ID_MARKING_PICKER_ROW_SELECTED_CLASS =
-  "border-[#0a83ff]/70 bg-white/[0.06]";
+  "border-[#0a83ff]/70 bg-[#0a83ff]/10 dark:bg-white/[0.06]";
 
-export const ID_MARKING_PICKER_ROW_REPLY_CLASS = "ml-3 border-l-2 border-l-white/20";
+export const ID_MARKING_PICKER_ROW_REPLY_CLASS =
+  "ml-3 border-l-2 border-l-[#DCE3EC] dark:border-l-white/20";
 
 export const ID_MARKING_PICKER_META_PILL_CLASS =
-  "whitespace-nowrap rounded-full border border-white/20 bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-white/75";
+  "whitespace-nowrap rounded-full border border-[#DCE3EC] bg-[#F6F8FC] px-2 py-0.5 text-[11px] font-medium text-muted-foreground dark:border-white/20 dark:bg-white/[0.06] dark:text-white/75";
 
 /** Oldest Comment — semantic blue cue (pill only; not row selection). */
 export const ID_MARKING_PICKER_OLDEST_PILL_CLASS =
@@ -37,4 +38,4 @@ export const ID_MARKING_PICKER_OLDEST_PILL_CLASS =
 
 /** First Comment / First Tag — semantic gold cue (pill only; not row selection). */
 export const ID_MARKING_PICKER_FIRST_PILL_CLASS =
-  "whitespace-nowrap rounded-full border border-[#FFD700]/80 bg-[#FFD700]/25 px-2 py-0.5 text-[11px] font-semibold text-white shadow-[0_0_14px_rgba(255,215,0,0.35)]";
+  "whitespace-nowrap rounded-full border border-[#FFD700]/80 bg-[#FFD700]/25 px-2 py-0.5 text-[11px] font-semibold text-[#8A6200] shadow-[0_0_14px_rgba(255,215,0,0.35)] dark:text-white";

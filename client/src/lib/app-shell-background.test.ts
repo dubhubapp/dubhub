@@ -37,9 +37,12 @@ function braceBlock(src: string, marker: string): string {
 }
 
 describe("APP-SHELL-2 canonical app-shell background", () => {
-  it("defines a dedicated shell token pinned to #0f1324", () => {
+  it("defines a light shell on :root and the canonical dark shell on .dark", () => {
     const root = braceBlock(cssSrc, ":root {");
-    assert.match(root, /--app-shell-background:\s*#0f1324/);
+    const dark = braceBlock(cssSrc, "\n.dark {");
+    assert.match(root, /--app-shell-background:\s*#F6F8FC/);
+    assert.doesNotMatch(root, /--app-shell-background:\s*#0f1324/);
+    assert.match(dark, /--app-shell-background:\s*#0f1324/);
   });
 
   it("paints html, body, and #root from the shell token, not --dark or --background", () => {
@@ -54,11 +57,12 @@ describe("APP-SHELL-2 canonical app-shell background", () => {
     assert.doesNotMatch(body, /var\(--dark\)|var\(--background\)|bg-dark/);
   });
 
-  it("does not let .dark retint the shell token", () => {
+  it("keeps html.dark painting the shell token, which .dark pins to #0f1324", () => {
     const dark = braceBlock(cssSrc, "\n.dark {");
-    assert.doesNotMatch(dark, /--app-shell-background/);
+    assert.match(dark, /--app-shell-background:\s*#0f1324/);
     const htmlDark = braceBlock(cssSrc, "html.dark {");
     assert.match(htmlDark, /background-color:\s*var\(--app-shell-background\)/);
+    assert.match(htmlDark, /color-scheme:\s*dark/);
   });
 
   it("does not set html { color-scheme: dark }", () => {

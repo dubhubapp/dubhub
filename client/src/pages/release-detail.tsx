@@ -22,8 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS,
   APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
   APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
   APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
@@ -608,10 +608,10 @@ export default function ReleaseDetail() {
             type="button"
             onClick={handleBack}
             aria-label="Back"
-            className={APP_MATERIAL_BACK_BUTTON_CLASS}
+            className={APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS}
             data-testid="release-detail-back"
           >
-            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+            <ChevronLeft className={APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
           </button>
           <div className="flex min-w-0 items-center justify-end gap-2">
             {showSavedToReleasesStatus ? (
@@ -626,7 +626,7 @@ export default function ReleaseDetail() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="ios-press h-9 w-9 shrink-0 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                className="ios-press h-9 w-9 shrink-0 text-muted-foreground hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/10"
                 aria-label={isOwner ? "Edit release" : "Manage attachments"}
                 data-testid="button-edit-release"
                 onClick={() => {
@@ -660,10 +660,10 @@ export default function ReleaseDetail() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="end"
-                  className="min-w-[12rem] rounded-[15px] border-white/10 bg-[#141a30]/95 p-1.5 text-foreground shadow-[0_14px_36px_rgba(0,0,0,0.45)]"
+                  className="min-w-[12rem] rounded-[15px] border-[#DCE3EC] bg-white p-1.5 text-foreground shadow-[0_14px_36px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-[#141a30]/95 dark:shadow-[0_14px_36px_rgba(0,0,0,0.45)]"
                 >
                   <DropdownMenuItem
-                    className="mx-0 my-0 cursor-pointer gap-2 px-3 py-2.5 text-red-400 focus:bg-white/[0.08] focus:text-red-400 data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-red-400"
+                    className="mx-0 my-0 cursor-pointer gap-2 px-3 py-2.5 text-red-400 focus:bg-black/[0.04] focus:text-red-400 data-[highlighted]:bg-black/[0.04] data-[highlighted]:text-red-400 dark:focus:bg-white/[0.08] dark:data-[highlighted]:bg-white/[0.08]"
                     onSelect={(e) => {
                       e.preventDefault();
                       setReleaseMenuOpen(false);
@@ -732,10 +732,10 @@ export default function ReleaseDetail() {
                   onArtistPress={openArtistProfile}
                   className="break-words"
                 />
-                <h1 className="mt-0.5 text-xl font-bold leading-tight break-words whitespace-normal">
+                <h1 className="mt-0.5 text-xl font-bold leading-tight break-words whitespace-normal text-foreground">
                   {sanitizeReleaseText(releaseData.title)}
                 </h1>
-                <p className="text-sm mt-1">
+                <p className="mt-1 text-sm text-muted-foreground dark:text-inherit">
                   {releaseStatusSubtitle(timingInput) ||
                     formatDate(releaseData.releaseDate)}
                 </p>
@@ -797,7 +797,7 @@ export default function ReleaseDetail() {
 
         {isSubscriptionPausedOwner ? (
           <div
-            className="mb-4 space-y-1.5 rounded-lg border border-white/10 bg-muted/30 px-3 py-2"
+            className="mb-4 space-y-1.5 rounded-lg border border-[#DCE3EC] bg-white/70 px-3 py-2 dark:border-white/10 dark:bg-muted/30"
             data-testid="banner-release-subscription-paused"
             role="status"
           >
@@ -812,7 +812,7 @@ export default function ReleaseDetail() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="mt-0.5 h-8 text-xs border-white/15 bg-black/20"
+                className="mt-0.5 h-8 border-[#DCE3EC] bg-white text-xs dark:border-white/15 dark:bg-black/20"
                 onClick={() =>
                   requestVerifiedArtistToolsUpgrade(toast, {
                     source: "future_release_paused",
@@ -828,7 +828,7 @@ export default function ReleaseDetail() {
 
         {isSubscriptionPausedPublic ? (
           <div
-            className="mb-4 rounded-lg border border-white/10 bg-black/30 px-3 py-2"
+            className="mb-4 rounded-lg border border-[#DCE3EC] bg-white/80 px-3 py-2 dark:border-white/10 dark:bg-black/30"
             data-testid="banner-release-unavailable"
             role="status"
           >

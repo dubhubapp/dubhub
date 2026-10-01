@@ -19,8 +19,8 @@ import {
   COUNTRY_FLAG_SETTINGS_ROW_CLASS,
 } from "@/components/country-flag";
 import {
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_ICON_CLASS,
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/user-context";
@@ -72,12 +72,12 @@ export default function SettingsManageAccountPage({
             <button
               type="button"
               onClick={handleBack}
-              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              className={cn(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
               aria-label="Back"
               data-testid="button-manage-account-back"
             >
               <ChevronLeft
-                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                className={cn(APP_MATERIAL_PAGE_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
                 strokeWidth={2}
                 aria-hidden
               />

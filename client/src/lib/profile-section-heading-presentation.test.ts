@@ -102,7 +102,7 @@ describe("profile-rep-overview heading", () => {
     assert.doesNotMatch(repSrc, /-mt-/);
     assert.match(repSrc, /compact \?/);
     assert.match(repSrc, />Rep</);
-    assert.match(repSrc, /TrendingUp className="h-4 w-4 text-white"/);
+    assert.match(repSrc, /TrendingUp className="h-4 w-4 text-foreground dark:text-white"/);
     assert.doesNotMatch(repSrc, /TrendingUp className="h-4 w-4 text-accent"/);
   });
 });

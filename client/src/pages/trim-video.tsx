@@ -39,7 +39,17 @@ import {
   wavesurferRepaintPlayhead,
 } from "@/lib/trim-waveform-peaks";
 import { cn } from "@/lib/utils";
-import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
+import {
+  APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
+  APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS,
+  APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
+  APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS,
+  APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS,
+  APP_MATERIAL_OVERLAY_TITLE_CLASS,
+} from "@/lib/app-material";
+import { cancelPostAndReturnToHome } from "@/lib/post-flow";
 import {
   getNativeCompressPassthrough,
   isNativeIosVideoEditorPath,
@@ -1770,7 +1780,10 @@ export default function TrimVideo() {
         /* ignore */
       }
     }
-    await cancelPostAndHardResetToHome("trim-cancel-post");
+    await cancelPostAndReturnToHome({
+      reason: "trim-cancel-post",
+      navigateHome: () => setLocation("/"),
+    });
   };
 
   const formatTime = (time: number) => {
@@ -2140,17 +2153,27 @@ export default function TrimVideo() {
       <TrimNativePassthroughToggle />
 
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-        <AlertDialogContent overlayClassName="z-[70]" className="z-[70]">
+        <AlertDialogContent
+          className={cn(APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS, "z-[70]")}
+          overlayClassName={cn(APP_MATERIAL_OVERLAY_BACKDROP_CLASS, "z-[70]")}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel posting?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className={APP_MATERIAL_OVERLAY_TITLE_CLASS}>
+              Cancel posting?
+            </AlertDialogTitle>
+            <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
               Your current clip and edits will be discarded.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+          <AlertDialogFooter className={APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS}>
+            <AlertDialogCancel className={APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS}>
+              Keep editing
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={cn(
+                APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+                APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS,
+              )}
               onClick={() => {
                 void handleCancelPost();
               }}

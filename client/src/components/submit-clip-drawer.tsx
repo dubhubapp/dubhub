@@ -337,7 +337,7 @@ export function SubmitClipDrawer() {
       >
         <DrawerContent
           overlayClassName="z-40 bg-transparent pointer-events-auto"
-          className="z-40 mx-auto mt-0 max-h-[min(420px,85dvh)] w-full max-w-xl gap-0 rounded-t-3xl border border-gray-800 bg-surface/98 p-0 shadow-2xl backdrop-blur-md outline-none"
+          className="z-40 mx-auto mt-0 max-h-[min(420px,85dvh)] w-full max-w-xl gap-0 rounded-t-3xl border border-[#DCE3EC] bg-white p-0 shadow-2xl outline-none dark:border-gray-800 dark:bg-surface/98 dark:backdrop-blur-md"
           style={{ bottom: "var(--app-sheet-screen-bottom, var(--app-bottom-control-inset))" }}
         >
           <DrawerTitle className="sr-only">Add your clip</DrawerTitle>
@@ -345,9 +345,9 @@ export function SubmitClipDrawer() {
             Choose a video from your library or record with the camera.
           </DrawerDescription>
 
-          <div className="border-b border-gray-800/90 px-4 pb-3 pt-2 text-left">
-            <h3 className="text-base font-semibold text-white">Add your clip</h3>
-            <p className="mt-1 text-sm text-gray-400">
+          <div className="border-b border-[#DCE3EC] px-4 pb-3 pt-2 text-left dark:border-gray-800/90">
+            <h3 className="text-base font-semibold text-foreground dark:text-white">Add your clip</h3>
+            <p className="mt-1 text-sm text-muted-foreground dark:text-gray-400">
               Choose from your library or record with the camera.
             </p>
           </div>
@@ -355,25 +355,25 @@ export function SubmitClipDrawer() {
           <div className="flex flex-col gap-2 px-4 pb-6 pt-3">
             <button
               type="button"
-              className="flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-colors bg-gray-900/60 hover:bg-gray-800/80 active:bg-gray-800 border border-gray-800/80"
+              className="flex w-full items-center gap-4 rounded-xl border border-[#DCE3EC] bg-white px-4 py-3.5 text-left transition-colors hover:bg-[#F6F8FC] active:bg-[#F6F8FC] dark:border-gray-800/80 dark:bg-gray-900/60 dark:hover:bg-gray-800/80 dark:active:bg-gray-800"
               onClick={triggerPickGallery}
               data-testid="button-select-video"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
                 <Film className="h-5 w-5" aria-hidden />
               </span>
-              <span className="text-base font-medium text-white">Choose Video</span>
+              <span className="text-base font-medium text-foreground dark:text-white">Choose Video</span>
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-colors bg-gray-900/60 hover:bg-gray-800/80 active:bg-gray-800 border border-gray-800/80"
+              className="flex w-full items-center gap-4 rounded-xl border border-[#DCE3EC] bg-white px-4 py-3.5 text-left transition-colors hover:bg-[#F6F8FC] active:bg-[#F6F8FC] dark:border-gray-800/80 dark:bg-gray-900/60 dark:hover:bg-gray-800/80 dark:active:bg-gray-800"
               onClick={triggerPickCamera}
               data-testid="button-take-video"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
                 <Video className="h-5 w-5" aria-hidden />
               </span>
-              <span className="text-base font-medium text-white">Take Video</span>
+              <span className="text-base font-medium text-foreground dark:text-white">Take Video</span>
             </button>
           </div>
         </DrawerContent>

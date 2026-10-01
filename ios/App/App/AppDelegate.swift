@@ -1259,7 +1259,8 @@ final class DubHubVideoEditor {
     }
 }
 
-/// Canonical app-shell colour `#0f1324` (sRGB 15, 19, 36). Do not use the system canvas colour.
+/// Canonical shells. Dark `#0f1324` is the default and the Home/auth shell.
+/// Light `#F6F8FC` is the normal-page shell only.
 enum DubHubAppShellBackground {
     static let color = UIColor(
         red: 15.0 / 255.0,
@@ -1267,15 +1268,52 @@ enum DubHubAppShellBackground {
         blue: 36.0 / 255.0,
         alpha: 1
     )
+    static let light = UIColor(
+        red: 246.0 / 255.0,
+        green: 248.0 / 255.0,
+        blue: 252.0 / 255.0,
+        alpha: 1
+    )
+}
+
+enum DubHubNativeAppearance {
+    case dark
+    case light
 }
 
 @objc(DubHubBridgeViewController)
 class DubHubBridgeViewController: CAPBridgeViewController {
     private var didInstallNativeTabBarOverlay = false
+    private var dubHubStatusBarStyle: UIStatusBarStyle = .lightContent
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        dubHubStatusBarStyle
+    }
+
+    /// One effective appearance. Does not resize the WebView or recreate the tab bar.
+    func applyDubHubAppearance(_ appearance: DubHubNativeAppearance, keyboardUsesLight: Bool) {
+        let light = appearance == .light
+        let style: UIUserInterfaceStyle = light ? .light : .dark
+        overrideUserInterfaceStyle = style
+        view.window?.overrideUserInterfaceStyle = style
+        let background = light ? DubHubAppShellBackground.light : DubHubAppShellBackground.color
+        view.backgroundColor = background
+        view.window?.backgroundColor = background
+        if let webView {
+            webView.isOpaque = true
+            webView.backgroundColor = background
+            webView.scrollView.backgroundColor = background
+            webView.overrideUserInterfaceStyle = keyboardUsesLight ? .light : style
+        }
+        dubHubStatusBarStyle = light ? .darkContent : .lightContent
+        setNeedsStatusBarAppearanceUpdate()
+    }
 
     override open func viewDidLoad() {
         super.viewDidLoad()
+        overrideUserInterfaceStyle = .dark
         view.backgroundColor = DubHubAppShellBackground.color
+        view.window?.backgroundColor = DubHubAppShellBackground.color
     }
 
     override open func capacitorDidLoad() {
@@ -1292,7 +1330,6 @@ class DubHubBridgeViewController: CAPBridgeViewController {
 
     override open func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        view.window?.backgroundColor = DubHubAppShellBackground.color
         didInstallNativeTabBarOverlay = true
         // LG-NAV-3: sibling UITabBar overlay. Hidden until React sets visibility. Taps emit tab IDs only.
         DubHubNativeTabBarOverlay.installOverlayIfNeeded(on: self)

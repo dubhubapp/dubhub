@@ -27,7 +27,7 @@ export const MODERATOR_PAGE_SCROLL_CLASS =
 
 /** Quiet privilege identity — soft glass, not a CTA. */
 export const MODERATOR_ACCESS_BADGE_CLASS =
-  "rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-xs font-medium text-foreground/70 shadow-none" as const;
+  "rounded-full border border-[#DCE3EC] bg-white px-3 py-1 text-xs font-medium text-foreground/70 shadow-none dark:border-white/[0.08] dark:bg-white/[0.03]" as const;
 
 /** Text-led tablist — no pill tray / teal fill. */
 export const MODERATOR_TABLIST_CLASS =
@@ -40,7 +40,7 @@ export const MODERATOR_TAB_TRIGGER_ACTIVE_CLASS =
   "font-semibold text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-[#0a83ff]" as const;
 
 export const MODERATOR_TAB_TRIGGER_INACTIVE_CLASS =
-  "font-medium text-white/55 hover:bg-transparent hover:text-white/80 data-[state=inactive]:bg-transparent" as const;
+  "font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=inactive]:bg-transparent dark:text-white/55 dark:hover:text-white/80" as const;
 
 /** Open filter block — no outer card. */
 export const MODERATOR_FILTER_BLOCK_CLASS = "mt-3 space-y-2.5" as const;
@@ -50,10 +50,10 @@ export const MODERATOR_FILTER_LABEL_CLASS =
 
 /** Compact claim segments — material blue selected, not teal/default primary. */
 export const MODERATOR_CLAIM_FILTER_ACTIVE_CLASS =
-  "h-8 min-h-8 rounded-[12px] border border-[#0a83ff]/45 bg-[#0a83ff]/15 px-2.5 text-xs font-semibold text-white shadow-none hover:bg-[#0a83ff]/22 hover:text-white" as const;
+  "h-8 min-h-8 rounded-[12px] border border-[#0a83ff]/45 bg-[#0a83ff]/15 px-2.5 text-xs font-semibold text-foreground shadow-none hover:bg-[#0a83ff]/22 hover:text-foreground dark:text-white dark:hover:text-white" as const;
 
 export const MODERATOR_CLAIM_FILTER_INACTIVE_CLASS =
-  "h-8 min-h-8 rounded-[12px] border border-white/10 bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 shadow-none hover:bg-white/[0.1] hover:text-white" as const;
+  "h-8 min-h-8 rounded-[12px] border border-[#DCE3EC] bg-white px-2.5 text-xs font-medium text-muted-foreground shadow-none hover:bg-[#F6F8FC] hover:text-foreground dark:border-white/10 dark:bg-white/[0.06] dark:text-white/70 dark:hover:bg-white/[0.1] dark:hover:text-white" as const;
 
 export const MODERATOR_SECTION_HELPER_CLASS =
   "text-sm text-muted-foreground/90" as const;
@@ -68,7 +68,7 @@ export const MODERATOR_QUEUE_LIST_CLASS =
 export const MODERATOR_QUEUE_ITEM_CLASS = "py-4 first:pt-2" as const;
 
 export const MODERATOR_THUMB_CLASS =
-  "group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-muted sm:h-24 sm:w-24" as const;
+  "group relative h-32 w-full flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-[#DCE3EC] bg-muted sm:h-24 sm:w-24 dark:border-white/10" as const;
 
 /** Semantic panels — meaning via tint, modernized borders. */
 export const MODERATOR_PANEL_ID_CLASS =
@@ -87,11 +87,11 @@ export const MODERATOR_PANEL_COMMUNITY_REPORT_CLASS =
   "mt-2 rounded-xl border border-yellow-500/25 bg-yellow-500/10 p-2.5" as const;
 
 export const MODERATOR_REPORTER_META_CLASS =
-  "mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2 text-xs" as const;
+  "mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#DCE3EC] bg-white px-2.5 py-2 text-xs dark:border-white/10 dark:bg-white/[0.04]" as const;
 
 /** Soft chip inside Uploader's Selection — supports title, does not compete. */
 export const MODERATOR_SELECTED_COMMENT_CHIP_CLASS =
-  "rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-white/65 shadow-none" as const;
+  "rounded-full border border-[#DCE3EC] bg-[#F6F8FC] px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65" as const;
 
 /**
  * Claim hint + Keep explanation stack.
@@ -122,7 +122,7 @@ export const MODERATOR_ACTION_DESTRUCTIVE_CLASS =
  * Slightly shorter; Keep is soft glass; Reopen is red-tint glass (not solid mass).
  */
 export const MODERATOR_ACTION_FOLLOWUP_SECONDARY_CLASS =
-  "h-7 min-h-7 rounded-[11px] border border-white/[0.1] bg-white/[0.04] px-2.5 text-[11px] font-medium text-foreground/75 shadow-none hover:bg-white/[0.07] hover:text-foreground" as const;
+  "h-7 min-h-7 rounded-[11px] border border-[#DCE3EC] bg-white px-2.5 text-[11px] font-medium text-foreground/75 shadow-none hover:bg-[#F6F8FC] hover:text-foreground dark:border-white/[0.1] dark:bg-white/[0.04] dark:hover:bg-white/[0.07]" as const;
 
 export const MODERATOR_ACTION_FOLLOWUP_DESTRUCTIVE_CLASS =
   "h-7 min-h-7 rounded-[11px] border border-red-500/35 bg-red-500/10 px-2.5 text-[11px] font-medium text-red-300 shadow-none hover:bg-red-500/15 hover:text-red-200" as const;

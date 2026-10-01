@@ -64,10 +64,10 @@ export function ReleaseFormHero({
           </>
         ) : (
           <span className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-white/30 bg-white/[0.07] text-white/80">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-[#C8D0DC] bg-[#F6F8FC] text-muted-foreground dark:border-white/30 dark:bg-white/[0.07] dark:text-white/80">
               <Plus className="h-5 w-5" />
             </span>
-            <span className="text-sm font-medium text-white/80">
+            <span className="text-sm font-medium text-muted-foreground dark:text-white/80">
               {uploading ? "Uploading…" : "Add artwork"}
             </span>
           </span>
@@ -88,7 +88,7 @@ export function ReleaseFormHero({
           <span
             className={cn(
               "block text-2xl font-semibold leading-tight tracking-tight",
-              hasTitle ? "text-foreground" : "text-muted-foreground",
+              hasTitle ? "text-foreground" : "text-foreground/70 dark:text-muted-foreground",
             )}
           >
             {hasTitle ? title.trim() : titlePlaceholder}

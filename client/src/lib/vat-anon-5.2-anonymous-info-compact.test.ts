@@ -84,7 +84,10 @@ describe("VAT-ANON-5.2 compact anonymous presentation", () => {
   });
 
   it("anonymous pill reuses the same Identified glow chrome as other Comments pills", () => {
-    assert.match(commentsSrc, /const COMMENTS_IDENTIFIED_PILL_CLASS = STATUS_GLOW_PILL_CLASS/);
+    assert.match(
+      commentsSrc,
+      /const COMMENTS_IDENTIFIED_PILL_CLASS = `\$\{STATUS_GLOW_PILL_CLASS\} dubhub-identified-pill-page`/,
+    );
     const pillFn = commentsSrc.slice(
       commentsSrc.indexOf("function CommentsPostIdentificationPill"),
       commentsSrc.indexOf("function CommentsPostIdentificationPill") + 2200,

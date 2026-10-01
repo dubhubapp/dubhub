@@ -316,6 +316,20 @@ async function assertNestedSettingsPopCommits() {
     });
     root.render(React.createElement(harness.BrowserHistoryTransitionHarness, { nonce: 0 }));
   });
+  const profileSettingsButton = dom.document.querySelector('[data-testid="button-settings"]');
+  if (!profileSettingsButton) throw new Error("Browser harness Profile Settings button missing");
+  await act(async () => {
+    profileSettingsButton.dispatchEvent(new dom.MouseEvent("click", { bubbles: true }));
+  });
+  if (session.dump() !== "1:/profile > /settings") {
+    throw new Error(`Profile Settings tap did not push history (${session.dump()})`);
+  }
+  if (globalThis.window.__dubhubTransitionDebug?.().stack.pages.join("|") !== "/profile|/settings") {
+    throw new Error("Profile Settings tap did not push the contextual stack");
+  }
+  await act(async () => {
+    dom.history.back();
+  });
   await act(async () => {
     harness.navigateBrowserHarness("/settings");
   });
@@ -486,6 +500,94 @@ async function go(path) {
   });
 }
 
+function motionSnapshot(label) {
+  const debug = globalThis.window.__dubhubTransitionDebug?.();
+  const layers = [...dom.document.querySelectorAll("[data-settings-path]")].map((layer) => {
+    const motion = layer.querySelector("[data-settings-motion]");
+    return {
+      path: layer.getAttribute("data-settings-path"),
+      role: layer.getAttribute("data-settings-stack"),
+      motionTransform: motion?.style?.transform || "",
+      motionTransition: motion?.style?.transition || "",
+    };
+  });
+  return {
+    label,
+    location: debug?.stack?.location ?? dom.location.pathname,
+    pages: debug?.stack?.pages ?? null,
+    layers,
+  };
+}
+
+async function traceHeldPush(label, path, activate) {
+  const queued = [];
+  const previous = globalThis.requestAnimationFrame;
+  const previousCancel = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = (callback) => {
+    queued.push(callback);
+    return queued.length;
+  };
+  globalThis.cancelAnimationFrame = (id) => {
+    queued[id - 1] = null;
+  };
+  if (globalThis.window) {
+    globalThis.window.requestAnimationFrame = globalThis.requestAnimationFrame;
+    globalThis.window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  }
+  try {
+    await act(async () => {
+      if (activate) activate();
+      else harness.navigateRuntimeHarness(path);
+    });
+    const afterLayout = motionSnapshot(`${label}:after-layout`);
+    const depth = queued.length;
+    await act(async () => {
+      const batch = queued.splice(0, queued.length);
+      for (const callback of batch) callback?.(0);
+    });
+    const afterOuterFrame = motionSnapshot(`${label}:after-outer-frame`);
+    await act(async () => {
+      const batch = queued.splice(0, queued.length);
+      for (const callback of batch) callback?.(0);
+    });
+    const afterInnerFrame = motionSnapshot(`${label}:after-inner-frame`);
+    const foreground = afterLayout.layers.find((layer) => layer.role === "foreground");
+    const underlay = afterLayout.layers.find((layer) => layer.role === "underlay");
+    if (!foreground || foreground.motionTransform !== "translate3d(100%,0,0)") {
+      throw new Error(
+        `${label} did not start off the right edge (${JSON.stringify(afterLayout.layers)})`,
+      );
+    }
+    if (!underlay) {
+      throw new Error(`${label} did not keep a mounted underlay (${JSON.stringify(afterLayout.layers)})`);
+    }
+    if (foreground.motionTransition !== "none") {
+      throw new Error(`${label} armed a transition before the enter frame (${foreground.motionTransition})`);
+    }
+    const entered = afterInnerFrame.layers.find((layer) => layer.role === "foreground");
+    const stillUnder = afterInnerFrame.layers.find((layer) => layer.path === underlay.path);
+    if (!entered || entered.motionTransform !== "translate3d(0,0,0)") {
+      throw new Error(`${label} did not enter (${JSON.stringify(afterInnerFrame.layers)})`);
+    }
+    if (!entered.motionTransition.includes("280ms")) {
+      throw new Error(`${label} did not use the push duration (${entered.motionTransition})`);
+    }
+    if (!stillUnder) {
+      throw new Error(`${label} removed the previous page before the enter frame`);
+    }
+    if (depth < 2) {
+      throw new Error(`${label} did not schedule the double frame (${depth})`);
+    }
+  } finally {
+    globalThis.requestAnimationFrame = previous;
+    globalThis.cancelAnimationFrame = previousCancel;
+    if (globalThis.window) {
+      globalThis.window.requestAnimationFrame = previous;
+      globalThis.window.cancelAnimationFrame = previousCancel;
+    }
+  }
+}
+
 const rootEl = dom.document.createElement("div");
 dom.document.body.appendChild(rootEl);
 const root = createRoot(rootEl);
@@ -517,6 +619,14 @@ try {
   if (dom.document.querySelectorAll('[data-lg-nav-5a-dest="profile"]').length !== 1) {
     throw new Error("Profile did not mount once after currentUser arrived with the flag on");
   }
+
+  const settingsButton = dom.document.querySelector('[data-testid="button-settings"]');
+  if (!settingsButton) throw new Error("Profile Settings button did not mount");
+  await traceHeldPush("profile-button-to-settings", "/settings", () => {
+    settingsButton.dispatchEvent(new dom.MouseEvent("click", { bubbles: true }));
+  });
+  await traceHeldPush("settings-to-notifications", "/settings/notifications");
+  await go("/profile");
 
   await go("/settings");
   summarize("flag on /settings");

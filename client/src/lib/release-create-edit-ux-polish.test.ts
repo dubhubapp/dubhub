@@ -181,12 +181,17 @@ describe("release schedule segment material", () => {
     assert.match(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /dubhub-app-segment-active/);
     assert.doesNotMatch(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /#0a83ff|bg-primary|bg-\[#0a83ff\]/);
     assert.match(APP_MATERIAL_SEGMENT_INACTIVE_CLASS, /bg-white\/\[0\.06\]/);
-    const darkSeg = cssSrc.slice(
-      cssSrc.indexOf(".dark .dubhub-app-segment-active"),
-      cssSrc.indexOf(".dark .dubhub-app-segment-active") + 350,
+    const darkMaterialStart = cssSrc.indexOf(".dark,\n.dubhub-auth-surface {");
+    const darkMaterial = cssSrc.slice(
+      darkMaterialStart,
+      cssSrc.indexOf(".dubhub-auth-surface {\n  color-scheme: dark;"),
     );
-    assert.doesNotMatch(darkSeg, /#0a83ff/);
-    assert.match(darkSeg, /rgba\(255,\s*255,\s*255/);
+    const segmentTokens = darkMaterial.slice(
+      darkMaterial.indexOf("--segment-active-bg"),
+      darkMaterial.indexOf("--segment-inactive-bg"),
+    );
+    assert.doesNotMatch(segmentTokens, /#0a83ff/);
+    assert.match(segmentTokens, /rgba\(255,\s*255,\s*255/);
   });
 
   it("sheet Done CTAs use ceramic primary (not bg-primary blue)", () => {

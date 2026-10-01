@@ -543,7 +543,7 @@ function StatLine({
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center overflow-hidden text-center">
-      <div className="flex min-w-0 items-center justify-center gap-1" style={labelStyle}>
+      <div className="flex min-w-0 items-center justify-center gap-1" style={labelStyle} data-preview-role="label">
         <Icon className="h-3.5 w-3.5 shrink-0 opacity-90" />
         <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide">{label}</span>
       </div>
@@ -555,6 +555,7 @@ function StatLine({
         <div
           className={`mt-0.5 w-full break-words text-center text-xs font-semibold leading-tight ${valueTabular ? "tabular-nums" : ""}`}
           style={valueStyle}
+          data-preview-role="value"
         >
           {value}
         </div>
@@ -1067,6 +1068,7 @@ function HomeProfilePreviewSheetBody({
                 backgroundColor: repBase,
               }}
               data-testid="reputation-bar"
+              data-rep-fill={genreBarColorHex != null && String(genreBarColorHex).trim() ? "genre" : "neutral"}
             />
           </div>
           <p className="mt-2 text-[11px] leading-snug text-white/55">{HOME_PROFILE_PREVIEW_REP_HINT}</p>

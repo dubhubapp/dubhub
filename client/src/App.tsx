@@ -16,6 +16,7 @@ import { CountryPromptHost } from "@/components/country-prompt-host";
 import { HomeWidgetRefreshHost } from "@/components/home-widget-refresh-host";
 import { HomeWidgetSetupGuideHost } from "@/components/home-widget-setup-guide-host";
 import { ConditionalBottomNavigation } from "@/components/conditional-bottom-navigation";
+import { retainNativeAuthSurface } from "@/lib/auth-surface";
 import { ReleaseDropDayBanner } from "@/components/release-drop-day-banner";
 import { InAppNotificationBannerHost } from "@/components/in-app-notification-banner";
 import { PasswordRecoveryRedirect } from "@/components/auth/PasswordRecoveryRedirect";
@@ -149,8 +150,8 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
       });
     }
     if (location !== "/") return;
-    // Isolation mode: disable route-based epoch bump.
-    // Keep explicit cancel-path epoch increments only.
+    // Isolation mode: do not bump the Home media epoch on this return.
+    // Soft Cancel leaves the existing epoch for Home to read on mount.
     if (prev === "/trim-video" || prev === "/submit-metadata" || prev === "/submit") {
       dubhubVideoDebugLog("[DubHub][PostFlow][resource]", "home-return resource snapshot", {
         fromRoute: prev,
@@ -228,6 +229,11 @@ function App() {
     userId: null,
     email: null,
   });
+  useEffect(() => {
+    const lockNativeDark = !isAuthenticated || firstLoginOnboarding.open;
+    if (!lockNativeDark) return;
+    return retainNativeAuthSurface();
+  }, [isAuthenticated, firstLoginOnboarding.open]);
   const [isHomeFeedReady, setIsHomeFeedReady] = useState(false);
   /**
    * STARTUP-CONTINUITY: startup overlay visible state.

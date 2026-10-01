@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ReleaseAttachedClipCard } from "@/components/release-attached-clips";
 import { StatInfoPopover } from "@/components/stat-info-popover";
+import { APP_MATERIAL_FIELD_CLASS } from "@/lib/app-material";
 import { SEARCH_INPUT_KEYBOARD_PROPS } from "@/lib/form-search-input";
 import { apiRequest } from "@/lib/queryClient";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
@@ -181,7 +182,7 @@ export function ReleaseAttachClipsManagement({
           placeholder={ATTACH_POSTS_SEARCH_PLACEHOLDER}
           value={searchTerm}
           onChange={(e) => onSearchTermChange(e.target.value)}
-          className={cn("bg-black/40 pl-8", FIELD_FOCUS)}
+          className={cn(APP_MATERIAL_FIELD_CLASS, "h-10 pl-8", FIELD_FOCUS)}
           aria-label="Search by DJ, title, or verified comment"
           data-testid="release-attach-clips-search"
           {...SEARCH_INPUT_KEYBOARD_PROPS}

@@ -27,10 +27,10 @@ export function GoldVerifiedTick({
 }) {
   const glowClass = glow === "inline" ? goldGlowInlineClass : goldGlowDropShadowClass;
   return (
-    <span title={title} className="inline-flex">
+    <span title={title} className="dubhub-verified-tick-align inline-flex">
       <CheckCircle
         className={cn(
-          "text-[#FFD700] " + glowClass,
+          "dubhub-gold-verified-tick text-[#FFD700] " + glowClass,
           withBackground ? backgroundClassName : "",
           className
         )}

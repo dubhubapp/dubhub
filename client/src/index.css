@@ -68,30 +68,118 @@
   --video-card-overlay-bottom: 0px;
   --video-card-metadata-shift: 0px;
 
-  --background: hsl(227, 96%, 54%);
-  --foreground: hsl(0, 0%, 100%);
-  --muted: hsl(227, 96%, 50%);
-  --muted-foreground: hsl(0, 0%, 85%);
-  --popover: hsl(227, 96%, 54%);
-  --popover-foreground: hsl(0, 0%, 100%);
-  --card: hsl(227, 96%, 54%);
-  --card-foreground: hsl(0, 0%, 100%);
-  --border: hsl(0, 0%, 100%);
-  --input: hsl(227, 96%, 48%);
-  --primary: hsl(0, 0%, 100%);
-  --primary-foreground: hsl(227, 96%, 54%);
-  --secondary: hsl(180, 69%, 59%);
-  --secondary-foreground: hsl(0, 0%, 100%);
-  --accent: hsl(180, 69%, 59%);
-  --accent-foreground: hsl(0, 0%, 100%);
+  /*
+   * Semantic colours are complete colors. Consumers use var(--token).
+   * Do not wrap these in hsl() — the value is already a color.
+   * :root is the new Light palette. Shipping UI keeps html.dark, which
+   * overrides every token below with the canonical Dark palette.
+   */
+  --background: #F6F8FC;
+  --foreground: #101828;
+  --muted: #EDF2F8;
+  --muted-foreground: #667085;
+  --popover: #FFFFFF;
+  --popover-foreground: #101828;
+  --card: #FFFFFF;
+  --card-foreground: #101828;
+  --border: #DCE3EC;
+  --input: #FFFFFF;
+  --primary: #0A83FF;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EDF2F8;
+  --secondary-foreground: #101828;
+  --accent: #0A83FF;
+  --accent-foreground: #FFFFFF;
   --destructive: hsl(0, 62.8%, 30.6%);
   --destructive-foreground: hsl(0, 0%, 100%);
-  --ring: hsl(0, 0%, 100%);
+  --ring: #0A83FF;
   --radius: 0.5rem;
-  --surface: hsl(227, 96%, 50%);
+  --surface: #FFFFFF;
   --dark: #0f1324;
-  /* Document / native underlay. Not theme-shifted — `.dark` must not override this. */
-  --app-shell-background: #0f1324;
+  /* Light document underlay. .dark restores canonical navy #0f1324. */
+  --app-shell-background: #F6F8FC;
+
+  /*
+   * Shared primitive paint. Complete colors, not bare HSL components.
+   * .dark (and the auth surface) override these with the canonical Dark values.
+   */
+  --overlay: rgba(15, 23, 42, 0.4);
+  --sheet-overlay: rgba(15, 23, 42, 0.32);
+  --primary-action-bg: #0A83FF;
+  --primary-action-fg: #FFFFFF;
+  --primary-action-border: #0A83FF;
+  --primary-action-disabled-bg: #EDF2F8;
+  --primary-action-disabled-fg: #667085;
+  --primary-action-disabled-border: #DCE3EC;
+  --secondary-action-bg: rgba(16, 24, 40, 0.04);
+  --secondary-action-border: #DCE3EC;
+  --secondary-action-hover-bg: rgba(16, 24, 40, 0.08);
+  --material-field-bg: #FFFFFF;
+  --material-field-border: #DCE3EC;
+  --material-field-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --material-field-focus-border: rgba(10, 131, 255, 0.55);
+  --material-field-focus-shadow: 0 0 0 1px rgba(10, 131, 255, 0.25);
+  --material-field-invalid-border: rgba(239, 68, 68, 0.65);
+  --material-field-invalid-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25);
+  --material-field-success-border: rgba(22, 163, 74, 0.28);
+  --material-field-success-bg: #FFFFFF;
+  --material-field-success-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --overlay-surface-bg: #FFFFFF;
+  --overlay-surface-border: #DCE3EC;
+  --overlay-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 18px 40px rgba(15, 23, 42, 0.18);
+  --sheet-surface-bg: rgba(255, 255, 255, 0.92);
+  --sheet-surface-bg-blur: rgba(255, 255, 255, 0.78);
+  --sheet-surface-image: linear-gradient(180deg, #FFFFFF 0%, #F6F8FC 100%);
+  --sheet-surface-border: #DCE3EC;
+  --sheet-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 -8px 28px rgba(15, 23, 42, 0.1);
+  --toast-bg: #FFFFFF;
+  --toast-bg-blur: rgba(255, 255, 255, 0.92);
+  --toast-image: none;
+  --toast-border: #DCE3EC;
+  --toast-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 12px 28px rgba(15, 23, 42, 0.14);
+  --select-bg: #FFFFFF;
+  --select-border: #DCE3EC;
+  --select-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+  --artwork-bg: #FFFFFF;
+  --artwork-border: #DCE3EC;
+  --artwork-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --segment-active-bg: rgba(16, 24, 40, 0.06);
+  --segment-active-image: linear-gradient(180deg, rgba(16, 24, 40, 0.1) 0%, rgba(16, 24, 40, 0.04) 100%);
+  --segment-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -0.5px 0 rgba(15, 23, 42, 0.08);
+  --segment-active-fg: #101828;
+  --segment-inactive-bg: rgba(16, 24, 40, 0.04);
+  --segment-inactive-border: #DCE3EC;
+  --segment-inactive-fg: #667085;
+  --segment-inactive-hover-bg: rgba(16, 24, 40, 0.08);
+  --segment-inactive-hover-fg: #101828;
+  --destructive-surface-bg: #EDF2F8;
+  --destructive-surface-border: #DCE3EC;
+  --destructive-surface-shadow: none;
+  --destructive-surface-highlight: rgba(16, 24, 40, 0.06);
+  --form-canvas-bg: #F6F8FC;
+  --form-canvas-image: var(--page-canvas-atmosphere);
+  /*
+   * Light page canvas. Same geometry as `.dark .dubhub-app-releases-canvas`:
+   * ellipse centred above the page, then a vertical dissolve into #F6F8FC.
+   * Cool blue-lavender only. The semantic Light colours stay unchanged.
+   */
+  --page-canvas-atmosphere:
+    radial-gradient(
+      ellipse 120% 70% at 50% -35%,
+      rgba(190, 206, 255, 0.55) 0%,
+      rgba(190, 206, 255, 0.16) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      #EEF3FF 0%,
+      #F3F6FD 32%,
+      #F5F7FC 58%,
+      #F6F8FC 100%
+    );
+  --skeleton-bar: rgba(16, 24, 40, 0.12);
+  --skeleton-bar-mid: rgba(16, 24, 40, 0.1);
+  --skeleton-bar-faint: rgba(16, 24, 40, 0.08);
 }
 
 /*
@@ -254,7 +342,7 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   background-image: linear-gradient(
     to top,
     transparent 0%,
-    hsl(var(--background) / 0.55) 45%,
+    rgba(246, 248, 252, 0.72) 45%,
     transparent 100%
   );
 }
@@ -291,6 +379,75 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   --ring: hsl(227, 35%, 45%);
   --surface: hsl(227, 28%, 16%);
   --dark: hsl(227, 45%, 9%);
+  /* Canonical Dark document underlay. Must stay #0f1324. */
+  --app-shell-background: #0f1324;
+}
+
+/*
+ * Canonical Dark paint for shared primitives. Values match the previous
+ * .dark component rules. Auth repeats them so a Light document cannot
+ * wash the forced-dark login surface.
+ */
+.dark,
+.dubhub-auth-surface {
+  --overlay: rgba(8, 12, 28, 0.58);
+  --sheet-overlay: rgba(8, 12, 28, 0.42);
+  --primary-action-bg: #ffffff;
+  --primary-action-fg: #0f172a;
+  --primary-action-border: rgba(255, 255, 255, 0.8);
+  --primary-action-disabled-bg: rgba(255, 255, 255, 0.28);
+  --primary-action-disabled-fg: rgba(15, 23, 42, 0.45);
+  --primary-action-disabled-border: rgba(255, 255, 255, 0.12);
+  --secondary-action-bg: rgba(255, 255, 255, 0.06);
+  --secondary-action-border: rgba(255, 255, 255, 0.15);
+  --secondary-action-hover-bg: rgba(255, 255, 255, 0.1);
+  --material-field-bg: rgba(28, 36, 68, 0.78);
+  --material-field-border: rgba(255, 255, 255, 0.08);
+  --material-field-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  --material-field-focus-border: rgba(10, 131, 255, 0.55);
+  --material-field-focus-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(10, 131, 255, 0.28);
+  --material-field-invalid-border: rgba(239, 68, 68, 0.65);
+  --material-field-invalid-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(239, 68, 68, 0.25);
+  --material-field-success-border: rgba(34, 197, 94, 0.22);
+  --material-field-success-bg: rgba(28, 36, 68, 0.78);
+  --material-field-success-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  --overlay-surface-bg: rgba(20, 26, 48, 0.97);
+  --overlay-surface-border: rgba(255, 255, 255, 0.1);
+  --overlay-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 48px rgba(0, 0, 0, 0.5);
+  --sheet-surface-bg: rgba(18, 24, 48, 0.72);
+  --sheet-surface-bg-blur: rgba(18, 24, 48, 0.58);
+  --sheet-surface-image: linear-gradient(180deg, rgba(36, 48, 88, 0.5) 0%, rgba(18, 24, 48, 0.68) 42%, rgba(12, 16, 32, 0.82) 100%);
+  --sheet-surface-border: rgba(255, 255, 255, 0.1);
+  --sheet-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 -8px 32px rgba(0, 0, 0, 0.28);
+  --toast-bg: rgba(18, 24, 48, 0.92);
+  --toast-bg-blur: rgba(18, 24, 48, 0.78);
+  --toast-image: linear-gradient(180deg, rgba(36, 48, 88, 0.55) 0%, rgba(18, 24, 48, 0.88) 50%, rgba(12, 16, 32, 0.95) 100%);
+  --toast-border: rgba(255, 255, 255, 0.1);
+  --toast-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 32px rgba(0, 0, 0, 0.4);
+  --select-bg: rgba(22, 30, 56, 0.98);
+  --select-border: rgba(255, 255, 255, 0.08);
+  --select-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 14px 36px rgba(0, 0, 0, 0.48);
+  --artwork-bg: rgba(22, 30, 56, 0.72);
+  --artwork-border: rgba(255, 255, 255, 0.12);
+  --artwork-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 40px -28px rgba(0, 0, 0, 0.85);
+  --segment-active-bg: rgba(255, 255, 255, 0.08);
+  --segment-active-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 100%);
+  --segment-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -0.5px 0 rgba(0, 0, 0, 0.3);
+  --segment-active-fg: #ffffff;
+  --segment-inactive-bg: rgba(255, 255, 255, 0.06);
+  --segment-inactive-border: rgba(255, 255, 255, 0.1);
+  --segment-inactive-fg: rgba(255, 255, 255, 0.7);
+  --segment-inactive-hover-bg: rgba(255, 255, 255, 0.1);
+  --segment-inactive-hover-fg: #ffffff;
+  --destructive-surface-bg: rgba(28, 36, 68, 0.55);
+  --destructive-surface-border: rgba(255, 255, 255, 0.1);
+  --destructive-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --destructive-surface-highlight: rgba(255, 255, 255, 0.08);
+  --form-canvas-bg: #0f1324;
+  --form-canvas-image: radial-gradient(ellipse 120% 70% at 50% -35%, rgba(10, 131, 255, 0.12) 0%, rgba(0, 29, 249, 0.05) 42%, transparent 70%), linear-gradient(180deg, rgba(22, 38, 92, 0.24) 0%, rgba(15, 22, 48, 0.1) 32%, rgba(15, 19, 36, 0.04) 58%, #0f1324 100%);
+  --skeleton-bar: rgba(255, 255, 255, 0.12);
+  --skeleton-bar-mid: rgba(255, 255, 255, 0.1);
+  --skeleton-bar-faint: rgba(255, 255, 255, 0.08);
 }
 
 /*
@@ -675,6 +832,37 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   background-repeat: no-repeat;
 }
 
+/*
+ * Home loading is a media stage. Light `background` (#F6F8FC) must not paint
+ * the lower fade. Dark keeps the utility classes (`bg-background` / `from-background`).
+ * Stops match the loaded card: black/80 solid extend, black/80 → black/40 → clear.
+ */
+:root:not(.dark) [data-home-feed-skeleton-fade-extend] {
+  background-color: rgb(0 0 0 / 0.8);
+}
+
+:root:not(.dark) [data-home-feed-skeleton-fade] {
+  background-image: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.8) 0%,
+    rgb(0 0 0 / 0.4) 45%,
+    transparent 100%
+  );
+}
+
+/* Ghost bars stay the Dark media ink on this stage only. Other Light pages keep their tokens. */
+:root:not(.dark) .dubhub-home-skeleton-launch-bg .dubhub-app-skeleton-bar {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+:root:not(.dark) .dubhub-home-skeleton-launch-bg .dubhub-app-skeleton-bar-mid {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+:root:not(.dark) .dubhub-home-skeleton-launch-bg .dubhub-app-skeleton-bar-faint {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -739,6 +927,83 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   
   .bg-surface {
     background-color: var(--surface);
+  }
+
+  /*
+   * `surface` is not a Tailwind color, so `bg-surface/98` never painted.
+   * Pre-Light Add Clip was backdrop-blur-md over Home, not a 98% slab.
+   * Dark sheet glass when blur is available is --sheet-surface-bg-blur (0.58).
+   * Rows sit slightly denser in the same navy, still open enough for the blur.
+   */
+  html.dark .dark\:bg-surface\/98 {
+    background-color: rgba(18, 24, 48, 0.58);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    backdrop-filter: blur(12px) saturate(1.2);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 -8px 32px rgba(0, 0, 0, 0.28);
+  }
+
+  html.dark [data-testid="button-select-video"],
+  html.dark [data-testid="button-take-video"] {
+    background-color: rgba(12, 16, 32, 0.72);
+    border-color: rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(12px) saturate(1.15);
+    backdrop-filter: blur(12px) saturate(1.15);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  html.dark [data-testid="button-select-video"]:hover,
+  html.dark [data-testid="button-take-video"]:hover {
+    background-color: rgba(12, 16, 32, 0.8);
+  }
+
+  html.dark [data-testid="button-select-video"]:active,
+  html.dark [data-testid="button-take-video"]:active {
+    background-color: rgba(12, 16, 32, 0.86);
+  }
+
+  /*
+   * Light Add Clip. Same hierarchy as the Dark glass above:
+   * cool translucent shell, denser frosted rows, 12px blur.
+   * Dark rules stay on html.dark.
+   */
+  :root:not(.dark) .dark\:bg-surface\/98 {
+    background-color: rgba(246, 248, 252, 0.78);
+    border-color: #dce3ec;
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    backdrop-filter: blur(12px) saturate(1.2);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      0 -8px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  :root:not(.dark) [data-testid="button-select-video"],
+  :root:not(.dark) [data-testid="button-take-video"] {
+    background-color: rgba(255, 255, 255, 0.92);
+    border-color: rgba(220, 227, 236, 0.95);
+    color: #101828;
+    -webkit-backdrop-filter: blur(12px) saturate(1.15);
+    backdrop-filter: blur(12px) saturate(1.15);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 1px 2px rgba(16, 24, 40, 0.06);
+  }
+
+  :root:not(.dark) [data-testid="button-select-video"] .text-primary,
+  :root:not(.dark) [data-testid="button-take-video"] .text-primary {
+    color: #101828;
+    background-color: rgba(16, 24, 40, 0.06);
+  }
+
+  :root:not(.dark) [data-testid="button-select-video"]:hover,
+  :root:not(.dark) [data-testid="button-take-video"]:hover {
+    background-color: rgba(255, 255, 255, 0.96);
+  }
+
+  :root:not(.dark) [data-testid="button-select-video"]:active,
+  :root:not(.dark) [data-testid="button-take-video"]:active {
+    background-color: rgba(246, 248, 252, 0.98);
   }
   
   .bg-dark {
@@ -1002,7 +1267,7 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
  * Quieter than pre-login auth canvas. Never apply on Home / video feed.
  */
 .dark .dubhub-app-releases-canvas {
-  background-color: #0f1324;
+  background-color: #0f1324 !important;
   background-image:
     radial-gradient(
       ellipse 120% 70% at 50% -35%,
@@ -1016,7 +1281,82 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
       rgba(15, 22, 48, 0.12) 32%,
       rgba(15, 19, 36, 0.04) 58%,
       #0f1324 100%
-    );
+    ) !important;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/**
+ * Light page-canvas atmosphere for the shared authenticated canvas
+ * (Settings, and later Releases / profiles / leaderboard).
+ * Dark rule above is unchanged. Not used by Home, video, or auth.
+ */
+:root:not(.dark) .dubhub-app-releases-canvas {
+  background-color: #F6F8FC;
+  background-image: var(--page-canvas-atmosphere);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/*
+ * Leaderboard only. The shared canvas parks its wash above the page and
+ * reaches solid #0f1324 by 58%, so the list under the hero reads as a flat field.
+ * Same navy/blue family as that canvas and the Profile lower wash, held through
+ * the list at low intensity. Light canvas above is unchanged.
+ */
+html.dark .dubhub-lb-page-atmosphere {
+  background-color: #0f1324 !important;
+  background-image:
+    radial-gradient(
+      ellipse 120% 70% at 50% -35%,
+      rgba(10, 131, 255, 0.14) 0%,
+      rgba(0, 29, 249, 0.06) 42%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 110% 48% at 50% 82%,
+      rgba(10, 131, 255, 0.07) 0%,
+      rgba(0, 29, 249, 0.03) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(22, 38, 92, 0.28) 0%,
+      rgba(15, 22, 48, 0.16) 34%,
+      rgba(22, 38, 92, 0.11) 68%,
+      rgba(15, 22, 48, 0.07) 100%
+    ) !important;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/*
+ * Light Leaderboard only. Shared canvas reaches #F6F8FC by 58%, so the list
+ * under the hero is a flat field. Same stop positions as the Dark rule above,
+ * in the approved cool Light palette, settling back to #F6F8FC.
+ */
+:root:not(.dark) .dubhub-lb-page-atmosphere {
+  background-color: #F6F8FC !important;
+  background-image:
+    radial-gradient(
+      ellipse 120% 70% at 50% -35%,
+      rgba(190, 206, 255, 0.55) 0%,
+      rgba(190, 206, 255, 0.16) 42%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 110% 48% at 50% 82%,
+      rgba(190, 206, 255, 0.28) 0%,
+      rgba(190, 206, 255, 0.08) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      #EEF3FF 0%,
+      #F3F6FD 34%,
+      #F5F7FC 68%,
+      #F6F8FC 100%
+    ) !important;
   background-repeat: no-repeat;
   background-size: 100% 100%;
 }
@@ -1048,11 +1388,28 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   background-size: 100% 100%;
 }
 
-/* Light: solid theme background — no dark atmosphere slabs. */
+/* Light with-banner canvas — same hold-then-wash geometry as Dark.
+   The hero edge stays #F6F8FC so the dissolve endpoint meets the page. */
 :root:not(.dark) .dubhub-app-profile-canvas-with-banner,
 .light .dubhub-app-profile-canvas-with-banner {
-  background-color: hsl(var(--background));
-  background-image: none;
+  background-color: #F6F8FC;
+  background-image:
+    radial-gradient(
+      ellipse 110% 48% at 50% 88%,
+      rgba(190, 206, 255, 0.45) 0%,
+      rgba(190, 206, 255, 0.14) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      #F6F8FC 0%,
+      #F6F8FC 52%,
+      #EEF3FF 72%,
+      #F3F6FD 86%,
+      #F6F8FC 100%
+    );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
 }
 
 .dark .dubhub-app-releases-sticky {
@@ -1066,6 +1423,32 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
 .dark .dubhub-app-releases-sticky-fade {
   background-color: rgba(15, 22, 48, 0.32);
   transition: background-color 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Light Releases sticky — pale frost over the approved canvas, not a white slab. */
+:root:not(.dark) .dubhub-app-releases-sticky {
+  background-color: rgba(246, 248, 252, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 rgba(220, 227, 236, 0.95);
+}
+
+:root:not(.dark) .dubhub-app-releases-sticky-fade {
+  background-color: rgba(246, 248, 252, 0.28);
+}
+
+:root:not(.dark) .dubhub-app-releases-sticky .text-white\/55,
+:root:not(.dark) .dubhub-app-releases-sticky .text-white\/60 {
+  color: #667085;
+}
+
+:root:not(.dark) .dubhub-app-releases-sticky .text-white\/55:hover,
+:root:not(.dark) .dubhub-app-releases-sticky .text-white\/60:hover {
+  color: #101828;
+}
+
+:root:not(.dark) .dubhub-app-releases-sticky .text-white\/30 {
+  color: #98a2b3;
 }
 
 /**
@@ -1133,6 +1516,237 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   }
 }
 
+/**
+ * Light Leaderboard sticky glass. Same structure as the Dark rule above.
+ * Over the hero (glass false) tab type stays white. Scrolled glass is pale.
+ */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] {
+    background-color: rgba(246, 248, 252, 0.88);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+  }
+
+  :root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] .dubhub-lb-sticky-fade {
+    height: 2.75rem;
+    background-color: rgba(246, 248, 252, 0.45);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] {
+    background-color: rgba(246, 248, 252, 0.96);
+  }
+}
+
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="false"] [role="tab"][data-state="active"],
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="false"] [role="tab"][aria-selected="true"] {
+  color: #fff;
+}
+
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"],
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] [role="tab"] {
+  text-shadow: none !important;
+}
+
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] [role="tab"] {
+  color: #667085 !important;
+}
+
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] [role="tab"][data-state="active"],
+:root:not(.dark) .dubhub-lb-sticky-chrome[data-lb-sticky-glass="true"] [role="tab"][aria-selected="true"] {
+  color: #101828 !important;
+}
+
+:root:not(.dark) .dubhub-lb-hero-fade {
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(246, 248, 252, 0.08) 22%,
+    rgba(246, 248, 252, 0.55) 58%,
+    #F6F8FC 86%,
+    #F6F8FC 100%
+  ) !important;
+}
+
+/* Dark artwork fade stays the inline hero stack. Light wash above must not replace it. */
+html.dark .dubhub-lb-hero-fade {
+  background-image: var(--dubhub-lb-dark-hero-fade) !important;
+}
+
+:root:not(.dark) .dubhub-lb-hero-fallback {
+  background-image: linear-gradient(180deg, #EEF3FF 0%, #F3F6FD 42%, #F6F8FC 100%) !important;
+}
+
+:root:not(.dark) .dubhub-profile-no-banner-atmosphere {
+  background: none !important;
+}
+
+:root:not(.dark) [data-profile-hero="canvas"] [data-testid="profile-key-stats"] .text-white,
+:root:not(.dark) [data-profile-hero="canvas"] [data-testid="profile-key-stats"] .text-gray-300\/90,
+:root:not(.dark) [data-profile-hero="canvas"] [data-testid="public-profile-key-stats"] .text-white,
+:root:not(.dark) [data-profile-hero="canvas"] [data-testid="public-profile-key-stats"] .text-gray-300\/90 {
+  color: var(--foreground);
+  filter: none;
+}
+
+/* Light paint on the same dissolve layer as Dark (top-[36%], same alpha stops).
+   Destination is #F6F8FC instead of #0f1324. Inline Dark gradient stays. */
+:root:not(.dark) [data-profile-hero="media"] {
+  background-color: #F6F8FC;
+}
+
+:root:not(.dark) .dubhub-profile-banner-dissolve {
+  background: linear-gradient(
+    to bottom,
+    rgba(246, 248, 252, 0) 0%,
+    rgba(246, 248, 252, 0.16) 22%,
+    rgba(246, 248, 252, 0.42) 48%,
+    rgba(246, 248, 252, 0.72) 72%,
+    rgba(246, 248, 252, 0.92) 88%,
+    #F6F8FC 100%
+  ) !important;
+}
+
+:root:not(.dark) .dubhub-profile-dense-genre-chip {
+  color: #101828 !important;
+}
+
+/* Leaderboard prize surround — Light frost only. Dark radial stays on the class. */
+:root:not(.dark) .dubhub-lb-hero-meta-scrim {
+  background-image: radial-gradient(
+    ellipse at center,
+    rgba(246, 248, 252, 0.72) 0%,
+    rgba(238, 243, 255, 0.42) 46%,
+    rgba(246, 248, 252, 0.14) 70%,
+    transparent 86%
+  );
+}
+
+:root:not(.dark) [data-testid="rewards-banner-title"],
+:root:not(.dark) [data-testid="rewards-banner-sponsor"],
+:root:not(.dark) [data-testid="rewards-banner-eligibility"],
+:root:not(.dark) [data-testid="rewards-banner-terms"] {
+  color: #101828;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Prize pills: the container carries Light contrast. Accent colour stays the identity. */
+:root:not(.dark) [data-lb-prize-tone="blue"] [data-testid="rewards-banner-prize-label"],
+:root:not(.dark) [data-lb-prize-tone="blue"] [data-testid="rewards-banner-countdown"] {
+  background-color: rgba(10, 131, 255, 0.16) !important;
+  border-color: #0a83ff !important;
+  color: #0757b8 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+:root:not(.dark) [data-lb-prize-tone="gold"] [data-testid="rewards-banner-prize-label"],
+:root:not(.dark) [data-lb-prize-tone="gold"] [data-testid="rewards-banner-countdown"] {
+  background-color: rgba(229, 188, 5, 0.22) !important;
+  border-color: #e5bc05 !important;
+  color: #8a6808 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+/* Canonical #FFD700 on pale page chrome. One zero-blur edge; Dark/media omit this class. */
+:root:not(.dark) .dubhub-gold-text-surface {
+  color: #ffd700;
+  text-shadow: 0 1px 0 rgba(16, 24, 40, 0.45);
+}
+
+:root:not(.dark) .dubhub-gold-text-surface .dubhub-gold-verified-tick,
+:root:not(.dark) .dubhub-gold-text-surface + * .dubhub-gold-verified-tick {
+  filter: drop-shadow(0 1px 0 rgba(16, 24, 40, 0.45));
+}
+
+:root:not(.dark) [data-profile-hero="canvas"] .dubhub-gold-text-surface {
+  filter: none;
+}
+
+/* Light compact identity: foreground name. Tick stays gold, with the same edge. */
+:root:not(.dark) .dubhub-artist-identity-compact {
+  color: #101828;
+  text-shadow: none;
+}
+
+:root:not(.dark) .dubhub-artist-identity-compact .dubhub-gold-verified-tick,
+:root:not(.dark) .dubhub-artist-identity-compact + * .dubhub-gold-verified-tick {
+  filter: drop-shadow(0 1px 0 rgba(16, 24, 40, 0.45));
+}
+
+.dark .dubhub-artist-identity-compact {
+  color: #ffd700;
+}
+
+/*
+ * Light page release-status pills. Same hue family as the media chip,
+ * with a pale fill, a solid status border, and deeper status text.
+ * Media pills set data-release-status-surface="media" and skip this.
+ */
+:root:not(.dark) [data-release-status-surface="page"][data-release-status="upcoming"] {
+  background-color: color-mix(in srgb, #6366f1 22%, #ffffff);
+  color: #312e81;
+  box-shadow: inset 0 0 0 1px #6366f1;
+}
+
+:root:not(.dark) [data-release-status-surface="page"][data-release-status="coming_soon"] {
+  background-color: color-mix(in srgb, #f59e0b 22%, #ffffff);
+  color: #92400e;
+  box-shadow: inset 0 0 0 1px #d97706;
+}
+
+:root:not(.dark) [data-release-status-surface="page"][data-release-status="released"] {
+  background-color: color-mix(in srgb, #22c55e 22%, #ffffff);
+  color: #166534;
+  box-shadow: inset 0 0 0 1px #16a34a;
+}
+
+:root:not(.dark) [data-release-status-surface="page"][data-release-status="paused"] {
+  background-color: color-mix(in srgb, #64748b 22%, #ffffff);
+  color: #334155;
+  box-shadow: inset 0 0 0 1px #64748b;
+}
+
+/* Leaderboard row badges — Light surface only. */
+:root:not(.dark) [data-testid^="leaderboard-entry-"] .dubhub-moderator-shield-stroke {
+  color: #1d4ed8;
+  fill: rgba(29, 78, 216, 0.16);
+}
+
+:root:not(.dark) [data-testid^="leaderboard-entry-"] .dubhub-moderator-shield-mark {
+  fill: #101828;
+}
+
+/* Same Light badge ink on pale surfaces. Leaderboard rows keep the selectors above. */
+:root:not(.dark) .dubhub-moderator-shield-on-surface .dubhub-moderator-shield-stroke {
+  color: #1d4ed8;
+  fill: rgba(29, 78, 216, 0.16);
+}
+
+:root:not(.dark) .dubhub-moderator-shield-on-surface .dubhub-moderator-shield-mark {
+  fill: #101828;
+}
+
+:root:not(.dark) .dubhub-hundred-club-on-surface {
+  border-color: #667085;
+  background-color: rgba(255, 255, 255, 0.94);
+  background-image: none;
+  color: #101828;
+  box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.08);
+}
+
+:root:not(.dark) .dubhub-hundred-club-on-surface .dubhub-hundred-club-label {
+  color: #101828;
+}
+
+:root:not(.dark) .dubhub-hundred-club-on-surface .dubhub-hundred-club-numeral {
+  fill: #101828;
+}
+
 .dark .dubhub-app-releases-fab-underlay {
   background-color: #0f1324;
 }
@@ -1146,20 +1760,44 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   );
 }
 
-/* Light mode: canvas/sticky stay on theme tokens; underlays remain opaque background. */
+/* Light Releases underlay/fade dissolve into the approved canvas #F6F8FC. */
 :root:not(.dark) .dubhub-app-releases-fab-underlay,
 .light .dubhub-app-releases-fab-underlay {
-  background-color: hsl(var(--background));
+  background-color: #F6F8FC;
 }
 
 :root:not(.dark) .dubhub-app-releases-fab-fade,
 .light .dubhub-app-releases-fab-fade {
   background-image: linear-gradient(
     to top,
-    hsl(var(--background)) 0%,
-    hsl(var(--background) / 0.9) 45%,
+    #F6F8FC 0%,
+    rgba(246, 248, 252, 0.9) 45%,
     transparent 100%
   );
+}
+
+/* List-only Light chrome. Release Detail / Create / Edit do not use this hook. */
+:root:not(.dark) .dubhub-releases-list .dubhub-app-primary-action {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+  box-shadow: 0 10px 24px -16px rgba(10, 131, 255, 0.65);
+}
+
+:root:not(.dark) .dubhub-releases-list [class~="ring-teal-400/35"] {
+  background-color: color-mix(in srgb, #14b8a6 18%, #ffffff);
+  color: #101828;
+}
+
+:root:not(.dark) .dubhub-releases-list [class~="ring-red-400/35"] {
+  background-color: color-mix(in srgb, #ef4444 16%, #ffffff);
+  color: #101828;
+}
+
+:root:not(.dark) .dubhub-releases-list [class~="border-white/10"][class~="bg-white/5"] {
+  border-color: #DCE3EC;
+  background-color: rgba(16, 24, 40, 0.05);
+  color: #101828;
 }
 
 /**
@@ -1169,7 +1807,7 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
  * (avoids stacking with sticky chrome / page blur).
  */
 .dubhub-app-overlay-backdrop {
-  background-color: rgba(8, 12, 28, 0.58) !important;
+  background-color: var(--overlay) !important;
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -1179,70 +1817,137 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   }
 }
 
-.dark .dubhub-app-overlay-surface {
+.dubhub-app-overlay-surface {
   border-radius: 22px !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  background-color: rgba(20, 26, 48, 0.97) !important;
-  color: hsl(210, 25%, 96%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 18px 48px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid var(--overlay-surface-border) !important;
+  background-color: var(--overlay-surface-bg) !important;
+  color: var(--foreground);
+  box-shadow: var(--overlay-surface-shadow) !important;
 }
 
-.dark .dubhub-app-sheet-surface {
+/* ID-marking shell only. Rows stay white cards. Dark keeps the overlay token. */
+:root:not(.dark) .dubhub-id-marking-atmosphere {
+  background-color: #F4F7FC !important;
+  background-image: var(--page-canvas-atmosphere) !important;
+}
+
+/* Comments sheet only. Composer stays a white field. Dark keeps its own image. */
+:root:not(.dark) .dubhub-comments-sheet-atmosphere {
+  background-color: #F6F8FC;
+  background-image: var(--page-canvas-atmosphere);
+}
+
+/* Quick profile sheet follows the app theme. Home media underneath stays separate. */
+:root:not(.dark) [data-home-profile-preview="true"] {
+  background-color: #F6F8FC !important;
+  background-image: var(--page-canvas-atmosphere) !important;
+  color: #101828;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] .text-white {
+  color: #101828 !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [class*="text-white/"] {
+  color: #667085 !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="profile-preview-username"] {
+  color: #101828 !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="reputation-level"] {
+  color: #101828 !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-preview-role="label"] {
+  color: #667085 !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-preview-role="value"] {
+  color: #101828 !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="home-profile-preview-stats-row"] {
+  border-color: #DCE3EC;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="home-profile-preview-stats-row"] .bg-white\/20 {
+  background-color: #DCE3EC !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="home-profile-preview-grabber"] {
+  background-color: rgba(16, 24, 40, 0.22) !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] .bg-white\/\[0\.14\] {
+  background-color: rgba(16, 24, 40, 0.08) !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="home-profile-preview-rep-progress"] .bg-black\/55 {
+  background-color: rgba(16, 24, 40, 0.1) !important;
+}
+
+:root:not(.dark) [data-home-profile-preview="true"] [data-testid="reputation-bar"][data-rep-fill="neutral"] {
+  background-color: #0A83FF !important;
+  background-image: linear-gradient(90deg, #0A83FF 0%, #5BA8FF 100%) !important;
+}
+
+/* Light Comments Identified pill: deeper green ink, same green family. */
+:root:not(.dark) .dubhub-identified-pill-page {
+  color: #166534 !important;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.78), rgba(21, 128, 61, 0.62)) !important;
+}
+
+:root:not(.dark) .dubhub-identified-pill-page svg:not(.dubhub-gold-verified-tick) {
+  color: #166534 !important;
+}
+
+/* One tick baseline: slightly above the username, Light and Dark. */
+.dubhub-verified-tick-align {
+  transform: translateY(-0.14em);
+}
+
+.dubhub-app-sheet-surface {
   border-radius: 22px 22px 0 0 !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  background-color: rgba(18, 24, 48, 0.72) !important;
-  background-image: linear-gradient(
-    180deg,
-    rgba(36, 48, 88, 0.5) 0%,
-    rgba(18, 24, 48, 0.68) 42%,
-    rgba(12, 16, 32, 0.82) 100%
-  );
-  color: hsl(210, 25%, 96%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 -8px 32px rgba(0, 0, 0, 0.28) !important;
+  border-color: var(--sheet-surface-border) !important;
+  background-color: var(--sheet-surface-bg) !important;
+  background-image: var(--sheet-surface-image);
+  color: var(--foreground);
+  box-shadow: var(--sheet-surface-shadow) !important;
 }
 
 /**
  * Standard toast + upload progress capsule — same navy gradient family as sheets.
  * Intentionally separate from in-app notification glass banners.
  */
-.dark .dubhub-app-toast-surface {
+.dubhub-app-toast-surface {
   border-radius: 18px !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  background-color: rgba(18, 24, 48, 0.92) !important;
-  background-image: linear-gradient(
-    180deg,
-    rgba(36, 48, 88, 0.55) 0%,
-    rgba(18, 24, 48, 0.88) 50%,
-    rgba(12, 16, 32, 0.95) 100%
-  );
-  color: hsl(210, 25%, 96%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 12px 32px rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid var(--toast-border) !important;
+  background-color: var(--toast-bg) !important;
+  background-image: var(--toast-image);
+  color: var(--foreground);
+  box-shadow: var(--toast-shadow) !important;
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .dark .dubhub-app-toast-surface {
-    background-color: rgba(18, 24, 48, 0.78) !important;
+  .dubhub-app-toast-surface {
+    background-color: var(--toast-bg-blur) !important;
     -webkit-backdrop-filter: blur(16px) saturate(1.15);
     backdrop-filter: blur(16px) saturate(1.15);
   }
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .dark .dubhub-app-sheet-surface {
-    background-color: rgba(18, 24, 48, 0.58) !important;
+  .dubhub-app-sheet-surface {
+    background-color: var(--sheet-surface-bg-blur) !important;
     -webkit-backdrop-filter: blur(20px) saturate(1.2);
     backdrop-filter: blur(20px) saturate(1.2);
   }
 }
 
 .dubhub-app-sheet-backdrop {
-  background-color: rgba(8, 12, 28, 0.42) !important;
+  background-color: var(--sheet-overlay) !important;
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -1279,93 +1984,23 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   animation-timing-function: cubic-bezier(0.4, 0, 1, 1) !important;
 }
 
-/* Light: coherent raised surface — not stranded dark indigo. */
-:root:not(.dark) .dubhub-app-overlay-surface,
-.light .dubhub-app-overlay-surface {
-  border-radius: 22px !important;
-  border: 1px solid hsl(var(--border)) !important;
-  background-color: hsl(var(--background) / 0.98) !important;
-  color: hsl(var(--foreground));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 18px 40px rgba(15, 23, 42, 0.18) !important;
+.dubhub-app-segment-active {
+  background-color: var(--segment-active-bg);
+  background-image: var(--segment-active-image);
+  box-shadow: var(--segment-active-shadow);
+  color: var(--segment-active-fg);
 }
 
-:root:not(.dark) .dubhub-app-sheet-surface,
-.light .dubhub-app-sheet-surface {
-  border-radius: 22px 22px 0 0 !important;
-  border-color: hsl(var(--border)) !important;
-  background-color: hsl(var(--background) / 0.82) !important;
-  background-image: linear-gradient(
-    180deg,
-    hsl(var(--background) / 0.92) 0%,
-    hsl(var(--background) / 0.78) 100%
-  );
-  color: hsl(var(--foreground));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 -8px 28px rgba(15, 23, 42, 0.1) !important;
+.dubhub-app-segment-inactive,
+.dubhub-app-segment-inactive:hover {
+  background-color: var(--segment-inactive-bg);
+  border-color: var(--segment-inactive-border);
+  color: var(--segment-inactive-fg);
 }
 
-:root:not(.dark) .dubhub-app-toast-surface,
-.light .dubhub-app-toast-surface {
-  border-radius: 18px !important;
-  border: 1px solid hsl(var(--border)) !important;
-  background-color: hsl(var(--background) / 0.96) !important;
-  background-image: linear-gradient(
-    180deg,
-    hsl(var(--background) / 0.98) 0%,
-    hsl(var(--background) / 0.9) 100%
-  );
-  color: hsl(var(--foreground));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 12px 28px rgba(15, 23, 42, 0.14) !important;
-}
-
-@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  :root:not(.dark) .dubhub-app-sheet-surface,
-  .light .dubhub-app-sheet-surface {
-    background-color: hsl(var(--background) / 0.72) !important;
-    -webkit-backdrop-filter: blur(18px) saturate(1.15);
-    backdrop-filter: blur(18px) saturate(1.15);
-  }
-}
-
-:root:not(.dark) .dubhub-app-overlay-backdrop,
-.light .dubhub-app-overlay-backdrop {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-}
-
-:root:not(.dark) .dubhub-app-sheet-backdrop,
-.light .dubhub-app-sheet-backdrop {
-  background-color: rgba(15, 23, 42, 0.32) !important;
-}
-
-.dark .dubhub-app-segment-active {
-  background-color: rgba(255, 255, 255, 0.08);
-  background-image: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.06) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -0.5px 0 rgba(0, 0, 0, 0.3);
-}
-
-:root:not(.dark) .dubhub-app-segment-active,
-.light .dubhub-app-segment-active {
-  background-color: rgba(15, 23, 42, 0.06);
-  background-image: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.1) 0%,
-    rgba(15, 23, 42, 0.04) 100%
-  );
-  color: #0f172a;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    inset 0 -0.5px 0 rgba(15, 23, 42, 0.08);
+.dubhub-app-segment-inactive:hover {
+  background-color: var(--segment-inactive-hover-bg);
+  color: var(--segment-inactive-hover-fg);
 }
 
 .dubhub-app-release-form-top {
@@ -1380,7 +2015,7 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
  * Slice C4B–C4B.2 — Release Detail artwork-derived atmosphere (opt-in).
  * Base layer: branded blue → indigo → navy from frame 1 (covers parent bg-background).
  * ::before: artwork/neutral wash. Cached = instant; cold = short opacity fade.
- * Light mode: neutral theme background (no dark artwork island).
+ * Light uses the same --release-atmosphere-rgb, diluted into #F6F8FC.
  */
 .dark .dubhub-app-release-detail-canvas {
   --release-atmosphere-rgb: 12, 58, 120;
@@ -1473,194 +2108,208 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   z-index: 1;
 }
 
+/* Light exposure of the same artwork wash. Brand/pending keep the generic canvas. */
 :root:not(.dark) .dubhub-app-release-detail-canvas,
 .light .dubhub-app-release-detail-canvas {
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-  background-image: none;
+  --release-atmosphere-rgb: 12, 58, 120;
+  position: relative;
+  isolation: isolate;
+  background-color: #F6F8FC;
+  background-image: var(--page-canvas-atmosphere);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  color: var(--foreground);
 }
 
 :root:not(.dark) .dubhub-app-release-detail-canvas::before,
 .light .dubhub-app-release-detail-canvas::before {
-  content: none;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      ellipse 150% 55% at 50% -18%,
+      rgba(var(--release-atmosphere-rgb), 0.24) 0%,
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(var(--release-atmosphere-rgb), 0.22) 0%,
+      rgba(var(--release-atmosphere-rgb), 0.14) 14%,
+      rgba(var(--release-atmosphere-rgb), 0.07) 36%,
+      rgba(var(--release-atmosphere-rgb), 0.03) 55%,
+      rgba(var(--release-atmosphere-rgb), 0.01) 70%,
+      rgba(246, 248, 252, 0) 85%,
+      transparent 100%
+    );
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
 
-.dark .dubhub-app-destructive-action-surface {
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  background-color: rgba(28, 36, 68, 0.55) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+:root:not(.dark) .dubhub-app-release-detail-canvas[data-release-atmosphere="artwork"][data-atmosphere-ready="true"]::before,
+:root:not(.dark) .dubhub-app-release-detail-canvas[data-release-atmosphere="neutral"][data-atmosphere-ready="true"]::before,
+.light .dubhub-app-release-detail-canvas[data-release-atmosphere="artwork"][data-atmosphere-ready="true"]::before,
+.light .dubhub-app-release-detail-canvas[data-release-atmosphere="neutral"][data-atmosphere-ready="true"]::before {
+  opacity: 1;
 }
 
-:root:not(.dark) .dubhub-app-destructive-action-surface,
-.light .dubhub-app-destructive-action-surface {
+:root:not(.dark) .dubhub-app-release-detail-canvas[data-atmosphere-instant="true"][data-release-atmosphere="artwork"]::before,
+:root:not(.dark) .dubhub-app-release-detail-canvas[data-atmosphere-instant="true"][data-release-atmosphere="neutral"]::before,
+.light .dubhub-app-release-detail-canvas[data-atmosphere-instant="true"][data-release-atmosphere="artwork"]::before,
+.light .dubhub-app-release-detail-canvas[data-atmosphere-instant="true"][data-release-atmosphere="neutral"]::before {
+  opacity: 1;
+  transition: none;
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas[data-release-atmosphere="brand"]::before,
+.light .dubhub-app-release-detail-canvas[data-release-atmosphere="brand"]::before {
+  opacity: 0;
+  transition: none;
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas[data-atmosphere-pending="true"]::before,
+.light .dubhub-app-release-detail-canvas[data-atmosphere-pending="true"]::before {
+  opacity: 0;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not(.dark) .dubhub-app-release-detail-canvas::before,
+  .light .dubhub-app-release-detail-canvas::before {
+    transition: none;
+  }
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas > *,
+.light .dubhub-app-release-detail-canvas > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas [class~="ring-teal-400/35"],
+:root:not(.dark) .dubhub-release-form [class~="ring-teal-400/35"] {
+  background-color: color-mix(in srgb, #14b8a6 18%, #ffffff);
+  color: #101828;
+}
+
+:root:not(.dark) .dubhub-app-release-detail-canvas [class~="ring-red-400/35"],
+:root:not(.dark) .dubhub-release-form [class~="ring-red-400/35"] {
+  background-color: color-mix(in srgb, #ef4444 16%, #ffffff);
+  color: #101828;
+}
+
+.dubhub-app-destructive-action-surface {
   border-radius: 12px;
-  border: 1px solid hsl(var(--border)) !important;
-  background-color: hsl(var(--muted) / 0.6) !important;
+  border: 1px solid var(--destructive-surface-border) !important;
+  background-color: var(--destructive-surface-bg) !important;
+  box-shadow: var(--destructive-surface-shadow);
+}
+
+.dubhub-app-destructive-action-surface:focus,
+.dubhub-app-destructive-action-surface[data-highlighted] {
+  background-color: var(--destructive-surface-highlight) !important;
 }
 
 /**
  * Slice C3 — opt-in form canvas + field/select material (authenticated).
  * No per-field backdrop-filter. Select menu may use solid indigo (no blur).
  */
-.dark .dubhub-app-form-canvas {
-  background-color: #0f1324;
-  background-image:
-    radial-gradient(
-      ellipse 120% 70% at 50% -35%,
-      rgba(10, 131, 255, 0.12) 0%,
-      rgba(0, 29, 249, 0.05) 42%,
-      transparent 70%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(22, 38, 92, 0.24) 0%,
-      rgba(15, 22, 48, 0.1) 32%,
-      rgba(15, 19, 36, 0.04) 58%,
-      #0f1324 100%
-    );
+.dubhub-app-form-canvas {
+  background-color: var(--form-canvas-bg);
+  background-image: var(--form-canvas-image);
   background-repeat: no-repeat;
   background-size: 100% 100%;
 }
 
-.dark .dubhub-app-field {
+.dubhub-app-field {
   border-width: 1px !important;
   border-style: solid !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  background-color: rgba(28, 36, 68, 0.78) !important;
-  color: hsl(210, 25%, 96%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  border-color: var(--material-field-border) !important;
+  background-color: var(--material-field-bg) !important;
+  color: var(--foreground);
+  box-shadow: var(--material-field-shadow);
 }
 
-.dark .dubhub-app-field:focus,
-.dark .dubhub-app-field:focus-visible {
+.dubhub-app-field:focus,
+.dubhub-app-field:focus-visible {
   outline: none !important;
-  border-color: rgba(10, 131, 255, 0.55) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
-    0 0 0 1px rgba(10, 131, 255, 0.28);
+  border-color: var(--material-field-focus-border) !important;
+  box-shadow: var(--material-field-focus-shadow);
 }
 
-.dark .dubhub-app-field[aria-invalid="true"],
-.dark .dubhub-app-field.dubhub-app-field-invalid {
-  border-color: rgba(239, 68, 68, 0.65) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(239, 68, 68, 0.25);
+.dubhub-app-field[aria-invalid="true"],
+.dubhub-app-field.dubhub-app-field-invalid {
+  border-color: var(--material-field-invalid-border) !important;
+  box-shadow: var(--material-field-invalid-shadow);
 }
 
-.dark .dubhub-app-field.dubhub-app-field-success {
+.dubhub-app-field.dubhub-app-field-success {
   /* Quiet success: keep default field fill; subtle green border only — no outer glow. */
-  border-color: rgba(34, 197, 94, 0.22) !important;
-  background-color: rgba(28, 36, 68, 0.78) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  border-color: var(--material-field-success-border) !important;
+  background-color: var(--material-field-success-bg) !important;
+  box-shadow: var(--material-field-success-shadow);
 }
 
-.dark .dubhub-app-field.dubhub-app-field-success:focus,
-.dark .dubhub-app-field.dubhub-app-field-success:focus-visible {
-  border-color: rgba(10, 131, 255, 0.55) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
-    0 0 0 1px rgba(10, 131, 255, 0.28);
+.dubhub-app-field.dubhub-app-field-success:focus,
+.dubhub-app-field.dubhub-app-field-success:focus-visible {
+  border-color: var(--material-field-focus-border) !important;
+  box-shadow: var(--material-field-focus-shadow);
 }
 
-.dark .dubhub-app-select-content {
+.dubhub-app-select-content {
   border-radius: 15px !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  background-color: rgba(22, 30, 56, 0.98) !important;
-  color: hsl(210, 25%, 96%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 14px 36px rgba(0, 0, 0, 0.48) !important;
+  border-color: var(--select-border) !important;
+  background-color: var(--select-bg) !important;
+  color: var(--foreground);
+  box-shadow: var(--select-shadow) !important;
   overflow: hidden;
 }
 
-.dark .dubhub-app-artwork-picker {
+.dubhub-app-artwork-picker {
   border-radius: 18px;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background-color: rgba(22, 30, 56, 0.72) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 18px 40px -28px rgba(0, 0, 0, 0.85);
+  border-color: var(--artwork-border) !important;
+  background-color: var(--artwork-bg) !important;
+  box-shadow: var(--artwork-shadow);
 }
 
-.dark .dubhub-app-form-primary:disabled,
-.dark .dubhub-app-form-primary[disabled] {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background-color: rgba(255, 255, 255, 0.28) !important;
+.dubhub-app-primary-action,
+.dubhub-app-primary-action:hover {
+  background-color: var(--primary-action-bg);
+  border-color: var(--primary-action-border);
+  color: var(--primary-action-fg);
+}
+
+.dubhub-app-primary-action:disabled,
+.dubhub-app-primary-action[disabled] {
+  border-color: var(--primary-action-disabled-border) !important;
+  background-color: var(--primary-action-disabled-bg) !important;
   background-image: none !important;
-  color: rgba(15, 23, 42, 0.45) !important;
+  color: var(--primary-action-disabled-fg) !important;
   box-shadow: none !important;
   opacity: 1 !important;
 }
 
-/* Light form material — theme-coherent, not stranded indigo. */
-:root:not(.dark) .dubhub-app-form-canvas,
-.light .dubhub-app-form-canvas {
-  background-color: hsl(var(--background));
+.dubhub-app-secondary-action {
+  background-color: var(--secondary-action-bg);
+  border-color: var(--secondary-action-border);
+  color: var(--foreground);
 }
 
-:root:not(.dark) .dubhub-app-field,
-.light .dubhub-app-field {
-  border-width: 1px !important;
-  border-style: solid !important;
-  border-color: hsl(var(--border)) !important;
-  background-color: hsl(var(--background)) !important;
-  color: hsl(var(--foreground));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+.dubhub-app-secondary-action:hover {
+  background-color: var(--secondary-action-hover-bg);
+  color: var(--foreground);
 }
 
-:root:not(.dark) .dubhub-app-field:focus,
-:root:not(.dark) .dubhub-app-field:focus-visible,
-.light .dubhub-app-field:focus,
-.light .dubhub-app-field:focus-visible {
-  border-color: rgba(10, 131, 255, 0.55) !important;
-  box-shadow: 0 0 0 1px rgba(10, 131, 255, 0.25);
+.dubhub-app-skeleton-bar {
+  background-color: var(--skeleton-bar);
 }
 
-:root:not(.dark) .dubhub-app-field.dubhub-app-field-success,
-.light .dubhub-app-field.dubhub-app-field-success {
-  border-color: rgba(22, 163, 74, 0.28) !important;
-  background-color: hsl(var(--background)) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+.dubhub-app-skeleton-bar-mid {
+  background-color: var(--skeleton-bar-mid);
 }
 
-:root:not(.dark) .dubhub-app-field.dubhub-app-field-success:focus,
-:root:not(.dark) .dubhub-app-field.dubhub-app-field-success:focus-visible,
-.light .dubhub-app-field.dubhub-app-field-success:focus,
-.light .dubhub-app-field.dubhub-app-field-success:focus-visible {
-  border-color: rgba(10, 131, 255, 0.55) !important;
-  box-shadow: 0 0 0 1px rgba(10, 131, 255, 0.25);
-}
-
-:root:not(.dark) .dubhub-app-select-content,
-.light .dubhub-app-select-content {
-  border-radius: 15px !important;
-  border-color: hsl(var(--border)) !important;
-  background-color: hsl(var(--popover)) !important;
-  color: hsl(var(--popover-foreground));
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16) !important;
-}
-
-:root:not(.dark) .dubhub-app-artwork-picker,
-.light .dubhub-app-artwork-picker {
-  border-radius: 18px;
-  background-color: hsl(var(--muted) / 0.5) !important;
-}
-
-:root:not(.dark) .dubhub-app-form-primary:disabled,
-:root:not(.dark) .dubhub-app-form-primary[disabled],
-.light .dubhub-app-form-primary:disabled,
-.light .dubhub-app-form-primary[disabled] {
-  border-color: hsl(var(--border)) !important;
-  background-color: hsl(var(--muted)) !important;
-  color: hsl(var(--muted-foreground)) !important;
-  box-shadow: none !important;
-  opacity: 1 !important;
+.dubhub-app-skeleton-bar-faint {
+  background-color: var(--skeleton-bar-faint);
 }

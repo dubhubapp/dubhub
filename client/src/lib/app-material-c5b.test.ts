@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { ARTIST_IDENTITY_DISPLAY_CLASS } from "@/lib/artist-identity-presentation";
 import {
   APP_MATERIAL_AUTH_CANVAS_CLASS,
   APP_MATERIAL_AUTH_STICKY_CLASS,
@@ -171,7 +172,8 @@ describe("C5B semantic colour freezes", () => {
   it("keeps verified gold on profiles and leaderboard", () => {
     assert.match(userProfileSrc, /#FFD700/);
     assert.match(publicProfileSrc, /#FFD700/);
-    assert.match(leaderboardSrc, /#FFD700/);
+    assert.match(leaderboardSrc, /ARTIST_IDENTITY_DISPLAY_CLASS/);
+    assert.match(ARTIST_IDENTITY_DISPLAY_CLASS, /#FFD700/);
   });
 
   it("keeps Release Alerts green on / neutral off behaviour", () => {

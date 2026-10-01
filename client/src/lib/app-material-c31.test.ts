@@ -57,8 +57,8 @@ describe("C3.1 Back chevron", () => {
     assert.match(onboardingSrc, /PRE_LOGIN_BACK_ICON_CLASS/);
     assert.match(createSrc, /ChevronLeft/);
     assert.match(editSrc, /ChevronLeft/);
-    assert.match(createSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
-    assert.match(editSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
+    assert.match(createSrc, /APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS/);
+    assert.match(editSrc, /APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS/);
     assert.match(APP_MATERIAL_BACK_BUTTON_CLASS, /min-h-11/);
     assert.match(APP_MATERIAL_BACK_BUTTON_CLASS, /min-w-11/);
     assert.doesNotMatch(createSrc, /ArrowLeft|>\s*Back\s*</);
@@ -100,13 +100,14 @@ describe("C3.1 smoked Schedule / timezone sheets", () => {
     assert.match(tzSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS/);
     assert.match(tzSrc, /APP_MATERIAL_SHEET_SURFACE_CLASS/);
     assert.match(cssSrc, /\.dubhub-app-sheet-backdrop/);
-    assert.match(cssSrc, /\.dark \.dubhub-app-sheet-surface[\s\S]*?backdrop-filter:\s*blur\(20px\)/);
+    assert.match(cssSrc, /\.dubhub-app-sheet-surface \{[\s\S]*?backdrop-filter:\s*blur\(20px\)/);
+    assert.match(cssSrc, /--sheet-surface-bg-blur:\s*rgba\(18, 24, 48, 0\.58\)/);
     assert.doesNotMatch(commentsSrc, /APP_MATERIAL_SHEET_BACKDROP|dubhub-app-sheet-backdrop/);
     assert.match(paywallSrc, /APP_MATERIAL_SHEET_BACKDROP_CLASS/);
     assert.match(drawerSrc, /APP_MATERIAL_FORM_PRIMARY_CLASS/);
     assert.match(statusSrc, /APP_MATERIAL_SEGMENT_ACTIVE_CLASS/);
     assert.match(APP_MATERIAL_SEGMENT_ACTIVE_CLASS, /dubhub-app-segment-active/);
-    assert.match(cssSrc, /\.dark \.dubhub-app-segment-active/);
+    assert.match(cssSrc, /\.dubhub-app-segment-active \{/);
   });
 
   it("preserves schedule field wiring and C3 field helpers", () => {

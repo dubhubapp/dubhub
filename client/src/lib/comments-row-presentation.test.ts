@@ -175,7 +175,7 @@ describe("COMMENTS-POLISH-2 pin metadata + composer fade", () => {
 
   it("adds a 20px pointer-events-none list-edge fade without blur or composer border-t", () => {
     const fadeOpen = commentsSrc.indexOf(
-      'pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-white to-transparent dark:from-[#141a2e]',
+      'pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-[#F6F8FC] to-transparent dark:from-[#141a2e]',
     );
     assert.ok(fadeOpen >= 0);
     const fadeClass = commentsSrc.slice(fadeOpen, fadeOpen + 160);

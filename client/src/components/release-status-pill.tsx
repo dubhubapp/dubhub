@@ -3,6 +3,7 @@ import {
   RELEASE_COMING_SOON_LABEL,
   RELEASE_UPCOMING_LABEL,
   resolveReleaseStatusPillPresentation,
+  type ReleaseStatusPillSurface,
 } from "@/lib/release-status-pill";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,8 @@ type ReleaseStatusPillProps = {
   paused?: boolean;
   className?: string;
   size?: "default" | "compact";
+  /** Media keeps the navy chip. Page uses the Light pale variant. */
+  surface?: ReleaseStatusPillSurface;
   "data-testid"?: string;
 };
 
@@ -47,6 +50,7 @@ export function ReleaseStatusPill({
   paused = false,
   className,
   size = "default",
+  surface = "page",
   "data-testid": dataTestId,
 }: ReleaseStatusPillProps) {
   const presentation = resolveReleaseStatusPillPresentation({
@@ -68,6 +72,8 @@ export function ReleaseStatusPill({
         presentation.toneClass,
         className,
       )}
+      data-release-status={presentation.variant}
+      data-release-status-surface={surface}
       data-testid={dataTestId ?? `badge-release-status-${presentation.variant}`}
     >
       {presentation.label}

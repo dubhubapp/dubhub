@@ -17,6 +17,10 @@ import { GoldVerifiedTick } from "@/components/verified-artist";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/user-context";
 import { goldAvatarGlowShadowClass } from "@/components/verified-artist";
+import {
+  ARTIST_IDENTITY_DISPLAY_CLASS,
+  ARTIST_IDENTITY_MEDIA_CLASS,
+} from "@/lib/artist-identity-presentation";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
 import { formatJoinedDateLine } from "@/lib/joined-date";
@@ -60,7 +64,7 @@ import {
 } from "@/lib/public-profile-query";
 
 const PROFILE_ACTIVITY_CARD_CLASS =
-  "rounded-xl border border-white/10 bg-black/30 backdrop-blur-md p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
+  "rounded-xl border border-border bg-card p-4 dark:border-white/10 dark:bg-black/30 dark:backdrop-blur-md dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]";
 
 /** Compact Back chrome lane above identity (C5C) — ~44pt + safe-area. */
 const PUBLIC_PROFILE_BACK_LANE_CLASS =
@@ -86,7 +90,7 @@ const PUBLIC_KEY_STAT_ICON_CLASS =
   "h-4 w-4 shrink-0 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]";
 const PUBLIC_KEY_STAT_VALUE_CLASS =
   "text-base font-bold tabular-nums leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]";
-const PUBLIC_KEY_STAT_LABEL_CLASS = "text-[10px] leading-tight text-gray-300/90";
+const PUBLIC_KEY_STAT_LABEL_CLASS = "text-[10px] leading-tight text-muted-foreground dark:text-gray-300/90";
 
 /** Equal vertical rhythm: stats → rep → releases */
 const PUBLIC_PROFILE_SECTION_GAP_CLASS = "flex flex-col gap-5";
@@ -417,7 +421,9 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
 
   const topGenreKey = light?.topGenreKey ?? null;
   const genreChip = topGenreKey ? getGenreChipStyle(topGenreKey) : null;
-  const genrePillStyle = genreChip ? getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass) : null;
+  const genrePillStyle = genreChip
+    ? getGenreGlowPillStyle(genreChip.bgColor, genreChip.textClass)
+    : null;
 
   const postsValue = statsReady ? Number(light.posts).toLocaleString() : "—";
   const idsValue = statsReady ? Number(light.correct_ids).toLocaleString() : "—";
@@ -492,6 +498,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                   ? "bg-[#0f1324]"
                   : "bg-transparent"
               }`}
+              data-profile-hero={hasReadyUploadedBanner ? "media" : "canvas"}
               data-testid="public-profile-banner"
             >
               {showBannerLoadingPlaceholder ? <ProfileBannerLoadingPlaceholder /> : null}
@@ -574,7 +581,13 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                     <div className="flex min-w-0 items-center gap-1.5">
                       <h1
                         className={`min-w-0 break-words text-xl font-bold leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] sm:truncate ${
-                          isVerifiedArtist ? "text-[#FFD700]" : "text-foreground"
+                          isVerifiedArtist
+                            ? hasReadyUploadedBanner
+                              ? ARTIST_IDENTITY_MEDIA_CLASS
+                              : ARTIST_IDENTITY_DISPLAY_CLASS
+                            : hasReadyUploadedBanner
+                              ? "text-white"
+                              : "text-foreground"
                         }`}
                         data-testid="public-profile-username"
                         title={profile.username ? formatUsernameDisplay(profile.username) : routeUsername}
@@ -617,7 +630,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                         className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
                         data-testid="public-profile-fav-genre"
                       >
-                        <span className="text-[10px] font-medium leading-none text-white/60">Fav genre</span>
+                        <span className={`text-[10px] font-medium leading-none ${hasReadyUploadedBanner ? "text-white/60" : "text-muted-foreground"}`}>Fav genre</span>
                         <span
                           className={PUBLIC_PROFILE_GENRE_VALUE_PILL_CLASS}
                           style={genrePillStyle as CSSProperties}
@@ -697,7 +710,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
             {isVerifiedArtist ? (
               <section className="space-y-4" data-testid="public-profile-releases">
                 <div className="flex items-baseline justify-between gap-3">
-                  <h2 className="text-sm font-semibold text-white">Releases</h2>
+                  <h2 className="text-sm font-semibold text-foreground dark:text-white">Releases</h2>
                 </div>
 
                 {releasesLoading ? (
@@ -710,7 +723,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                   />
                 ) : (
                   <div className={PROFILE_ACTIVITY_CARD_CLASS}>
-                    <p className="text-sm leading-relaxed text-gray-400">
+                    <p className="text-sm leading-relaxed text-muted-foreground dark:text-gray-400">
                       No public releases yet. When this artist publishes releases, they will appear here.
                     </p>
                   </div>
@@ -720,7 +733,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
               </section>
             ) : (
               <section className="space-y-4" data-testid="public-profile-saved-releases">
-                <h2 className="text-sm font-semibold text-white">
+                <h2 className="text-sm font-semibold text-foreground dark:text-white">
                   {savedReleasesCount !== null
                     ? `Saved Releases (${savedReleasesCount})`
                     : "Saved Releases"}
@@ -734,7 +747,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                       showSavedAtLabels
                     />
                   ) : (
-                    <p className="text-sm text-gray-400">No saved releases yet.</p>
+                    <p className="text-sm text-muted-foreground dark:text-gray-400">No saved releases yet.</p>
                   )
                 ) : (
                   <PublicArtistReleasesSkeleton />

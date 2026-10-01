@@ -282,6 +282,43 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.doesNotMatch(overlaySrc, /backgroundEffect/);
   });
 
+  it("keeps Light selected and unselected tab ink at #101828 and Dark tints unchanged", () => {
+    assert.match(
+      overlaySrc,
+      /if lightCanvas \{[\s\S]*?red:\s*16\.0\s*\/\s*255\.0,\s*green:\s*24\.0\s*\/\s*255\.0,\s*blue:\s*40\.0\s*\/\s*255\.0[\s\S]*?tabBar\.tintColor = ink[\s\S]*?tabBar\.unselectedItemTintColor = ink/,
+    );
+    assert.match(
+      overlaySrc,
+      /tabBar\.tintColor\s*=\s*UIColor\.white\.withAlphaComponent\(0\.96\)/,
+    );
+    assert.match(
+      overlaySrc,
+      /tabBar\.unselectedItemTintColor\s*=\s*UIColor\.white\.withAlphaComponent\(0\.50\)/,
+    );
+    assert.match(overlaySrc, /classList\.contains\('dark'\) \? 'dark' : 'light'/);
+    assert.doesNotMatch(overlaySrc, /UITabBarAppearance\s*\(/);
+  });
+
+  it("keeps Home on Dark media ink and other tabs on the page theme", () => {
+    assert.match(overlaySrc, /if selectedTabId == "home" \{ return false \}/);
+    assert.match(overlaySrc, /return pagePrefersLightInk/);
+    assert.match(overlaySrc, /applyItemTints\(on: tabBar, lightCanvas: itemTintsFollowLightPage\(\)\)/);
+    assert.match(overlaySrc, /self\.pagePrefersLightInk = lightCanvas[\s\S]*?self\.applyResolvedItemTints\(\)/);
+    assert.match(overlaySrc, /self\.applySelectedItem\(\)\s*\n\s*self\.applyResolvedItemTints\(\)/);
+    assert.match(overlaySrc, /selectedTabId = tab\s*\n\s*applyResolvedItemTints\(\)/);
+    assert.match(
+      overlaySrc,
+      /tabBar\.tintColor\s*=\s*UIColor\.white\.withAlphaComponent\(0\.96\)/,
+    );
+    assert.match(
+      overlaySrc,
+      /tabBar\.unselectedItemTintColor\s*=\s*UIColor\.white\.withAlphaComponent\(0\.50\)/,
+    );
+    assert.doesNotMatch(overlaySrc, /UITabBarAppearance\s*\(/);
+    assert.doesNotMatch(homeSrc, /itemTintsFollowLightPage|applyResolvedItemTints/);
+    assert.doesNotMatch(videoCardSrc, /itemTintsFollowLightPage|applyResolvedItemTints/);
+  });
+
   it("maps custom tab glyphs as template assets with SF fallback, without scale hacks", () => {
     assert.match(overlaySrc, /symbol = "house"/);
     assert.match(overlaySrc, /symbol = "calendar"/);

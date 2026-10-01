@@ -193,7 +193,12 @@ export const LEADERBOARD_REWARD_HERO_META_CLASS =
  * HERO-11: reduced peak + slightly lower center (lower fade owns hero darkening).
  */
 export const LEADERBOARD_REWARD_HERO_META_SCRIM_CLASS =
-  "pointer-events-none absolute left-1/2 top-[54%] h-[11rem] w-[min(100%,23rem)] -translate-x-1/2 -translate-y-1/2 rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(15,19,36,0.48)_0%,rgba(15,19,36,0.22)_55%,transparent_78%)]" as const;
+  "dubhub-lb-hero-meta-scrim pointer-events-none absolute left-1/2 top-[54%] h-[11rem] w-[min(100%,23rem)] -translate-x-1/2 -translate-y-1/2 rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(15,19,36,0.48)_0%,rgba(15,19,36,0.22)_55%,transparent_78%)]" as const;
+
+/** Canonical verified gold. Light page chrome keeps this hue and adds a crisp edge. */
+export const ARTIST_GOLD_CANONICAL = "#FFD700" as const;
+/** Zero-blur edge so #FFD700 stays readable on #F6F8FC. Not a second gold. */
+export const ARTIST_GOLD_LIGHT_SURFACE_EDGE = "0 1px 0 rgba(16, 24, 40, 0.45)" as const;
 
 /** 1px IO sentinel at hero end — sticky glass only (not pager geometry). */
 export const LEADERBOARD_REWARD_HERO_SENTINEL_CLASS =
@@ -243,7 +248,7 @@ export const LEADERBOARD_ROW_BASE_CLASS =
  * Orientation is the `You` pill only; no wash/ring/border.
  */
 export const LEADERBOARD_ROW_CURRENT_CLASS = "" as const;
-export const LEADERBOARD_LIST_CLASS = "divide-y divide-white/[0.08]" as const;
+export const LEADERBOARD_LIST_CLASS = "divide-y divide-border dark:divide-white/[0.08]" as const;
 /**
  * Prize + list body enter classes.
  * Empty on purpose (LG-NAV-5A2a): a remount-keyed `fade-in-0 duration-200` wrapper
@@ -256,7 +261,7 @@ export const LEADERBOARD_BODY_ENTER_CLASS = "" as const;
 /** Viewport-filling skeleton rows — enough contrast on the dark canvas (not 100-row list). */
 export const LEADERBOARD_SKELETON_ROW_COUNT = 8 as const;
 /** Loading bones — `white/5` is invisible on the navy canvas; /15 reads as structure. */
-export const LEADERBOARD_SKELETON_BONE_CLASS = "animate-pulse rounded bg-white/15" as const;
+export const LEADERBOARD_SKELETON_BONE_CLASS = "animate-pulse rounded bg-foreground/12 dark:bg-white/15" as const;
 /** Current-user "You" chip — restrained interactive blue. */
 export const LEADERBOARD_YOU_PILL_CLASS =
   "inline-flex shrink-0 items-center rounded-full bg-[#0a83ff] px-1.5 py-0.5 text-[10px] font-medium leading-none text-white" as const;
@@ -281,7 +286,7 @@ export function leaderboardIdsUnitLabel(count: number): "ID" | "IDs" {
 
 /** Lifted neutral track — recessive empty portion with clear fill separation. */
 export const LEADERBOARD_REP_TRACK_CLASS =
-  "h-2 flex-1 overflow-hidden rounded-full bg-white/[0.07] ring-1 ring-inset ring-white/[0.04]" as const;
+  "h-2 flex-1 overflow-hidden rounded-full bg-foreground/[0.08] ring-1 ring-inset ring-foreground/[0.06] dark:bg-white/[0.07] dark:ring-white/[0.04]" as const;
 /** Soft top sheen on fill — depth without neon glow. */
 export const LEADERBOARD_REP_FILL_CLASS =
   "h-full rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none" as const;

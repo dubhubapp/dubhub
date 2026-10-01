@@ -42,7 +42,10 @@ type Props = {
 };
 
 const VAT_CARD_SURFACE_CLASS =
-  "w-full rounded-xl border border-white/10 bg-black/30 p-4 space-y-3 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" as const;
+  "w-full rounded-xl border border-border bg-card p-4 space-y-3 shadow-[inset_0_0_0_1px_rgba(16,24,40,0.04)] dark:border-white/10 dark:bg-black/30 dark:backdrop-blur-md dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" as const;
+
+/** Active status. Dark keeps the existing teal; Light uses a darker teal so it stays readable. */
+const VAT_ACTIVE_MARK_CLASS = "text-teal-700 dark:text-[#4ae9df]" as const;
 
 export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Props) {
   const { toast } = useToast();
@@ -155,7 +158,7 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
         className={
           surface === "inset"
             ? SETTINGS_VAT_INSET_CLASS
-            : "w-full rounded-xl border border-white/10 bg-black/30 p-4 space-y-2 backdrop-blur-md shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+            : cn(VAT_CARD_SURFACE_CLASS, "space-y-2")
         }
         data-testid="settings-verified-artist-tools-loading"
         data-settings-vat-surface={surface}
@@ -193,7 +196,7 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
           <p
             className={cn(
               "mt-0.5 text-xs font-medium text-muted-foreground",
-              view.mode === "active" && "text-[#4ae9df]",
+              view.mode === "active" && VAT_ACTIVE_MARK_CLASS,
             )}
             data-testid="settings-vat-status"
           >
@@ -222,7 +225,7 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
                     <Check
                       className={cn(
                         "mt-0.5 h-3.5 w-3.5 shrink-0",
-                        view.mode === "active" ? "text-[#4ae9df]" : "text-muted-foreground",
+                        view.mode === "active" ? VAT_ACTIVE_MARK_CLASS : "text-muted-foreground",
                       )}
                       aria-hidden
                     />

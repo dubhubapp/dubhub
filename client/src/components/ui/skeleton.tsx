@@ -1,13 +1,13 @@
 import { cn } from "@/lib/utils";
 
-/** Soft ghost bar — primary tier (translucent white on dark glass). */
-export const dubhubSkeletonBarClass = "animate-pulse rounded bg-white/12";
+/** Soft ghost bar — theme token, Dark stays translucent white. */
+export const dubhubSkeletonBarClass = "dubhub-app-skeleton-bar animate-pulse rounded bg-white/12";
 
 /** Mid tier for secondary lines. */
-export const dubhubSkeletonBarMidClass = "animate-pulse rounded bg-white/10";
+export const dubhubSkeletonBarMidClass = "dubhub-app-skeleton-bar-mid animate-pulse rounded bg-white/10";
 
 /** Faintest tier for tertiary lines. */
-export const dubhubSkeletonBarFaintClass = "animate-pulse rounded bg-white/[0.08]";
+export const dubhubSkeletonBarFaintClass = "dubhub-app-skeleton-bar-faint animate-pulse rounded bg-white/[0.08]";
 
 /** Subtle teal-tinted tier — accent hint without strong colour. */
 export const dubhubSkeletonBarTealClass = "animate-pulse rounded bg-teal-400/[0.1]";

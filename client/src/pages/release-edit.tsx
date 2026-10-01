@@ -29,8 +29,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS,
   APP_MATERIAL_DESTRUCTIVE_ACTION_SURFACE_CLASS,
   APP_MATERIAL_DIALOG_CONTENT_CLASS,
   APP_MATERIAL_FORM_PRIMARY_CLASS,
@@ -1114,7 +1114,7 @@ export default function ReleaseEdit() {
       enabled={false}
       onBack={handleBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none scrollbar-hide dubhub-app-form-canvas",
+        "dubhub-release-form flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none scrollbar-hide dubhub-app-form-canvas",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
       )}
     >
@@ -1139,10 +1139,10 @@ export default function ReleaseEdit() {
             type="button"
             onClick={handleBack}
             aria-label="Back"
-            className={APP_MATERIAL_BACK_BUTTON_CLASS}
+            className={APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS}
             data-testid="release-edit-back"
           >
-            <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+            <ChevronLeft className={APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
           </button>
           {isOwner ? (
             <DropdownMenu open={releaseMenuOpen} onOpenChange={setReleaseMenuOpen}>

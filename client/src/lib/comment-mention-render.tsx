@@ -1,4 +1,5 @@
 import { GoldVerifiedTick } from "@/components/verified-artist";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
 import { parseCommentMentionSegments } from "@shared/mentionParsing";
 import type { MouseEvent, ReactNode } from "react";
 
@@ -24,7 +25,7 @@ export function renderCommentMentionNodes(
     const isVerifiedArtist = isVerifiedArtistUsername(username);
 
     let className = isVerifiedArtist
-      ? "text-yellow-500 font-semibold cursor-pointer no-underline hover:no-underline active:no-underline focus:no-underline"
+      ? `${ARTIST_IDENTITY_COMPACT_CLASS} font-semibold cursor-pointer no-underline hover:no-underline active:no-underline focus:no-underline`
       : "text-inherit font-semibold cursor-pointer no-underline hover:no-underline active:no-underline focus:no-underline";
 
     if (tagStatus === "confirmed") {

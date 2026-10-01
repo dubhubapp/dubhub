@@ -19,8 +19,8 @@ const promptSrc = readFileSync(join(here, "../components/artist-profile-question
 
 describe("artist profile questions prompt presentation", () => {
   it("uses white Sparkles / success icons with no turquoise accent", () => {
-    assert.match(promptSrc, /Sparkles className="mt-0\.5 h-4 w-4 shrink-0 text-white"/);
-    assert.match(promptSrc, /CheckCircle2 className="mt-0\.5 h-4 w-4 shrink-0 text-white"/);
+    assert.match(promptSrc, /Sparkles className="mt-0\.5 h-4 w-4 shrink-0 text-foreground dark:text-white"/);
+    assert.match(promptSrc, /CheckCircle2 className="mt-0\.5 h-4 w-4 shrink-0 text-foreground dark:text-white"/);
     assert.doesNotMatch(promptSrc, /#4ae9df/);
   });
 

@@ -28,7 +28,7 @@ const toastVariants = cva(
     variants: {
       variant: {
         default:
-          "dubhub-app-toast-surface border-white/10 text-foreground",
+          "dubhub-app-toast-surface text-foreground",
         destructive:
           "destructive group border-destructive bg-destructive text-destructive-foreground",
       },

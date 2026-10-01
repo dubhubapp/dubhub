@@ -56,6 +56,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
 import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG, STATUS_GLOW_PILL_CLASS } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { useDelayedReleaseFeedSkeleton } from "@/lib/use-delayed-release-feed-skeleton";
@@ -242,7 +243,7 @@ const COMMENT_ACTIONS_DROPDOWN_CONTENT_CLASS =
 
 /** Local Comments sheet fill — opaque navy; do not use the shared 20px-blur sheet token. */
 const COMMENTS_SHEET_SURFACE_CLASS =
-  "bottom-0 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[#141a2e] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-sm dark:[background-image:linear-gradient(180deg,rgba(46,62,118,0.32)_0%,rgba(20,26,46,0)_38%)] [&>div:first-child]:bg-black/25 dark:[&>div:first-child]:bg-white/22";
+  "dubhub-comments-sheet-atmosphere bottom-0 mx-auto mt-0 h-[min(66vh,33rem)] w-full max-w-xl gap-0 rounded-t-3xl border-0 bg-white/95 p-0 shadow-2xl backdrop-blur-sm outline-none dark:bg-[#141a2e] dark:shadow-[0_-16px_56px_-12px_rgba(0,0,0,0.58)] dark:backdrop-blur-sm dark:[background-image:linear-gradient(180deg,rgba(46,62,118,0.32)_0%,rgba(20,26,46,0)_38%)] [&>div:first-child]:bg-black/25 dark:[&>div:first-child]:bg-white/22";
 
 /** Plain header icon control — generous hit target, no visible circle chrome. */
 const COMMENTS_HEADER_ICON_BUTTON_CLASS =
@@ -301,7 +302,7 @@ const COMMENTS_LIKE_BUTTON_LIKED_CLASS = "text-pink-600 dark:text-pink-400";
 const COMMENTS_LIKE_BUTTON_UNLIKED_CLASS = "text-gray-500 dark:text-white/40";
 
 /** Canonical Home Identified pill chrome — presentation only. */
-const COMMENTS_IDENTIFIED_PILL_CLASS = STATUS_GLOW_PILL_CLASS;
+const COMMENTS_IDENTIFIED_PILL_CLASS = `${STATUS_GLOW_PILL_CLASS} dubhub-identified-pill-page`;
 
 const COMMENTS_IDENTIFIED_PILL_STYLE = getGenreGlowPillStyle(
   STATUS_GLOW_PILL_BG.identified,
@@ -2539,13 +2540,20 @@ export function CommentsModal({
                     </button>
                     <div className="relative min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                        <div className="flex items-center space-x-1">
+                        <div
+                          className={`flex items-center space-x-1 ${
+                            pinnedVerifiedReply.user.account_type === "artist" &&
+                            pinnedVerifiedReply.user.verified_artist
+                              ? ARTIST_IDENTITY_COMPACT_CLASS
+                              : ""
+                          }`}
+                        >
                           <span
                             data-mark-id-long-press-ignore="true"
                             className={`cursor-pointer text-xs font-medium hover:underline sm:text-[13px] ${
                               pinnedVerifiedReply.user.account_type === "artist" &&
                               pinnedVerifiedReply.user.verified_artist
-                                ? "text-[#FFD700]"
+                                ? ARTIST_IDENTITY_COMPACT_CLASS
                                 : "text-gray-900 dark:text-white"
                             }`}
                             onClick={(e) => {
@@ -2661,12 +2669,18 @@ export function CommentsModal({
                 ) : (
                 <>
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <div className="flex items-center space-x-1">
+                  <div
+                    className={`flex items-center space-x-1 ${
+                      comment.user.account_type === "artist" && comment.user.verified_artist
+                        ? ARTIST_IDENTITY_COMPACT_CLASS
+                        : ""
+                    }`}
+                  >
                     <span 
                       data-mark-id-long-press-ignore="true"
                       className={`text-xs font-medium cursor-pointer hover:underline sm:text-[13px] ${
                         comment.user.account_type === 'artist' && comment.user.verified_artist
-                          ? "text-[#FFD700]"
+                          ? ARTIST_IDENTITY_COMPACT_CLASS
                           : "text-gray-900 dark:text-white"
                       }`}
                       onClick={(e) => {
@@ -2967,12 +2981,18 @@ export function CommentsModal({
                               <div className="min-w-0 flex-1">
                             <div className="relative">
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                            <div className="flex items-center space-x-1">
+                            <div
+                              className={`flex items-center space-x-1 ${
+                                reply.user.account_type === "artist" && reply.user.verified_artist
+                                  ? ARTIST_IDENTITY_COMPACT_CLASS
+                                  : ""
+                              }`}
+                            >
                               <span 
                                 data-mark-id-long-press-ignore="true"
                                 className={`text-xs font-medium cursor-pointer hover:underline ${
                                   reply.user.account_type === 'artist' && reply.user.verified_artist
-                                    ? "text-[#FFD700]"
+                                    ? ARTIST_IDENTITY_COMPACT_CLASS
                                     : "text-gray-900 dark:text-white"
                                 }`}
                                 onClick={(e) => {
@@ -3315,7 +3335,7 @@ export function CommentsModal({
                               modal
                               side="bottom"
                               align="end"
-                              className="relative z-10 h-8 w-8 shrink-0 text-white/50 hover:text-white/80 dark:text-white/50 dark:hover:text-white/80"
+                              className="relative z-10 h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80"
                               contentClassName={alertDialogStackZ}
                               content={
                                 <div
@@ -3374,7 +3394,7 @@ export function CommentsModal({
         </div>
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-white to-transparent dark:from-[#141a2e]"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-[#F6F8FC] to-transparent dark:from-[#141a2e]"
         />
         </div>
 
@@ -3385,18 +3405,18 @@ export function CommentsModal({
         >
           {/* Reply indicator */}
           {replyingTo && (
-            <div className="mb-2 rounded-lg border border-white/10 bg-white/[0.04] p-2.5 dark:border-white/10 dark:bg-white/[0.05]">
+            <div className="mb-2 rounded-lg border border-[#DCE3EC] bg-[#F6F8FC] p-2.5 dark:border-white/10 dark:bg-white/[0.05]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <span className="text-xs text-white/55">Replying to</span>
-                  <span className="text-xs font-medium text-white/85">{formatUsernameDisplay(replyingTo.username)}</span>
+                  <span className="text-xs text-muted-foreground dark:text-white/55">Replying to</span>
+                  <span className="text-xs font-medium text-foreground dark:text-white/85">{formatUsernameDisplay(replyingTo.username)}</span>
                 </div>
                 <button 
                   onClick={() => {
                     setReplyingTo(null);
                     setNewComment('');
                   }}
-                  className="text-white/40 hover:text-white/70"
+                  className="text-muted-foreground hover:text-foreground dark:text-white/40 dark:hover:text-white/70"
                   data-testid="cancel-reply"
                 >
                   <X className="w-4 h-4" />
@@ -3450,14 +3470,18 @@ export function CommentsModal({
                       className={`avatar-media w-8 h-8 rounded-full ${isDefaultAvatarUrl(avatarSrc) ? "avatar-default-media" : ""}`}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2">
+                      <div
+                        className={`flex items-center space-x-2 ${
+                          isVerifiedArtistSuggestion && !isDeniedOnPost ? ARTIST_IDENTITY_COMPACT_CLASS : ""
+                        }`}
+                      >
                         <span
                           className={`text-sm font-medium ${
                             isDeniedOnPost
                               ? "text-gray-500 dark:text-white/45"
                               : isVerifiedArtistSuggestion
-                                ? "text-yellow-600 dark:text-yellow-500"
-                                : "text-gray-900 dark:text-white"
+                                ? ARTIST_IDENTITY_COMPACT_CLASS
+                                : "text-foreground dark:text-white"
                           }`}
                         >
                           {formatUsernameDisplay(suggestion.username)}
@@ -3589,7 +3613,7 @@ export function CommentsModal({
                         ? "Tag yourself if this is your ID..."
                         : "What do you think?"
                   }
-                  className="block max-h-28 min-h-[44px] min-w-0 flex-1 resize-none overflow-y-auto scrollbar-hide rounded-2xl border-gray-300 px-3 py-[11px] text-sm leading-5 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
+                  className="block max-h-28 min-h-[44px] min-w-0 flex-1 resize-none overflow-y-auto scrollbar-hide rounded-2xl border-[#DCE3EC] bg-white px-3 py-[11px] text-sm leading-5 text-foreground placeholder:text-muted-foreground dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-white dark:placeholder:text-white/35 dark:ring-offset-[#141a2e]"
                   disabled={addCommentMutation.isPending}
                   data-testid="comment-input"
                   maxLength={INPUT_LIMITS.commentBody}

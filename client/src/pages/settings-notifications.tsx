@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import {
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_ICON_CLASS,
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import { setNotificationPreferences, useNotificationPreferences } from "@/lib/notification-preferences";
@@ -35,7 +35,11 @@ import {
   SETTINGS_HEADER_TO_SECTIONS_CLASS,
   SETTINGS_NOTIFICATIONS_INTRO_COPY,
   SETTINGS_NOTIFICATIONS_PUSH_HELPER_COPY,
+  SETTINGS_INLINE_ERROR_CLASS,
+  SETTINGS_INLINE_WARNING_CLASS,
+  SETTINGS_OS_WARNING_ACTION_CLASS,
   SETTINGS_OS_WARNING_CLASS,
+  SETTINGS_OS_WARNING_TEXT_CLASS,
   SETTINGS_PAGE_PAD_CLASS,
   SETTINGS_PAGE_SCROLL_CLASS,
   SETTINGS_SECTION_HELPER_CLASS,
@@ -97,8 +101,8 @@ function PushPrefSkeletonRow() {
   return (
     <div className={SETTINGS_SWITCH_ROW_CLASS} aria-hidden>
       <div className="min-w-0 flex-1 space-y-1.5">
-        <div className="h-4 w-36 max-w-[70%] rounded bg-white/10 animate-pulse" />
-        <div className="h-3 w-52 max-w-full rounded bg-white/5 animate-pulse" />
+        <div className="h-4 w-36 max-w-[70%] rounded bg-foreground/10 animate-pulse" />
+        <div className="h-3 w-52 max-w-full rounded bg-foreground/5 animate-pulse" />
       </div>
       <div className="h-6 w-11 shrink-0 rounded-full bg-input opacity-50" />
     </div>
@@ -262,12 +266,12 @@ export default function SettingsNotificationsPage() {
             <button
               type="button"
               onClick={handleBack}
-              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              className={cn(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
               aria-label="Back"
               data-testid="button-settings-notifications-back"
             >
               <ChevronLeft
-                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                className={cn(APP_MATERIAL_PAGE_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
                 strokeWidth={2}
                 aria-hidden
               />
@@ -343,12 +347,12 @@ export default function SettingsNotificationsPage() {
               </p>
             ) : null}
             {pushPrefsLoadError ? (
-              <p className="mb-2 text-xs text-amber-200/90" data-testid="push-prefs-load-error">
+              <p className={SETTINGS_INLINE_WARNING_CLASS} data-testid="push-prefs-load-error">
                 {pushPrefsLoadError}
               </p>
             ) : null}
             {pushPrefsSaveError ? (
-              <p className="mb-2 text-xs text-red-300" data-testid="push-prefs-save-error">
+              <p className={SETTINGS_INLINE_ERROR_CLASS} data-testid="push-prefs-save-error">
                 {pushPrefsSaveError}
               </p>
             ) : null}
@@ -430,7 +434,7 @@ export default function SettingsNotificationsPage() {
 
             {pushOsPermissionDenied ? (
               <div className={`mt-2 ${SETTINGS_OS_WARNING_CLASS}`}>
-                <p className="text-xs leading-relaxed text-amber-100/90">
+                <p className={SETTINGS_OS_WARNING_TEXT_CLASS}>
                   Notifications are turned off for dub hub in iOS Settings. Open Settings → Notifications →
                   dub hub to allow alerts, then return here.
                 </p>
@@ -438,7 +442,7 @@ export default function SettingsNotificationsPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 border-amber-400/40 text-amber-50 hover:bg-amber-400/10"
+                  className={SETTINGS_OS_WARNING_ACTION_CLASS}
                   onClick={() => openIosAppNotificationSettings()}
                   data-testid="button-push-open-ios-settings"
                 >

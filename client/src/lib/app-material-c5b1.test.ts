@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { ARTIST_IDENTITY_DISPLAY_CLASS } from "@/lib/artist-identity-presentation";
 import {
   LEADERBOARD_ROW_BASE_CLASS,
   LEADERBOARD_ROW_CURRENT_CLASS,
@@ -99,7 +100,8 @@ describe("C5B.1 semantic safety", () => {
     assert.doesNotMatch(leaderboardSrc, /text-yellow-500|text-amber-600|text-gray-400/);
     assert.match(leaderboardSrc, /getLeaderboardRewardHeroConfig|rewards-banner/);
     assert.doesNotMatch(leaderboardSrc, /border-amber-500\/30|border-purple-500\/30/);
-    assert.match(leaderboardSrc, /#FFD700/);
+    assert.match(leaderboardSrc, /ARTIST_IDENTITY_DISPLAY_CLASS/);
+    assert.match(ARTIST_IDENTITY_DISPLAY_CLASS, /#FFD700/);
     assert.match(userProfileSrc, /#FFD700/);
     assert.match(publicProfileSrc, /#FFD700/);
     assert.match(releaseAlertsBtnSrc, /green-500/);

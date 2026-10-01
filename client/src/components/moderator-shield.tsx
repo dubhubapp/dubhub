@@ -10,7 +10,7 @@ export const INLINE_ROLE_ICON_SIZE = "h-4 w-4";
 const INLINE_ROLE_TICK_SIZE = "h-3 w-3";
 /** ~10% artwork upscale inside the fixed box (between h-3 and h-3.5). */
 const INLINE_ROLE_TICK_ARTWORK_SCALE = "origin-center scale-[1.1]";
-const INLINE_ROLE_TICK_WRAPPER = `inline-flex ${INLINE_ROLE_TICK_SIZE} shrink-0 items-center justify-center overflow-visible -mt-0.5`;
+const INLINE_ROLE_TICK_WRAPPER = `inline-flex ${INLINE_ROLE_TICK_SIZE} shrink-0 items-center justify-center overflow-visible`;
 const INLINE_ROLE_SHIELD_ALIGN = "-mt-0.5 self-center";
 
 /** Subtle blue glow — weaker than gold verified-artist tick (`0_0_10px` @ 0.6). */
@@ -42,9 +42,9 @@ function ModeratorShieldMark({ className }: { className?: string }) {
         stroke="currentColor"
         strokeWidth={1.5}
         strokeLinejoin="round"
-        className="text-blue-400/80"
+        className="dubhub-moderator-shield-stroke text-blue-400/80"
       />
-      <path d={SHIELD_M_PATH} fill="#FFFFFF" />
+      <path d={SHIELD_M_PATH} className="dubhub-moderator-shield-mark" fill="#FFFFFF" />
     </svg>
   );
 }
@@ -69,6 +69,7 @@ export function ModeratorShieldIcon({
         "relative inline-flex shrink-0 overflow-visible leading-none",
         moderatorShieldGlowClass,
         tone === "onDark" && moderatorShieldOnDarkGlowClass,
+        tone !== "onDark" && "dubhub-moderator-shield-on-surface",
         sizeClass,
         className,
       )}

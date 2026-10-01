@@ -62,7 +62,7 @@ describe("C7B submit metadata leftover chrome", () => {
     assert.match(metadataSrc, /ChevronLeft/);
     assert.doesNotMatch(metadataSrc, /ArrowLeft/);
     assert.match(metadataSrc, /onClick=\{handleBack\}/);
-    assert.match(metadataSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
+    assert.match(metadataSrc, /APP_MATERIAL_PAGE_BACK_BUTTON_CLASS/);
     assert.match(
       metadataSrc,
       /SelectItem value=\{SUBMIT_SUBGENRE_NONE_VALUE\} className=\{APP_MATERIAL_SELECT_ITEM_CLASS\}/,
@@ -102,8 +102,9 @@ describe("C7B submit metadata leftover chrome", () => {
 describe("C7B.1 isolation", () => {
   it("does not modify Home and restores Trim cancel chrome", () => {
     assert.match(trimSrc, /ArrowLeft/);
-    assert.doesNotMatch(trimSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
-    assert.doesNotMatch(trimSrc, /APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS/);
+    assert.match(trimSrc, /APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS/);
+    assert.match(trimSrc, /APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS/);
+    assert.match(trimSrc, /APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS/);
     assert.doesNotMatch(homeSrc, /SUBMIT_CLIP_ACTION_ROW_CLASS/);
     assert.doesNotMatch(homeSrc, /APP_MATERIAL_FORM_CANVAS_CLASS/);
     assert.doesNotMatch(homeSrc, /SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS/);

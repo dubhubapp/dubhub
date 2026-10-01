@@ -43,10 +43,14 @@ export function ProfileRepOverview({
 }: ProfileRepOverviewProps) {
   const progressPct = Math.min(100, Math.max(0, Number.isFinite(trust.progressPct) ? trust.progressPct : 0));
   const barWidth = trust.isTopTier ? 100 : progressPct;
+  const lightCanvas =
+    typeof document !== "undefined" && !document.documentElement.classList.contains("dark");
   const fillCss =
     genreBarColorHex != null && String(genreBarColorHex).trim()
       ? repProgressGradientFromGenreBg(genreBarColorHex)
-      : whiteRepProgressGradient();
+      : lightCanvas
+        ? "linear-gradient(90deg, #101828 0%, #667085 100%)"
+        : whiteRepProgressGradient();
   const barBase = repProgressBarBaseColor(genreBarColorHex ?? null);
   const barGlow = repGenreGlowShadow(genreBarColorHex ?? null);
 
@@ -64,11 +68,11 @@ export function ProfileRepOverview({
       {showSectionHeader ? (
         <div className={cn(PROFILE_SECTION_HEADING_ROW_CLASS, headerMargin)}>
           <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-            <TrendingUp className="h-4 w-4 text-white" />
+            <TrendingUp className="h-4 w-4 text-foreground dark:text-white" />
           </span>
           {compact ? (
             <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>
-              Rep <span className="text-white/45">·</span>{" "}
+              Rep <span className="text-foreground/45 dark:text-white/45">·</span>{" "}
               <span data-testid="reputation-level">{trust.displayName}</span>
             </h3>
           ) : (
@@ -80,7 +84,7 @@ export function ProfileRepOverview({
               content={helpContent}
               side="bottom"
               align="start"
-              className="text-gray-400 hover:text-gray-200"
+              className="text-muted-foreground hover:text-foreground dark:text-gray-400 dark:hover:text-gray-200"
             />
           ) : null}
         </div>
@@ -93,13 +97,13 @@ export function ProfileRepOverview({
         </div>
       ) : null}
       {communityTopPercent != null && communityTopPercent > 0 ? (
-        <p className={cn("text-xs text-gray-400", percentileMargin)} data-testid="reputation-percentile">
+        <p className={cn("text-xs text-muted-foreground dark:text-gray-400", percentileMargin)} data-testid="reputation-percentile">
           {percentileCopy}
         </p>
       ) : (
         <div className={percentileMargin} />
       )}
-      <div className="h-2 w-full overflow-hidden rounded-full bg-black/55">
+      <div className="h-2 w-full overflow-hidden rounded-full bg-[#E7EDF5] ring-1 ring-inset ring-[#DCE3EC] dark:bg-black/55 dark:ring-0">
         <div
           className="h-2 rounded-full transition-[width] duration-700 ease-out"
           style={{
@@ -116,7 +120,7 @@ export function ProfileRepOverview({
       </div>
       <div
         className={cn(
-          "flex items-center text-[11px] font-medium text-gray-400",
+          "flex items-center text-[11px] font-medium text-muted-foreground dark:text-gray-400",
           barLabelsMargin,
           trust.isTopTier ? "justify-start" : "justify-between",
         )}

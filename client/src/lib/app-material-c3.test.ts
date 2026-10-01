@@ -45,9 +45,9 @@ describe("C3 form material opt-in (no global Input/Select rewrite)", () => {
     assert.doesNotMatch(inputSrc, /dubhub-app-field|APP_MATERIAL_FIELD/);
     assert.doesNotMatch(selectSrc, /dubhub-app-field|APP_MATERIAL_SELECT/);
     assert.match(APP_MATERIAL_FIELD_CLASS, /dubhub-app-field/);
-    assert.match(cssSrc, /\.dark \.dubhub-app-field/);
+    assert.match(cssSrc, /\.dubhub-app-field \{/);
     assert.doesNotMatch(
-      cssSrc.slice(cssSrc.indexOf(".dark .dubhub-app-field"), cssSrc.indexOf(".dark .dubhub-app-select-content")),
+      cssSrc.slice(cssSrc.indexOf(".dubhub-app-field {"), cssSrc.indexOf(".dubhub-app-select-content {")),
       /backdrop-filter/,
     );
   });

@@ -832,7 +832,7 @@ export function ArtworkReleaseBrowser({
       >
         {monthContext ? (
           <p
-            className="mb-1.5 text-sm font-semibold text-white"
+            className="mb-1.5 text-sm font-semibold text-foreground dark:text-white"
             data-testid="artwork-release-month-context"
           >
             {monthContext}

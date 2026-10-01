@@ -54,7 +54,7 @@ describe("upload progress capsule polish", () => {
   it("uses compact rounded gradient capsule presentation", () => {
     assert.match(submitSrc, /data-testid="upload-progress-capsule"/);
     assert.match(submitSrc, /APP_MATERIAL_TOAST_SURFACE_CLASS/);
-    assert.match(submitSrc, /className="h-1 bg-white\/10"/);
+    assert.match(submitSrc, /className="h-1 bg-black\/10 dark:bg-white\/10"/);
     assert.match(submitSrc, /Uploading… \$\{Math\.round\(uploadProgress\)\}%/);
     assert.doesNotMatch(submitSrc, /bg-black\/55/);
     assert.doesNotMatch(submitSrc, /bg-surface\/90/);
@@ -85,13 +85,20 @@ describe("submit metadata quiet success validation", () => {
 
   it("removes strong green field glow from success CSS", () => {
     const successBlock = cssSrc.match(
-      /\.dark \.dubhub-app-field\.dubhub-app-field-success \{[\s\S]*?\}/,
+      /\.dubhub-app-field\.dubhub-app-field-success \{[\s\S]*?\}/,
     )?.[0] ?? "";
-    assert.ok(successBlock.length > 0, "dark success rule found");
-    assert.match(successBlock, /rgba\(34, 197, 94, 0\.22\)/);
-    assert.match(successBlock, /rgba\(28, 36, 68, 0\.78\)/);
+    assert.ok(successBlock.length > 0, "success rule found");
+    assert.match(successBlock, /var\(--material-field-success-border\)/);
+    assert.match(successBlock, /var\(--material-field-success-bg\)/);
     assert.doesNotMatch(successBlock, /0 0 0 1px rgba\(34, 197, 94/);
     assert.doesNotMatch(successBlock, /rgba\(20, 40, 32/);
+    const darkMaterialStart = cssSrc.indexOf(".dark,\n.dubhub-auth-surface {");
+    const darkMaterial = cssSrc.slice(
+      darkMaterialStart,
+      cssSrc.indexOf(".dubhub-auth-surface {\n  color-scheme: dark;"),
+    );
+    assert.match(darkMaterial, /--material-field-success-border:\s*rgba\(34, 197, 94, 0\.22\)/);
+    assert.match(darkMaterial, /--material-field-success-bg:\s*rgba\(28, 36, 68, 0\.78\)/);
   });
 
   it("keeps focus distinct from valid and leaves error styling strong", () => {
@@ -99,13 +106,19 @@ describe("submit metadata quiet success validation", () => {
       submitSrc,
       /showFieldSuccess = \(key: TrackFieldKey, valid: boolean\) =>\s*valid && !!fieldConfirmed\[key\] && !fieldFocused\[key\]/,
     );
-    assert.match(cssSrc, /\.dark \.dubhub-app-field\.dubhub-app-field-success:focus/);
+    assert.match(cssSrc, /\.dubhub-app-field\.dubhub-app-field-success:focus/);
     const invalidBlock = cssSrc.match(
-      /\.dark \.dubhub-app-field\[aria-invalid="true"\],\s*\.dark \.dubhub-app-field\.dubhub-app-field-invalid \{[\s\S]*?\}/,
+      /\.dubhub-app-field\[aria-invalid="true"\],\s*\.dubhub-app-field\.dubhub-app-field-invalid \{[\s\S]*?\}/,
     )?.[0] ?? "";
-    assert.ok(invalidBlock.length > 0, "dark invalid rule found");
-    assert.match(invalidBlock, /rgba\(239, 68, 68, 0\.65\)/);
-    assert.match(invalidBlock, /0 0 0 1px rgba\(239, 68, 68/);
+    assert.ok(invalidBlock.length > 0, "invalid rule found");
+    assert.match(invalidBlock, /var\(--material-field-invalid/);
+    const darkMaterialStart = cssSrc.indexOf(".dark,\n.dubhub-auth-surface {");
+    const darkMaterial = cssSrc.slice(
+      darkMaterialStart,
+      cssSrc.indexOf(".dubhub-auth-surface {\n  color-scheme: dark;"),
+    );
+    assert.match(darkMaterial, /--material-field-invalid-border:\s*rgba\(239, 68, 68, 0\.65\)/);
+    assert.match(darkMaterial, /0 0 0 1px rgba\(239, 68, 68/);
   });
 });
 
@@ -136,8 +149,9 @@ describe("standard toast surface polish", () => {
     assert.match(toastSrc, /rounded-\[18px\]/);
     assert.match(toastSrc, /dubhub-app-toast-surface/);
     assert.doesNotMatch(toastSrc, /default:\s*"border bg-background text-foreground"/);
-    assert.match(cssSrc, /\.dark \.dubhub-app-toast-surface/);
-    assert.match(cssSrc, /background-image:\s*linear-gradient/);
+    assert.match(cssSrc, /\.dubhub-app-toast-surface \{/);
+    assert.match(cssSrc, /background-image:\s*var\(--toast-image\)/);
+    assert.match(cssSrc, /--toast-image:\s*linear-gradient\(180deg,\s*rgba\(36, 48, 88, 0\.55\)/);
   });
 
   it("leaves in-app notification glass banners on their own surface", () => {

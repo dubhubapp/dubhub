@@ -34,7 +34,7 @@ export function ModeratorGenreFilter({ selectedGenres, onGenresChange }: Moderat
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 min-w-[9.5rem] max-w-full justify-between rounded-[12px] border-white/15 bg-white/[0.06] px-2.5 text-sm font-normal shadow-none hover:bg-white/[0.1]"
+          className="h-8 min-w-[9.5rem] max-w-full justify-between rounded-[12px] border-[#DCE3EC] bg-white px-2.5 text-sm font-normal text-foreground shadow-none hover:bg-[#F6F8FC] dark:border-white/15 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]"
           data-testid="moderator-genre-filter"
         >
           <span className="truncate">{triggerLabel}</span>
@@ -43,7 +43,7 @@ export function ModeratorGenreFilter({ selectedGenres, onGenresChange }: Moderat
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[min(18rem,calc(100vw-2rem))] rounded-[15px] border-white/15 bg-background/95 p-3 backdrop-blur-md"
+        className="w-[min(18rem,calc(100vw-2rem))] rounded-[15px] border-[#DCE3EC] bg-white p-3 dark:border-white/15 dark:bg-background/95 dark:backdrop-blur-md"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-foreground">Genres</span>
@@ -72,7 +72,7 @@ export function ModeratorGenreFilter({ selectedGenres, onGenresChange }: Moderat
                   "ios-press rounded-full px-2.5 py-1.5 text-xs transition-colors",
                   isSelected
                     ? entry?.textClass ?? "text-white"
-                    : "border border-white/15 bg-white/10 text-white/85 hover:bg-white/20",
+                    : "border border-[#DCE3EC] bg-white text-foreground/80 hover:bg-[#F6F8FC] dark:border-white/15 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/20",
                 )}
                 style={isSelected && entry?.bgColor ? { backgroundColor: entry.bgColor } : undefined}
               >

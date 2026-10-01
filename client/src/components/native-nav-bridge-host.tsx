@@ -34,8 +34,9 @@ import {
   logNativeNav5c1Geometry,
 } from "@/lib/native-nav-layout";
 import { lgNav5aMark } from "@/lib/lg-nav-5a-timing";
+import { cn } from "@/lib/utils";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
-import { cancelPostAndHardResetToHome } from "@/lib/post-flow";
+import { cancelPostAndReturnToHome } from "@/lib/post-flow";
 import {
   isVerifiedArtistToolsPaywallCoveringNativeNav,
   subscribeVerifiedArtistToolsPaywallNativeNavCover,
@@ -66,8 +67,10 @@ import {
   APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
   APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
   APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
+  APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS,
   APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
-  APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS,
+  APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS,
+  APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
 } from "@/lib/app-material";
 
@@ -337,14 +340,20 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
             Your current clip and edits will be discarded.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel className={APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS}>
+        <AlertDialogFooter className={APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS}>
+          <AlertDialogCancel className={APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS}>
             Keep editing
           </AlertDialogCancel>
           <AlertDialogAction
-            className={APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS}
+            className={cn(
+              APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS,
+              APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS,
+            )}
             onClick={() => {
-              void cancelPostAndHardResetToHome("bottom-nav-cancel-post");
+              void cancelPostAndReturnToHome({
+                reason: "bottom-nav-cancel-post",
+                navigateHome: () => navigate("/"),
+              });
             }}
           >
             Cancel post

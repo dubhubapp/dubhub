@@ -98,7 +98,7 @@ describe("submit-metadata presentation polish", () => {
   it("uses approved ChevronLeft Back with unchanged handleBack and premium None select item", () => {
     assert.match(pageSrc, /ChevronLeft/);
     assert.doesNotMatch(pageSrc, /ArrowLeft/);
-    assert.match(pageSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
+    assert.match(pageSrc, /APP_MATERIAL_PAGE_BACK_BUTTON_CLASS/);
     assert.match(pageSrc, /onClick=\{handleBack\}/);
     assert.match(pageSrc, /aria-label="Back"/);
     assert.match(

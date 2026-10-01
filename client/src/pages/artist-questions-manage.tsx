@@ -6,8 +6,8 @@ import { ArtistProfileQuestionsManage } from "@/components/artist-profile-questi
 import { useUser } from "@/lib/user-context";
 import { useEffect } from "react";
 import {
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_ICON_CLASS,
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import {
@@ -51,12 +51,12 @@ export default function ArtistQuestionsManagePage() {
             <button
               type="button"
               onClick={handleBack}
-              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              className={cn(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
               aria-label="Back"
               data-testid="button-artist-questions-back"
             >
               <ChevronLeft
-                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                className={cn(APP_MATERIAL_PAGE_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
                 strokeWidth={2}
                 aria-hidden
               />

@@ -30,7 +30,7 @@ describe("login auth-surface dark control consistency", () => {
   });
 
   it("scopes dark tokens and color-scheme to the auth surface only", () => {
-    const surfaceBlockStart = cssSrc.indexOf(".dubhub-auth-surface {");
+    const surfaceBlockStart = cssSrc.indexOf(".dubhub-auth-surface {\n  color-scheme: dark;");
     assert.ok(surfaceBlockStart >= 0, "expected .dubhub-auth-surface rule");
     const surfaceBlock = cssSrc.slice(surfaceBlockStart, cssSrc.indexOf("}", surfaceBlockStart) + 1);
     assert.match(surfaceBlock, /color-scheme:\s*dark/);
@@ -62,12 +62,12 @@ describe("login auth-surface dark control consistency", () => {
     assert.equal(THEME_STORAGE_KEY, "dubhub-theme");
   });
 
-  it("leaves dark-only theme persistence intact across logout/login", () => {
+  it("leaves theme persistence intact across logout/login", () => {
     assert.match(themeSrc, /export function getStoredTheme/);
     assert.match(themeSrc, /export function applyTheme/);
-    assert.match(themeSrc, /localStorage\.setItem\(THEME_STORAGE_KEY, "dark"\)/);
-    assert.doesNotMatch(settingsSrc, /applyTheme\(/);
-    assert.doesNotMatch(settingsSrc, /data-testid="switch-light-mode"/);
+    assert.match(themeSrc, /THEME_EPOCH_SEMANTIC_LIGHT/);
+    assert.match(settingsSrc, /applyTheme\(/);
+    assert.match(settingsSrc, /data-testid="switch-light-mode"/);
     assert.match(appSrc, /Keep device-level preferences \(e\.g\. theme\) intact across logout\/login\./);
     assert.doesNotMatch(appSrc, /localStorage\.removeItem\(['"]dubhub-theme['"]\)/);
   });

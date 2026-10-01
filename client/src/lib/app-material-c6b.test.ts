@@ -10,7 +10,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   APP_MATERIAL_AUTH_CANVAS_CLASS,
-  APP_MATERIAL_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
   APP_MATERIAL_INTERACTIVE_BLUE,
 } from "./app-material";
 import {
@@ -131,9 +131,9 @@ describe("C6B Settings canvas + Back", () => {
 
   it("uses approved icon-only Back with theme-aware colour", () => {
     assert.match(settingsSrc, /ChevronLeft/);
-    assert.match(settingsSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);
-    assert.match(APP_MATERIAL_BACK_BUTTON_CLASS, /min-h-11/);
-    assert.match(APP_MATERIAL_BACK_BUTTON_CLASS, /min-w-11/);
+    assert.match(settingsSrc, /APP_MATERIAL_PAGE_BACK_BUTTON_CLASS/);
+    assert.match(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, /min-h-11/);
+    assert.match(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, /min-w-11/);
     assert.match(settingsSrc, /aria-label="Back"/);
     assert.match(settingsSrc, /data-testid="button-settings-back"/);
     assert.match(settingsSrc, /SETTINGS_BACK_BUTTON_CLASS/);
@@ -226,7 +226,7 @@ describe("C6B.1 Settings switches", () => {
     assert.doesNotMatch(settingsSrc, /SETTINGS_SWITCH_CHECKED_CLASS/);
     assert.doesNotMatch(settingsSrc, /data-\[state=checked\]:bg-\[#0a83ff\]/);
     assert.match(settingsSrc, /switch-feed-start-with-sound/);
-    assert.doesNotMatch(settingsSrc, /switch-light-mode/);
+    assert.match(settingsSrc, /switch-light-mode/);
     assert.doesNotMatch(switchSrc, /#0a83ff/);
   });
 });
@@ -265,8 +265,9 @@ describe("C6B VAT presentation", () => {
   });
 
   it("uses the paywall tick colour for Active and plan checks", () => {
-    assert.match(vatRowSrc, /view\.mode === "active" && "text-\[#4ae9df\]"/);
-    assert.match(vatRowSrc, /view\.mode === "active" \? "text-\[#4ae9df\]" : "text-muted-foreground"/);
+    assert.match(vatRowSrc, /text-teal-700 dark:text-\[#4ae9df\]/);
+    assert.match(vatRowSrc, /VAT_ACTIVE_MARK_CLASS/);
+    assert.match(vatRowSrc, /view\.mode === "active" \? VAT_ACTIVE_MARK_CLASS : "text-muted-foreground"/);
     assert.match(paywallSrc, /text-\[#4ae9df\]/);
     assert.match(vatRowSrc, /text-xs leading-relaxed text-muted-foreground/);
     assert.doesNotMatch(vatRowSrc, /text-green-500/);

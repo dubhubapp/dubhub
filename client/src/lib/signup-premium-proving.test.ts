@@ -68,7 +68,7 @@ describe("premium auth material Slice A isolation", () => {
     assert.match(cssSrc, /\.dubhub-prelogin-auth input\.dubhub-prelogin-field:-webkit-autofill/);
     assert.match(cssSrc, /\.dubhub-prelogin-select-content/);
     assert.doesNotMatch(cssSrc, /\.dubhub-signup-proving/);
-    const authSurfaceStart = cssSrc.indexOf(".dubhub-auth-surface {");
+    const authSurfaceStart = cssSrc.indexOf(".dubhub-auth-surface {\n  color-scheme: dark;");
     const authSurfaceEnd = cssSrc.indexOf("}", authSurfaceStart);
     const authSurfaceBlock = cssSrc.slice(authSurfaceStart, authSurfaceEnd + 1);
     assert.doesNotMatch(authSurfaceBlock, /#0a83ff|#001df9/);

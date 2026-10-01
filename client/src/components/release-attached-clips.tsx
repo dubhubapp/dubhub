@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check, EyeOff, Heart, Music } from "lucide-react";
-import { GoldVerifiedTick, goldTextClass } from "@/components/verified-artist";
+import { GoldVerifiedTick } from "@/components/verified-artist";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
 import { resolveMediaUrl } from "@/lib/media-url";
 import type { ReleaseAttachedClip } from "@/lib/release-cache";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
@@ -55,9 +56,9 @@ export function ReleaseAttachedClipCard({
     <div
       className={cn(
         "relative flex w-[9.25rem] shrink-0 flex-col overflow-hidden rounded-lg",
-        "border border-white/10 bg-black/30 text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]",
+        "border border-[#DCE3EC] bg-white text-left dark:border-white/10 dark:bg-black/30 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]",
         showAttachedChrome && "border-green-500/50 ring-1 ring-green-500/30",
-        !showSelection && !showAttachedChrome && "hover:border-white/20",
+        !showSelection && !showAttachedChrome && "hover:border-[#C8D0DC] dark:hover:border-white/20",
       )}
       data-testid={`release-attached-clip-${clip.id}`}
     >
@@ -65,7 +66,7 @@ export function ReleaseAttachedClipCard({
         type="button"
         className={cn(
           "ios-press ios-press-soft flex min-w-0 flex-1 flex-col text-left",
-          "hover:bg-black/40",
+          "hover:bg-[#F6F8FC] dark:hover:bg-black/40",
         )}
         onClick={onOpen}
       >
@@ -73,7 +74,7 @@ export function ReleaseAttachedClipCard({
           {thumb ? (
             <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-black/40">
+            <div className="flex h-full w-full items-center justify-center bg-[#EDF2F8] dark:bg-black/40">
               <Music className="h-7 w-7 text-muted-foreground" aria-hidden />
             </div>
           )}
@@ -116,7 +117,7 @@ export function ReleaseAttachedClipCard({
           <span
             className={cn(
               "min-w-0 truncate text-[10px]",
-              clip.isVerifiedArtist ? goldTextClass : "text-muted-foreground",
+              clip.isVerifiedArtist ? ARTIST_IDENTITY_COMPACT_CLASS : "text-muted-foreground",
             )}
           >
             {formatUsernameDisplay(clip.uploaderUsername) ||
@@ -150,7 +151,7 @@ export function ReleaseAttachedClipCard({
             "ios-press border-t border-white/10 px-2 py-1.5 text-center text-[10px] font-medium transition-colors",
             isSelected
               ? "bg-green-500/15 text-green-600 dark:text-green-400"
-              : "text-muted-foreground hover:bg-black/20 hover:text-foreground",
+              : "text-foreground hover:bg-[#F6F8FC] hover:text-foreground dark:text-muted-foreground dark:hover:bg-black/20",
             selectionDisabled && "cursor-not-allowed opacity-50",
           )}
           onClick={(e) => {
@@ -185,7 +186,7 @@ export function ReleaseAttachedClipsSkeleton() {
             key={i}
             className={cn(
               "flex w-[9.25rem] shrink-0 flex-col overflow-hidden rounded-lg",
-              "border border-white/10 bg-black/20",
+              "border border-[#DCE3EC] bg-white dark:border-white/10 dark:bg-black/20",
             )}
           >
             <DubHubSkeletonBar tone="mid" className="aspect-[4/5] w-full rounded-none" />

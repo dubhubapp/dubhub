@@ -143,7 +143,7 @@ export function ReleaseStatusFields({
                 required
                 className={cn(
                   APP_MATERIAL_FIELD_CLASS,
-                  "dubhub-date-input h-10 min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-start px-3 py-0 pr-12 text-left transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
+                  "dubhub-date-input h-10 min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-start px-3 py-0 pr-12 text-left transition-[border-color,box-shadow,background-color] [color-scheme:light] dark:[color-scheme:dark] md:text-sm",
                   "focus-visible:ring-offset-0",
                   dateFieldDisabled && "cursor-not-allowed opacity-50",
                 )}
@@ -231,7 +231,7 @@ export function ReleaseStatusFields({
                     required={exact}
                     className={cn(
                       APP_MATERIAL_FIELD_CLASS,
-                      "dubhub-time-input h-10 min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-center px-3 py-0 text-center transition-[border-color,box-shadow,background-color] [color-scheme:dark] md:text-sm",
+                      "dubhub-time-input h-10 min-w-0 w-full max-w-full flex-1 basis-0 items-center justify-center px-3 py-0 text-center transition-[border-color,box-shadow,background-color] [color-scheme:light] dark:[color-scheme:dark] md:text-sm",
                       "focus-visible:ring-offset-0",
                       dateFieldDisabled && "cursor-not-allowed opacity-50",
                     )}

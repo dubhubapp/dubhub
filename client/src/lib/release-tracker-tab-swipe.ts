@@ -285,6 +285,12 @@ export const RELEASE_TRACKER_SECONDARY_TAB_INACTIVE_ALPHA = 0.55;
 
 export function releaseTrackerSecondaryTabEmphasisColor(emphasis: number): string {
   const t = Math.min(1, Math.max(0, emphasis));
+  const lightCanvas =
+    typeof document !== "undefined" && !document.documentElement.classList.contains("dark");
+  if (lightCanvas) {
+    const mix = (from: number, to: number) => Math.round(from + (to - from) * t);
+    return `rgb(${mix(102, 16)}, ${mix(112, 24)}, ${mix(133, 40)})`;
+  }
   const alpha =
     RELEASE_TRACKER_SECONDARY_TAB_INACTIVE_ALPHA +
     (1 - RELEASE_TRACKER_SECONDARY_TAB_INACTIVE_ALPHA) * t;

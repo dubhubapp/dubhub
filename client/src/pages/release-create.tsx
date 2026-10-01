@@ -15,8 +15,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   APP_MATERIAL_ALERT_DIALOG_CONTENT_CLASS,
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS,
   APP_MATERIAL_FORM_PRIMARY_CLASS,
   APP_MATERIAL_OVERLAY_BACKDROP_CLASS,
   APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS,
@@ -922,7 +922,7 @@ export default function ReleaseCreate() {
       enabled={false}
       onBack={handleBack}
       className={cn(
-        "flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none scrollbar-hide dubhub-app-form-canvas",
+        "dubhub-release-form flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-none scrollbar-hide dubhub-app-form-canvas",
         APP_SCROLL_WITH_CLAMP_END_PAD_CLASS,
       )}
     >
@@ -946,10 +946,10 @@ export default function ReleaseCreate() {
           type="button"
           onClick={handleBack}
           aria-label="Back"
-          className={APP_MATERIAL_BACK_BUTTON_CLASS}
+          className={APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS}
           data-testid="release-create-back"
         >
-          <ChevronLeft className={APP_MATERIAL_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
+          <ChevronLeft className={APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS} strokeWidth={2} aria-hidden />
         </button>
         <h1 className="text-xl font-bold mb-4 mt-2">Add Release</h1>
 

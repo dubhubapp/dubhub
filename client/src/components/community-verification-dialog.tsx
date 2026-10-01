@@ -11,6 +11,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { CommentWithUser } from "@shared/schema";
 import { goldAvatarGlowShadowClass } from "./verified-artist";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { formatUsernameDisplay } from "@/lib/utils";
 import { playSuccessNotification } from "@/lib/haptic";
@@ -192,22 +194,22 @@ export function CommunityVerificationDialog({
       >
         <div ref={initialFocusRef} tabIndex={-1} />
         <DialogHeader className="space-y-1.5 text-center">
-          <DialogTitle className="text-lg font-semibold text-white">ID Track</DialogTitle>
-          <DialogDescription className="text-sm text-white/75">
+          <DialogTitle className="text-lg font-semibold text-foreground dark:text-white">ID Track</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground dark:text-white/75">
             Select the comment that contains the correct track identification.
             A moderator will review your selection.
           </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="mt-4 flex items-center justify-center rounded-lg border border-white/10 bg-black/15 py-8">
-            <div className="flex flex-col items-center gap-2 text-white/75">
+          <div className="mt-4 flex items-center justify-center rounded-lg border border-[#DCE3EC] bg-[#F6F8FC] dark:border-white/10 dark:bg-black/15 py-8">
+            <div className="flex flex-col items-center gap-2 text-muted-foreground dark:text-white/75">
               <InlineSpinner className="border-primary" sizeClassName="h-8 w-8" />
               <p className="text-xs">Loading comments...</p>
             </div>
           </div>
         ) : commentsList.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
+          <div className="mt-4 rounded-lg border border-[#DCE3EC] bg-[#F6F8FC] dark:border-white/10 dark:bg-black/15 py-8 text-center text-muted-foreground dark:text-white/70">
             <p>No comments yet. Community members need to comment with track IDs first.</p>
           </div>
         ) : (
@@ -241,6 +243,8 @@ export function CommunityVerificationDialog({
                         <div className="flex min-w-0 items-start gap-2">
                           <div
                             className={`h-8 w-8 shrink-0 rounded-full overflow-hidden flex items-center justify-center border ${
+                              isDefaultAvatarUrl(comment.user.avatar_url) ? "bg-[#0f1324] " : ""
+                            }${
                               comment.user.verified_artist
                                 ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                                 : "border-primary/20"
@@ -250,7 +254,11 @@ export function CommunityVerificationDialog({
                               <img
                                 src={comment.user.avatar_url}
                                 alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
-                                className="w-full h-full object-cover"
+                                className={`h-full w-full object-cover${
+                                  isDefaultAvatarUrl(comment.user.avatar_url)
+                                    ? " avatar-media avatar-default-media"
+                                    : ""
+                                }`}
                               />
                             ) : (
                               <User className="w-4 h-4 text-primary" />
@@ -260,7 +268,7 @@ export function CommunityVerificationDialog({
                             <div className="flex min-w-0 items-center gap-2">
                               <span
                                 className={`truncate text-sm font-medium ${
-                                  comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
+                                  comment.user.verified_artist ? ARTIST_IDENTITY_COMPACT_CLASS : "text-foreground dark:text-white"
                                 }`}
                               >
                                 {formatUsernameDisplay(comment.user.username)}
@@ -272,7 +280,7 @@ export function CommunityVerificationDialog({
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-1">
                               {isReply && (
-                                <span className="whitespace-nowrap rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
+                                <span className="whitespace-nowrap rounded-full border border-[#DCE3EC] bg-[#F6F8FC] px-2 py-0.5 text-[11px] font-medium text-muted-foreground dark:border-white/30 dark:bg-white/10 dark:text-white/80">
                                   {comment.parentAuthorUsername
                                     ? `Reply to ${formatUsernameDisplay(comment.parentAuthorUsername)}`
                                     : "Reply"}
@@ -291,17 +299,17 @@ export function CommunityVerificationDialog({
                             </div>
                           </div>
                         </div>
-                        <div className="mt-2 flex items-center gap-1 text-[11px] text-white/65">
+                        <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground dark:text-white/65">
                           <Clock3 className="h-3.5 w-3.5" />
                           <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                         </div>
                       </div>
 
-                      <p className="break-words text-sm text-white/92">
+                      <p className="break-words text-sm text-foreground dark:text-white/92">
                         {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
                       </p>
                       {comment.taggedArtist && (
-                        <p className="mt-1 break-words text-xs text-white/65">
+                        <p className="mt-1 break-words text-xs text-muted-foreground dark:text-white/65">
                           Tagged artist: {formatUsernameDisplay(comment.taggedArtist.username)}
                         </p>
                       )}
@@ -311,7 +319,7 @@ export function CommunityVerificationDialog({
               })}
             </RadioGroup>
 
-            <div className="flex justify-end gap-2 border-t border-white/15 pt-4">
+            <div className="flex justify-end gap-2 border-t border-[#DCE3EC] pt-4 dark:border-white/15">
               <Button
                 variant="outline"
                 onClick={onClose}

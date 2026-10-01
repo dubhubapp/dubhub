@@ -555,7 +555,7 @@ export function VerifiedArtistToolsPaywall({
           {liveMessage}
         </div>
 
-        <DrawerHeader className="relative shrink-0 space-y-1.5 border-b border-white/10 px-5 pb-3 pt-2 text-left">
+        <DrawerHeader className="relative shrink-0 space-y-1.5 border-b border-[#DCE3EC] px-5 pb-3 pt-2 text-left dark:border-white/10">
           <div className="min-w-0 space-y-1">
             <DrawerTitle
               id={titleId}
@@ -679,7 +679,7 @@ export function VerifiedArtistToolsPaywall({
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 border-white/15 bg-black/20"
+                className="h-11 border-[#DCE3EC] bg-white dark:border-white/15 dark:bg-black/20"
                 onClick={() => void loadOfferings()}
                 data-testid="paywall-offerings-retry"
               >
@@ -825,7 +825,7 @@ export function VerifiedArtistToolsPaywall({
                           <Check className="h-4 w-4 text-[#4ae9df]" aria-hidden />
                         ) : (
                           <span
-                            className="h-4 w-4 rounded-full border border-white/25"
+                            className="h-4 w-4 rounded-full border border-[#DCE3EC] dark:border-white/25"
                             aria-hidden
                           />
                         )}
@@ -841,7 +841,7 @@ export function VerifiedArtistToolsPaywall({
         <DrawerFooter
           className={cn(
             // Override DrawerFooter default mt-auto so footer follows packages.
-            "mt-0 shrink-0 gap-2 border-t border-white/10 px-5 pb-3",
+            "mt-0 shrink-0 gap-2 border-t border-[#DCE3EC] px-5 pb-3 dark:border-white/10",
             compactShell ? "pt-3" : "pt-8",
           )}
           data-testid="paywall-footer"
@@ -905,7 +905,7 @@ export function VerifiedArtistToolsPaywall({
                     type="button"
                     variant="outline"
                     className={cn(
-                      "w-full border-white/15 bg-black/20",
+                      "w-full border-[#DCE3EC] bg-white dark:border-white/15 dark:bg-black/20",
                       PAYWALL_FOOTER_GEOMETRY.secondaryButtonMinHeightClass,
                     )}
                     data-testid="paywall-dismiss-pending"
@@ -922,7 +922,7 @@ export function VerifiedArtistToolsPaywall({
                   type="button"
                   variant="outline"
                   className={cn(
-                    "w-full border-white/15 bg-black/20",
+                    "w-full border-[#DCE3EC] bg-white dark:border-white/15 dark:bg-black/20",
                     PAYWALL_FOOTER_GEOMETRY.primaryButtonMinHeightClass,
                   )}
                   data-testid="paywall-dismiss-pending"

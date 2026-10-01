@@ -267,10 +267,10 @@ export const PAYWALL_SHELL_CLASS = [
 
 /** Selected package row — thin luminous hairline, no heavy double ring. */
 export const PAYWALL_PACKAGE_SELECTED_CLASS =
-  "border-[#0a83ff]/35 bg-white/[0.07]" as const;
+  "border-[#0a83ff]/35 bg-[#0a83ff]/10 dark:bg-white/[0.07]" as const;
 
 export const PAYWALL_PACKAGE_IDLE_CLASS =
-  "border-white/10 bg-black/20" as const;
+  "border-[#DCE3EC] bg-white dark:border-white/10 dark:bg-black/20" as const;
 
 /** Shared footer geometry tokens (tailwind-friendly rem). */
 export const PAYWALL_FOOTER_GEOMETRY = {

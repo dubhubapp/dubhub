@@ -76,7 +76,15 @@ export const PROFILE_BANNER_BOTTOM_FADE_HEIGHT_CLASS = "h-48" as const;
  * Opaque only at 100% so the DOM edge matches with-banner canvas base.
  */
 export const PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS =
-  "pointer-events-none absolute inset-x-0 bottom-0 top-[36%]" as const;
+  "dubhub-profile-banner-dissolve pointer-events-none absolute inset-x-0 bottom-0 top-[36%]" as const;
+
+/**
+ * Frosted glass shared by Change Avatar and Change Banner.
+ * Light is a cool white frost with dark ink. Dark is a translucent white frost
+ * with white ink. Same blur and inset highlight in both themes.
+ */
+export const PROFILE_IMAGE_EDIT_CONTROL_LIGHT_CLASS =
+  "border border-white/70 bg-white/60 text-[#101828] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md hover:bg-white/75 dark:border-white/25 dark:bg-white/[0.12] dark:text-white dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] dark:hover:bg-white/[0.18]" as const;
 
 export const PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE: CSSProperties = {
   background: `linear-gradient(to bottom,
@@ -110,13 +118,13 @@ export function ProfileBannerDefaultGradient() {
   return (
     <>
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)]"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] dubhub-profile-no-banner-atmosphere"
         style={{ background: PROFILE_BANNER_NO_BANNER_GRADIENT }}
         aria-hidden
         data-testid="profile-banner-no-banner-atmosphere"
       />
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] overflow-hidden"
+        className="dubhub-profile-no-banner-atmosphere pointer-events-none absolute inset-x-0 bottom-0 -top-[env(safe-area-inset-top,0px)] overflow-hidden"
         aria-hidden
       >
         <div

@@ -101,6 +101,7 @@ export function HundredClubMark({
       {title ? <title>{title}</title> : null}
       {/* Back: sans “1” — slightly brighter than label text */}
       <path
+        className="dubhub-hundred-club-numeral"
         fill="#ffffff"
         d="M7.35 8.15 L10.15 5.05 L13.55 5.05 L13.55 26.95 L10.15 26.95 L10.15 9.05 L7.35 10.55 Z"
       />

@@ -15,8 +15,8 @@ import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { Check, ChevronLeft, Search, X } from "lucide-react";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import {
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_ICON_CLASS,
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/user-context";
@@ -131,13 +131,13 @@ export default function SettingsCountryPage() {
       <div className={SETTINGS_PAGE_PAD_CLASS}>
         <button
           type="button"
-          className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+          className={cn(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
           onClick={handleCountryBack}
           aria-label="Back"
           data-testid="button-settings-country-back"
         >
           <ChevronLeft
-            className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+            className={cn(APP_MATERIAL_PAGE_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
             aria-hidden
           />
         </button>

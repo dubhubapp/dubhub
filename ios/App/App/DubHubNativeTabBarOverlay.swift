@@ -125,7 +125,7 @@ enum DubHubNativeTabBarOverlay {
     }
 }
 
-final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
+final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate, WKScriptMessageHandler {
     static let shared = DubHubNativeTabBarChrome()
 
     private let overlayTag = 0x4C474E31
@@ -178,6 +178,19 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
     private var pendingIconAnimationTabId: String?
     private var pendingIconAnimationItem: UITabBarItem?
     private var iconAnimationCoalesceWork: DispatchWorkItem?
+    /// Web Light (`html` without `.dark`). Home and auth still resolve to Dark.
+    private var pagePrefersLightInk = false
+    /// Auth / prelogin / onboarding. Independent of the stored user theme.
+    private var authSurface = false
+    /// Stays Dark until the existing selected-tab bridge reports once.
+    private var hasReceivedSelectedTab = false
+    /// Last appearance pushed onto the WebView. A repeat of the same pair is skipped
+    /// so a nested route (Settings clears the selected tab) cannot restart UIKit traits
+    /// and cancel the contextual page transition already in flight.
+    private var appliedChromeAppearance: DubHubNativeAppearance?
+    private var appliedChromeKeyboardLight: Bool?
+    private var themeObserverInstalled = false
+    private static let themeMessageName = "dubhubTabItemTint"
 
     func bind(plugin: CAPPlugin) {
         self.plugin = plugin
@@ -230,6 +243,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
             if let tabBar = self.tabBar {
                 self.applyVisualCover(tabBar)
             }
+            self.applyEffectiveChrome()
             completion?()
         }
     }
@@ -240,8 +254,11 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
                 completion?()
                 return
             }
+            self.hasReceivedSelectedTab = true
             self.selectedTabId = self.normalizedTabId(raw)
             self.applySelectedItem()
+            self.applyResolvedItemTints()
+            self.applyEffectiveChrome()
             // PROFILE-NAV-BADGE-2H: selection may rebuild SelectedContent hosts — reassert both.
             self.ensureProfileUnreadBadgeHostedIfNeeded()
             completion?()
@@ -670,6 +687,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         applySelectedItem()
         applyPresentation(on: bridgeController)
         syncDocumentFlag(on: bridgeController)
+        applyEffectiveChrome()
     }
 
     private func layoutOnMain(_ bridgeController: CAPBridgeViewController) {
@@ -691,14 +709,60 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         tabBar.accessibilityIdentifier = "dubhub.nativeTabBar.lgNav3"
         // NATIVE-NAV-PREMIUM-2A: neutral selected/unselected tints only.
         // Do not construct a custom tab-bar appearance object (preserves system glass/platter).
-        tabBar.tintColor = UIColor.white.withAlphaComponent(0.96)
-        tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.50)
+        // Dark until the page reports Light. Bubble/geometry stay system-owned.
+        applyItemTints(on: tabBar, lightCanvas: false)
         // PROFILE-NAV-BADGE-2H: reassert mirrored dual-tree badges if UIKit rebuilds hosts.
         tabBar.onDidLayoutSubviews = { [weak self] in
             self?.ensureProfileUnreadBadgeHostedIfNeeded()
         }
         bindIconAnimationInteraction(on: tabBar)
         return tabBar
+    }
+
+    /// Home is a media stage, so its bar keeps the Dark ink even when the page theme is Light.
+    /// Every other tab follows `pagePrefersLightInk`. The system platter stays the bubble.
+    private func itemTintsFollowLightPage() -> Bool {
+        if authSurface { return false }
+        if !hasReceivedSelectedTab { return false }
+        if selectedTabId == "home" { return false }
+        return pagePrefersLightInk
+    }
+
+    /// Status bar, shell, WebView background, and keyboard context. Same decision as the tab ink.
+    private func applyEffectiveChrome() {
+        assertMain("appearance")
+        applyResolvedItemTints()
+        let light = itemTintsFollowLightPage()
+        let keyboardUsesLight =
+            light || (pagePrefersLightInk && !authSurface && reactCovered && selectedTabId == "home")
+        let appearance: DubHubNativeAppearance = light ? .light : .dark
+        if appliedChromeAppearance == appearance, appliedChromeKeyboardLight == keyboardUsesLight {
+            return
+        }
+        appliedChromeAppearance = appearance
+        appliedChromeKeyboardLight = keyboardUsesLight
+        (hostController as? DubHubBridgeViewController)?.applyDubHubAppearance(
+            appearance,
+            keyboardUsesLight: keyboardUsesLight
+        )
+    }
+
+    private func applyResolvedItemTints() {
+        guard let tabBar else { return }
+        applyItemTints(on: tabBar, lightCanvas: itemTintsFollowLightPage())
+    }
+
+    /// Selected tint is `tintColor` (icon + label). Unselected is `unselectedItemTintColor`.
+    /// Light uses #101828 for both; the platter bubble stays the selection mark.
+    private func applyItemTints(on tabBar: UITabBar, lightCanvas: Bool) {
+        if lightCanvas {
+            let ink = UIColor(red: 16.0 / 255.0, green: 24.0 / 255.0, blue: 40.0 / 255.0, alpha: 1)
+            tabBar.tintColor = ink
+            tabBar.unselectedItemTintColor = ink
+            return
+        }
+        tabBar.tintColor = UIColor.white.withAlphaComponent(0.96)
+        tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.50)
     }
 
     private func bindIconAnimationInteraction(on tabBar: DubHubNativeTabBar) {
@@ -1061,6 +1125,53 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         })();
         """
         bridgeController.webView?.evaluateJavaScript(js, completionHandler: nil)
+        installThemeObserverIfNeeded(on: bridgeController)
+    }
+
+    /// Follows `html.dark` so Light page chrome can use #101828 while UIKit stays Dark.
+    private func installThemeObserverIfNeeded(on bridgeController: CAPBridgeViewController) {
+        guard let webView = bridgeController.webView else { return }
+        if !themeObserverInstalled {
+            webView.configuration.userContentController.add(self, name: Self.themeMessageName)
+            themeObserverInstalled = true
+        }
+        let js = """
+        (function(){
+          if (window.__dubhubTabItemTint) return;
+          var el = document.documentElement;
+          if (!el) return;
+          window.__dubhubTabItemTint = true;
+          var name = '\(Self.themeMessageName)';
+          function post(){
+            var root = document.documentElement;
+            var handlers = window.webkit && window.webkit.messageHandlers;
+            if (!root || !handlers || !handlers[name]) return;
+            var theme = root.classList.contains('dark') ? 'dark' : 'light';
+            var auth = root.getAttribute('data-dubhub-auth-surface') === 'on';
+            handlers[name].postMessage(auth ? theme + '|auth' : theme);
+          }
+          post();
+          new MutationObserver(post).observe(el, { attributes: true, attributeFilter: ['class', 'data-dubhub-auth-surface'] });
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard message.name == Self.themeMessageName else { return }
+        let raw = (message.body as? String) ?? "dark"
+        let authSurface = raw.contains("|auth")
+        let lightCanvas = raw == "light" || raw.hasPrefix("light|")
+        runOnMain { [weak self] in
+            guard let self else { return }
+            self.authSurface = authSurface
+            self.pagePrefersLightInk = lightCanvas
+            self.applyResolvedItemTints()
+            self.applyEffectiveChrome()
+        }
     }
 
     private func normalizedTabId(_ raw: String?) -> String? {
@@ -1075,6 +1186,8 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate {
         guard let tab = tagToTabId[item.tag] else { return }
         let event = (tab == selectedTabId) ? "reselectTab" : "selectTab"
         selectedTabId = tab
+        applyResolvedItemTints()
+        applyEffectiveChrome()
         var payload: [String: Any] = ["tab": tab]
         #if DEBUG
         let t = CACurrentMediaTime()

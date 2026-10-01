@@ -59,6 +59,33 @@ describe("STARTUP-CONTINUITY Home skeleton lifecycle", () => {
     assert.match(cssSrc, /dubhub-home-skeleton-launch-bg/);
     assert.match(cssSrc, /dubhub-premium-launch-background\.png/);
   });
+
+  it("Light Home loading uses the dark media fade; other Light pages keep the light shell", () => {
+    assert.match(skeletonSrc, /data-home-feed-skeleton-fade-extend/);
+    assert.match(skeletonSrc, /data-home-feed-skeleton-fade/);
+    assert.match(
+      skeletonSrc,
+      /h-\[var\(--video-card-overlay-bottom,0px\)\] bg-background/,
+    );
+    assert.match(
+      skeletonSrc,
+      /from-background from-30% via-background\/65 to-transparent/,
+    );
+    assert.match(
+      cssSrc,
+      /:root:not\(\.dark\) \[data-home-feed-skeleton-fade-extend\]\s*\{[^}]*background-color:\s*rgb\(0 0 0 \/ 0\.8\)/,
+    );
+    assert.match(
+      cssSrc,
+      /:root:not\(\.dark\) \[data-home-feed-skeleton-fade\]\s*\{[^}]*rgb\(0 0 0 \/ 0\.8\)[^}]*rgb\(0 0 0 \/ 0\.4\)/,
+    );
+    assert.match(cssSrc, /--app-shell-background:\s*#F6F8FC/);
+    assert.match(cssSrc, /--app-shell-background:\s*#0f1324/);
+    assert.doesNotMatch(skeletonSrc, /setTimeout\s*\(/);
+    assert.doesNotMatch(homeSrc, /data-home-feed-skeleton-fade/);
+    assert.match(homeSrc, /activePostId/);
+    assert.match(homeSrc, /data-home-video-feed/);
+  });
 });
 
 describe("STARTUP-CONTINUITY-4 SplashScreen plugin config", () => {

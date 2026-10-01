@@ -54,7 +54,10 @@ describe("remove saved release destructive menu", () => {
   it("uses one material menu shell with flat destructive row (no nested surface card)", () => {
     assert.match(detailSrc, /menu-remove-saved-release/);
     assert.match(detailSrc, /text-red-400/);
-    assert.match(detailSrc, /rounded-\[15px\] border-white\/10 bg-\[#141a30\]\/95/);
+    assert.match(
+      detailSrc,
+      /rounded-\[15px\] border-\[#DCE3EC\] bg-white[\s\S]*dark:border-white\/10 dark:bg-\[#141a30\]\/95/,
+    );
     const removeMenuBlock = detailSrc.slice(
       detailSrc.indexOf("menu-remove-saved-release") - 500,
       detailSrc.indexOf("menu-remove-saved-release") + 280,

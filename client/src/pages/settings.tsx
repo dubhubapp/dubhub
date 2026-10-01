@@ -18,6 +18,7 @@ import {
   MessageSquare,
   Scale,
   Settings as SettingsIcon,
+  Sun,
   UserRound,
   Volume2,
   Music2,
@@ -26,14 +27,15 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
 import { getFeedStartWithSound, setFeedStartWithSound } from "@/lib/feed-sound-preferences";
+import { applyTheme, getStoredTheme } from "@/lib/theme";
 import { useUser } from "@/lib/user-context";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { interactiveParentNavigation } from "@/lib/interactive-page-transitions";
 import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { revenueCatIdentityDiagnosticsEnabled } from "@/lib/revenuecat-identity";
 import {
-  APP_MATERIAL_BACK_BUTTON_CLASS,
-  APP_MATERIAL_BACK_ICON_CLASS,
+  APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
+  APP_MATERIAL_PAGE_BACK_ICON_CLASS,
 } from "@/lib/app-material";
 import { cn } from "@/lib/utils";
 import {
@@ -105,6 +107,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [, navigate] = useLocation();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
+  const [lightMode, setLightMode] = useState(() => getStoredTheme() === "light");
   const { verifiedArtist } = useUser();
   /** Dev / forced-diagnostics builds only — never shown by account role. */
   const showDeveloperDiagnosticsEntry = revenueCatIdentityDiagnosticsEnabled();
@@ -112,6 +115,11 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const handleFeedStartWithSoundToggle = (enabled: boolean) => {
     setFeedStartWithSound(enabled);
     setFeedStartWithSoundState(enabled);
+  };
+
+  const handleLightModeToggle = (enabled: boolean) => {
+    applyTheme(enabled ? "light" : "dark");
+    setLightMode(enabled);
   };
 
   const commitBack = () => {
@@ -139,12 +147,12 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
             <button
               type="button"
               onClick={handleBack}
-              className={cn(APP_MATERIAL_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
+              className={cn(APP_MATERIAL_PAGE_BACK_BUTTON_CLASS, SETTINGS_BACK_BUTTON_CLASS)}
               aria-label="Back"
               data-testid="button-settings-back"
             >
               <ChevronLeft
-                className={cn(APP_MATERIAL_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
+                className={cn(APP_MATERIAL_PAGE_BACK_ICON_CLASS, SETTINGS_BACK_ICON_CLASS)}
                 strokeWidth={2}
                 aria-hidden
               />
@@ -211,6 +219,19 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   onCheckedChange={handleFeedStartWithSoundToggle}
                   aria-label="Start feed with sound"
                   data-testid="switch-feed-start-with-sound"
+                />
+              </div>
+
+              <div className={SETTINGS_SWITCH_ROW_CLASS}>
+                <Sun className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                <p className={`${SETTINGS_ROW_TITLE_CLASS} ${SETTINGS_ROW_TEXT_WRAP_CLASS}`}>
+                  Light Mode
+                </p>
+                <Switch
+                  checked={lightMode}
+                  onCheckedChange={handleLightModeToggle}
+                  aria-label="Light Mode"
+                  data-testid="switch-light-mode"
                 />
               </div>
             </div>

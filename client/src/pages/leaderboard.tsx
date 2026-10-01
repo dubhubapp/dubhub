@@ -116,6 +116,7 @@ import {
   type LeaderboardScope,
   type LeaderboardTimeFilter,
 } from "@/lib/leaderboard-presentation";
+import { ARTIST_IDENTITY_DISPLAY_CLASS } from "@/lib/artist-identity-presentation";
 import {
   getLeaderboardRewardHeroConfig,
   LEADERBOARD_REWARD_HERO_NAVY,
@@ -322,7 +323,7 @@ export function LeaderboardEntryRow({
         <div className="relative z-[1] mb-1.5 flex min-w-0 items-center gap-x-1.5">
           <button
             type="button"
-            className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden font-semibold text-base leading-snug ${isVerifiedArtist ? "text-[#FFD700]" : ""}`}
+            className={`ios-press ios-press-soft inline-flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden font-semibold text-base leading-snug ${isVerifiedArtist ? ARTIST_IDENTITY_DISPLAY_CLASS : ""}`}
             data-testid={`username-${entry.user_id}`}
             onClick={handleOpenProfile}
           >
@@ -419,7 +420,12 @@ export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
         } as CSSProperties
       }
     >
-      <div className="relative" data-testid="rewards-banner" data-leaderboard-hero-scope={tab}>
+      <div
+        className="relative"
+        data-testid="rewards-banner"
+        data-leaderboard-hero-scope={tab}
+        data-lb-prize-tone={accent.toLowerCase() === "#0a83ff" ? "blue" : "gold"}
+      >
         <div className={LEADERBOARD_REWARD_HERO_POSTER_STAGE_CLASS}>
           {hasImage ? (
             <img
@@ -432,7 +438,7 @@ export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
             />
           ) : (
             <div
-              className="absolute inset-0 w-full"
+              className="dubhub-lb-hero-fallback absolute inset-0 w-full"
               style={{ backgroundImage: gradients.fallbackFill }}
               aria-hidden
               data-testid="rewards-banner-fallback"
@@ -442,8 +448,11 @@ export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
           <div className={LEADERBOARD_REWARD_HERO_TOP_SCRIM_CLASS} aria-hidden />
 
           <div
-            className={LEADERBOARD_REWARD_HERO_FADE_OVERLAP_CLASS}
-            style={{ backgroundImage: gradients.overlapFade }}
+            className={`${LEADERBOARD_REWARD_HERO_FADE_OVERLAP_CLASS} dubhub-lb-hero-fade`}
+            style={{
+              backgroundImage: gradients.overlapFade,
+              ["--dubhub-lb-dark-hero-fade" as string]: gradients.overlapFade,
+            }}
             aria-hidden
             data-testid="rewards-banner-fade"
           />
@@ -1367,7 +1376,7 @@ export default function Leaderboard() {
     <div
       ref={pageScrollRef}
       data-lg-nav-5a-dest="leaderboard"
-      className={`${LEADERBOARD_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} bg-background`}
+      className={`${LEADERBOARD_PAGE_SCROLL_CLASS} ${APP_MATERIAL_AUTH_CANVAS_CLASS} dubhub-lb-page-atmosphere bg-background`}
     >
       <div className="mx-auto max-w-4xl px-4">
         <Tabs value={activeTab} onValueChange={handleLeaderboardTabChange}>

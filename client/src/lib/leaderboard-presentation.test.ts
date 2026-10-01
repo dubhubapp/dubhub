@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { deriveTrustLevel } from "@shared/trust-level";
+import { ARTIST_IDENTITY_DISPLAY_CLASS } from "./artist-identity-presentation";
 import { GENRE_ENTRIES, getGenreChipStyle } from "@/lib/genre-styles";
 import {
   LEADERBOARD_BODY_ENTER_CLASS,
@@ -132,7 +133,7 @@ describe("Leaderboard presentation — sticky chrome + prize", () => {
 
 describe("Leaderboard presentation — rows + identity", () => {
   it("uses divider rows instead of per-entry card containers", () => {
-    assert.equal(LEADERBOARD_LIST_CLASS, "divide-y divide-white/[0.08]");
+    assert.equal(LEADERBOARD_LIST_CLASS, "divide-y divide-border dark:divide-white/[0.08]");
     assert.match(leaderboardSrc, /LEADERBOARD_ROW_BASE_CLASS/);
     assert.doesNotMatch(LEADERBOARD_ROW_BASE_CLASS, /rounded-xl|border|bg-black\/25|backdrop-blur/);
     assert.doesNotMatch(leaderboardSrc, /bg-black\/25 backdrop-blur-md border-white\/10/);
@@ -164,7 +165,8 @@ describe("Leaderboard presentation — rows + identity", () => {
   });
 
   it("preserves verified artist gold username colour", () => {
-    assert.match(leaderboardSrc, /text-\[#FFD700\]/);
+    assert.match(leaderboardSrc, /ARTIST_IDENTITY_DISPLAY_CLASS/);
+    assert.match(ARTIST_IDENTITY_DISPLAY_CLASS, /text-\[#FFD700\]/);
     assert.match(leaderboardSrc, /verified_artist === true/);
   });
 });

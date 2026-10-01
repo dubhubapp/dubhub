@@ -1,10 +1,14 @@
 import { clearDubhubTrimSession } from "@/lib/dubhub-trim-session";
-import { clearHomeFeedSession } from "@/lib/home-feed-session";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { disposeTrimExportResources, getTrimExportResourceState } from "@/lib/export-trimmed-video";
 
 const DUBHUB_HOME_MEDIA_EPOCH_KEY = "dubhub_home_media_epoch";
 
+/**
+ * Writer for the Home media epoch key that Home reads once on mount.
+ * Soft Cancel must not call this. Bumping it forces fresh `<video>` elements,
+ * which was only required after the old document reload.
+ */
 export function bumpDubhubHomeMediaEpoch(reason: string): number {
   try {
     const currentRaw = sessionStorage.getItem(DUBHUB_HOME_MEDIA_EPOCH_KEY);
@@ -22,7 +26,7 @@ export function bumpDubhubHomeMediaEpoch(reason: string): number {
 }
 
 /**
- * Explicit "Cancel post" flow reset.
+ * Explicit "Cancel post" draft cleanup.
  * Keep this as the single place that abandons the in-progress post flow.
  */
 export function cancelDubhubPostFlow(): void {
@@ -38,17 +42,18 @@ export function cancelDubhubPostFlow(): void {
   clearDubhubTrimSession();
 }
 
-export async function cancelPostAndHardResetToHome(reason: string): Promise<void> {
-  dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "cancelPostAndHardResetToHome start", { reason });
-  clearHomeFeedSession();
-  bumpDubhubHomeMediaEpoch(reason);
-  // Run the same storage/blob cleanup path first.
+/**
+ * Abandon the in-progress post and return to the existing Home session.
+ * Soft in-app navigation only: does not reload the document or clear the Home feed snapshot.
+ */
+export async function cancelPostAndReturnToHome(input: {
+  reason: string;
+  navigateHome: () => void;
+}): Promise<void> {
+  const { reason, navigateHome } = input;
+  dubhubVideoDebugLog("[DubHub][PostFlow][cleanup]", "cancelPostAndReturnToHome start", { reason });
   cancelDubhubPostFlow();
-  // Ensure heavy wasm resources are explicitly released before leaving flow.
-  await disposeTrimExportResources(`hard-reset:${reason}`);
-  dubhubVideoDebugLog("[DubHub][PostFlow][route]", "hard reset to Home", { reason, route: "/" });
-  // Force a full webview/page reload so media pipeline starts from a clean process state.
-  if (typeof window !== "undefined") {
-    window.location.replace("/");
-  }
+  await disposeTrimExportResources(`cancel-return:${reason}`);
+  dubhubVideoDebugLog("[DubHub][PostFlow][route]", "soft return to Home", { reason, route: "/" });
+  navigateHome();
 }

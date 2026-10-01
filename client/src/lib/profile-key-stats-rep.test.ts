@@ -127,7 +127,8 @@ describe("PROFILE-REFINEMENT-B1 — alignment + colour + View All + genre audit"
 
   it("View All is neutral secondary, not teal accent", () => {
     const block = viewAllBlock();
-    assert.match(block, /text-white\/70 hover:text-white/);
+    assert.match(block, /text-muted-foreground hover:text-foreground/);
+    assert.match(block, /dark:text-white\/70 dark:hover:text-white/);
     assert.doesNotMatch(block, /text-accent/);
     assert.match(block, /View All/);
     assert.match(block, /Show Less/);

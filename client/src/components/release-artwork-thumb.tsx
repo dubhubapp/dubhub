@@ -66,30 +66,31 @@ export function ReleaseArtworkThumb({
 
   return (
     <div
-      className={cn(
-        "flex items-center justify-center overflow-hidden bg-muted",
-        className,
-      )}
+      className={cn("flex items-center justify-center bg-muted", className)}
       data-testid={testId}
       data-artwork-state={showImage ? "image" : "fallback"}
     >
-      {showImage ? (
-        onOpen ? (
-          <button
-            type="button"
-            className="ios-press h-full w-full overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            onClick={onOpen}
-            aria-label={openAriaLabel ?? "View artwork"}
-            data-testid={`${testId}-open`}
-          >
-            {image}
-          </button>
+      {/* Clip the bitmap to the radius. Shadow stays on the outer box so WebKit
+          does not crop it with overflow + border-radius. */}
+      <div className="flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-[inherit]">
+        {showImage ? (
+          onOpen ? (
+            <button
+              type="button"
+              className="ios-press h-full w-full overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              onClick={onOpen}
+              aria-label={openAriaLabel ?? "View artwork"}
+              data-testid={`${testId}-open`}
+            >
+              {image}
+            </button>
+          ) : (
+            image
+          )
         ) : (
-          image
-        )
-      ) : (
-        fallback
-      )}
+          fallback
+        )}
+      </div>
     </div>
   );
 }

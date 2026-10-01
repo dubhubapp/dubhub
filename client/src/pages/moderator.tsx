@@ -37,7 +37,9 @@ import { ModeratorQueueCountBadge } from "@/components/moderator-queue-count-bad
 import { ModeratorShieldIcon, UserRoleInlineIcons } from "@/components/moderator-shield";
 import { cn, formatUsernameDisplay } from "@/lib/utils";
 import { flattenCommentsForIdSelection } from "@/lib/comment-selection";
+import { isDefaultAvatarUrl } from "@/lib/default-avatar";
 import { renderCommentMentionNodes } from "@/lib/comment-mention-render";
+import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
 import {
   ID_MARKING_DIALOG_CONTENT_CLASS,
   ID_MARKING_DIALOG_OVERLAY_CLASS,
@@ -1498,10 +1500,10 @@ export default function ModeratorPage() {
           className={`${ID_MARKING_DIALOG_CONTENT_CLASS} overflow-x-hidden`}
         >
           <DialogHeader className="space-y-1.5 text-center">
-            <DialogTitle className="text-lg font-semibold text-white">
+            <DialogTitle className="text-lg font-semibold text-foreground dark:text-white">
               Review Comments & Select Identification
             </DialogTitle>
-            <DialogDescription className="text-sm text-white/75">
+            <DialogDescription className="text-sm text-muted-foreground dark:text-white/75">
               Select the comment with the correct track ID, then confirm or keep as community identified.
             </DialogDescription>
           </DialogHeader>
@@ -1509,16 +1511,16 @@ export default function ModeratorPage() {
           {selectedPost && (
             <div className="mt-4 space-y-4 overflow-x-hidden">
               {/* Post info summary */}
-              <div className="rounded-lg border border-white/15 bg-black/20 px-3 py-2.5">
-                <p className="mb-1 text-sm font-semibold text-white">{selectedPost.description}</p>
-                <p className="text-xs text-white/65">
+              <div className="rounded-lg border border-[#DCE3EC] bg-white px-3 py-2.5 dark:border-white/15 dark:bg-black/20">
+                <p className="mb-1 text-sm font-semibold text-foreground dark:text-white">{selectedPost.description}</p>
+                <p className="text-xs text-muted-foreground dark:text-white/65">
                   Uploaded by {formatUsernameDisplay(selectedPost.user.username)}
                 </p>
               </div>
 
               {/* Comments list */}
               {flatPostComments.length === 0 ? (
-                <div className="rounded-lg border border-white/10 bg-black/15 py-8 text-center text-white/70">
+                <div className="rounded-lg border border-[#DCE3EC] bg-[#F6F8FC] py-8 text-center text-muted-foreground dark:border-white/10 dark:bg-black/15 dark:text-white/70">
                   <MessageSquare className="mx-auto mb-4 h-12 w-12 opacity-50" />
                   <p>No comments on this post yet</p>
                 </div>
@@ -1549,6 +1551,8 @@ export default function ModeratorPage() {
                             <div className="flex min-w-0 items-start gap-2">
                               <div
                                 className={`flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border ${
+                                  isDefaultAvatarUrl(comment.user.avatar_url) ? "bg-[#0f1324] " : ""
+                                }${
                                   comment.user.verified_artist
                                     ? "border-[#FFD700] " + goldAvatarGlowShadowClass
                                     : "border-primary/20"
@@ -1558,7 +1562,11 @@ export default function ModeratorPage() {
                                   <img
                                     src={comment.user.avatar_url}
                                     alt={formatUsernameDisplay(comment.user.username) || comment.user.username || ""}
-                                    className="h-full w-full object-cover"
+                                    className={`h-full w-full object-cover${
+                                      isDefaultAvatarUrl(comment.user.avatar_url)
+                                        ? " avatar-media avatar-default-media"
+                                        : ""
+                                    }`}
                                   />
                                 ) : (
                                   <User className="h-4 w-4 text-primary" />
@@ -1568,7 +1576,7 @@ export default function ModeratorPage() {
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span
                                     className={`truncate text-sm font-medium ${
-                                      comment.user.verified_artist ? "text-[#FFD700]" : "text-white"
+                                      comment.user.verified_artist ? ARTIST_IDENTITY_COMPACT_CLASS : "text-foreground dark:text-white"
                                     }`}
                                   >
                                     {formatUsernameDisplay(comment.user.username)}
@@ -1580,7 +1588,7 @@ export default function ModeratorPage() {
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-1">
                                   {isReply && (
-                                    <span className="whitespace-nowrap rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
+                                    <span className="whitespace-nowrap rounded-full border border-[#DCE3EC] bg-[#F6F8FC] px-2 py-0.5 text-[11px] font-medium text-muted-foreground dark:border-white/30 dark:bg-white/10 dark:text-white/80">
                                       {comment.parentAuthorUsername
                                         ? `Reply to ${formatUsernameDisplay(comment.parentAuthorUsername)}`
                                         : "Reply"}
@@ -1594,18 +1602,18 @@ export default function ModeratorPage() {
                                 </div>
                               </div>
                             </div>
-                            <div className="mt-2 flex items-center gap-1 text-[11px] text-white/65">
+                            <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground dark:text-white/65">
                               <Clock3 className="h-3.5 w-3.5" />
                               <span>{formatCommentTimestamp(comment.createdAt as any)}</span>
                             </div>
                           </div>
-                          <p className="break-words text-sm text-white/92">
+                          <p className="break-words text-sm text-foreground dark:text-white/92">
                             {renderCommentMentionNodes(comment.body, isVerifiedArtistUsername)}
                           </p>
                           {(comment.id === selectedPost.verifiedCommentId || comment.id === (selectedPost as any).verified_comment_id) && (
                             <Badge
                               variant="secondary"
-                              className="mt-2 border-white/25 bg-white/10 text-xs text-white/90"
+                              className="mt-2 border-[#DCE3EC] bg-[#F6F8FC] text-xs text-foreground dark:border-white/25 dark:bg-white/10 dark:text-white/90"
                             >
                               Uploader's Selection
                             </Badge>
@@ -1618,7 +1626,7 @@ export default function ModeratorPage() {
               )}
 
               {/* Action buttons */}
-              <div className="flex flex-wrap justify-end gap-2 border-t border-white/15 pt-4">
+              <div className="flex flex-wrap justify-end gap-2 border-t border-[#DCE3EC] pt-4 dark:border-white/15">
                 <Button
                   variant="outline"
                   onClick={() => {

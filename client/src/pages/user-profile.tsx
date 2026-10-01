@@ -116,6 +116,7 @@ import {
   PROFILE_BANNER_UPLOADED_DISSOLVE_CLASS,
   PROFILE_BANNER_UPLOADED_DISSOLVE_STYLE,
   PROFILE_BANNER_UPLOADED_SCRIM_STYLE,
+  PROFILE_IMAGE_EDIT_CONTROL_LIGHT_CLASS,
   ProfileBannerDefaultGradient,
   ProfileBannerLoadingPlaceholder,
   profilePageCanvasClass,
@@ -158,6 +159,10 @@ import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { resolveMediaUrl } from "@/lib/media-url";
 import { useLocation } from "wouter";
 import { goldAvatarGlowShadowClass, GoldVerifiedTick } from "@/components/verified-artist";
+import {
+  ARTIST_IDENTITY_DISPLAY_CLASS,
+  ARTIST_IDENTITY_MEDIA_CLASS,
+} from "@/lib/artist-identity-presentation";
 import { isPostArtistVerified } from "@/lib/post-artist-verification";
 import { UserRoleInlineIcons } from "@/components/moderator-shield";
 import { type StatsCardItem } from "@/components/stats-card-section";
@@ -349,10 +354,10 @@ function ActivityGenreStatChip({
   const pillStyle = getGenreGlowPillStyle(chip.bgColor, chip.textClass) as CSSProperties;
   return (
     <div className="flex min-w-[64px] flex-col items-center gap-1" data-testid={testId}>
-      <span className={ACTIVITY_GENRE_VALUE_PILL_CLASS} style={pillStyle}>
+      <span className={`${ACTIVITY_GENRE_VALUE_PILL_CLASS} dubhub-profile-dense-genre-chip`} style={pillStyle}>
         <span className="truncate">{chip.label}</span>
       </span>
-      <span className="text-xs font-medium text-gray-400">{count}</span>
+      <span className="text-xs font-medium text-muted-foreground dark:text-gray-400">{count}</span>
     </div>
   );
 }
@@ -361,7 +366,7 @@ function ActivityGenreStatChip({
  * Direct `section` children only (Quick One renders its own `<section>` when visible).
  * Top inset vs primary tabs: {@link PROFILE_SECONDARY_ROW_TOP_CLASS} on the panel. */
 const PROFILE_OVERVIEW_SECTIONS_CLASS =
-  "divide-y divide-white/5 [&>section]:py-5 [&>section:first-child]:pt-0 [&>section:last-child]:pb-1";
+  "divide-y divide-border dark:divide-white/5 [&>section]:py-5 [&>section:first-child]:pt-0 [&>section:last-child]:pb-1";
 
 /** Matches public profile fav-genre pill footprint. */
 const OWNER_PROFILE_GENRE_VALUE_PILL_CLASS =
@@ -422,7 +427,7 @@ function ProfileCommunityActivitySection({
       >
         <div className={PROFILE_SECTION_HEADING_ROW_CLASS}>
           <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-            <BarChart3 className="h-4 w-4 text-gray-300" />
+            <BarChart3 className="h-4 w-4 text-muted-foreground dark:text-gray-300" />
           </span>
           <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Your Activity</h3>
           <StatInfoPopover
@@ -430,13 +435,13 @@ function ProfileCommunityActivitySection({
             content={PROFILE_HELP.sectionOverview}
             side="bottom"
             align="start"
-            className="text-gray-400 hover:text-gray-200"
+            className="text-muted-foreground hover:text-foreground dark:text-gray-400 dark:hover:text-gray-200"
           />
         </div>
         <button
           type="button"
           onClick={onToggleGenres}
-          className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-white/70 hover:text-white"
+          className="ios-press inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground dark:text-white/70 dark:hover:text-white"
           aria-expanded={showActivityGenres}
           data-testid="your-activity-toggle-genres"
         >
@@ -446,12 +451,12 @@ function ProfileCommunityActivitySection({
           />
         </button>
       </div>
-      <div className="divide-y divide-white/5">
+      <div className="divide-y divide-border dark:divide-white/5">
         {userOverviewItems.map(({ label, value, Icon, info, supportingValue }) => (
           <div key={label} className="flex items-center justify-between gap-3 py-2.5">
             <div className="flex min-w-0 items-center gap-2.5">
-              <Icon className="w-4 h-4 shrink-0 text-gray-400" />
-              <span className="text-sm text-gray-200">{label}</span>
+              <Icon className="w-4 h-4 shrink-0 text-muted-foreground dark:text-gray-400" />
+              <span className="text-sm text-foreground dark:text-gray-200">{label}</span>
               {info ? (
                 <StatInfoPopover
                   label={label}
@@ -459,7 +464,7 @@ function ProfileCommunityActivitySection({
                   size="compact"
                   side="top"
                   align="center"
-                  className="text-gray-500 hover:text-gray-300"
+                  className="text-muted-foreground hover:text-foreground dark:text-gray-500 dark:hover:text-gray-300"
                 />
               ) : null}
             </div>
@@ -477,7 +482,7 @@ function ProfileCommunityActivitySection({
                 </span>
                 {supportingValue ? (
                   <span
-                    className="text-[10px] font-medium leading-tight text-white/55"
+                    className="text-[10px] font-medium leading-tight text-muted-foreground dark:text-white/55"
                     data-testid={
                       label === "Best Monthly Rank" ? "best-monthly-rank-month" : undefined
                     }
@@ -496,7 +501,7 @@ function ProfileCommunityActivitySection({
           <div>
             <div className={`mb-3 ${PROFILE_SECTION_HEADING_ROW_CLASS}`}>
               <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-                <Check className="h-4 w-4 text-gray-300" />
+                <Check className="h-4 w-4 text-muted-foreground dark:text-gray-300" />
               </span>
               <h4 className={cn("text-sm font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Top Genres ID&apos;d</h4>
               <StatInfoPopover
@@ -504,11 +509,11 @@ function ProfileCommunityActivitySection({
                 content={PROFILE_HELP.tracksIdentifiedGenres}
                 side="bottom"
                 align="start"
-                className="text-gray-400 hover:text-gray-200"
+                className="text-muted-foreground hover:text-foreground dark:text-gray-400 dark:hover:text-gray-200"
               />
             </div>
             {identifiedGenresLoading ? (
-              <p className="text-gray-400 text-sm" data-testid="identified-genres-loading">
+              <p className="text-muted-foreground text-sm dark:text-gray-400" data-testid="identified-genres-loading">
                 Loading genre breakdown…
               </p>
             ) : identifiedGenreStats.length > 0 ? (
@@ -523,7 +528,7 @@ function ProfileCommunityActivitySection({
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-sm" data-testid="identified-genres-empty">
+              <p className="text-muted-foreground text-sm dark:text-gray-400" data-testid="identified-genres-empty">
                 When your ID is confirmed as the correct track, those tracks will show up here.
               </p>
             )}
@@ -532,7 +537,7 @@ function ProfileCommunityActivitySection({
           <div>
             <div className={`mb-3 ${PROFILE_SECTION_HEADING_ROW_CLASS}`}>
               <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-                <Upload className="h-4 w-4 text-gray-300" />
+                <Upload className="h-4 w-4 text-muted-foreground dark:text-gray-300" />
               </span>
               <h4 className={cn("text-sm font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Top Genres Posted</h4>
               <StatInfoPopover
@@ -540,11 +545,11 @@ function ProfileCommunityActivitySection({
                 content={PROFILE_HELP.topGenresPosted}
                 side="bottom"
                 align="start"
-                className="text-gray-400 hover:text-gray-200"
+                className="text-muted-foreground hover:text-foreground dark:text-gray-400 dark:hover:text-gray-200"
               />
             </div>
             {postsLoading ? (
-              <p className="text-gray-400 text-sm" data-testid="posted-genres-loading">
+              <p className="text-muted-foreground text-sm dark:text-gray-400" data-testid="posted-genres-loading">
                 Loading genre breakdown…
               </p>
             ) : genreStats.length > 0 ? (
@@ -559,7 +564,7 @@ function ProfileCommunityActivitySection({
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-sm" data-testid="posted-genres-empty">
+              <p className="text-muted-foreground text-sm dark:text-gray-400" data-testid="posted-genres-empty">
                 No tracks posted yet. Start submitting tracks to see your genre breakdown.
               </p>
             )}
@@ -3332,6 +3337,7 @@ export default function UserProfile() {
                 ? "bg-[#0f1324]"
                 : "bg-transparent"
             }`}
+            data-profile-hero={hasReadyUploadedBanner ? "media" : "canvas"}
             data-testid="profile-banner"
           >
             {showBannerLoadingPlaceholder ? <ProfileBannerLoadingPlaceholder /> : null}
@@ -3405,10 +3411,10 @@ export default function UserProfile() {
                     )}
                     <button
                       onClick={handleProfileImageChange}
-                      className="ios-press ios-press-soft absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:bg-primary/80 transition-colors"
+                      className={`ios-press ios-press-soft absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full transition-colors ${PROFILE_IMAGE_EDIT_CONTROL_LIGHT_CLASS}`}
                       data-testid="button-edit-profile-picture"
                     >
-                      <Camera className="w-4 h-4 text-black" />
+                      <Camera className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -3416,7 +3422,13 @@ export default function UserProfile() {
                   <div className="flex items-center gap-1.5">
                     <h1
                       className={`min-w-0 truncate text-xl font-bold leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] ${
-                        verifiedArtist ? "text-[#FFD700]" : "text-foreground"
+                        verifiedArtist
+                          ? hasReadyUploadedBanner
+                            ? ARTIST_IDENTITY_MEDIA_CLASS
+                            : ARTIST_IDENTITY_DISPLAY_CLASS
+                          : hasReadyUploadedBanner
+                            ? "text-white"
+                            : "text-foreground"
                       }`}
                     >
                       {userData.username ? formatUsernameDisplay(userData.username) : "@user"}
@@ -3431,7 +3443,7 @@ export default function UserProfile() {
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
-                          className="ios-press ios-press-soft ml-auto shrink-0 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm hover:bg-black/60"
+                          className={`ios-press ios-press-soft ml-auto shrink-0 flex h-8 w-8 items-center justify-center rounded-full ${PROFILE_IMAGE_EDIT_CONTROL_LIGHT_CLASS}`}
                           data-testid="button-edit-profile-banner"
                           aria-label="Edit profile banner"
                         >
@@ -3490,7 +3502,7 @@ export default function UserProfile() {
                       className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
                       data-testid="owner-profile-fav-genre"
                     >
-                      <span className="text-[10px] font-medium leading-none text-white/60">Fav genre</span>
+                      <span className={`text-[10px] font-medium leading-none ${hasReadyUploadedBanner ? "text-white/60" : "text-muted-foreground"}`}>Fav genre</span>
                       <span
                         className={OWNER_PROFILE_GENRE_VALUE_PILL_CLASS}
                         style={ownerArtistGenrePillStyle}
@@ -3525,7 +3537,7 @@ export default function UserProfile() {
                       >
                         {value}
                       </span>
-                      <span className="text-[10px] leading-tight text-gray-300/90">{label}</span>
+                      <span className="text-[10px] leading-tight text-muted-foreground dark:text-gray-300/90">{label}</span>
                     </div>
                   ))}
                 </div>
@@ -3711,7 +3723,7 @@ export default function UserProfile() {
                       >
                         <div className={PROFILE_SECTION_HEADING_ROW_CLASS}>
                           <span className={PROFILE_SECTION_HEADING_ICON_SLOT_CLASS}>
-                            <BarChart3 className="h-4 w-4 text-gray-300" />
+                            <BarChart3 className="h-4 w-4 text-muted-foreground dark:text-gray-300" />
                           </span>
                           <h3 className={cn("font-semibold", PROFILE_SECTION_HEADING_TEXT_CLASS)}>Your Impact</h3>
                           <StatInfoPopover
@@ -3719,19 +3731,19 @@ export default function UserProfile() {
                             content={PROFILE_HELP.sectionImpact}
                             side="bottom"
                             align="start"
-                            className="text-gray-400 hover:text-gray-200"
+                            className="text-muted-foreground hover:text-foreground dark:text-gray-400 dark:hover:text-gray-200"
                           />
                         </div>
                       </div>
-                      <div className="divide-y divide-white/5">
+                      <div className="divide-y divide-border dark:divide-white/5">
                         {artistImpactItems.map(({ label, value, Icon, info }) => (
                           <div
                             key={label}
                             className="flex items-center justify-between py-2.5"
                           >
                             <div className="flex items-center gap-2.5">
-                              <Icon className="w-4 h-4 shrink-0 text-gray-400" />
-                              <span className="text-sm text-gray-200">{label}</span>
+                              <Icon className="w-4 h-4 shrink-0 text-muted-foreground dark:text-gray-400" />
+                              <span className="text-sm text-foreground dark:text-gray-200">{label}</span>
                               {info ? (
                                 <StatInfoPopover
                                   label={label}
@@ -3739,7 +3751,7 @@ export default function UserProfile() {
                                   size="compact"
                                   side="top"
                                   align="center"
-                                  className="text-gray-500 hover:text-gray-300"
+                                  className="text-muted-foreground hover:text-foreground dark:text-gray-500 dark:hover:text-gray-300"
                                 />
                               ) : null}
                             </div>
@@ -3756,7 +3768,7 @@ export default function UserProfile() {
                         />
                       </div>
                       {!artistStatsPending && !hasAnyArtistImpact ? (
-                        <p className="text-xs text-gray-400 mt-3 text-center">
+                        <p className="text-xs text-muted-foreground dark:text-gray-400 mt-3 text-center">
                           Your impact stats will grow as tracks are confirmed and clips get linked to your releases.
                         </p>
                       ) : null}
@@ -3818,15 +3830,18 @@ export default function UserProfile() {
             <Button
               variant="ghost"
               type="button"
-              className={cn(SETTINGS_NAV_ROW_CLASS, "h-auto justify-between")}
+              className={cn(
+                SETTINGS_NAV_ROW_CLASS,
+                "h-auto justify-between text-foreground hover:text-foreground",
+              )}
               data-testid="button-settings"
               onClick={() => navigate("/settings")}
             >
               <div className="flex items-center space-x-3">
-                <Settings className="w-5 h-5 text-gray-400" />
-                <span className="text-sm">Settings</span>
+                <Settings className="w-5 h-5 text-muted-foreground dark:text-gray-400" />
+                <span className="text-sm text-foreground">Settings</span>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4 text-muted-foreground dark:text-gray-400" />
             </Button>
           </section>
             </TabsContent>
@@ -3861,19 +3876,19 @@ export default function UserProfile() {
               {postsLoading ? (
                 <div className="text-center py-8">
                   <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
-                  <p className="text-gray-400">Loading your posts...</p>
+                  <p className="text-muted-foreground dark:text-gray-400">Loading your posts...</p>
                 </div>
               ) : filteredPosts.length === 0 ? (
                 <div className="text-center py-12">
-                  <Upload className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 text-lg mb-2">
+                  <Upload className="w-16 h-16 text-muted-foreground/70 dark:text-gray-600 mx-auto mb-4" />
+                  <p className="text-foreground dark:text-gray-400 text-lg mb-2">
                     {postFilter === "all"
                       ? "No posts yet"
                       : postFilter === "identified"
                       ? "No identified posts"
                       : "No unidentified posts"}
                   </p>
-                  <p className="text-gray-500 text-sm">
+                  <p className="text-muted-foreground text-sm dark:text-gray-500">
                     {postFilter === "all" && "Start uploading tracks to see them here!"}
                   </p>
                 </div>
@@ -3975,19 +3990,19 @@ export default function UserProfile() {
               {likedLoading ? (
                 <div className="text-center py-8">
                   <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
-                  <p className="text-gray-400">Loading liked videos...</p>
+                  <p className="text-muted-foreground dark:text-gray-400">Loading liked videos...</p>
                 </div>
               ) : filteredLikedPosts.length === 0 ? (
                 <div className="text-center py-12">
-                  <Heart className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 text-lg mb-2">
+                  <Heart className="w-16 h-16 text-muted-foreground/70 dark:text-gray-600 mx-auto mb-4" />
+                  <p className="text-foreground dark:text-gray-400 text-lg mb-2">
                     {likesFilter === "all"
                       ? "No liked videos yet"
                       : likesFilter === "identified"
                         ? "No identified liked videos"
                         : "No unidentified liked videos"}
                   </p>
-                  <p className="text-gray-500 text-sm">
+                  <p className="text-muted-foreground text-sm dark:text-gray-500">
                     {likesFilter === "all" && "Start liking tracks to see them here!"}
                   </p>
                 </div>

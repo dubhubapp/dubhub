@@ -27,7 +27,7 @@ export const PROFILE_PRIMARY_NAV_LIST_CLASS =
  * (classes here + pager colour lerp).
  */
 export const PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS =
-  "ios-press group relative flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-none border-0 bg-transparent px-0.5 text-[13px] font-semibold leading-tight text-white/55 shadow-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-[14px]" as const;
+  "ios-press group relative flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-none border-0 bg-transparent px-0.5 text-[13px] font-semibold leading-tight text-muted-foreground shadow-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none dark:text-white/55 sm:text-[14px]" as const;
 
 /**
  * Centred visual unit: [icon + label].

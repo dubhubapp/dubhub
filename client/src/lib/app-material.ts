@@ -74,6 +74,26 @@ export const APP_MATERIAL_BACK_BUTTON_CLASS =
 export const APP_MATERIAL_BACK_ICON_CLASS = "h-7 w-7 text-white" as const;
 
 /**
+ * Page-chrome Back. Semantic foreground, so Light is not white-on-pale.
+ * Not for controls that sit on video, artwork, or photography — those keep
+ * APP_MATERIAL_BACK_* (fixed white). Not wired to call sites in this phase.
+ */
+export const APP_MATERIAL_PAGE_BACK_BUTTON_CLASS =
+  "ios-press inline-flex min-h-11 min-w-11 items-center justify-center -ml-1 rounded-sm text-foreground hover:text-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-background" as const;
+
+export const APP_MATERIAL_PAGE_BACK_ICON_CLASS = "h-7 w-7 text-foreground" as const;
+
+/**
+ * Release Detail / Create / Edit Back. Sits on page atmosphere, so Light uses
+ * semantic foreground. Dark stays the fixed white media-adjacent chevron.
+ */
+export const APP_MATERIAL_RELEASE_PAGE_BACK_BUTTON_CLASS =
+  `${APP_MATERIAL_PAGE_BACK_BUTTON_CLASS} dark:text-white dark:hover:text-white/90 dark:focus-visible:ring-offset-[#0f1324]` as const;
+
+export const APP_MATERIAL_RELEASE_PAGE_BACK_ICON_CLASS =
+  `${APP_MATERIAL_PAGE_BACK_ICON_CLASS} dark:text-white` as const;
+
+/**
  * Neutral glass surface for destructive menu/action rows.
  * Red is reserved for icon + label content, not the outer border.
  */
@@ -94,10 +114,10 @@ export const APP_MATERIAL_AUTH_STICKY_CLASS = APP_MATERIAL_RELEASES_STICKY_CLASS
 export const APP_MATERIAL_AUTH_STICKY_FADE_CLASS = APP_MATERIAL_RELEASES_STICKY_FADE_CLASS;
 
 export const APP_MATERIAL_CERAMIC_BUTTON_CLASS =
-  "rounded-[15px] border border-white/80 bg-white font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:opacity-95 active:scale-[0.985]";
+  "dubhub-app-primary-action rounded-[15px] border border-white/80 bg-white font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:opacity-95 active:scale-[0.985]";
 
 export const APP_MATERIAL_RELEASES_ADD_CTA_CLASS =
-  "ios-press pointer-events-auto h-12 w-full rounded-[18px] border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]";
+  "dubhub-app-primary-action ios-press pointer-events-auto h-12 w-full rounded-[18px] border border-white/80 bg-white text-slate-900 shadow-[0_10px_28px_-18px_rgba(255,255,255,0.95),0_10px_24px_-18px_rgba(15,23,42,0.45)] transition-all hover:opacity-95 active:scale-[0.995]";
 
 /* ——— C2: opt-in Dialog / Sheet overlay material ——— */
 
@@ -125,13 +145,30 @@ export const APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS =
   "text-sm leading-relaxed text-muted-foreground" as const;
 
 export const APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS =
-  "border border-white/80 bg-white font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:text-slate-900 hover:opacity-95" as const;
+  "dubhub-app-primary-action border border-white/80 bg-white font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:text-slate-900 hover:opacity-95" as const;
 
 export const APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS =
-  "border border-white/15 bg-white/[0.06] font-medium text-foreground hover:bg-white/10 hover:text-foreground" as const;
+  "dubhub-app-secondary-action border border-white/15 bg-white/[0.06] font-medium text-foreground hover:bg-white/10 hover:text-foreground" as const;
 
 export const APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS =
   "bg-destructive font-semibold text-destructive-foreground hover:bg-destructive/90" as const;
+
+/** Stacked dialog actions. Gap replaces the flush full-bleed pair. */
+export const APP_MATERIAL_OVERLAY_ACTION_ROW_CLASS = "gap-2.5 sm:gap-2" as const;
+
+/**
+ * Destructive confirm inside a dialog. Same colour semantics as the overlay
+ * destructive action, with the app's 15px radius and a light inset highlight.
+ */
+export const APP_MATERIAL_OVERLAY_DESTRUCTIVE_CTA_CLASS =
+  "h-11 min-h-11 rounded-[15px] border border-white/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_18px_-14px_rgba(127,29,29,0.95)]" as const;
+
+/**
+ * Secondary dialog action. Light uses the filled secondary surface.
+ * Dark uses a lifted glass fill so it stays visible on the overlay.
+ */
+export const APP_MATERIAL_OVERLAY_KEEP_EDITING_CLASS =
+  "mt-0 h-11 min-h-11 rounded-[15px] border border-[#DCE3EC] bg-[#EDF2F8] font-medium text-[#101828] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(16,24,40,0.06)] hover:bg-[#E4EAF3] hover:text-[#101828] dark:border-white/20 dark:bg-white/[0.1] dark:text-white dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] dark:hover:bg-white/[0.16] dark:hover:text-white" as const;
 
 /* ——— C3: opt-in form / control material ——— */
 
@@ -169,7 +206,7 @@ export const APP_MATERIAL_SEGMENT_ACTIVE_CLASS =
   "dubhub-app-segment-active border-white/20 font-semibold text-white" as const;
 
 export const APP_MATERIAL_SEGMENT_INACTIVE_CLASS =
-  "border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1] hover:text-white" as const;
+  "dubhub-app-segment-inactive border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1] hover:text-white" as const;
 
 export const APP_MATERIAL_SEGMENT_ROW_CLASS =
   "grid w-full min-w-0 max-w-full grid-cols-[repeat(2,minmax(0,1fr))] gap-2" as const;
@@ -180,11 +217,11 @@ export const APP_MATERIAL_FIELD_TRIGGER_CLASS =
 
 /** Form primary ceramic CTA (Create / Save / Done / Submit). */
 export const APP_MATERIAL_FORM_PRIMARY_CLASS =
-  "dubhub-app-form-primary h-11 w-full rounded-[15px] border border-white/80 bg-white font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:text-slate-900 hover:opacity-95 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-100" as const;
+  "dubhub-app-form-primary dubhub-app-primary-action h-11 w-full rounded-[15px] border border-white/80 bg-white font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:text-slate-900 hover:opacity-95 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-100" as const;
 
 /** Tall Submit Track ID variant — same ceramic family, h-12. */
 export const APP_MATERIAL_FORM_PRIMARY_TALL_CLASS =
-  "dubhub-app-form-primary h-12 w-full rounded-[18px] border border-white/80 bg-white text-base font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:text-slate-900 hover:opacity-95 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-100" as const;
+  "dubhub-app-form-primary dubhub-app-primary-action h-12 w-full rounded-[18px] border border-white/80 bg-white text-base font-semibold text-slate-900 shadow-[0_4px_14px_rgba(0,0,0,0.16)] hover:bg-white hover:text-slate-900 hover:opacity-95 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-100" as const;
 
 /** Artwork picker surface — size owned by caller. */
 export const APP_MATERIAL_ARTWORK_PICKER_CLASS =
@@ -192,7 +229,7 @@ export const APP_MATERIAL_ARTWORK_PICKER_CLASS =
 
 /** Flat tool row focus — generic blue ring, no card shell. */
 export const APP_MATERIAL_TOOL_ROW_CLASS =
-  "ios-press flex min-h-11 w-full items-center justify-between gap-3 border-b border-white/[0.08] py-3 text-left last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-inset focus-visible:ring-offset-0" as const;
+  "ios-press flex min-h-11 w-full items-center justify-between gap-3 border-b border-[#DCE3EC] py-3 text-left last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a83ff]/45 focus-visible:ring-inset focus-visible:ring-offset-0 dark:border-white/[0.08]" as const;
 
 /** Generic interactive text link (Back in schedule timezone panel). */
 export const APP_MATERIAL_LINK_CLASS =
