@@ -45,7 +45,8 @@ const VAT_CARD_SURFACE_CLASS =
   "w-full rounded-xl border border-border bg-card p-4 space-y-3 shadow-[inset_0_0_0_1px_rgba(16,24,40,0.04)] dark:border-white/10 dark:bg-black/30 dark:backdrop-blur-md dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" as const;
 
 /** Active status. Dark keeps the existing teal; Light uses a darker teal so it stays readable. */
-const VAT_ACTIVE_MARK_CLASS = "text-teal-700 dark:text-[#4ae9df]" as const;
+/** Light: Settings Active / plan ticks. Dark: existing turquoise. */
+export const VAT_ACTIVE_MARK_CLASS = "text-teal-700 dark:text-[#4ae9df]" as const;
 
 export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Props) {
   const { toast } = useToast();

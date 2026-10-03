@@ -56,6 +56,7 @@ describe("verified-artist-tools-paywall-copy", () => {
     "onboarding_intro",
     "anonymous_identify",
     "notification_emoji",
+    "app_icon",
   ];
 
   it("returns contextual title/body for every source", () => {
@@ -67,7 +68,7 @@ describe("verified-artist-tools-paywall-copy", () => {
   });
 
   it("keeps shared benefits identical and avoids followers/reach claims", () => {
-    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS.length, 6);
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS.length, 7);
     const joined = VERIFIED_ARTIST_TOOLS_BENEFITS.join(" ");
     assert.equal(joined.includes("follower"), false);
     assert.equal(joined.toLowerCase().includes("boost"), false);
@@ -102,6 +103,7 @@ describe("verified-artist-tools-paywall-copy", () => {
       VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS["Identify your tracks anonymously"],
     );
     assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[5], "Custom notification emoji");
+    assert.equal(VERIFIED_ARTIST_TOOLS_BENEFITS[6], "Custom app icons");
     assert.equal(
       resolveVerifiedArtistToolsBenefitDetail({
         benefit: "Custom notification emoji",

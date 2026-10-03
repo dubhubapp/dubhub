@@ -92,7 +92,7 @@ describe("settings root IA slice 1", () => {
 
   it("keeps one Artist row on root that opens Artist Settings", () => {
     assert.match(settingsSrc, /data-testid="button-settings-artist"/);
-    assert.match(settingsSrc, /navigate\("\/settings\/artist"\)/);
+    assert.match(settingsSrc, /navigate\("\/settings\/artist", interactiveParentNavigation\("\/settings"\)\)/);
     assert.match(settingsSrc, /Manage artist tools and preferences/);
     assert.doesNotMatch(settingsSrc, /VerifiedArtistToolsSettingsRow/);
     assert.doesNotMatch(settingsSrc, /NotificationEmojiSettingsRow/);
@@ -102,8 +102,8 @@ describe("settings root IA slice 1", () => {
     assert.match(vatRowSrc, /resolveSettingsSubscriptionRowView/);
   });
 
-  it("gates Artist section on verifiedArtist with no blank community gap", () => {
-    assert.match(settingsSrc, /\{verifiedArtist \? \(/);
+  it("gates Artist section on a verified artist account with no blank community gap", () => {
+    assert.match(settingsSrc, /showArtistToolsSection\(\{ userType, verifiedArtist \}\)/);
     assert.match(settingsSrc, /data-testid="settings-group-artist"/);
     assert.match(settingsSrc, /settings-section-artist/);
   });
@@ -279,7 +279,7 @@ describe("settings root chrome slice 3", () => {
   });
 
   it("verified artists share one Artist row; community users skip the section", () => {
-    assert.match(settingsSrc, /\{verifiedArtist \? \(/);
+    assert.match(settingsSrc, /showArtistToolsSection\(\{ userType, verifiedArtist \}\)/);
     assert.match(settingsSrc, /settings-group-artist/);
     assert.match(settingsSrc, /button-settings-artist/);
     assert.doesNotMatch(settingsSrc, /surface="inset"/);

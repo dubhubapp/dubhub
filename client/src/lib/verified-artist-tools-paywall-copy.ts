@@ -13,7 +13,8 @@ export type VerifiedArtistToolsPaywallSource =
   | "settings"
   | "onboarding_intro"
   | "anonymous_identify"
-  | "notification_emoji";
+  | "notification_emoji"
+  | "app_icon";
 
 export type VerifiedArtistToolsPaywallContextCopy = {
   title: string;
@@ -32,6 +33,8 @@ export const ANONYMOUS_IDENTIFY_VAT_BENEFIT_TITLE =
 export const NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE =
   "Custom notification emoji" as const;
 
+export const APP_ICON_VAT_BENEFIT_TITLE = "Custom app icons" as const;
+
 export const NOTIFICATION_EMOJI_VAT_BENEFIT_DETAIL =
   "Add a signature emoji to eligible artist notifications." as const;
 
@@ -45,6 +48,7 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS = [
   "Pre-save, Pre-add and Pre-order links",
   "See your Release Alerts audience and send alerts to listeners waiting",
   NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE,
+  APP_ICON_VAT_BENEFIT_TITLE,
 ] as const;
 
 /**
@@ -76,6 +80,7 @@ export const VERIFIED_ARTIST_TOOLS_BENEFITS_COMPACT = [
   "Pre-save, Pre-add and Pre-order links",
   "See Release Alerts audience and send alerts",
   NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE,
+  APP_ICON_VAT_BENEFIT_TITLE,
 ] as const;
 
 const CONTEXT_COPY: Record<
@@ -133,6 +138,11 @@ const CONTEXT_COPY: Record<
     title: "Custom notification emoji",
     body: NOTIFICATION_EMOJI_VAT_BENEFIT_DETAIL,
     emphasizeBenefit: NOTIFICATION_EMOJI_VAT_BENEFIT_TITLE,
+  },
+  app_icon: {
+    title: "Custom app icons",
+    body: "Choose an alternate dub hub app icon. It only changes the icon on this device.",
+    emphasizeBenefit: APP_ICON_VAT_BENEFIT_TITLE,
   },
 };
 

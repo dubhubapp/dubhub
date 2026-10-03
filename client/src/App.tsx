@@ -116,6 +116,10 @@ function SettingsDeveloperDiagnosticsRoute() {
   return null;
 }
 
+function SettingsAppIconRoute() {
+  return null;
+}
+
 function UserProfileRoute() {
   return null;
 }
@@ -1048,6 +1052,7 @@ function App() {
               path="/settings/developer-diagnostics"
               component={SettingsDeveloperDiagnosticsRoute}
             />
+            <Route path="/settings/app-icon" component={SettingsAppIconRoute} />
             <Route path="/settings" component={SettingsWithSignOut} />
             <Route path="/moderator" component={ModeratorPage} />
             <Route component={NotFound} />

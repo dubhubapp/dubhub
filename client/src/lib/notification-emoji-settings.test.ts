@@ -65,15 +65,15 @@ describe("notification emoji settings mode", () => {
 describe("settings artist information architecture", () => {
   it("keeps a single Artist row on root Settings", () => {
     assert.match(settingsSrc, /data-testid="button-settings-artist"/);
-    assert.match(settingsSrc, />Artist</);
+    assert.match(settingsSrc, />Tools</);
     assert.match(settingsSrc, /Manage artist tools and preferences/);
-    assert.match(settingsSrc, /navigate\("\/settings\/artist"\)/);
+    assert.match(settingsSrc, /navigate\("\/settings\/artist", interactiveParentNavigation\("\/settings"\)\)/);
     assert.match(appSrc, /path="\/settings\/artist"/);
     assert.doesNotMatch(settingsSrc, /VerifiedArtistToolsSettingsRow/);
     assert.doesNotMatch(settingsSrc, /NotificationEmojiSettingsRow/);
     assert.doesNotMatch(settingsSrc, /button-artist-questions-settings/);
     assert.doesNotMatch(settingsSrc, /Notification emoji/);
-    assert.match(settingsSrc, /\{verifiedArtist \? \(/);
+    assert.match(settingsSrc, /showArtistToolsSection\(\{ userType, verifiedArtist \}\)/);
   });
 
   it("moves VAT, notification emoji, and Artist Questions onto Artist Settings", () => {

@@ -37,6 +37,7 @@ const SETTINGS_STACK_PAIRS: readonly (readonly [string, string])[] = [
   ["/settings", "/settings/manage-account"],
   ["/settings/artist", "/settings/artist-questions"],
   ["/settings", "/settings/developer-diagnostics"],
+  ["/settings", "/settings/app-icon"],
   ["/settings/manage-account", "/settings/country"],
 ];
 
@@ -47,6 +48,7 @@ const OWNED_SETTINGS_PATHS = new Set<string>([
   "/settings/manage-account",
   "/settings/artist-questions",
   "/settings/developer-diagnostics",
+  "/settings/app-icon",
   "/settings/country",
 ]);
 

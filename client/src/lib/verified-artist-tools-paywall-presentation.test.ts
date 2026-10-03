@@ -37,6 +37,10 @@ const hostSrc = readFileSync(
   "utf8",
 );
 const drawerSrc = readFileSync(join(here, "../components/ui/drawer.tsx"), "utf8");
+const vatRowSrc = readFileSync(
+  join(here, "../components/verified-artist-tools-settings-row.tsx"),
+  "utf8",
+);
 
 /** Mirrors DrawerContent base + paywall className merge (cn → twMerge). */
 function mergedPaywallDrawerContentClass(): string {
@@ -132,6 +136,13 @@ describe("VAT-PAYWALL-POLISH-2 benefits + intro parity", () => {
     ]);
     assert.match(introModalSrc, /ARTIST_SUBSCRIPTION_INTRO_BENEFIT_CHECK_CLASS/);
     assert.match(introModalSrc, /\bCheck\b/);
+    assert.match(
+      vatRowSrc,
+      /export const VAT_ACTIVE_MARK_CLASS = "text-teal-700 dark:text-\[#4ae9df\]"/,
+    );
+    assert.match(paywallSrc, /VAT_ACTIVE_MARK_CLASS/);
+    assert.match(paywallSrc, /paywall-benefits[\s\S]*VAT_ACTIVE_MARK_CLASS/);
+    assert.match(paywallSrc, /paywall-success-feature[\s\S]*VAT_ACTIVE_MARK_CLASS/);
     assert.match(paywallSrc, /text-\[#4ae9df\]/);
     assert.doesNotMatch(paywallSrc, /Includes future Verified Artist Tools/);
     assert.doesNotMatch(paywallSrc, /VERIFIED_ARTIST_TOOLS_BENEFITS_FOOTER/);

@@ -1322,10 +1322,12 @@ class DubHubBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HomeWidgetBridgePlugin())
         bridge?.registerPluginInstance(DubHubNativeNavigationPlugin())
         bridge?.registerPluginInstance(DubHubAppStoreReviewPlugin())
+        bridge?.registerPluginInstance(DubHubAppIconPlugin())
         NSLog("[DubHub][NativeVideoEditor] plugin registered in DubHubBridgeViewController")
         NSLog("[DubHub][HomeWidgetBridge] plugin registered in DubHubBridgeViewController")
         NSLog("[DubHub][NativeNavigation] plugin registered in DubHubBridgeViewController")
         NSLog("[DubHub][AppStoreReview] plugin registered in DubHubBridgeViewController")
+        NSLog("[DubHub][AppIcon] plugin registered in DubHubBridgeViewController")
     }
 
     override open func viewDidAppear(_ animated: Bool) {

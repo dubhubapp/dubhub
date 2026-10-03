@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { VAT_ACTIVE_MARK_CLASS } from "@/components/verified-artist-tools-settings-row";
 import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
 import {
   DUBHUB_PRIVACY_POLICY_URL,
@@ -627,7 +628,7 @@ export function VerifiedArtistToolsPaywall({
                     data-testid="paywall-success-feature"
                   >
                     <Check
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#4ae9df]"
+                      className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", VAT_ACTIVE_MARK_CLASS)}
                       aria-hidden
                     />
                     <span>{line}</span>
@@ -757,7 +758,7 @@ export function VerifiedArtistToolsPaywall({
                         data-paywall-benefit-emphasized={isEmphasized ? "true" : undefined}
                       >
                         <Check
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#4ae9df]"
+                          className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", VAT_ACTIVE_MARK_CLASS)}
                           aria-hidden
                         />
                         <span className="min-w-0">

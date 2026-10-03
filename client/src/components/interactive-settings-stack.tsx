@@ -16,6 +16,7 @@ import SettingsCountryPage from "@/pages/settings-country";
 import SettingsManageAccountPage from "@/pages/settings-manage-account";
 import SettingsArtistPage from "@/pages/settings-artist";
 import SettingsDeveloperDiagnosticsPage from "@/pages/settings-developer-diagnostics";
+import SettingsAppIconPage from "@/pages/settings-app-icon";
 import ArtistQuestionsManagePage from "@/pages/artist-questions-manage";
 import UserProfilePage from "@/pages/user-profile";
 import PublicProfile from "@/pages/public-profile";
@@ -256,6 +257,8 @@ function renderSettingsPage(
       return <ArtistQuestionsManagePage />;
     case "/settings/developer-diagnostics":
       return <SettingsDeveloperDiagnosticsPage />;
+    case "/settings/app-icon":
+      return <SettingsAppIconPage />;
     case "/settings/country":
       return <SettingsCountryPage />;
     default:

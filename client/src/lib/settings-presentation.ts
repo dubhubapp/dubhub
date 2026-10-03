@@ -25,7 +25,8 @@ export function isSettingsUtilityRoute(pathname: string): boolean {
     path === "/settings/country" ||
     path === "/settings/manage-account" ||
     path === "/settings/artist" ||
-    path === "/settings/artist-questions"
+    path === "/settings/artist-questions" ||
+    path === "/settings/app-icon"
   );
 }
 

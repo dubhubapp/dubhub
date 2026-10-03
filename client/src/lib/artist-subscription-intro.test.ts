@@ -472,7 +472,7 @@ describe("ARTIST-SUB-INTRO copy and actions", () => {
       ARTIST_SUBSCRIPTION_INTRO_COPY.body,
       /manage releases and act on listener demand/,
     );
-    assert.equal(ARTIST_SUBSCRIPTION_INTRO_COPY.benefits.length, 6);
+    assert.equal(ARTIST_SUBSCRIPTION_INTRO_COPY.benefits.length, 7);
     assert.equal(
       ARTIST_SUBSCRIPTION_INTRO_COPY.benefits[0],
       "Unlimited releases and active future releases",

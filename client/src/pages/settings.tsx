@@ -23,6 +23,7 @@ import {
   Volume2,
   Music2,
   Wrench,
+  AppWindow,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { SettingsFeedbackSheet } from "@/components/settings-feedback-sheet";
@@ -33,6 +34,8 @@ import { SwipeBackPage } from "@/components/swipe-back-page";
 import { interactiveParentNavigation } from "@/lib/interactive-page-transitions";
 import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { revenueCatIdentityDiagnosticsEnabled } from "@/lib/revenuecat-identity";
+import { isNativeIosAppIconPath } from "@/lib/app-icon-bridge";
+import { showAppIconEntry, showArtistToolsSection } from "@/lib/app-icon-settings";
 import {
   APP_MATERIAL_PAGE_BACK_BUTTON_CLASS,
   APP_MATERIAL_PAGE_BACK_ICON_CLASS,
@@ -108,7 +111,7 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedStartWithSound, setFeedStartWithSoundState] = useState(() => getFeedStartWithSound());
   const [lightMode, setLightMode] = useState(() => getStoredTheme() === "light");
-  const { verifiedArtist } = useUser();
+  const { verifiedArtist, userType } = useUser();
   /** Dev / forced-diagnostics builds only — never shown by account role. */
   const showDeveloperDiagnosticsEntry = revenueCatIdentityDiagnosticsEnabled();
 
@@ -234,22 +237,46 @@ export default function SettingsPage({ onSignOut }: SettingsPageProps) {
                   data-testid="switch-light-mode"
                 />
               </div>
+
+              {showAppIconEntry({ userType, nativeIos: isNativeIosAppIconPath() }) ? (
+                <button
+                  type="button"
+                  className={SETTINGS_NAV_ROW_CLASS}
+                  onClick={() =>
+                    navigate("/settings/app-icon", interactiveParentNavigation("/settings"))
+                  }
+                  data-testid="button-settings-app-icon"
+                  aria-label="App Icon"
+                >
+                  <AppWindow className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
+                  <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
+                    <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>App Icon</span>
+                    <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
+                      Choose your dub hub icon
+                    </span>
+                  </span>
+                  <ChevronRight className={SETTINGS_CHEVRON_CLASS} aria-hidden />
+                </button>
+              ) : null}
             </div>
           </section>
 
-          {verifiedArtist ? (
-            <section id="settings-section-artist" aria-label="Artist" data-testid="settings-group-artist">
+          {showArtistToolsSection({ userType, verifiedArtist }) ? (
+            <section aria-labelledby="settings-section-artist" data-testid="settings-group-artist">
+              <h2 id="settings-section-artist" className={SETTINGS_SECTION_LABEL_CLASS}>
+                Artist
+              </h2>
               <div className={SETTINGS_ROWS_STACK_CLASS}>
                 <button
                   type="button"
                   className={SETTINGS_NAV_ROW_CLASS}
                   onClick={() => navigate("/settings/artist", interactiveParentNavigation("/settings"))}
                   data-testid="button-settings-artist"
-                  aria-label="Artist"
+                  aria-label="Tools"
                 >
                   <Music2 className={SETTINGS_ROW_ICON_CLASS} aria-hidden />
                   <span className={SETTINGS_ROW_TEXT_WRAP_CLASS}>
-                    <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Artist</span>
+                    <span className={`${SETTINGS_ROW_TITLE_CLASS} block`}>Tools</span>
                     <span className={`${SETTINGS_ROW_SUBTITLE_CLASS} block`}>
                       Manage artist tools and preferences
                     </span>

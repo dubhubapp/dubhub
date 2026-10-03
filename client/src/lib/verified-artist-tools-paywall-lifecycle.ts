@@ -243,6 +243,7 @@ export const PAYWALL_SUCCESS_CONFIRMATION_LINES = [
   "Pre-save, Pre-add and Pre-order links",
   "See your Release Alerts audience and send alerts to listeners waiting",
   "Custom notification emoji",
+  "Custom app icons",
 ] as const;
 
 /**

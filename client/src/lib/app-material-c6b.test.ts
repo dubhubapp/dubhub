@@ -173,7 +173,7 @@ describe("C6B Settings intro copy + IA order", () => {
     assert.ok(logout > developer);
     assert.doesNotMatch(settingsSrc, /settings-section-personal-details/);
     assert.doesNotMatch(settingsSrc, /settings-section-account"/);
-    assert.match(settingsSrc, /\{verifiedArtist \? \(/);
+    assert.match(settingsSrc, /showArtistToolsSection\(\{ userType, verifiedArtist \}\)/);
   });
 });
 
