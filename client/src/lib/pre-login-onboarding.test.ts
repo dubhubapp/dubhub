@@ -11,6 +11,7 @@ import {
   PRE_LOGIN_ARTIST_TOOLS_LABEL,
   PRE_LOGIN_AVATAR_GLOW_FILTER,
   PRE_LOGIN_AVATAR_MOTION_CLASS,
+  PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS,
   PRE_LOGIN_AVATAR_SELECTED_SCALE,
   PRE_LOGIN_AVATAR_SLOT_SCREEN1_CLASS,
   PRE_LOGIN_AVATAR_SLOT_SCREEN2_CLASS,
@@ -42,6 +43,8 @@ import {
   PRE_LOGIN_LOGO_SIZE,
   PRE_LOGIN_ONBOARDING_COPY,
   PRE_LOGIN_ONBOARDING_SEEN_KEY,
+  PRE_LOGIN_PAGER_FLICK_MIN_PX,
+  PRE_LOGIN_PAGER_FLICK_PX_PER_MS,
   PRE_LOGIN_PAGER_SNAP_CLASS,
   PRE_LOGIN_PAGER_THRESHOLD,
   PRE_LOGIN_PERSPECTIVE_BUTTON_CLASS,
@@ -55,6 +58,7 @@ import {
   PRE_LOGIN_SCREEN_1_MIDDLE_CLASS,
   PRE_LOGIN_SCREEN_1_CLIP_CLASS,
   PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS,
+  PRE_LOGIN_SCREEN_1_REVEAL_INITIAL_DELAY_MS,
   PRE_LOGIN_SCREEN_1_REVEAL_SLOTS,
   PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS,
   PRE_LOGIN_SCREEN_1_REVEAL_TRANSLATE_PX,
@@ -62,7 +66,9 @@ import {
   PRE_LOGIN_SCREEN_1_STORY_OUTER_GAP_CLASS,
   PRE_LOGIN_SCREEN_1_STORY_RELEASE_CARD_CLASS,
   PRE_LOGIN_SCREEN_1_STORY_RELEASE_EXAMPLE,
-  PRE_LOGIN_SCREEN_1_STORY_RELEASE_VERIFIED_TICK_CLASS,
+  PRE_LOGIN_AVATAR_GOLD_GLOW_FILTER,
+  PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORM_ICON_CLASS,
+  PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORMS,
   PRE_LOGIN_SCREEN_1_SELECTION_INSTRUCTION_CLASS,
   PRE_LOGIN_SCREEN_1_STORY_TRANSITION_GAP_CLASS,
   PRE_LOGIN_SCREEN_1_STORY_VISUAL_LABEL_GAP_CLASS,
@@ -99,14 +105,21 @@ import {
   lockPerspectivePagerAxis,
   markPerspectiveRevealed,
   markPreLoginOnboardingSeen,
+  perspectivePagerArtistProgress,
   perspectivePagerTranslatePx,
+  preLoginAvatarGlowFilterForStrength,
+  preLoginEmphasisAt,
   preLoginAvatarGlowStyle,
+  preLoginAvatarTransformForStrength,
   preLoginAvatarTransformStyle,
+  preLoginPerspectiveEmphasis,
+  preLoginPerspectiveLabelColor,
   preLoginAvatarEmphasisStyle,
   preLoginFeatureRevealStyle,
   preLoginScreen1RevealStyle,
   resolvePerspectivePagerCommit,
   resolveScreen1RevealReady,
+  screen1RevealDelayMs,
   resolveSignupAccountType,
   shouldAnimatePerspectiveReveal,
   shouldRunScreen1StorySequence,
@@ -448,7 +461,7 @@ describe("pre-login onboarding slice 1", () => {
     const joined = JSON.stringify(PRE_LOGIN_ONBOARDING_COPY);
     assert.match(joined, /Still got that video in your camera roll\?/);
     assert.doesNotMatch(joined, /Great music deserves a second listen/);
-    assert.match(joined, /Hear it in a set/);
+    assert.match(joined, /Hear a track you like/);
     assert.match(joined, /Find it on dub hub/);
     assert.match(joined, /Follow it through to release/);
     assert.doesNotMatch(
@@ -457,7 +470,7 @@ describe("pre-login onboarding slice 1", () => {
     );
     assert.match(joined, /For the community/);
     assert.match(joined, /For artists/);
-    assert.match(joined, /Let the music do the talking/);
+    assert.match(joined, /Let your music do the talking/);
     assert.doesNotMatch(joined, /subscription|widget|paid tools|mix alerts|hidden identification/i);
     assert.match(componentSrc, /PRE_LOGIN_ONBOARDING_COPY/);
     assert.match(componentSrc, /type="button"/);
@@ -503,8 +516,8 @@ describe("pre-login onboarding slice 2 presentation", () => {
       componentSrc.indexOf('data-testid="button-onboarding-view-artist"'),
       componentSrc.indexOf("{copy.screen2.viewArtists}"),
     );
-    assert.match(userBtn, /text-foreground|text-muted-foreground/);
-    assert.match(artistBtn, /text-foreground|text-muted-foreground/);
+    assert.match(userBtn, /preLoginPerspectiveLabelColor\(communityStrength\)/);
+    assert.match(artistBtn, /preLoginPerspectiveLabelColor\(artistProgress\)/);
     assert.match(componentSrc, /aria-pressed=\{!viewingArtist\}/);
     assert.match(componentSrc, /aria-pressed=\{viewingArtist\}/);
     assert.doesNotMatch(componentSrc, /PRE_LOGIN_SEGMENT_HIGHLIGHT_CLASS/);
@@ -574,7 +587,7 @@ describe("pre-login onboarding slice 2 presentation", () => {
   });
 
   it("uses the approved Screen 1 product journey copy", () => {
-    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear it in a set");
+    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear a track you like");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFind, "Find it on dub hub");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFollow, "Follow it through to release");
     assert.equal("supporting" in PRE_LOGIN_ONBOARDING_COPY.screen1, false);
@@ -788,7 +801,7 @@ describe("pre-login onboarding slice 3 presentation", () => {
     const joined = JSON.stringify(artistBenefits);
     assert.doesNotMatch(
       joined,
-      /unlimited|pre-save|pre-add|profile questions|boost|visibility|analytics|credibility|campaign|scheduled/i,
+      /pre-save|pre-add|profile questions|boost|visibility|analytics|credibility|campaign|scheduled/i,
     );
     assert.equal(
       artistBenefits.filter((item) => item.visual === "artistTools").length,
@@ -877,7 +890,7 @@ describe("pre-login onboarding slice 4 presentation", () => {
       "Save the tracks you love",
       "Follow them through to release",
       "Get notified when tracks finally drop",
-      "Climb the Leaderboard. Earn rewards.",
+      "Climb the Leaderboard to earn rewards",
     ]);
     const joined = JSON.stringify(PRE_LOGIN_ONBOARDING_COPY.screen2.communityBenefits);
     assert.doesNotMatch(joined, /Artist tools|Subscribe|tutorial|Discover UI|notification permission/i);
@@ -909,8 +922,10 @@ describe("pre-login onboarding slice 4 presentation", () => {
     const paid = benefits.filter((item) => item.visual === "artistTools");
     assert.equal(paid.length, 1);
     assert.equal(paid[0].title, PRE_LOGIN_ARTIST_TOOLS_LABEL);
-    assert.match(paid[0].body, /More releases, attached clips and links/);
-    assert.match(paid[0].body, /Release Alert delivery/);
+    assert.equal(
+      paid[0].body,
+      "Unlimited releases, links, Release Alerts, private IDs and custom icons",
+    );
     const confirm = benefits.find((item) => item.visual === "artistIdentifiedPill");
     const demand = benefits.find((item) => item.visual === "alertDemand");
     const reputation = benefits.find((item) => item.title === "Climb the Artist Leaderboard");
@@ -1003,7 +1018,7 @@ describe("pre-login onboarding slice 5 interaction and rhythm", () => {
     );
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistLead,
-      "Let the music do the talking.",
+      "Let your music do the talking.",
     );
     assert.match(PRE_LOGIN_HEADING_BLOCK_CLASS, /shrink-0/);
     assert.match(PRE_LOGIN_HEADING_BLOCK_CLASS, /min-h-\[3\.25rem\]/);
@@ -1080,11 +1095,11 @@ describe("pre-login onboarding slice 5 interaction and rhythm", () => {
   it("uses the approved reserved-username hook copy", () => {
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistHookTitle,
-      "Your artist name may already be waiting.",
+      "Your artist name may already be waiting",
     );
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistHookBody,
-      "We've reserved usernames for artists just like you. See if yours is one of them.",
+      "We've reserved usernames for artists just like you. See if yours is one of them",
     );
   });
 
@@ -1347,7 +1362,7 @@ describe("pre-login onboarding slice 7 story and motion polish", () => {
       JSON.stringify(PRE_LOGIN_ONBOARDING_COPY.screen1),
       /Identify tracks from sets, events and mixes, save the ones you love/,
     );
-    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear it in a set");
+    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear a track you like");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFind, "Find it on dub hub");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFollow, "Follow it through to release");
     assert.match(componentSrc, /pre-login-product-journey/);
@@ -1509,12 +1524,15 @@ describe("pre-login onboarding slice 8 composition and motion polish", () => {
     assert.match(componentSrc, /pre-login-closing-callout-\$\{side\}/);
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.communityCalloutTitle,
-      "Your next ID might already be here.",
+      "Your next favourite track is waiting to be discovered",
     );
-    assert.match(PRE_LOGIN_ONBOARDING_COPY.screen2.communityCalloutBody, /Join the community/);
+    assert.equal(
+      PRE_LOGIN_ONBOARDING_COPY.screen2.communityCalloutBody,
+      "Join the community of people just like you, who hate scrolling through comments searching for the ID and release date",
+    );
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistHookTitle,
-      "Your artist name may already be waiting.",
+      "Your artist name may already be waiting",
     );
     assert.doesNotMatch(
       JSON.stringify(PRE_LOGIN_ONBOARDING_COPY.screen2.artistBenefits),
@@ -1597,7 +1615,7 @@ describe("pre-login onboarding slice 9 corrective layout and motion", () => {
     assert.doesNotMatch(PRE_LOGIN_JOURNEY_STEP_CLASS, /text-2xl|text-xl /);
     assert.match(PRE_LOGIN_JOURNEY_CONNECTOR_CLASS, /h-\[3\.25rem\]/);
     assert.match(PRE_LOGIN_JOURNEY_CONNECTOR_CLASS, /text-white\/40/);
-    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear it in a set");
+    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear a track you like");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFind, "Find it on dub hub");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFollow, "Follow it through to release");
   });
@@ -1629,7 +1647,7 @@ describe("pre-login onboarding slice 9 corrective layout and motion", () => {
         "Save the tracks you love",
         "Follow them through to release",
         "Get notified when tracks finally drop",
-        "Climb the Leaderboard. Earn rewards.",
+        "Climb the Leaderboard to earn rewards",
       ],
     );
     assert.deepEqual(
@@ -1643,7 +1661,10 @@ describe("pre-login onboarding slice 9 corrective layout and motion", () => {
         PRE_LOGIN_ARTIST_TOOLS_LABEL,
       ],
     );
-    assert.match(artist[5].body, /Release Alert delivery/);
+    assert.equal(
+      artist[5].body,
+      "Unlimited releases, links, Release Alerts, private IDs and custom icons",
+    );
     assert.doesNotMatch(JSON.stringify(artist), /analytics|boosts|pre-save|visibility advantage/i);
   });
 
@@ -1652,11 +1673,11 @@ describe("pre-login onboarding slice 9 corrective layout and motion", () => {
     assert.doesNotMatch(PRE_LOGIN_CALLOUT_CLASS, /min-h-/);
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.communityCalloutTitle,
-      "Your next ID might already be here.",
+      "Your next favourite track is waiting to be discovered",
     );
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistHookTitle,
-      "Your artist name may already be waiting.",
+      "Your artist name may already be waiting",
     );
     assert.doesNotMatch(
       JSON.stringify(PRE_LOGIN_ONBOARDING_COPY.screen2.communityBenefits),
@@ -1815,7 +1836,7 @@ describe("pre-login onboarding slice 10 spacing and reveal polish", () => {
     assert.ok(PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS >= 500);
     assert.ok(PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS <= 650);
     assert.ok(PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS >= 180);
-    assert.ok(PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS <= 260);
+    assert.ok(PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS <= 320);
     assert.ok(PRE_LOGIN_SCREEN_1_REVEAL_TRANSLATE_PX <= 6);
     assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_SLOTS.logo, 0);
     assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_SLOTS.headline, 1);
@@ -1829,7 +1850,7 @@ describe("pre-login onboarding slice 10 spacing and reveal polish", () => {
     const shown = preLoginScreen1RevealStyle(true, 0);
     assert.equal(hidden.opacity, 0);
     assert.equal(shown.opacity, 1);
-    assert.equal(hidden.transitionDuration, "550ms");
+    assert.equal(hidden.transitionDuration, "650ms");
     assert.equal(hidden.transitionProperty, "opacity, transform");
     assert.match(componentSrc, /preLoginScreen1RevealStyle/);
     assert.match(componentSrc, /screen1PlayedRef/);
@@ -1975,10 +1996,10 @@ describe("pre-login onboarding slice 11 visual polish", () => {
     assert.match(PRE_LOGIN_AVATAR_GLOW_FILTER, /10, 131, 255/);
     assert.doesNotMatch(PRE_LOGIN_AVATAR_GLOW_FILTER, /74, 233, 223/);
     assert.equal(idle.filter, "none");
-    assert.match(componentSrc, /preLoginAvatarGlowStyle\(emphasize\)/);
-    assert.match(componentSrc, /preLoginAvatarTransformStyle\(emphasize\)/);
-    assert.match(componentSrc, /emphasize=\{!viewingArtist\}/);
-    assert.match(componentSrc, /emphasize=\{viewingArtist\}/);
+    assert.match(componentSrc, /preLoginAvatarGlowFilterForStrength\(displayedEmphasis, glowTone\)/);
+    assert.match(componentSrc, /preLoginAvatarTransformForStrength\(displayedEmphasis\)/);
+    assert.match(componentSrc, /strength=\{communityStrength\}/);
+    assert.match(componentSrc, /strength=\{artistProgress\}/);
     assert.match(PRE_LOGIN_AVATAR_MOTION_CLASS, /duration-200/);
     assert.match(PRE_LOGIN_AVATAR_MOTION_CLASS, /motion-reduce:transition-none/);
   });
@@ -2024,8 +2045,8 @@ describe("pre-login onboarding slice 11 visual polish", () => {
     assert.equal(switched.viewingPerspective, "artist");
     assert.equal(preLoginAvatarEmphasisStyle(switched.viewingPerspective === "user").transform, "scale(1)");
     assert.equal(preLoginAvatarEmphasisStyle(switched.viewingPerspective === "artist").transform, "scale(1.12)");
-    assert.match(componentSrc, /emphasize=\{!viewingArtist\}/);
-    assert.match(componentSrc, /emphasize=\{viewingArtist\}/);
+    assert.match(componentSrc, /strength=\{communityStrength\}/);
+    assert.match(componentSrc, /strength=\{artistProgress\}/);
   });
 
   it("shows the previous Screen 1 choice with scale and glow after Back, not a ring", () => {
@@ -2096,13 +2117,15 @@ describe("pre-login onboarding slice 12 micro-polish", () => {
       componentSrc.indexOf("function OnboardingStatusPill"),
     );
     assert.match(visual, /PRE_LOGIN_AVATAR_GLOW_WRAPPER_CLASS/);
-    assert.match(visual, /preLoginAvatarGlowStyle\(emphasize\)/);
-    assert.match(visual, /preLoginAvatarTransformStyle\(emphasize\)/);
+    assert.match(visual, /preLoginAvatarGlowFilterForStrength\(displayedEmphasis, glowTone\)/);
+    assert.match(visual, /preLoginAvatarTransformForStrength\(displayedEmphasis\)/);
     const emphasized = componentSrc.slice(
       componentSrc.indexOf("function EmphasizedRoleAvatar"),
       componentSrc.indexOf("function OnboardingStatusPill"),
     );
-    assert.match(emphasized, /preLoginAvatarTransformStyle\(emphasize\)/);
+    assert.match(emphasized, /preLoginAvatarTransformForStrength\(displayedEmphasis\)/);
+    assert.doesNotMatch(emphasized, /PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS/);
+    assert.doesNotMatch(emphasized, /PRE_LOGIN_AVATAR_MOTION_CLASS/);
     const img = componentSrc.slice(
       componentSrc.indexOf("function DefaultRoleAvatar"),
       componentSrc.indexOf("function EmphasizedRoleAvatar"),
@@ -2205,7 +2228,7 @@ describe("pre-login onboarding slice 13 copy lock and avatar glow gutter", () =>
     assert.equal(community[0].title, "ID the tracks you're looking for");
     assert.equal(community[2].title, "Save the tracks you love");
     assert.equal(community[4].title, "Get notified when tracks finally drop");
-    assert.equal(community[5].title, "Climb the Leaderboard. Earn rewards.");
+    assert.equal(community[5].title, "Climb the Leaderboard to earn rewards");
     assert.match(community[5].body, /event tickets, unreleased dubs and production equipment/);
     const joined = JSON.stringify(community);
     assert.doesNotMatch(joined, /Find the tracks nobody can name|Save the ones worth chasing/);
@@ -2228,8 +2251,11 @@ describe("pre-login onboarding slice 13 copy lock and avatar glow gutter", () =>
   it("uses Artist Tools Path B and keeps verification free", () => {
     const tools = PRE_LOGIN_ONBOARDING_COPY.screen2.artistBenefits[5];
     assert.equal(tools.title, PRE_LOGIN_ARTIST_TOOLS_LABEL);
-    assert.match(tools.body, /More releases, attached clips and links/);
-    assert.match(tools.body, /Release Alert delivery on drop/);
+    assert.equal(tools.title, "Artist Tools");
+    assert.equal(
+      tools.body,
+      "Unlimited releases, links, Release Alerts, private IDs and custom icons",
+    );
     assert.doesNotMatch(tools.body, /privately|private identification/);
     assert.doesNotMatch(JSON.stringify(PRE_LOGIN_ONBOARDING_COPY), /verification.*paid|paid.*verification/i);
     assert.match(paywallCopySrc, /Artist verification remains free/);
@@ -2238,7 +2264,7 @@ describe("pre-login onboarding slice 13 copy lock and avatar glow gutter", () =>
   it("updates the Artist closing callout to reserved usernames wording", () => {
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistHookTitle,
-      "Your artist name may already be waiting.",
+      "Your artist name may already be waiting",
     );
     assert.doesNotMatch(
       PRE_LOGIN_ONBOARDING_COPY.screen2.artistHookTitle,
@@ -2246,7 +2272,7 @@ describe("pre-login onboarding slice 13 copy lock and avatar glow gutter", () =>
     );
     assert.equal(
       PRE_LOGIN_ONBOARDING_COPY.screen2.communityCalloutTitle,
-      "Your next ID might already be here.",
+      "Your next favourite track is waiting to be discovered",
     );
   });
 
@@ -2300,8 +2326,8 @@ describe("pre-login onboarding slice 14 final rhythm glow re-audit and fit", () 
       componentSrc.indexOf("function EmphasizedRoleAvatar"),
       componentSrc.indexOf("function OnboardingStatusPill"),
     );
-    assert.match(visual, /preLoginAvatarGlowStyle\(emphasize\)/);
-    assert.match(visual, /preLoginAvatarTransformStyle\(emphasize\)/);
+    assert.match(visual, /preLoginAvatarGlowFilterForStrength\(displayedEmphasis, glowTone\)/);
+    assert.match(visual, /preLoginAvatarTransformForStrength\(displayedEmphasis\)/);
     assert.doesNotMatch(visual, /preLoginAvatarEmphasisStyle\(emphasize\)/);
   });
 
@@ -2428,8 +2454,8 @@ describe("pre-login onboarding slice 15 structural geometry fix", () => {
       componentSrc.indexOf("function EmphasizedRoleAvatar"),
       componentSrc.indexOf("function OnboardingStatusPill"),
     );
-    assert.match(visual, /preLoginAvatarGlowStyle\(emphasize\)/);
-    assert.match(visual, /preLoginAvatarTransformStyle\(emphasize\)/);
+    assert.match(visual, /preLoginAvatarGlowFilterForStrength\(displayedEmphasis, glowTone\)/);
+    assert.match(visual, /preLoginAvatarTransformForStrength\(displayedEmphasis\)/);
   });
 
   it("uses one shared six-row template for both perspectives", () => {
@@ -2476,7 +2502,7 @@ describe("pre-login onboarding final feature rhythm polish", () => {
   it("shortens Artist row 1 heading only", () => {
     const artist = PRE_LOGIN_ONBOARDING_COPY.screen2.artistBenefits[0];
     assert.equal(artist.title, "Discover where your music is played");
-    assert.equal(artist.body, "Find clips of your tracks from sets, events and mixes.");
+    assert.equal(artist.body, "Find clips of your tracks from sets, events and mixes");
     assert.doesNotMatch(
       JSON.stringify(PRE_LOGIN_ONBOARDING_COPY.screen2),
       /Find where your music is already being played/,
@@ -2521,7 +2547,7 @@ describe("pre-login onboarding feature rhythm structural fix", () => {
   it("keeps Artist row 1 heading copy unchanged", () => {
     const artist = PRE_LOGIN_ONBOARDING_COPY.screen2.artistBenefits[0];
     assert.equal(artist.title, "Discover where your music is played");
-    assert.equal(artist.body, "Find clips of your tracks from sets, events and mixes.");
+    assert.equal(artist.body, "Find clips of your tracks from sets, events and mixes");
   });
 
   it("uses six uniform 68px feature row tracks with no 52px rows", () => {
@@ -2613,7 +2639,7 @@ describe("pre-login onboarding screen 1 product story polish", () => {
   });
 
   it("keeps exactly three story stages with approved labels", () => {
-    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear it in a set");
+    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyHear, "Hear a track you like");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFind, "Find it on dub hub");
     assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.journeyFollow, "Follow it through to release");
     assert.match(componentSrc, /pre-login-story-stage-1/);
@@ -2683,16 +2709,22 @@ describe("pre-login onboarding screen 1 product story polish", () => {
   });
 
   it("uses calm opacity-first Screen 1 timing within product-story bounds", () => {
-    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS, 550);
-    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS, 220);
-    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_TRANSLATE_PX, 5);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS, 650);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS, 320);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_INITIAL_DELAY_MS, 40);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_TRANSLATE_PX, 3);
     assert.match(PRE_LOGIN_SCREEN_1_STORY_CLASS, /gap-1/);
     assert.match(PRE_LOGIN_SCREEN_1_STORY_STAGE_CLASS, /gap-1/);
     const lastDelay =
       PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS +
-      40 +
+      PRE_LOGIN_SCREEN_1_REVEAL_INITIAL_DELAY_MS +
       PRE_LOGIN_SCREEN_1_REVEAL_SLOTS.signIn * PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS;
-    assert.ok(lastDelay >= 2000 && lastDelay <= 3200);
+    assert.equal(lastDelay, 3570);
+    const identityButtons = componentSrc.slice(
+      componentSrc.indexOf('data-testid="pre-login-identity-region"'),
+      componentSrc.indexOf('data-testid="button-onboarding-sign-in"'),
+    );
+    assert.doesNotMatch(identityButtons, /disabled=/);
   });
 
   it("leaves Screen 2 contracts unchanged", () => {
@@ -2733,7 +2765,7 @@ describe("pre-login onboarding screen 1 story rhythm polish", () => {
     assert.doesNotMatch(PRE_LOGIN_SCREEN_1_STORY_RELEASE_CARD_CLASS, /max-w-\[11rem\]/);
   });
 
-  it("uses the timeless release example with verified artist treatment", () => {
+  it("uses the timeless release example without a verified tick on the card", () => {
     assert.equal(PRE_LOGIN_SCREEN_1_STORY_RELEASE_EXAMPLE.track, "New Release");
     assert.equal(PRE_LOGIN_SCREEN_1_STORY_RELEASE_EXAMPLE.artist, "@Artist");
     assert.equal(PRE_LOGIN_SCREEN_1_STORY_RELEASE_EXAMPLE.outLabel, "Out 1 Jan");
@@ -2742,7 +2774,8 @@ describe("pre-login onboarding screen 1 story rhythm polish", () => {
       componentSrc.indexOf("function Screen1ReleaseVisual"),
       componentSrc.indexOf("function Screen1StoryStage"),
     );
-    assert.match(release, /GoldVerifiedTick/);
+    assert.doesNotMatch(release, /GoldVerifiedTick/);
+    assert.match(release, /PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORMS/);
     assert.match(release, /PRE_LOGIN_SCREEN_1_STORY_RELEASE_CARD_CLASS/);
   });
 
@@ -2787,14 +2820,46 @@ describe("pre-login onboarding screen 1 final copy polish", () => {
     );
   });
 
-  it("uses a smaller release-card-only verified tick", () => {
-    assert.match(PRE_LOGIN_SCREEN_1_STORY_RELEASE_VERIFIED_TICK_CLASS, /h-2\.5 w-2\.5/);
+  it("keeps the release mock readable with supporting platform marks", () => {
+    assert.deepEqual([...PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORMS], [
+      "spotify",
+      "apple_music",
+      "beatport",
+      "soundcloud",
+    ]);
+    assert.match(PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORM_ICON_CLASS, /h-2\.5 w-2\.5/);
     const release = componentSrc.slice(
       componentSrc.indexOf("function Screen1ReleaseVisual"),
       componentSrc.indexOf("function Screen1StoryStage"),
     );
-    assert.match(release, /PRE_LOGIN_SCREEN_1_STORY_RELEASE_VERIFIED_TICK_CLASS/);
-    assert.doesNotMatch(release, /h-3 w-3/);
+    assert.doesNotMatch(release, /GoldVerifiedTick/);
+    assert.match(release, /pre-login-story-release-platforms/);
+    assert.match(release, /opacity-70/);
+    assert.match(release, /sample\.track/);
+    assert.match(release, /sample\.artist/);
+    assert.match(release, /sample\.outLabel/);
+  });
+
+  it("gives only the Artist role chooser a subtle gold verified treatment", () => {
+    assert.equal(preLoginAvatarGlowStyle(true).filter, PRE_LOGIN_AVATAR_GLOW_FILTER);
+    assert.equal(preLoginAvatarGlowStyle(true, "gold").filter, PRE_LOGIN_AVATAR_GOLD_GLOW_FILTER);
+    assert.equal(preLoginAvatarGlowStyle(false, "gold").filter, "none");
+    assert.match(PRE_LOGIN_AVATAR_GOLD_GLOW_FILTER, /255, 215, 0/);
+    assert.doesNotMatch(PRE_LOGIN_AVATAR_GLOW_FILTER, /255, 215, 0/);
+    const intentBtn = componentSrc.slice(
+      componentSrc.indexOf("function IntentChoiceButton"),
+      componentSrc.indexOf("function SignInExit"),
+    );
+    assert.match(intentBtn, /glowTone=\{role === "artist" \? "gold" : "blue"\}/);
+    assert.match(intentBtn, /role === "artist"/);
+    assert.match(intentBtn, /goldTextClass/);
+    assert.match(intentBtn, /GoldVerifiedTick/);
+    assert.match(intentBtn, /aria-label=\{`\$\{label\}\. \$\{supporting\}`\}/);
+    assert.equal(PRE_LOGIN_ONBOARDING_COPY.screen1.communitySupporting, "Find, identify and save music");
+    assert.equal(
+      PRE_LOGIN_ONBOARDING_COPY.screen1.artistSupporting,
+      "ID your music and connect it to your releases",
+    );
   });
 
   it("shows the selection instruction above avatars without shifting journey rhythm", () => {
@@ -2968,5 +3033,101 @@ describe("pre-login onboarding Slice B — premium material", () => {
     assert.match(componentSrc, /shouldAnimatePerspectiveReveal/);
     assert.match(componentSrc, /markPerspectiveRevealed/);
     assert.match(componentSrc, /prefersReducedMotion/);
+  });
+
+  it("keeps Screen 1 beats distinct and requires a deliberate Screen 2 flick", () => {
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS, 650);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS, 320);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_INITIAL_DELAY_MS, 40);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_SLOTS.logo, 0);
+    assert.equal(PRE_LOGIN_SCREEN_1_REVEAL_SLOTS.signIn, 9);
+    assert.equal(screen1RevealDelayMs(0), 40);
+    const seWidth = 375;
+    assert.equal(
+      resolvePerspectivePagerCommit({ from: "user", dx: -30, width: seWidth, vx: -2 }),
+      "user",
+    );
+    assert.equal(
+      resolvePerspectivePagerCommit({ from: "user", dx: -56, width: seWidth, vx: -0.69 }),
+      "user",
+    );
+    assert.equal(
+      resolvePerspectivePagerCommit({ from: "user", dx: -56, width: seWidth, vx: -0.7 }),
+      "artist",
+    );
+    assert.equal(
+      resolvePerspectivePagerCommit({ from: "artist", dx: 56, width: seWidth, vx: 0.7 }),
+      "user",
+    );
+    assert.equal(
+      resolvePerspectivePagerCommit({ from: "user", dx: -Math.ceil(seWidth * 0.28), width: seWidth, vx: 0 }),
+      "artist",
+    );
+    assert.equal(
+      resolvePerspectivePagerCommit({ from: "user", dx: -40, width: seWidth, vx: 0 }),
+      "user",
+    );
+    assert.equal(PRE_LOGIN_PAGER_FLICK_MIN_PX, 56);
+    assert.equal(PRE_LOGIN_PAGER_FLICK_PX_PER_MS, 0.7);
+    assert.equal(PRE_LOGIN_PAGER_THRESHOLD, 0.28);
+    assert.match(PRE_LOGIN_PAGER_SNAP_CLASS, /duration-300/);
+  });
+
+  it("blends Community and Artist emphasis from pager progress", () => {
+    const settledCommunity = preLoginPerspectiveEmphasis(0);
+    const midpoint = preLoginPerspectiveEmphasis(0.5);
+    const settledArtist = preLoginPerspectiveEmphasis(1);
+    assert.equal(settledCommunity.community, 1);
+    assert.equal(settledCommunity.artist, 0);
+    assert.equal(midpoint.community, 0.5);
+    assert.equal(midpoint.artist, 0.5);
+    assert.equal(settledArtist.community, 0);
+    assert.equal(settledArtist.artist, 1);
+    assert.equal(preLoginAvatarTransformForStrength(settledCommunity.community), "scale(1.12)");
+    assert.equal(preLoginAvatarTransformForStrength(settledCommunity.artist), "scale(1)");
+    assert.equal(preLoginAvatarTransformForStrength(midpoint.community), "scale(1.06)");
+    assert.equal(preLoginAvatarTransformForStrength(settledArtist.artist), "scale(1.12)");
+    assert.equal(preLoginAvatarGlowFilterForStrength(1), PRE_LOGIN_AVATAR_GLOW_FILTER);
+    assert.equal(preLoginAvatarGlowFilterForStrength(1, "blue"), PRE_LOGIN_AVATAR_GLOW_FILTER);
+    assert.equal(preLoginAvatarGlowFilterForStrength(1, "gold"), PRE_LOGIN_AVATAR_GOLD_GLOW_FILTER);
+    assert.match(preLoginAvatarGlowFilterForStrength(0), /drop-shadow/);
+    assert.match(preLoginAvatarGlowFilterForStrength(0.5), /drop-shadow/);
+    assert.match(preLoginAvatarGlowFilterForStrength(0.5, "gold"), /255, 215, 0/);
+    assert.doesNotMatch(preLoginAvatarGlowFilterForStrength(0.5, "blue"), /255, 215, 0/);
+    assert.notEqual(preLoginAvatarGlowFilterForStrength(0), "none");
+    assert.notEqual(preLoginAvatarGlowFilterForStrength(0.5), "none");
+    assert.equal(preLoginEmphasisAt({ from: 0.25, to: 1, elapsedMs: 0, durationMs: 300 }), 0.25);
+    assert.equal(preLoginEmphasisAt({ from: 0.25, to: 1, elapsedMs: 300, durationMs: 300 }), 1);
+    assert.ok(preLoginEmphasisAt({ from: 0, to: 1, elapsedMs: 150, durationMs: 300 }) < 1);
+    assert.ok(preLoginEmphasisAt({ from: 0, to: 1, elapsedMs: 150, durationMs: 300 }) > 0.5);
+    assert.match(preLoginPerspectiveLabelColor(1), /var\(--foreground\) 100%/);
+    assert.match(preLoginPerspectiveLabelColor(0), /var\(--muted-foreground\)/);
+    assert.match(preLoginPerspectiveLabelColor(0.5), /var\(--foreground\) 50%/);
+    assert.equal(
+      perspectivePagerArtistProgress({ viewing: "user", panning: false, panDx: 0, width: 375 }),
+      0,
+    );
+    assert.equal(
+      perspectivePagerArtistProgress({ viewing: "artist", panning: false, panDx: 0, width: 375 }),
+      1,
+    );
+    assert.equal(
+      perspectivePagerArtistProgress({ viewing: "user", panning: true, panDx: -187.5, width: 375 }),
+      0.5,
+    );
+    assert.match(componentSrc, /preLoginEmphasisAt/);
+    assert.match(componentSrc, /PRE_LOGIN_AVATAR_PROGRESS_MOTION_MS/);
+    assert.doesNotMatch(componentSrc, /pendingSettleRef/);
+    assert.match(componentSrc, /preLoginAvatarGlowFilterForStrength\(displayedEmphasis, glowTone\)/);
+    assert.match(componentSrc, /glowTone="gold"/);
+    assert.match(componentSrc, /glowTone="blue"/);
+    assert.match(PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS, /duration-300/);
+    const switcher = componentSrc.slice(
+      componentSrc.indexOf("function PerspectiveSwitcher"),
+      componentSrc.indexOf("function PerspectivePanel"),
+    );
+    assert.match(switcher, /preLoginPerspectiveLabelColor\(communityStrength\)/);
+    assert.match(switcher, /preLoginPerspectiveLabelColor\(artistProgress\)/);
+    assert.doesNotMatch(switcher, /preLoginAvatarGlowStyle|filter: "none"|text-foreground/);
   });
 });

@@ -261,6 +261,8 @@ describe("VAT-ANON-1 route + serializer contracts", () => {
       serviceSrc.indexOf("export async function createAnonymousArtistIdentification"),
       serviceSrc.indexOf("export async function revealAnonymousArtistIdentification"),
     );
+    assert.match(createFn, /PAID_ARTIST_TOOL_REQUIRED/);
+    assert.match(createFn, /Artist Tools required to identify tracks anonymously/);
     assert.match(createFn, /is_artist_verified_anonymous = true/);
     assert.doesNotMatch(createFn, /artist_verified_by\s*=/);
     assert.doesNotMatch(createFn, /artist_identified_post|track_identified|createComment/);

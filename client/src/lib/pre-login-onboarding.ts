@@ -47,7 +47,7 @@ export const PRE_LOGIN_ARTIST_TOOLS_LABEL = "Artist Tools";
 export const PRE_LOGIN_ONBOARDING_COPY = {
   screen1: {
     heading: "Still got that video in your camera roll?",
-    journeyHear: "Hear it in a set",
+    journeyHear: "Hear a track you like",
     journeyFind: "Find it on dub hub",
     journeyFollow: "Follow it through to release",
     intentPrompt: "Choose how you'll use dub hub",
@@ -63,78 +63,78 @@ export const PRE_LOGIN_ONBOARDING_COPY = {
     communityHeading: "For the community",
     communityLead: "Music you've heard once shouldn't disappear forever.",
     artistHeading: "For artists",
-    artistLead: "Let the music do the talking.",
+    artistLead: "Let your music do the talking.",
     viewCommunity: "Community",
     viewArtists: "Artists",
     back: "Back",
     getStarted: "Get started",
-    communityCalloutTitle: "Your next ID might already be here.",
+    communityCalloutTitle: "Your next favourite track is waiting to be discovered",
     communityCalloutBody:
-      "Join the community finding the tracks everyone else is still looking for.",
-    artistHookTitle: "Your artist name may already be waiting.",
+      "Join the community of people just like you, who hate scrolling through comments searching for the ID and release date",
+    artistHookTitle: "Your artist name may already be waiting",
     artistHookBody:
-      "We've reserved usernames for artists just like you. See if yours is one of them.",
+      "We've reserved usernames for artists just like you. See if yours is one of them",
     communityBenefits: [
       {
         title: "ID the tracks you're looking for",
-        body: "Upload clips from sets, events and mixes and let the community help identify them.",
+        body: "Upload clips from sets, events and mixes and let the community help identify them",
         visual: "communityIdentifiedPill" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Find your sound",
-        body: "Explore the feed by genre, subgenre and identification status.",
+        body: "Explore the feed by genre, subgenre and identification status",
         visual: "genrePills" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Save the tracks you love",
-        body: "Save tracks to find out when they're identified or released.",
+        body: "Save tracks to find out when they're identified or released",
         visual: "save" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Follow them through to release",
-        body: "Keep track of new music from the first ID to the final release.",
+        body: "Keep track of new music from the first ID to the final release",
         visual: "releases" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Get notified when tracks finally drop",
-        body: "Stay updated when the music you've discovered is finally released.",
+        body: "Stay updated when the music you've discovered is finally released",
         visual: "alerts" as const satisfies PreLoginOnboardingVisual,
       },
       {
-        title: "Climb the Leaderboard. Earn rewards.",
-        body: "Correct IDs can earn event tickets, unreleased dubs and production equipment.",
+        title: "Climb the Leaderboard to earn rewards",
+        body: "Correct IDs can earn event tickets, unreleased dubs and production equipment",
         visual: "leaderboard" as const satisfies PreLoginOnboardingVisual,
       },
     ],
     artistBenefits: [
       {
         title: "Discover where your music is played",
-        body: "Find clips of your tracks from sets, events and mixes.",
+        body: "Find clips of your tracks from sets, events and mixes",
         visual: "clips" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Confirm your tracks",
-        body: "Let listeners know when an ID is yours, straight from the source.",
+        body: "Let listeners know when an ID is yours, straight from the source",
         visual: "artistIdentifiedPill" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Connect clips to your releases",
-        body: "Connect the moments people found your music to the release they belong to.",
+        body: "Connect the moments people found your music to the release they belong to",
         visual: "releases" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Notify the people already waiting",
-        body: "When a track drops, notify listeners who've saved clips containing your music.",
+        body: "When a track drops, notify listeners who've saved clips containing your music",
         visual: "alertDemand" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: "Climb the Artist Leaderboard",
-        body: "Contribute to the community, build your reputation and earn artist rewards.",
+        body: "Contribute to the community, build your reputation and earn artist rewards",
         visual: "leaderboard" as const satisfies PreLoginOnboardingVisual,
       },
       {
         title: PRE_LOGIN_ARTIST_TOOLS_LABEL,
-        body: "More releases, attached clips and links — plus Release Alert delivery on drop.",
+        body: "Unlimited releases, links, Release Alerts, private IDs and custom icons",
         visual: "artistTools" as const satisfies PreLoginOnboardingVisual,
       },
     ],
@@ -348,8 +348,14 @@ export const PRE_LOGIN_SCREEN_1_STORY_RELEASE_EXAMPLE = {
   artist: "@Artist",
   outLabel: "Out 1 Jan",
 } as const;
-/** Release-card-only verified tick — smaller than default inline usage elsewhere. */
-export const PRE_LOGIN_SCREEN_1_STORY_RELEASE_VERIFIED_TICK_CLASS = "h-2.5 w-2.5 shrink-0";
+/** Supporting marks on the mock release date row. Smaller than feed link icons. */
+export const PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORMS = [
+  "spotify",
+  "apple_music",
+  "beatport",
+  "soundcloud",
+] as const;
+export const PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORM_ICON_CLASS = "h-2.5 w-2.5";
 export const PRE_LOGIN_SCREEN_1_SELECTION_INSTRUCTION_CLASS =
   "mb-2 text-center text-sm font-medium leading-snug text-foreground/70";
 export const PRE_LOGIN_SCREEN_1_BOTTOM_CLASS = "shrink-0 pb-2";
@@ -417,8 +423,16 @@ export const PRE_LOGIN_AVATAR_SELECTED_SCALE = 1.12;
 /** Selected avatar ambient glow — dub hub blue family (not teal accent). */
 export const PRE_LOGIN_AVATAR_GLOW_FILTER =
   "drop-shadow(0 0 6px rgba(10, 131, 255, 0.38)) drop-shadow(0 0 14px rgba(10, 131, 255, 0.2))";
+/** Screen 1 Artist role chooser. Same radii as the blue glow, quieter gold. */
+export const PRE_LOGIN_AVATAR_GOLD_GLOW_FILTER =
+  "drop-shadow(0 0 6px rgba(255, 215, 0, 0.28)) drop-shadow(0 0 14px rgba(255, 215, 0, 0.14))";
+export const PRE_LOGIN_AVATAR_MOTION_MS = 200;
 export const PRE_LOGIN_AVATAR_MOTION_CLASS =
   "motion-safe:transition-[transform,filter] motion-safe:duration-200 motion-safe:ease-out motion-reduce:transition-none";
+/** Label colour on the Screen 2 switcher. Avatar scale and glow do not use this transition. */
+export const PRE_LOGIN_AVATAR_PROGRESS_MOTION_MS = 300;
+export const PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS =
+  "motion-safe:transition-[transform,filter,color] motion-safe:duration-300 motion-safe:ease-out motion-reduce:transition-none";
 /** Fixed layout slot. Overflow stays visible so scaled/glowing inner visual cannot reflow or clip. */
 export const PRE_LOGIN_AVATAR_SLOT_SCREEN1_CLASS =
   "relative flex h-24 w-24 min-[400px]:h-[6.75rem] min-[400px]:w-[6.75rem] items-center justify-center overflow-visible";
@@ -445,9 +459,13 @@ export function preLoginAvatarTransformStyle(selected: boolean): { transform: st
   };
 }
 
-export function preLoginAvatarGlowStyle(selected: boolean): { filter: string } {
+export function preLoginAvatarGlowStyle(
+  selected: boolean,
+  tone: "blue" | "gold" = "blue",
+): { filter: string } {
+  if (!selected) return { filter: "none" };
   return {
-    filter: selected ? PRE_LOGIN_AVATAR_GLOW_FILTER : "none",
+    filter: tone === "gold" ? PRE_LOGIN_AVATAR_GOLD_GLOW_FILTER : PRE_LOGIN_AVATAR_GLOW_FILTER,
   };
 }
 
@@ -471,10 +489,10 @@ export const PRE_LOGIN_STAGGER_STEP_MS = 260;
 export const PRE_LOGIN_STAGGER_INITIAL_DELAY_MS = 100;
 export const PRE_LOGIN_STAGGER_TRANSLATE_PX = 6;
 export const PRE_LOGIN_STAGGER_EASING = "cubic-bezier(0.25, 0.1, 0.25, 1)";
-export const PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS = 550;
-export const PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS = 220;
+export const PRE_LOGIN_SCREEN_1_REVEAL_DURATION_MS = 650;
+export const PRE_LOGIN_SCREEN_1_REVEAL_STEP_MS = 320;
 export const PRE_LOGIN_SCREEN_1_REVEAL_INITIAL_DELAY_MS = 40;
-export const PRE_LOGIN_SCREEN_1_REVEAL_TRANSLATE_PX = 5;
+export const PRE_LOGIN_SCREEN_1_REVEAL_TRANSLATE_PX = 3;
 export const PRE_LOGIN_SCREEN_1_REVEAL_SLOTS = {
   logo: 0,
   headline: 1,
@@ -492,10 +510,11 @@ export const PRE_LOGIN_STAGGER_ITEM_CLASS =
   "motion-reduce:transition-none motion-reduce:translate-y-0 motion-reduce:opacity-100";
 
 export const PRE_LOGIN_PAGER_THRESHOLD = 0.28;
-export const PRE_LOGIN_PAGER_FLICK_PX_PER_MS = 0.55;
+export const PRE_LOGIN_PAGER_FLICK_PX_PER_MS = 0.7;
+export const PRE_LOGIN_PAGER_FLICK_MIN_PX = 56;
 export const PRE_LOGIN_PAGER_SLOP_PX = 10;
 export const PRE_LOGIN_PAGER_SNAP_CLASS =
-  "motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out motion-reduce:transition-none";
+  "motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-out motion-reduce:transition-none";
 
 export function lockPerspectivePagerAxis(
   dx: number,
@@ -515,7 +534,8 @@ export function resolvePerspectivePagerCommit(args: {
   const width = Math.max(1, args.width);
   const distanceOk = Math.abs(args.dx) >= width * PRE_LOGIN_PAGER_THRESHOLD;
   const flickOk =
-    Math.abs(args.vx) >= PRE_LOGIN_PAGER_FLICK_PX_PER_MS && Math.abs(args.dx) >= 24;
+    Math.abs(args.vx) >= PRE_LOGIN_PAGER_FLICK_PX_PER_MS &&
+    Math.abs(args.dx) >= PRE_LOGIN_PAGER_FLICK_MIN_PX;
   if (!distanceOk && !flickOk) return args.from;
   if (args.dx < 0 && args.from === "user") return "artist";
   if (args.dx > 0 && args.from === "artist") return "user";
@@ -533,6 +553,80 @@ export function perspectivePagerTranslatePx(
   if (next > 0) return 0;
   if (next < -pageWidth) return -pageWidth;
   return next;
+}
+
+export function clampPreLoginEmphasis(strength: number): number {
+  if (!Number.isFinite(strength)) return 0;
+  return Math.min(1, Math.max(0, strength));
+}
+
+/** Community = 0, Artist = 1. Settled pages sit on the endpoints. */
+export function perspectivePagerArtistProgress(args: {
+  viewing: PreLoginOnboardingIntent;
+  panning: boolean;
+  panDx: number;
+  width: number;
+}): number {
+  if (!args.panning || args.width <= 0) {
+    return args.viewing === "artist" ? 1 : 0;
+  }
+  const width = Math.max(1, args.width);
+  const translate = perspectivePagerTranslatePx(args.viewing, args.panDx, width);
+  return clampPreLoginEmphasis(-translate / width);
+}
+
+export function preLoginPerspectiveEmphasis(artistProgress: number): {
+  community: number;
+  artist: number;
+} {
+  const artist = clampPreLoginEmphasis(artistProgress);
+  return { community: 1 - artist, artist };
+}
+
+function formatEmphasisUnit(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+/** Always a drop-shadow pair so strength can blend. Never switches through `none`. */
+export function preLoginAvatarGlowFilterForStrength(
+  strength: number,
+  tone: "blue" | "gold" = "blue",
+): string {
+  const t = clampPreLoginEmphasis(strength);
+  const nearAlpha = tone === "gold" ? 0.28 : 0.38;
+  const farAlpha = tone === "gold" ? 0.14 : 0.2;
+  const rgb = tone === "gold" ? "255, 215, 0" : "10, 131, 255";
+  const near = formatEmphasisUnit(nearAlpha * t);
+  const far = formatEmphasisUnit(farAlpha * t);
+  return `drop-shadow(0 0 6px rgba(${rgb}, ${near})) drop-shadow(0 0 14px rgba(${rgb}, ${far}))`;
+}
+
+/** Ease-out cubic. Stays between the endpoints, with no overshoot. */
+export function preLoginEmphasisAt(args: {
+  from: number;
+  to: number;
+  elapsedMs: number;
+  durationMs: number;
+}): number {
+  const from = clampPreLoginEmphasis(args.from);
+  const to = clampPreLoginEmphasis(args.to);
+  if (!(args.durationMs > 0) || args.elapsedMs >= args.durationMs) return to;
+  if (args.elapsedMs <= 0) return from;
+  const progress = args.elapsedMs / args.durationMs;
+  const eased = 1 - (1 - progress) ** 3;
+  return clampPreLoginEmphasis(from + (to - from) * eased);
+}
+
+export function preLoginAvatarTransformForStrength(strength: number): string {
+  const t = clampPreLoginEmphasis(strength);
+  const scale = 1 + (PRE_LOGIN_AVATAR_SELECTED_SCALE - 1) * t;
+  return `scale(${formatEmphasisUnit(scale)})`;
+}
+
+/** Mixes the existing foreground and muted-foreground tokens. No new colors. */
+export function preLoginPerspectiveLabelColor(strength: number): string {
+  const pct = formatEmphasisUnit(clampPreLoginEmphasis(strength) * 100);
+  return `color-mix(in srgb, var(--foreground) ${pct}%, var(--muted-foreground))`;
 }
 
 export function featureStaggerDelayMs(slotIndex: number): number {

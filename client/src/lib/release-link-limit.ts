@@ -58,7 +58,7 @@ export const LINK_OVER_LIMIT_BODY =
 
 export const LINK_PAID_TITLE = "Unlimited release links" as const;
 export const LINK_PAID_BODY =
-  "You're subscribed to Verified Artist Tools." as const;
+  "You're subscribed to Artist Tools." as const;
 
 /** Owner guidance when a free listening link is saved on a future / Coming Soon release. */
 export const LISTENING_LINK_FUTURE_GUIDANCE = {
@@ -68,7 +68,7 @@ export const LISTENING_LINK_FUTURE_GUIDANCE = {
 
 export const PAID_ONLY_LINK_TYPES = new Set(["presave"]);
 
-/** True when purpose requires Verified Artist Tools (pre-release only). */
+/** True when purpose requires Artist Tools (pre-release only). */
 export function isPaidOnlyReleaseLink(
   _platform: string,
   linkType?: string | null,

@@ -1138,7 +1138,7 @@ export default function ReleaseCreate() {
                   className={APP_MATERIAL_FORM_PRIMARY_CLASS}
                   onClick={() => handleUpgrade("release_limit")}
                   data-testid="release-create-submit-locked"
-                  aria-label="Create Release — Verified Artist Tools"
+                  aria-label="Create Release — Artist Tools"
                 >
                   <span className="inline-flex items-center justify-center gap-1.5">
                     <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -1,5 +1,5 @@
 /**
- * Contextual paywall copy + shared Verified Artist Tools benefit summary.
+ * Contextual paywall copy + shared Artist Tools benefit summary.
  * Artist verification remains free and is never claimed as a paid benefit.
  */
 
@@ -115,18 +115,18 @@ const CONTEXT_COPY: Record<
   release_alerts: {
     title: "Turn on Release Alerts",
     body:
-      "Listeners can turn on Release Alerts for your profile at any time. Their interest stays saved, and with Verified Artist Tools you can notify everyone waiting when you share a new release.",
+      "Listeners can turn on Release Alerts for your profile at any time. Their interest stays saved, and with Artist Tools you can notify everyone waiting when you share a new release.",
     emphasizeBenefit:
       "See your Release Alerts audience and send alerts to listeners waiting",
   },
   settings: {
-    title: "Verified Artist Tools",
+    title: "Artist Tools",
     body: "More tools for sharing and managing your releases.",
   },
   onboarding_intro: {
     title: "Take your releases further",
     body:
-      "Verified Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
+      "Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
   },
   anonymous_identify: {
     title: "Keep the track under wraps",
@@ -153,7 +153,7 @@ export function resolveVerifiedArtistToolsPaywallCopy(
 }
 
 export const PAYWALL_UI_COPY = {
-  productName: "Verified Artist Tools",
+  productName: "Artist Tools",
   loadingAnnouncement: "Loading subscription options",
   packageMonthlyLabel: "Monthly",
   packageAnnualLabel: "Annual",
@@ -163,9 +163,9 @@ export const PAYWALL_UI_COPY = {
   restorePurchases: "Restore Purchases",
   retry: "Retry",
   notNow: "Not now",
-  successTitle: "Verified Artist Tools unlocked",
+  successTitle: "Artist Tools unlocked",
   successBody: "Your artist tools are ready to use.",
-  restoreSuccessBody: "Your Verified Artist Tools are ready to use.",
+  restoreSuccessBody: "Your Artist Tools are ready to use.",
   processingLabel: "Processing…",
   processingAnnouncement: "Opening App Store purchase…",
   unlockingTitle: "Unlocking your tools…",
@@ -181,14 +181,14 @@ export const PAYWALL_UI_COPY = {
   restoreSuccessTitle: "Purchases restored",
   restoreNothingTitle: "Nothing to restore",
   restoreNothingBody:
-    "No active Verified Artist Tools purchase was found for this Apple ID.",
+    "No active Artist Tools purchase was found for this Apple ID.",
   offeringsErrorTitle: "Couldn’t load subscription options",
   offeringsErrorBody: "Check your connection and try again.",
   storeErrorTitle: "Purchase couldn’t be completed",
   storeErrorBody: "Try again in a moment.",
   identityErrorTitle: "Purchase unavailable",
   identityErrorBody: "Sign in again on this device, then retry.",
-  activeTitle: "Verified Artist Tools",
+  activeTitle: "Artist Tools",
   activeBody: "Your artist tools are unlocked.",
   manageSubscription: "Manage Subscription",
   periodMonthly: "per month",

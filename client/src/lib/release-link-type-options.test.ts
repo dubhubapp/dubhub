@@ -128,7 +128,7 @@ describe("selectedLinkTypeDisplay", () => {
 });
 
 describe("linkTypeOptionAriaLabel", () => {
-  it("announces Verified Artist Tools only on locked options", () => {
+  it("announces Artist Tools only on locked options", () => {
     const opts = buildLinkTypeOptions({
       platform: "spotify",
       supported: supportedPurposesForPlatform("spotify"),
@@ -138,7 +138,7 @@ describe("linkTypeOptionAriaLabel", () => {
     const live = opts.find((o) => !o.locked)!;
     assert.equal(
       linkTypeOptionAriaLabel(locked),
-      "Pre-save, Verified Artist Tools required",
+      "Pre-save, Artist Tools required",
     );
     assert.equal(linkTypeOptionAriaLabel(live), "Listen");
     assert.equal(
@@ -147,7 +147,7 @@ describe("linkTypeOptionAriaLabel", () => {
         label: "Pre-add",
         locked: true,
       }),
-      "Pre-add, Verified Artist Tools required",
+      "Pre-add, Artist Tools required",
     );
     assert.equal(
       linkTypeOptionAriaLabel({
@@ -155,7 +155,7 @@ describe("linkTypeOptionAriaLabel", () => {
         label: "Pre-order",
         locked: true,
       }),
-      "Pre-order, Verified Artist Tools required",
+      "Pre-order, Artist Tools required",
     );
   });
 
@@ -175,7 +175,7 @@ describe("linkTypeOptionAriaLabel", () => {
   });
 });
 
-describe("verified artist tools upgrade entry", () => {
+describe("artist tools upgrade entry", () => {
   it("shows purchase placeholder with contextual source without mutating callers", () => {
     const calls: { title: string; description?: string }[] = [];
     let draft: string = "listen";

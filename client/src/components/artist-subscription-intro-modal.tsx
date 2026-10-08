@@ -1,5 +1,5 @@
 /**
- * Profile-triggered Verified Artist Tools introduction — awareness only, not a purchase UI.
+ * Profile-triggered Artist Tools introduction — awareness only, not a purchase UI.
  */
 
 import { Check } from "lucide-react";

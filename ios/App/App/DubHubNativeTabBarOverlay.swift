@@ -4,18 +4,16 @@ import Capacitor
 
 /// Native-navigation feature flag for LG-NAV-*.
 ///
-/// DEBUG: missing key defaults ON. Explicit `true` / `false` in UserDefaults is respected.
-/// Non-DEBUG: missing key remains OFF (current production-safe behaviour).
+/// Missing key defaults ON in Debug and Release.
+/// Explicit `true` / `false` in UserDefaults is respected (kill switch).
 enum DubHubNativeNavigationFlag {
     static let userDefaultsKey = "dubhub.nativeNavigation.enabled"
 
     static var isEnabled: Bool {
         let defaults = UserDefaults.standard
-#if DEBUG
         if defaults.object(forKey: userDefaultsKey) == nil {
             return true
         }
-#endif
         return defaults.bool(forKey: userDefaultsKey)
     }
 }

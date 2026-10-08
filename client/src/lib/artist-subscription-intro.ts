@@ -1,5 +1,5 @@
 /**
- * ARTIST-SUB-INTRO — one-time Verified Artist Tools intro on first owner Profile visit.
+ * ARTIST-SUB-INTRO — one-time Artist Tools intro on first owner Profile visit.
  * Device-local acknowledgement.
  */
 
@@ -12,12 +12,12 @@ export const ARTIST_SUBSCRIPTION_INTRO_SEEN_PREFIX =
 export const ARTIST_SUBSCRIPTION_INTRO_COPY = {
   title: "Take your releases further",
   body:
-    "Verified Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
+    "Artist Tools gives you more ways to manage releases and act on listener demand around your music.",
   /** Product name styled with a restrained brand accent in the intro modal. */
-  bodyBrand: "Verified Artist Tools",
-  /** Same canonical benefits as the Verified Artist Tools paywall. */
+  bodyBrand: "Artist Tools",
+  /** Same canonical benefits as the Artist Tools paywall. */
   benefits: VERIFIED_ARTIST_TOOLS_BENEFITS,
-  primaryCta: "View Verified Artist Tools",
+  primaryCta: "View Artist Tools",
   secondaryCta: "Maybe later",
 } as const;
 
@@ -59,7 +59,7 @@ export function isArtistSubscriptionIntroSeen(
   }
 }
 
-/** Call only after Maybe later or View Verified Artist Tools — never on render. */
+/** Call only after Maybe later or View Artist Tools — never on render. */
 export function markArtistSubscriptionIntroSeen(
   userId: string | null | undefined,
   storage: ArtistSubscriptionIntroStorage | null = defaultLocalStorage(),

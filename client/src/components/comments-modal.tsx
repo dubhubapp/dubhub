@@ -2100,7 +2100,7 @@ export function CommentsModal({
             <AlertDialogDescription className={APP_MATERIAL_OVERLAY_DESCRIPTION_CLASS}>
               If it isn&apos;t yours, decline the tag as normal.
               <span className="mt-2 block">
-                If it is yours but you&apos;re not ready to reveal yourself, Verified Artist Tools
+                If it is yours but you&apos;re not ready to reveal yourself, Artist Tools
                 lets you identify it anonymously and reveal later.
               </span>
             </AlertDialogDescription>
@@ -2118,7 +2118,7 @@ export function CommentsModal({
               aria-label={
                 anonymousIdentifyEntitled
                   ? "Identify anonymously"
-                  : "Identify anonymously — Verified Artist Tools"
+                  : "Identify anonymously — Artist Tools"
               }
               onClick={(event) => {
                 event.preventDefault();

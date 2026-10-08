@@ -52,7 +52,7 @@ describe("VAT-ANON-3.2 Confirm ID footer hierarchy", () => {
 
   it("keeps Lock only for free/unresolved Identify anonymously", () => {
     assert.match(dialogSrc, /\{!anonymousIdentifyEntitled \? \([\s\S]{0,80}<Lock/);
-    assert.match(dialogSrc, /Identify anonymously — Verified Artist Tools/);
+    assert.match(dialogSrc, /Identify anonymously — Artist Tools/);
   });
 
   it("keeps Cancel + Not my track as quieter tertiary row", () => {

@@ -1557,7 +1557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   /**
-   * Optional notification emoji for verified artists with Verified Artist Tools.
+   * Optional notification emoji for verified artists with Artist Tools.
    * Body: { emoji: string | null }. null / "" clears. Does not touch other profile fields.
    */
   app.patch("/api/user/notification-emoji", withSupabaseUser, async (req: AuthenticatedRequest, res) => {
@@ -3160,7 +3160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!paid) {
         return res.status(403).json({
           code: "PAID_ARTIST_TOOL_REQUIRED",
-          message: "Verified Artist Tools required",
+          message: "Artist Tools required",
         });
       }
       const count = await storage.countArtistReleaseAlertsForArtist(req.dbUser.id);

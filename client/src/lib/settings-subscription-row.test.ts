@@ -94,6 +94,7 @@ describe("resolveSettingsSubscriptionRowView", () => {
   it("2 never subscribed — Free + Upgrade + Restore", () => {
     const view = viewFor({});
     assert.equal(view.mode, "free");
+    assert.equal(view.title, "Artist Tools");
     assert.equal(view.statusLabel, "Free");
     assert.match(view.detail ?? "", /More tools for sharing/);
     assert.equal(view.showUpgrade, true);
@@ -222,7 +223,7 @@ describe("resolveSettingsSubscriptionRowView", () => {
     const expired = viewFor({ state: "expired", freshness: "fresh" });
     const never = viewFor({});
     assert.equal(expired.statusLabel, "Subscription ended");
-    assert.equal(expired.detail, "Your Verified Artist Tools subscription has ended.");
+    assert.equal(expired.detail, "Your Artist Tools subscription has ended.");
     assert.equal(expired.showUpgrade, true);
     assert.equal(expired.showRestore, true);
     assert.equal(expired.showManage, false);
@@ -234,7 +235,7 @@ describe("resolveSettingsSubscriptionRowView", () => {
     for (const state of ["refunded", "revoked"] as const) {
       const view = viewFor({ state, freshness: "fresh" });
       assert.equal(view.statusLabel, "Subscription ended");
-      assert.equal(view.detail, "Your Verified Artist Tools are no longer active.");
+      assert.equal(view.detail, "Your Artist Tools are no longer active.");
       assert.equal(view.showUpgrade, true);
       assert.equal(view.showRestore, true);
       assert.equal(view.showManage, false);

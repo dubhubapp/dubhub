@@ -97,7 +97,7 @@ describe("VAT-ANON-2 decline dialog + Identify anonymously wiring", () => {
     assert.match(commentsSrc, /Lock/);
     assert.match(
       commentsSrc,
-      /Identify anonymously — Verified Artist Tools/,
+      /Identify anonymously — Artist Tools/,
     );
     // Entitled branch calls parent callback; otherwise paywall — never both.
     assert.match(
@@ -161,7 +161,7 @@ describe("VAT-ANON-2 decline dialog + Identify anonymously wiring", () => {
 
   it("maps entitlement / conflict / disabled errors without exposing raw codes in titles", () => {
     const entitled = resolveAnonymousIdentifyErrorCopy("PAID_ARTIST_TOOL_REQUIRED");
-    assert.match(entitled.title, /Verified Artist Tools/i);
+    assert.match(entitled.title, /Artist Tools/i);
     assert.doesNotMatch(entitled.title, /PAID_ARTIST_TOOL_REQUIRED/);
 
     const conflict = resolveAnonymousIdentifyErrorCopy("ANONYMOUS_CLAIM_EXISTS");

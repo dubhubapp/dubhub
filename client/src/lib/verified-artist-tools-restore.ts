@@ -1,5 +1,5 @@
 /**
- * Production RevenueCat restore for Verified Artist Tools.
+ * Production RevenueCat restore for Artist Tools.
  * Same reconcile path as purchase. Does not quarantine or log out identity.
  */
 

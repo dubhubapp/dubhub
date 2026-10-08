@@ -111,7 +111,7 @@ describe("resolveFreeReleaseAllowanceSuccessCopy", () => {
     assert.equal(copy.animateFrom, 1);
     assert.equal(copy.usedCount, 2);
     assert.match(copy.supporting, /free release allowance/i);
-    assert.match(copy.supporting, /Verified Artist Tools/);
+    assert.match(copy.supporting, /Artist Tools/);
     assert.equal(copy.showViewArtistTools, true);
     assert.equal(FREE_RELEASE_ALLOWANCE_SUCCESS_VIEW_TOOLS, "View Artist Tools");
     assert.equal(FREE_RELEASE_ALLOWANCE_SUCCESS_DONE, "Done");
@@ -172,7 +172,7 @@ describe("release-create allowance success wiring", () => {
       CREATE_RELEASE_HANDOFF_BODY,
       /already out/,
     );
-    assert.doesNotMatch(CREATE_RELEASE_HANDOFF_BODY, /Verified Artist Tools/);
+    assert.doesNotMatch(CREATE_RELEASE_HANDOFF_BODY, /Artist Tools/);
     assert.match(handoffSrc, /already out/);
   });
 

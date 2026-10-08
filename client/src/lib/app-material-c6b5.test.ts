@@ -1,5 +1,5 @@
 /**
- * Slice C6B.5 — Verified Artist Tools compact action polish.
+ * Slice C6B.5 — Artist Tools compact action polish.
  * Presentation only. Does not change VAT / RevenueCat / entitlement behaviour.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Production RevenueCat purchase for Verified Artist Tools (monthly or annual).
+ * Production RevenueCat purchase for Artist Tools (monthly or annual).
  * Reuses identity gates + error classification from diagnostics; not DEV-gated.
  */
 

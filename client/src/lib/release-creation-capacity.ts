@@ -103,7 +103,7 @@ export function resolveReleaseCapacityCardCopy(
   if (capacity.unlimited) {
     return {
       title: "Unlimited releases",
-      body: "You're subscribed to Verified Artist Tools.",
+      body: "You're subscribed to Artist Tools.",
       showUpgrade: false,
     };
   }

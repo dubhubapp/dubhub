@@ -12,8 +12,9 @@ import {
 } from "lucide-react";
 import { ArtistToolsMark } from "@/components/artist-tools-mark";
 import { Logo } from "@/components/brand/Logo";
+import { PlatformIcon } from "@/components/PlatformIcon";
 import { Button } from "@/components/ui/button";
-import { GoldVerifiedTick } from "@/components/verified-artist";
+import { GoldVerifiedTick, goldTextClass } from "@/components/verified-artist";
 import AuthPage from "@/pages/auth";
 import { AUTH_SURFACE_CLASS } from "@/lib/auth-surface";
 import { getDefaultAvatarPublicUrl } from "@/lib/default-avatar";
@@ -43,7 +44,9 @@ import {
 import {
   INITIAL_PRE_LOGIN_ONBOARDING_UI,
   INITIAL_PRE_LOGIN_REVEAL_PLAYED,
-  PRE_LOGIN_AVATAR_MOTION_CLASS,
+  PRE_LOGIN_AVATAR_MOTION_MS,
+  PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS,
+  PRE_LOGIN_AVATAR_PROGRESS_MOTION_MS,
   PRE_LOGIN_AVATAR_IMAGE_SCREEN1_CLASS,
   PRE_LOGIN_AVATAR_IMAGE_SCREEN2_CLASS,
   PRE_LOGIN_AVATAR_SLOT_SCREEN1_CLASS,
@@ -82,7 +85,8 @@ import {
   PRE_LOGIN_SCREEN_1_STORY_VISUAL_SLOT_CLASS,
   PRE_LOGIN_SCREEN_1_STORY_WAVEFORM_CLASS,
   PRE_LOGIN_SCREEN_1_STORY_RELEASE_EXAMPLE,
-  PRE_LOGIN_SCREEN_1_STORY_RELEASE_VERIFIED_TICK_CLASS,
+  PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORM_ICON_CLASS,
+  PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORMS,
   PRE_LOGIN_SCREEN_1_SELECTION_INSTRUCTION_CLASS,
   PRE_LOGIN_SCREEN_1_TOP_CLASS,
   PRE_LOGIN_SCREEN_2_CONTENT_INSET_CLASS,
@@ -105,9 +109,12 @@ import {
   lockPerspectivePagerAxis,
   markPerspectiveRevealed,
   markPreLoginOnboardingSeen,
+  perspectivePagerArtistProgress,
   perspectivePagerTranslatePx,
-  preLoginAvatarGlowStyle,
-  preLoginAvatarTransformStyle,
+  preLoginAvatarGlowFilterForStrength,
+  preLoginAvatarTransformForStrength,
+  preLoginEmphasisAt,
+  preLoginPerspectiveLabelColor,
   preLoginFeatureRevealStyle,
   preLoginScreen1RevealStyle,
   resolveScreen1RevealReady,
@@ -164,30 +171,71 @@ function DefaultRoleAvatar({
   );
 }
 
+function usePreLoginEmphasis(target: number, durationMs: number | null): number {
+  const [shown, setShown] = useState(target);
+  const shownRef = useRef(target);
+
+  useEffect(() => {
+    if (durationMs == null) return;
+    if (prefersReducedMotion()) {
+      shownRef.current = target;
+      setShown(target);
+      return;
+    }
+    const from = shownRef.current;
+    if (from === target) return;
+    const start = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      const next = preLoginEmphasisAt({
+        from,
+        to: target,
+        elapsedMs: now - start,
+        durationMs,
+      });
+      shownRef.current = next;
+      setShown(next);
+      if (now - start < durationMs) frame = window.requestAnimationFrame(step);
+    };
+    frame = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(frame);
+  }, [target, durationMs]);
+
+  return durationMs == null ? target : shown;
+}
+
 function EmphasizedRoleAvatar({
   role,
   emphasize,
+  strength,
   slotClassName,
   imageClassName,
   testId,
+  glowTone = "blue",
 }: {
   role: PreLoginOnboardingIntent;
-  emphasize: boolean;
+  emphasize?: boolean;
+  /** 0–1 live emphasis. When set, scale and glow follow it with no extra transition. */
+  strength?: number;
   slotClassName: string;
   imageClassName: string;
   testId?: string;
+  glowTone?: "blue" | "gold";
 }) {
+  const live = strength != null;
+  const target = live ? strength : emphasize === true ? 1 : 0;
+  const displayedEmphasis = usePreLoginEmphasis(target, live ? null : PRE_LOGIN_AVATAR_MOTION_MS);
   return (
     <span className={slotClassName}>
       <span
-        className={cn(PRE_LOGIN_AVATAR_GLOW_WRAPPER_CLASS, PRE_LOGIN_AVATAR_MOTION_CLASS)}
-        style={preLoginAvatarGlowStyle(emphasize)}
+        className={PRE_LOGIN_AVATAR_GLOW_WRAPPER_CLASS}
+        style={{ filter: preLoginAvatarGlowFilterForStrength(displayedEmphasis, glowTone) }}
       >
         <DefaultRoleAvatar
           role={role}
           testId={testId}
-          className={cn(imageClassName, PRE_LOGIN_AVATAR_MOTION_CLASS)}
-          style={preLoginAvatarTransformStyle(emphasize)}
+          className={imageClassName}
+          style={{ transform: preLoginAvatarTransformForStrength(displayedEmphasis) }}
         />
       </span>
     </span>
@@ -316,6 +364,7 @@ function IntentChoiceButton({
       <EmphasizedRoleAvatar
         role={role}
         emphasize={emphasize}
+        glowTone={role === "artist" ? "gold" : "blue"}
         slotClassName={PRE_LOGIN_AVATAR_SLOT_SCREEN1_CLASS}
         imageClassName={PRE_LOGIN_AVATAR_IMAGE_SCREEN1_CLASS}
         testId={`onboarding-intent-avatar-${role}`}
@@ -323,10 +372,19 @@ function IntentChoiceButton({
       <span
         className={cn(
           PRE_LOGIN_IDENTITY_LABEL_CLASS,
-          emphasize ? "text-foreground" : "text-foreground/90",
+          role === "artist"
+            ? cn(goldTextClass, "inline-flex items-center justify-center gap-0.5")
+            : emphasize
+              ? "text-foreground"
+              : "text-foreground/90",
         )}
       >
         {label}
+        {role === "artist" ? (
+          <span aria-hidden className="inline-flex">
+            <GoldVerifiedTick className="h-3.5 w-3.5 shrink-0" glow="inline" />
+          </span>
+        ) : null}
       </span>
       <span className="mt-1 text-center text-sm leading-snug text-muted-foreground">
         {supporting}
@@ -441,15 +499,27 @@ function Screen1ReleaseVisual() {
         <p className="truncate text-[11px] font-semibold leading-tight text-foreground">
           {sample.track}
         </p>
-        <p className="flex min-w-0 items-center gap-0.5 truncate text-[10px] leading-tight text-muted-foreground">
-          <span className="truncate">{sample.artist}</span>
-          <GoldVerifiedTick
-            className={PRE_LOGIN_SCREEN_1_STORY_RELEASE_VERIFIED_TICK_CLASS}
-            glow="inline"
-          />
+        <p className="truncate text-[10px] leading-tight text-muted-foreground">
+          {sample.artist}
         </p>
-        <p className="mt-0.5 text-[9px] font-medium leading-tight text-[#fb923c]">
-          {sample.outLabel}
+        <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[9px] font-medium leading-none text-[#fb923c]">
+          <span className="shrink-0">{sample.outLabel}</span>
+          <span
+            className="flex items-center gap-0.5 opacity-70"
+            data-testid="pre-login-story-release-platforms"
+          >
+            {PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORMS.map((platform) => (
+              <PlatformIcon
+                key={platform}
+                platform={platform}
+                className={cn(
+                  PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORM_ICON_CLASS,
+                  "object-contain",
+                )}
+                boxClassName={PRE_LOGIN_SCREEN_1_STORY_RELEASE_PLATFORM_ICON_CLASS}
+              />
+            ))}
+          </span>
         </p>
       </div>
     </div>
@@ -612,16 +682,22 @@ function Screen1({
 
 function PerspectiveSwitcher({
   viewingArtist,
+  artistProgress,
+  trackFinger,
   onViewPerspective,
 }: {
   viewingArtist: boolean;
+  artistProgress: number;
+  trackFinger: boolean;
   onViewPerspective: (perspective: PreLoginOnboardingIntent) => void;
 }) {
+  const communityStrength = 1 - artistProgress;
   return (
     <div
       role="group"
       aria-label="View community or artist benefits"
       className={PRE_LOGIN_PERSPECTIVE_SWITCHER_CLASS}
+      data-artist-progress={artistProgress}
     >
       <button
         type="button"
@@ -630,13 +706,18 @@ function PerspectiveSwitcher({
         data-testid="button-onboarding-view-user"
         className={cn(
           PRE_LOGIN_PERSPECTIVE_BUTTON_CLASS,
+          PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS,
           "rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f1324]",
-          !viewingArtist ? "text-foreground" : "text-muted-foreground",
         )}
+        style={{
+          color: preLoginPerspectiveLabelColor(communityStrength),
+          ...(trackFinger ? { transitionDuration: "0ms" } : undefined),
+        }}
       >
         <EmphasizedRoleAvatar
           role="user"
-          emphasize={!viewingArtist}
+          strength={communityStrength}
+          glowTone="blue"
           slotClassName={PRE_LOGIN_AVATAR_SLOT_SCREEN2_CLASS}
           imageClassName={PRE_LOGIN_AVATAR_IMAGE_SCREEN2_CLASS}
           testId="onboarding-perspective-avatar-user"
@@ -653,13 +734,18 @@ function PerspectiveSwitcher({
         data-testid="button-onboarding-view-artist"
         className={cn(
           PRE_LOGIN_PERSPECTIVE_BUTTON_CLASS,
+          PRE_LOGIN_AVATAR_PROGRESS_MOTION_CLASS,
           "rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f1324]",
-          viewingArtist ? "text-foreground" : "text-muted-foreground",
         )}
+        style={{
+          color: preLoginPerspectiveLabelColor(artistProgress),
+          ...(trackFinger ? { transitionDuration: "0ms" } : undefined),
+        }}
       >
         <EmphasizedRoleAvatar
           role="artist"
-          emphasize={viewingArtist}
+          strength={artistProgress}
+          glowTone="gold"
           slotClassName={PRE_LOGIN_AVATAR_SLOT_SCREEN2_CLASS}
           imageClassName={PRE_LOGIN_AVATAR_IMAGE_SCREEN2_CLASS}
           testId="onboarding-perspective-avatar-artist"
@@ -778,6 +864,9 @@ function Screen2({
   const panDxRef = useRef(0);
   const [panDx, setPanDx] = useState(0);
   const [panning, setPanning] = useState(false);
+  const [artistProgress, setArtistProgress] = useState(viewingArtist ? 1 : 0);
+  const artistProgressRef = useRef(artistProgress);
+  artistProgressRef.current = artistProgress;
   const [reduceMotion, setReduceMotion] = useState(false);
   const playedRef = useRef<PreLoginRevealPlayed>({ ...INITIAL_PRE_LOGIN_REVEAL_PLAYED });
   const [revealReady, setRevealReady] = useState<PreLoginRevealPlayed>(
@@ -787,6 +876,33 @@ function Screen2({
   useEffect(() => {
     setReduceMotion(prefersReducedMotion());
   }, []);
+
+  useEffect(() => {
+    if (panning) return;
+    const target = viewingArtist ? 1 : 0;
+    const from = artistProgressRef.current;
+    if (prefersReducedMotion() || from === target) {
+      if (from !== target) setArtistProgress(target);
+      return;
+    }
+    const start = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      const next = preLoginEmphasisAt({
+        from,
+        to: target,
+        elapsedMs: now - start,
+        durationMs: PRE_LOGIN_AVATAR_PROGRESS_MOTION_MS,
+      });
+      artistProgressRef.current = next;
+      setArtistProgress(next);
+      if (now - start < PRE_LOGIN_AVATAR_PROGRESS_MOTION_MS) {
+        frame = window.requestAnimationFrame(step);
+      }
+    };
+    frame = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(frame);
+  }, [panning, viewingArtist]);
 
   useEffect(() => {
     if (!active) return;
@@ -829,7 +945,16 @@ function Screen2({
     }
     if (axisRef.current !== "x") return;
     panDxRef.current = dx;
-    if (!prefersReducedMotion()) setPanDx(dx);
+    if (prefersReducedMotion()) return;
+    setPanDx(dx);
+    setArtistProgress(
+      perspectivePagerArtistProgress({
+        viewing: state.viewingPerspective,
+        panning: true,
+        panDx: dx,
+        width: pageWidth(),
+      }),
+    );
   };
 
   const finishPan = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -867,6 +992,8 @@ function Screen2({
       >
         <PerspectiveSwitcher
           viewingArtist={viewingArtist}
+          artistProgress={artistProgress}
+          trackFinger={panning && !reduceMotion}
           onViewPerspective={onViewPerspective}
         />
       </div>

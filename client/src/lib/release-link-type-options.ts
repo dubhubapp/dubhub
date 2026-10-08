@@ -29,7 +29,7 @@ export function buildLinkTypeOptions(args: {
 /** VoiceOver / a11y label — premium requirement only on locked rows. */
 export function linkTypeOptionAriaLabel(option: LinkTypeOption): string {
   if (option.locked) {
-    return `${option.label}, Verified Artist Tools required`;
+    return `${option.label}, Artist Tools required`;
   }
   return option.label;
 }

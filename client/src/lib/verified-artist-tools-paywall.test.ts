@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  RC_ENTITLEMENT_VERIFIED_ARTIST_TOOLS,
   RC_PACKAGE_ANNUAL,
   RC_PACKAGE_LIFETIME,
   RC_PACKAGE_MONTHLY,
@@ -12,6 +13,7 @@ import {
 import {
   resolveVerifiedArtistToolsBenefitDetail,
   resolveVerifiedArtistToolsPaywallCopy,
+  PAYWALL_UI_COPY,
   VERIFIED_ARTIST_TOOLS_BENEFIT_DETAILS,
   VERIFIED_ARTIST_TOOLS_BENEFITS,
   type VerifiedArtistToolsPaywallSource,
@@ -137,21 +139,36 @@ describe("verified-artist-tools-paywall-copy", () => {
       VERIFIED_ARTIST_TOOLS_BENEFITS[4],
       "See your Release Alerts audience and send alerts to listeners waiting",
     );
-    assert.doesNotMatch(joined, /Includes future Verified Artist Tools/);
+    assert.doesNotMatch(joined, /Includes future Artist Tools/);
     assert.doesNotMatch(joined, /countdown/i);
   });
 
+  it("names the paid product Artist Tools without changing catalogue identifiers", () => {
+    assert.equal(PAYWALL_UI_COPY.productName, "Artist Tools");
+    assert.equal(PAYWALL_UI_COPY.successTitle, "Artist Tools unlocked");
+    assert.equal(PAYWALL_UI_COPY.activeTitle, "Artist Tools");
+    assert.equal(PAYWALL_UI_COPY.restoreSuccessBody, "Your Artist Tools are ready to use.");
+    assert.equal(
+      PAYWALL_UI_COPY.restoreNothingBody,
+      "No active Artist Tools purchase was found for this Apple ID.",
+    );
+    assert.equal(RC_ENTITLEMENT_VERIFIED_ARTIST_TOOLS, "verified_artist_tools");
+    assert.equal(RC_PACKAGE_MONTHLY, "$rc_monthly");
+    assert.equal(RC_PACKAGE_ANNUAL, "$rc_annual");
+    assert.equal(RC_PACKAGE_LIFETIME, "$rc_lifetime");
+  });
+
   it("capitalises Tools in product naming surfaces", () => {
-    assert.match(
+    assert.equal(
       resolveVerifiedArtistToolsPaywallCopy("settings").title,
-      /Verified Artist Tools/,
+      "Artist Tools",
     );
     assert.match(
       PAYWALL_SUCCESS_CONFIRMATION_LINES.join(" "),
       /See your Release Alerts audience and send alerts to listeners waiting/,
     );
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Verified Artist Tools/);
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/);
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Artist Tools/);
+    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Artist Tools/);
   });
 
   it("release_alerts paywall keeps listener-interest semantics", () => {
@@ -159,7 +176,7 @@ describe("verified-artist-tools-paywall-copy", () => {
     assert.equal(copy.title, "Turn on Release Alerts");
     assert.match(copy.body, /Listeners can turn on Release Alerts/i);
     assert.match(copy.body, /interest stays saved/i);
-    assert.match(copy.body, /Verified Artist Tools/i);
+    assert.match(copy.body, /Artist Tools/i);
     assert.match(copy.body, /notify everyone waiting/i);
     assert.equal(
       copy.emphasizeBenefit,

@@ -511,7 +511,7 @@ describe("ARTIST-SUB-INTRO copy and actions", () => {
     assert.match(ARTIST_SUBSCRIPTION_INTRO_BENEFIT_CHECK_CLASS, /#4ae9df/);
     assert.match(ARTIST_SUBSCRIPTION_INTRO_BENEFIT_CHECK_CLASS, /h-3\.5/);
     assert.match(ARTIST_SUBSCRIPTION_INTRO_BRAND_EMPHASIS_CLASS, /from-\[#0a83ff\].*to-\[#4ae9df\]/);
-    assert.doesNotMatch(modalSrc, /\bPRO\b|neon|Verified Artist Tools unlocked/);
+    assert.doesNotMatch(modalSrc, /\bPRO\b|neon|Artist Tools unlocked/);
   });
 
   it("onboarding_intro paywall source remains contextual", () => {

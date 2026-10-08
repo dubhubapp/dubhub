@@ -1,5 +1,5 @@
 /**
- * VAT-PAYWALL-POLISH-2 — presentation-only contract for Verified Artist Tools paywall + intro.
+ * VAT-PAYWALL-POLISH-2 — presentation-only contract for Artist Tools paywall + intro.
  */
 
 import assert from "node:assert/strict";
@@ -144,7 +144,7 @@ describe("VAT-PAYWALL-POLISH-2 benefits + intro parity", () => {
     assert.match(paywallSrc, /paywall-benefits[\s\S]*VAT_ACTIVE_MARK_CLASS/);
     assert.match(paywallSrc, /paywall-success-feature[\s\S]*VAT_ACTIVE_MARK_CLASS/);
     assert.match(paywallSrc, /text-\[#4ae9df\]/);
-    assert.doesNotMatch(paywallSrc, /Includes future Verified Artist Tools/);
+    assert.doesNotMatch(paywallSrc, /Includes future Artist Tools/);
     assert.doesNotMatch(paywallSrc, /VERIFIED_ARTIST_TOOLS_BENEFITS_FOOTER/);
   });
 });

@@ -15,8 +15,8 @@ import type { SubscriptionEnvironmentSelection } from "./subscription-environmen
 import { isLifetimeSettingsAccess } from "./settings-subscription-row";
 
 export const LIFETIME_GIFT_COPY = {
-  title: "Lifetime Verified Artist Tools unlocked",
-  body: "You’ve been given lifetime access to Verified Artist Tools.",
+  title: "Lifetime Artist Tools unlocked",
+  body: "You’ve been given lifetime access to Artist Tools.",
   secondary: "Your artist tools are permanently unlocked and won’t renew.",
   done: "Done",
 } as const;

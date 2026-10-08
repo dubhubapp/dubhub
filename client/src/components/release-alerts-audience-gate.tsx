@@ -1,6 +1,6 @@
 /**
  * Owner-profile Release Alerts audience count.
- * Aggregate total is paid (Verified Artist Tools). Listener opt-in and in-app
+ * Aggregate total is paid (Artist Tools). Listener opt-in and in-app
  * demand notifications (release_alert_enabled) stay free.
  */
 
@@ -109,8 +109,8 @@ export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
             className="ios-press relative inline-flex shrink-0 items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-400 disabled:pointer-events-none disabled:opacity-50"
             disabled={!paywallEnabled}
             aria-disabled={!paywallEnabled}
-            aria-label="Locked — unlock with Verified Artist Tools"
-            title={paywallEnabled ? "Unlock with Verified Artist Tools" : copy.ctaHint}
+            aria-label="Locked — unlock with Artist Tools"
+            title={paywallEnabled ? "Unlock with Artist Tools" : copy.ctaHint}
             onClick={openUpgrade}
             data-testid="artist-release-alerts-audience-locked-affordance"
           >

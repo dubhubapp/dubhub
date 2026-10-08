@@ -792,7 +792,7 @@ export function ArtistVerificationDialog({
                       aria-label={
                         anonymousIdentifyEntitled
                           ? "Identify anonymously"
-                          : "Identify anonymously — Verified Artist Tools"
+                          : "Identify anonymously — Artist Tools"
                       }
                     >
                       {identifyAnonymouslyMutation.isPending ? (
@@ -908,7 +908,7 @@ export function ArtistVerificationDialog({
                   data-testid="button-attach-create-new-release"
                   aria-label={
                     createReleaseLocked
-                      ? "Create new release — Verified Artist Tools"
+                      ? "Create new release — Artist Tools"
                       : "Create new release"
                   }
                 >
@@ -942,7 +942,7 @@ export function ArtistVerificationDialog({
                 data-testid="button-create-release-handoff-confirm"
                 aria-label={
                   createReleaseLocked
-                    ? "Create new release — Verified Artist Tools"
+                    ? "Create new release — Artist Tools"
                     : "Create new release"
                 }
               >

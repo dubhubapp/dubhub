@@ -1,5 +1,5 @@
 /**
- * Reusable Verified Artist Tools production paywall (contextual bottom sheet).
+ * Reusable Artist Tools production paywall (contextual bottom sheet).
  * Owns offerings load, package selection, purchase, restore, and shared UI states.
  */
 

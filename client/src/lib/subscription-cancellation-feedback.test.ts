@@ -627,7 +627,7 @@ describe("cancellation feedback submission and guards", () => {
     assert.equal(CANCELLATION_FEEDBACK_COPY.title, "What made you cancel?");
     assert.equal(
       CANCELLATION_FEEDBACK_COPY.support,
-      "Optional — your feedback helps us improve Verified Artist Tools.",
+      "Optional — your feedback helps us improve Artist Tools.",
     );
     assert.equal(CANCELLATION_FEEDBACK_COPY.noteLabel, "Anything else you’d like us to know?");
     assert.equal(CANCELLATION_FEEDBACK_COPY.send, "Send feedback");

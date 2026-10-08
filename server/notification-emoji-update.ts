@@ -61,7 +61,7 @@ export async function updateNotificationEmojiForUser(args: {
       ok: false,
       status: 403,
       code: "PAID_ARTIST_TOOL_REQUIRED",
-      message: "Verified Artist Tools required",
+      message: "Artist Tools required",
     };
   }
 

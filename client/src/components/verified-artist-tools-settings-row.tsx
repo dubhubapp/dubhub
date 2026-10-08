@@ -1,5 +1,5 @@
 /**
- * Artist Settings — Verified Artist Tools subscription row (production).
+ * Artist Settings — Artist Tools subscription row (production).
  * Presentation only — access comes from authoritative subscription domain.
  */
 
@@ -164,7 +164,7 @@ export function VerifiedArtistToolsSettingsRow({ enabled, surface = "card" }: Pr
         data-testid="settings-verified-artist-tools-loading"
         data-settings-vat-surface={surface}
         aria-busy="true"
-        aria-label="Loading Verified Artist Tools"
+        aria-label="Loading Artist Tools"
       >
         <DubHubSkeletonBar tone="mid" className="h-4 w-48" />
         <DubHubSkeletonBar className="h-3 w-24" />
@@ -335,7 +335,7 @@ function SettingsLifecycleLiveRegion({
   useEffect(() => {
     if (!statusLabel || statusLabel === liveStatusRef.current) return;
     liveStatusRef.current = statusLabel;
-    setAnnouncement(`Verified Artist Tools: ${statusLabel}`);
+    setAnnouncement(`Artist Tools: ${statusLabel}`);
   }, [statusLabel, liveStatusRef]);
 
   return (

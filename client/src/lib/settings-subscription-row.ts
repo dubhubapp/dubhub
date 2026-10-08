@@ -1,5 +1,5 @@
 /**
- * Settings row presentation for Verified Artist Tools (safe fields only).
+ * Settings row presentation for Artist Tools (safe fields only).
  * UI consumes authoritative domain state — never defines entitlement.
  */
 
@@ -184,7 +184,7 @@ export function resolveSettingsSubscriptionRowView(args: {
   hasError: boolean;
   selection: SubscriptionEnvironmentSelection;
 }): SettingsSubscriptionRowView {
-  const title = "Verified Artist Tools";
+  const title = "Artist Tools";
 
   if (args.loading) {
     return baseView({
@@ -360,7 +360,7 @@ export function resolveSettingsSubscriptionRowView(args: {
       mode: "free",
       title,
       statusLabel: "Subscription ended",
-      detail: "Your Verified Artist Tools subscription has ended.",
+      detail: "Your Artist Tools subscription has ended.",
       showUpgrade: true,
       showRestore: true,
       showManage: false,
@@ -372,7 +372,7 @@ export function resolveSettingsSubscriptionRowView(args: {
       mode: "free",
       title,
       statusLabel: "Subscription ended",
-      detail: "Your Verified Artist Tools are no longer active.",
+      detail: "Your Artist Tools are no longer active.",
       showUpgrade: true,
       showRestore: true,
       showManage: false,

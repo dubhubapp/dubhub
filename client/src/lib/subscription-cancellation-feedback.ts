@@ -1,5 +1,5 @@
 /**
- * Optional cancellation feedback for Verified Artist Tools.
+ * Optional cancellation feedback for Artist Tools.
  * Apple’s manage-subscriptions page stays immediate. A sheet is armed only
  * after one authoritative refresh proves a voluntary cancellation.
  * This module never writes subscription snapshots.
@@ -47,7 +47,7 @@ export type CancellationFeedbackReason =
 
 export const CANCELLATION_FEEDBACK_COPY = {
   title: "What made you cancel?",
-  support: "Optional — your feedback helps us improve Verified Artist Tools.",
+  support: "Optional — your feedback helps us improve Artist Tools.",
   noteLabel: "Anything else you’d like us to know?",
   send: "Send feedback",
   skip: "Skip",

@@ -253,9 +253,9 @@ export function resolveAnonymousIdentifyErrorCopy(
   switch (code) {
     case "PAID_ARTIST_TOOL_REQUIRED":
       return {
-        title: "Verified Artist Tools required",
+        title: "Artist Tools required",
         description:
-          "Identify anonymously is included with Verified Artist Tools. Artist verification remains free.",
+          "Identify anonymously is included with Artist Tools. Artist verification remains free.",
       };
     case "FEATURE_DISABLED":
       return {

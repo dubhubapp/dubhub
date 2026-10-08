@@ -64,7 +64,7 @@ describe("VAT-ANON-3.1 decline flow Lock", () => {
       commentsSrc.indexOf('data-testid="identify-anonymously-confirm"') + 1200,
     );
     assert.match(identifyBlock, /Lock/);
-    assert.match(identifyBlock, /Identify anonymously — Verified Artist Tools/);
+    assert.match(identifyBlock, /Identify anonymously — Artist Tools/);
     assert.match(identifyBlock, /source:\s*"anonymous_identify"/);
     assert.match(identifyBlock, /requestVerifiedArtistToolsUpgrade/);
     assert.doesNotMatch(identifyBlock, /apiRequest/);
@@ -97,7 +97,7 @@ describe("VAT-ANON-3.1 main Confirm dialog", () => {
     assert.match(dialogSrc, /requestVerifiedArtistToolsUpgrade/);
     assert.match(dialogSrc, /source:\s*"anonymous_identify"/);
     assert.match(dialogSrc, /\{!anonymousIdentifyEntitled \? \([\s\S]{0,80}<Lock/);
-    assert.match(dialogSrc, /Identify anonymously — Verified Artist Tools/);
+    assert.match(dialogSrc, /Identify anonymously — Artist Tools/);
     assert.match(dialogSrc, /\/api\/posts\/\$\{postId\}\/artist-confirm/);
     // Public confirm does not gate on VAT entitlement.
     const confirmMutate = dialogSrc.slice(

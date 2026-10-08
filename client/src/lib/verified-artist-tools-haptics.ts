@@ -1,5 +1,5 @@
 /**
- * Narrow haptic surface for Verified Artist Tools commerce.
+ * Narrow haptic surface for Artist Tools commerce.
  * Wraps shared Capacitor helpers; never throws into purchase flows.
  */
 

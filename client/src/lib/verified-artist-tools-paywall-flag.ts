@@ -1,5 +1,5 @@
 /**
- * Client rollout flag for the production Verified Artist Tools paywall UI.
+ * Client rollout flag for the production Artist Tools paywall UI.
  * Does not bypass server entitlement rules.
  */
 

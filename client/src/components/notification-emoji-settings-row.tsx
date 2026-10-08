@@ -112,7 +112,7 @@ export function NotificationEmojiSettingsRow() {
       };
       if (!res.ok) {
         toast({
-          title: body.code === "PAID_ARTIST_TOOL_REQUIRED" ? "Verified Artist Tools" : "Couldn’t save emoji",
+          title: body.code === "PAID_ARTIST_TOOL_REQUIRED" ? "Artist Tools" : "Couldn’t save emoji",
           description:
             body.message ||
             (res.status === 400 ? "Enter a single emoji." : "Check your connection and try again."),

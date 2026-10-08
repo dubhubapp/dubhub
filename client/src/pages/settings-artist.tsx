@@ -1,6 +1,6 @@
 /**
  * Settings → Artist
- * Verified Artist Tools, notification emoji, and Artist Questions.
+ * Artist Tools, notification emoji, and Artist Questions.
  */
 
 import { useEffect, useState } from "react";

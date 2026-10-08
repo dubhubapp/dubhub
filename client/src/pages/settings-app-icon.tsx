@@ -1,6 +1,6 @@
 /**
  * Settings → App Icon.
- * Artist accounts only. Default stays selectable. Alternates use the existing Verified Artist Tools gate.
+ * Artist accounts only. Default stays selectable. Alternates use the existing Artist Tools gate.
  */
 
 import { useEffect, useState } from "react";

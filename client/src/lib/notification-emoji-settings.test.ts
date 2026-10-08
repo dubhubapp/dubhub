@@ -86,7 +86,7 @@ describe("settings artist information architecture", () => {
     assert.doesNotMatch(artistSettingsSrc, /SETTINGS_SECTION_LABEL_CLASS/);
     assert.match(artistSettingsSrc, /userType !== "artist" \|\| !verifiedArtist/);
     assert.doesNotMatch(vatRowSrc, /Sparkles/);
-    assert.match(vatRowSrc, /Verified Artist Tools|view\.title/);
+    assert.match(vatRowSrc, /Artist Tools|view\.title/);
   });
 
   it("keeps the native bar and stops keyboard resize on this page only", () => {

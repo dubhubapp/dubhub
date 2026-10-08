@@ -1,6 +1,6 @@
 /**
  * App Icon picker rules.
- * Device icon state and Verified Artist Tools access stay separate.
+ * Device icon state and Artist Tools access stay separate.
  */
 
 import type { PaidToolGateMode } from "./paid-tool-gate";
@@ -145,7 +145,7 @@ export function appIconAlternateHint(args: {
   if (args.access === "select" || args.access === "paywall") return null;
   if (args.gate === "loading") return null;
   if (!args.verifiedArtist) {
-    return "Alternate icons are part of Verified Artist Tools for verified artists.";
+    return "Alternate icons are part of Artist Tools for verified artists.";
   }
   if (
     args.gate === "loading" ||
@@ -155,7 +155,7 @@ export function appIconAlternateHint(args: {
     args.state === "stale" ||
     args.state === "unknown"
   ) {
-    return "Alternate icons can’t be changed until Verified Artist Tools status is confirmed.";
+    return "Alternate icons can’t be changed until Artist Tools status is confirmed.";
   }
   return null;
 }

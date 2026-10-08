@@ -107,6 +107,8 @@ describe("parsePaywallOfferings numeric prices", () => {
     if (!result.ok) return;
     assert.equal(result.monthly?.price, 7.99);
     assert.equal(result.annual?.price, 69.99);
+    assert.equal(result.monthly?.productIdentifier, "verified_artist_tools_monthly");
+    assert.equal(result.annual?.productIdentifier, "verified_artist_tools_annual");
     assert.equal(result.monthly?.priceString, "$0.01");
     assert.equal(result.annual?.priceString, "£999.00");
     assert.equal(

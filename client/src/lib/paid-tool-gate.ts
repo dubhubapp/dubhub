@@ -41,8 +41,8 @@ export function resolvePaidToolGateMode(args: {
 export const RELEASE_ALERTS_AUDIENCE_LOCKED_COPY = {
   title: "Release Alerts Audience",
   body:
-    "The total number of listeners waiting is included with Verified Artist Tools.",
-  ctaLabel: "Unlock with Verified Artist Tools",
+    "The total number of listeners waiting is included with Artist Tools.",
+  ctaLabel: "Unlock with Artist Tools",
   ctaHint: "Purchase options coming soon",
 } as const;
 

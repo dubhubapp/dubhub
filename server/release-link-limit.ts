@@ -106,7 +106,7 @@ export function assertReleaseLinkTypeCompatible(args: {
   throw new InvalidReleaseLinkTypeError();
 }
 
-/** True when the proposed purpose requires Verified Artist Tools (pre-release). */
+/** True when the proposed purpose requires Artist Tools (pre-release). */
 export function isPaidOnlyReleaseLink(
   _platform: string,
   linkType: string | null | undefined,

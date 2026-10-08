@@ -177,7 +177,7 @@ describe("artist-id create-release handoff wiring", () => {
       CREATE_RELEASE_HANDOFF_BODY,
       "Set up a release for this track and we'll attach this post for you. Add the release date and streaming links so people who've saved this post can listen when it drops — or straight away if it's already out.",
     );
-    assert.doesNotMatch(CREATE_RELEASE_HANDOFF_BODY, /Verified Artist Tools|VAT|unlimited/i);
+    assert.doesNotMatch(CREATE_RELEASE_HANDOFF_BODY, /Artist Tools|VAT|unlimited/i);
     assert.match(CREATE_RELEASE_HANDOFF_BODY, /already out/);
     assert.equal(CREATE_RELEASE_HANDOFF_CONFIRM, "Create new release");
     assert.match(dialogSrc, /resolvePostConfirmReleaseHandoff/);
@@ -203,7 +203,7 @@ describe("artist-id create-release handoff wiring", () => {
       ATTACH_TO_RELEASE_HANDOFF_BODY,
       /Attach this post to an upcoming release, or create a new release/,
     );
-    assert.doesNotMatch(ATTACH_TO_RELEASE_HANDOFF_BODY, /Verified Artist Tools|already out/i);
+    assert.doesNotMatch(ATTACH_TO_RELEASE_HANDOFF_BODY, /Artist Tools|already out/i);
   });
 
   it("ENTITLEMENT: Create new uses creation-capacity + release_limit VAT; attach still independent", () => {

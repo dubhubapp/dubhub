@@ -287,8 +287,11 @@ describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
 
   it("locked copy hides the aggregate without selling analytics or unlocking Alerts", () => {
     assert.equal(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.title, "Release Alerts Audience");
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /Verified Artist Tools/i);
-    assert.match(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Verified Artist Tools/i);
+    assert.equal(
+      RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body,
+      "The total number of listeners waiting is included with Artist Tools.",
+    );
+    assert.equal(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, "Unlock with Artist Tools");
     assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.body, /insight|analytics|credibility/i);
     assert.doesNotMatch(RELEASE_ALERTS_AUDIENCE_LOCKED_COPY.ctaLabel, /Unlock Release Alerts/i);
   });
@@ -307,7 +310,7 @@ describe("ARTIST-SUB-INTRO-1 audience count remains paid", () => {
     assert.match(gateRowSrc, /requestVerifiedArtistToolsUpgrade/);
     assert.match(gateRowSrc, /enabled:\s*queryEnabled/);
     assert.match(gateRowSrc, /mode === "available"/);
-    assert.doesNotMatch(gateRowSrc, /insight is part of Verified Artist Tools/i);
+    assert.doesNotMatch(gateRowSrc, /insight is part of Artist Tools/i);
   });
 
   it("profile only mounts audience row when verifiedArtist", () => {
@@ -326,6 +329,7 @@ describe("ARTIST-SUB-INTRO-1 audience count remains paid", () => {
     assert.match(body, /Verified artist access only/);
     assert.match(body, /canArtistUsePaidTools/);
     assert.match(body, /PAID_ARTIST_TOOL_REQUIRED/);
+    assert.match(body, /message: "Artist Tools required"/);
     assert.match(body, /countArtistReleaseAlertsForArtist/);
   });
 });

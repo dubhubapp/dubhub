@@ -1,5 +1,5 @@
 /**
- * Central entry for Verified Artist Tools upgrade prompts.
+ * Central entry for Artist Tools upgrade prompts.
  * When the paywall flag is on and a provider is registered, opens the paywall.
  * Otherwise keeps the established placeholder toast.
  */
@@ -43,7 +43,7 @@ export function registerVerifiedArtistToolsPaywallOpener(
 }
 
 /**
- * Opens the Verified Artist Tools upgrade flow for the given contextual source.
+ * Opens the Artist Tools upgrade flow for the given contextual source.
  */
 export function requestVerifiedArtistToolsUpgrade(
   toast: ToastFn,

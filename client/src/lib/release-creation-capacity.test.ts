@@ -99,7 +99,7 @@ describe("resolveReleaseCapacityCardCopy", () => {
       canCreate: true,
     });
     assert.equal(copy.title, "Unlimited releases");
-    assert.equal(copy.body, "You're subscribed to Verified Artist Tools.");
+    assert.equal(copy.body, "You're subscribed to Artist Tools.");
     assert.equal(copy.showUpgrade, false);
   });
 });

@@ -60,7 +60,7 @@ export function resolveFreeReleaseAllowanceSuccessCopy(
     animateFrom: 1,
     progressSuffix: "of 2 free releases used",
     supporting:
-      "You've used your free release allowance. Verified Artist Tools gives you unlimited releases.",
+      "You've used your free release allowance. Artist Tools gives you unlimited releases.",
     showViewArtistTools: true,
   };
 }

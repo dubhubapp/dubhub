@@ -70,6 +70,7 @@ describe("updateNotificationEmojiForUser", () => {
     if (!result.ok) {
       assert.equal(result.status, 403);
       assert.equal(result.code, "PAID_ARTIST_TOOL_REQUIRED");
+      assert.equal(result.message, "Artist Tools required");
     }
     assert.equal(writes, 0);
   });

@@ -1,5 +1,5 @@
 /**
- * Optional Verified Artist Tools cancellation feedback body.
+ * Optional Artist Tools cancellation feedback body.
  * Stored through the existing feedback_submissions insert. Does not read or
  * write subscription snapshots.
  */

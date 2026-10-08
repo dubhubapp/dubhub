@@ -224,7 +224,7 @@ export async function createAnonymousArtistIdentification(
   if (!entitled || !paidTools) {
     throw new AnonymousClaimError(
       "PAID_ARTIST_TOOL_REQUIRED",
-      "Verified Artist Tools required to identify tracks anonymously.",
+      "Artist Tools required to identify tracks anonymously.",
       403,
     );
   }

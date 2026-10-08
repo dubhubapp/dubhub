@@ -2,7 +2,7 @@ import { Disc3, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Presentation mark for Verified Artist Tools: gold sleeve, Disc3 vinyl peeking from the right,
+ * Presentation mark for Artist Tools: gold sleeve, Disc3 vinyl peeking from the right,
  * white wrench on the cover. Not a paywall CTA. Not used for verification or credibility.
  */
 export function ArtistToolsMark({
