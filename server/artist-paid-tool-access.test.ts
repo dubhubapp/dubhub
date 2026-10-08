@@ -55,10 +55,19 @@ function snapshotFixture(
 }
 
 describe("artist-paid-tool-access environment selection", () => {
-  it("maps local → sandbox and testflight/production → production", () => {
-    assert.equal(subscriptionEnvironmentForServerBuildChannel("local").environment, "sandbox");
-    assert.equal(subscriptionEnvironmentForServerBuildChannel("testflight").environment, "production");
-    assert.equal(subscriptionEnvironmentForServerBuildChannel("production").environment, "production");
+  it("maps local and testflight → sandbox, production → production", () => {
+    assert.deepEqual(subscriptionEnvironmentForServerBuildChannel("local"), {
+      environment: "sandbox",
+      reason: "local_sandbox",
+    });
+    assert.deepEqual(subscriptionEnvironmentForServerBuildChannel("testflight"), {
+      environment: "sandbox",
+      reason: "testflight_sandbox",
+    });
+    assert.deepEqual(subscriptionEnvironmentForServerBuildChannel("production"), {
+      environment: "production",
+      reason: "production_production",
+    });
     assert.equal(parseServerAppBuildChannel("LOCAL"), "local");
   });
 
@@ -69,6 +78,16 @@ describe("artist-paid-tool-access environment selection", () => {
         VITE_APP_BUILD_CHANNEL: "local",
       } as NodeJS.ProcessEnv).environment,
       "production",
+    );
+  });
+
+  it("testflight channel selects sandbox even when NODE_ENV is production", () => {
+    assert.deepEqual(
+      resolveServerSubscriptionEnvironment({
+        APP_BUILD_CHANNEL: "testflight",
+        NODE_ENV: "production",
+      } as NodeJS.ProcessEnv),
+      { environment: "sandbox", reason: "testflight_sandbox" },
     );
   });
 });
@@ -169,7 +188,59 @@ describe("isPaidToolAccessEnabledForSnapshot", () => {
   });
 });
 
+function appleSandboxPaidProductionEmpty() {
+  return {
+    sandbox: snapshotFixture({
+      providerEnvironment: "sandbox",
+      store: "app_store",
+    }),
+    production: snapshotFixture({
+      providerEnvironment: "production",
+      isEntitlementActive: false,
+      expiresAt: new Date("2026-07-01T12:00:00.000Z"),
+      productIdentifier: null,
+      store: null,
+    }),
+  };
+}
+
 describe("canArtistUsePaidTools", () => {
+  it("testflight grants paid access from the sandbox snapshot only", async () => {
+    const result = await canArtistUsePaidTools(ARTIST_ID, {
+      getSnapshotsForUser: async () => appleSandboxPaidProductionEmpty(),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "testflight",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(result, true);
+  });
+
+  it("production never grants paid access from a sandbox entitlement", async () => {
+    const result = await canArtistUsePaidTools(ARTIST_ID, {
+      getSnapshotsForUser: async () => appleSandboxPaidProductionEmpty(),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "production",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(result, false);
+  });
+
+  it("local grants paid access from the sandbox snapshot", async () => {
+    const result = await canArtistUsePaidTools(ARTIST_ID, {
+      getSnapshotsForUser: async () => appleSandboxPaidProductionEmpty(),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "local",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(result, true);
+  });
+
   it("uses selected environment only", async () => {
     const result = await canArtistUsePaidTools(ARTIST_ID, {
       getSnapshotsForUser: async () => ({

@@ -36,7 +36,7 @@ export function parseServerAppBuildChannel(
 
 /**
  * Mirror client subscriptionEnvironmentForBuildChannel for server-side evaluation.
- * local → sandbox; testflight/production → production.
+ * local and testflight → sandbox; production → production.
  */
 export function subscriptionEnvironmentForServerBuildChannel(
   buildChannel: AppBuildChannel | null,
@@ -48,7 +48,7 @@ export function subscriptionEnvironmentForServerBuildChannel(
     case "local":
       return { environment: "sandbox", reason: "local_sandbox" };
     case "testflight":
-      return { environment: "production", reason: "testflight_production" };
+      return { environment: "sandbox", reason: "testflight_sandbox" };
     case "production":
       return { environment: "production", reason: "production_production" };
     default: {

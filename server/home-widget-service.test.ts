@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AuthenticatedRequest } from "./authMiddleware";
 import {
+  canArtistUsePaidTools,
+  resolveServerSubscriptionEnvironment,
+} from "./artist-paid-tool-access";
+import type { ArtistSubscriptionSnapshot } from "./subscription-status-domain";
+import {
   buildHomeWidgetPayload,
   type HomeWidgetServiceStorage,
 } from "./home-widget-service";
@@ -180,6 +185,87 @@ describe("home widget service resolution", () => {
     assert.equal(payload.mode, "artist");
     assert.equal(payload.release?.id, artistRelease.id);
     assert.equal(payload.eligibility, "eligible_artist_release");
+  });
+
+  it("artist auto-mode follows the testflight sandbox snapshot and ignores it in production", async () => {
+    const artistRelease = release({
+      id: "00000000-0000-4000-8000-000000000010",
+      artistId: USER_ID,
+    });
+    const sandboxPaid: ArtistSubscriptionSnapshot = {
+      id: "00000000-0000-4000-8000-0000000000aa",
+      userId: USER_ID,
+      provider: "revenuecat",
+      providerEnvironment: "sandbox",
+      providerAppUserId: USER_ID,
+      entitlementIdentifier: "verified_artist_tools",
+      productIdentifier: "verified_artist_tools_monthly",
+      store: "app_store",
+      ownershipType: null,
+      storeSubscriptionIdentifier: "txn_sandbox",
+      isEntitlementActive: true,
+      willRenew: true,
+      hasBillingIssue: false,
+      isInGracePeriod: false,
+      isRefunded: false,
+      isRevoked: false,
+      unsubscribeDetected: false,
+      originalPurchasedAt: new Date("2026-07-01T12:00:00.000Z"),
+      latestPurchasedAt: new Date("2026-08-01T12:00:00.000Z"),
+      expiresAt: new Date("2026-09-01T12:00:00.000Z"),
+      providerEventAt: NOW,
+      lastWebhookAt: null,
+      lastRestReconciledAt: null,
+      lastSuccessfulVerificationAt: NOW,
+      staleAfterAt: new Date("2026-08-06T12:00:00.000Z"),
+      rawProviderPayload: null,
+      overrideType: null,
+      overrideStartsAt: null,
+      overrideEndsAt: null,
+      overrideReason: null,
+      overrideActor: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const paidForChannel = (channel: "testflight" | "production") => (artistId: string) =>
+      canArtistUsePaidTools(artistId, {
+        getSnapshotsForUser: async () => ({ sandbox: sandboxPaid, production: null }),
+        resolveEnvironment: () =>
+          resolveServerSubscriptionEnvironment({
+            APP_BUILD_CHANNEL: channel,
+            NODE_ENV: "production",
+          } as NodeJS.ProcessEnv),
+        now: () => NOW,
+      });
+
+    const testflightPayload = await buildHomeWidgetPayload({
+      profile: profile({
+        account_type: "artist",
+        verified_artist: true,
+        username: "tf-artist",
+      }),
+      deps: {
+        ...presentationDeps,
+        storage: storageFixture({ artist: [artistRelease] }),
+        canUsePaidTools: paidForChannel("testflight"),
+      },
+    });
+    assert.equal(testflightPayload.mode, "artist");
+    assert.equal(testflightPayload.eligibility, "eligible_artist_release");
+
+    const productionPayload = await buildHomeWidgetPayload({
+      profile: profile({
+        account_type: "artist",
+        verified_artist: true,
+      }),
+      deps: {
+        ...presentationDeps,
+        storage: storageFixture({ artist: [artistRelease] }),
+        canUsePaidTools: paidForChannel("production"),
+      },
+    });
+    assert.equal(productionPayload.mode, "unavailable");
+    assert.equal(productionPayload.eligibility, "artist_subscription_unavailable");
   });
 
   it("falls back to a valid saved release when artist access fails closed", async () => {

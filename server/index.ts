@@ -14,6 +14,7 @@ import { subscriptionStatusRepository } from "./subscription-status-repository";
 import { runLeaderboardMonthFreezeEnsureSafe } from "./leaderboard-monthly-freeze";
 import { formatApiAccessLogResponseSuffix } from "./api-access-log";
 import { runPendingDemographicsCleanupJob } from "./pending-demographics-route";
+import { registerBackgroundJobs } from "./background-jobs";
 
 const app = express();
 
@@ -216,45 +217,56 @@ async function runFutureReleaseSuspensionReconcileBatch(): Promise<void> {
   // No London 09:00 / 07:00 global threshold.
   const isDev = process.env.NODE_ENV !== "production";
   const cronExpr = isDev ? "* * * * *" : "*/5 * * * *"; // Dev: every 1 min; Prod: every 5 min
-  cron.schedule(cronExpr, async () => {
-    try {
-      if (isDev) log("[Cron] Release-day job running");
-      const result = await storage.notifyReleaseDayLikers();
-      if (result.count > 0) {
-        log(`[Cron] Release-day notifications sent: ${result.count} for release(s) ${result.releaseIds.join(", ")}`);
-      }
-      if (isDev && result.releaseIds.length === 0) {
-        log("[Cron] Release-day job: 0 deliveries (Exact release_at / Midnight local TZ)");
-      }
-    } catch (err) {
-      console.error("[Cron] Release-day notifications error:", err);
-    }
-  });
-
   // Future-release subscription suspension batch reconcile: hourly in prod, every 15 min in dev.
   const futureReleaseSuspensionCronExpr = isDev ? "*/15 * * * *" : "0 * * * *";
-  cron.schedule(futureReleaseSuspensionCronExpr, () => {
-    void runFutureReleaseSuspensionReconcileBatch();
-  });
-
-  // Completed-month leaderboard freeze: hourly (Railway may miss exact midnight).
-  // Startup reconcile below covers downtime around month boundary.
-  cron.schedule("0 * * * *", () => {
-    void runLeaderboardMonthFreezeEnsureSafe({
-      logPrefix: "[Cron][LeaderboardMonthlyFreeze]",
-    });
-  });
-
   // Abandoned pending DOB cleanup (48h expires_at). Railway node-cron — pg_cron not required.
   const pendingDemographicsCleanupExpr = isDev ? "*/15 * * * *" : "0 * * * *";
-  cron.schedule(pendingDemographicsCleanupExpr, () => {
-    void runPendingDemographicsCleanupJob();
-  });
 
-  // Non-blocking startup ensure — never delays listen on freeze failure.
-  void runLeaderboardMonthFreezeEnsureSafe({
-    logPrefix: "[startup][LeaderboardMonthlyFreeze]",
+  const backgroundJobsEnabled = registerBackgroundJobs({
+    scheduleReleaseDay: () => {
+      cron.schedule(cronExpr, async () => {
+        try {
+          if (isDev) log("[Cron] Release-day job running");
+          const result = await storage.notifyReleaseDayLikers();
+          if (result.count > 0) {
+            log(`[Cron] Release-day notifications sent: ${result.count} for release(s) ${result.releaseIds.join(", ")}`);
+          }
+          if (isDev && result.releaseIds.length === 0) {
+            log("[Cron] Release-day job: 0 deliveries (Exact release_at / Midnight local TZ)");
+          }
+        } catch (err) {
+          console.error("[Cron] Release-day notifications error:", err);
+        }
+      });
+    },
+    scheduleFutureReleaseSuspension: () => {
+      cron.schedule(futureReleaseSuspensionCronExpr, () => {
+        void runFutureReleaseSuspensionReconcileBatch();
+      });
+    },
+    scheduleLeaderboardFreeze: () => {
+      // Hourly (Railway may miss exact midnight). Startup call covers downtime.
+      cron.schedule("0 * * * *", () => {
+        void runLeaderboardMonthFreezeEnsureSafe({
+          logPrefix: "[Cron][LeaderboardMonthlyFreeze]",
+        });
+      });
+    },
+    schedulePendingDemographicsCleanup: () => {
+      cron.schedule(pendingDemographicsCleanupExpr, () => {
+        void runPendingDemographicsCleanupJob();
+      });
+    },
+    runStartupLeaderboardFreeze: () => {
+      // Non-blocking — never delays listen on freeze failure.
+      void runLeaderboardMonthFreezeEnsureSafe({
+        logPrefix: "[startup][LeaderboardMonthlyFreeze]",
+      });
+    },
   });
+  if (!backgroundJobsEnabled) {
+    log("[Cron] Background jobs disabled (BACKGROUND_JOBS_ENABLED=false)");
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

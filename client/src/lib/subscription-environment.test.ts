@@ -59,15 +59,15 @@ describe("subscriptionEnvironmentForBuildChannel", () => {
     });
   });
 
-  it("maps testflight and production → production", () => {
-    assert.equal(
-      subscriptionEnvironmentForBuildChannel("testflight").environment,
-      "production",
-    );
-    assert.equal(
-      subscriptionEnvironmentForBuildChannel("production").environment,
-      "production",
-    );
+  it("maps testflight → sandbox and production → production", () => {
+    assert.deepEqual(subscriptionEnvironmentForBuildChannel("testflight"), {
+      environment: "sandbox",
+      reason: "testflight_sandbox",
+    });
+    assert.deepEqual(subscriptionEnvironmentForBuildChannel("production"), {
+      environment: "production",
+      reason: "production_production",
+    });
   });
 
   it("fails closed for missing channel", () => {
@@ -222,17 +222,31 @@ describe("selectAuthoritativeSubscriptionEnvironment", () => {
     assert.equal(selected.hasPaidToolAccess, false);
   });
 
-  it("testflight uses production even when sandbox is active", () => {
+  it("testflight active sandbox entitlement grants paid access", () => {
     const selected = selectAuthoritativeSubscriptionEnvironment(
       statusResponse({
-        sandbox: { state: "active", hasPaidToolAccess: true },
+        sandbox: { state: "active", hasPaidToolAccess: true, irreversibleActionsAllowed: true },
         production: { state: "never_subscribed", hasPaidToolAccess: false },
       }),
       "testflight",
     );
+    assert.equal(selected.ok, true);
+    assert.equal(selected.selectedEnvironment, "sandbox");
+    assert.equal(selected.hasPaidToolAccess, true);
+    assert.equal(selected.selectionReason, "testflight_sandbox");
+  });
+
+  it("production ignores an active sandbox entitlement", () => {
+    const selected = selectAuthoritativeSubscriptionEnvironment(
+      statusResponse({
+        sandbox: { state: "active", hasPaidToolAccess: true, irreversibleActionsAllowed: true },
+        production: { state: "never_subscribed", hasPaidToolAccess: false },
+      }),
+      "production",
+    );
     assert.equal(selected.selectedEnvironment, "production");
     assert.equal(selected.hasPaidToolAccess, false);
-    assert.equal(selected.selectionReason, "testflight_production");
+    assert.equal(selected.selectionReason, "production_production");
   });
 
   it("unknown build channel → fail closed", () => {

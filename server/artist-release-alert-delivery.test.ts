@@ -54,9 +54,9 @@ function snapshotFixture(
 }
 
 describe("server subscription environment selection", () => {
-  it("maps local → sandbox and testflight/production → production", () => {
+  it("maps local and testflight → sandbox, production → production", () => {
     assert.equal(subscriptionEnvironmentForServerBuildChannel("local").environment, "sandbox");
-    assert.equal(subscriptionEnvironmentForServerBuildChannel("testflight").environment, "production");
+    assert.equal(subscriptionEnvironmentForServerBuildChannel("testflight").environment, "sandbox");
     assert.equal(subscriptionEnvironmentForServerBuildChannel("production").environment, "production");
     assert.equal(subscriptionEnvironmentForServerBuildChannel(null).environment, null);
   });
@@ -198,6 +198,38 @@ describe("isReleaseAlertDeliveryEnabledForSnapshot", () => {
 });
 
 describe("canArtistDeliverReleaseAlerts", () => {
+  it("testflight channel delivers from the sandbox snapshot", async () => {
+    const result = await canArtistDeliverReleaseAlerts(ARTIST_ID, {
+      getSnapshotsForUser: async () => ({
+        sandbox: snapshotFixture({ providerEnvironment: "sandbox", store: "app_store" }),
+        production: null,
+      }),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "testflight",
+          NODE_ENV: "production",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(result, true);
+  });
+
+  it("production channel does not deliver from a sandbox-only entitlement", async () => {
+    const result = await canArtistDeliverReleaseAlerts(ARTIST_ID, {
+      getSnapshotsForUser: async () => ({
+        sandbox: snapshotFixture({ providerEnvironment: "sandbox", store: "app_store" }),
+        production: null,
+      }),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "production",
+          NODE_ENV: "production",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(result, false);
+  });
+
   it("uses selected environment only (sandbox cannot enable production delivery)", async () => {
     const sandboxActive = snapshotFixture({ providerEnvironment: "sandbox" });
     const result = await canArtistDeliverReleaseAlerts(ARTIST_ID, {

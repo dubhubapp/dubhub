@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { ArtistSubscriptionSnapshot } from "./subscription-status-domain";
+import { resolveServerSubscriptionEnvironment } from "./artist-paid-tool-access";
 import { getReleaseCreationCapacity } from "./release-creation-capacity";
 import { FREE_RELEASE_LIMIT } from "./release-creation-limit";
 
@@ -115,6 +116,43 @@ describe("getReleaseCreationCapacity", () => {
     assert.equal(view.unlimited, true);
     assert.equal(view.canCreate, true);
     assert.equal(view.used, 5);
+  });
+
+  it("testflight sandbox entitlement lifts the free release limit", async () => {
+    const view = await getReleaseCreationCapacity(ARTIST, {
+      pool: fakePool(5),
+      getSnapshotsForUser: async () => ({
+        sandbox: paidSnapshot(),
+        production: null,
+      }),
+      now: () => NOW,
+      enforcementEnabled: true,
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "testflight",
+          NODE_ENV: "production",
+        } as NodeJS.ProcessEnv),
+    });
+    assert.equal(view.unlimited, true);
+    assert.equal(view.canCreate, true);
+  });
+
+  it("production ignores a sandbox entitlement at the free release limit", async () => {
+    const view = await getReleaseCreationCapacity(ARTIST, {
+      pool: fakePool(2),
+      getSnapshotsForUser: async () => ({
+        sandbox: paidSnapshot(),
+        production: null,
+      }),
+      now: () => NOW,
+      enforcementEnabled: true,
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "production",
+        } as NodeJS.ProcessEnv),
+    });
+    assert.equal(view.unlimited, false);
+    assert.equal(view.canCreate, false);
   });
 
   it("enforcement disabled → canCreate true even at limit", async () => {

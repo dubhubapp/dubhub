@@ -36,9 +36,8 @@ const FAIL_CLOSED_ACCESS = {
  * Explicit channel → provider environment mapping.
  * Repository channels are only: local | testflight | production.
  * There is no separate "development" channel; local covers Test Store / LAN builds.
- * TestFlight uses the testflight channel and maps to production snapshots
- * (Apple sandbox purchases still land in server sandbox, but authoritative
- * gating for TestFlight/App Store builds is production).
+ * local and testflight read the sandbox snapshot. production reads the production snapshot.
+ * Apple TestFlight purchases are sandbox. Production App Store purchases stay on the production snapshot.
  */
 export function subscriptionEnvironmentForBuildChannel(
   buildChannel: AppBuildChannel | null,
@@ -57,8 +56,8 @@ export function subscriptionEnvironmentForBuildChannel(
       };
     case "testflight":
       return {
-        environment: "production",
-        reason: "testflight_production",
+        environment: "sandbox",
+        reason: "testflight_sandbox",
       };
     case "production":
       return {

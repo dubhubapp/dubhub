@@ -12,6 +12,7 @@ import {
   isAnonymousArtistIdentificationEnabled,
   canArtistCreateAnonymousIdentification,
 } from "./artist-private-identification-policy";
+import { resolveServerSubscriptionEnvironment } from "./artist-paid-tool-access";
 import type { ArtistSubscriptionSnapshot } from "./subscription-status-domain";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -168,6 +169,37 @@ describe("VAT-ANON-1 entitlement helper", () => {
       now: () => now,
     });
     assert.equal(allowed, true);
+  });
+
+  it("testflight sandbox entitlement allows anonymous identification", async () => {
+    const allowed = await canArtistCreateAnonymousIdentification(ARTIST_ID, {
+      getSnapshotsForUser: async () => ({
+        sandbox: snapshotFixture({ providerEnvironment: "sandbox", store: "app_store" }),
+        production: null,
+      }),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "testflight",
+          NODE_ENV: "production",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(allowed, true);
+  });
+
+  it("production ignores a sandbox entitlement for anonymous identification", async () => {
+    const allowed = await canArtistCreateAnonymousIdentification(ARTIST_ID, {
+      getSnapshotsForUser: async () => ({
+        sandbox: snapshotFixture({ providerEnvironment: "sandbox", store: "app_store" }),
+        production: null,
+      }),
+      resolveEnvironment: () =>
+        resolveServerSubscriptionEnvironment({
+          APP_BUILD_CHANNEL: "production",
+        } as NodeJS.ProcessEnv),
+      now: () => now,
+    });
+    assert.equal(allowed, false);
   });
 
   it("fails closed on stale snapshot", async () => {
