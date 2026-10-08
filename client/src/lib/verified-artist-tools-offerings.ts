@@ -16,6 +16,8 @@ export type PaywallPackageOption = {
   kind: PaywallPackageKind;
   packageIdentifier: typeof RC_PACKAGE_MONTHLY | typeof RC_PACKAGE_ANNUAL;
   productIdentifier: string | null;
+  /** StoreKit/RevenueCat numeric price in the current storefront currency. */
+  price: number | null;
   priceString: string;
   subscriptionPeriod: string | null;
   periodLabel: string;
@@ -41,6 +43,8 @@ export type PaywallOfferingsResult =
 
 type ProductLike = {
   identifier?: string;
+  /** Numeric storefront price. Never derived from priceString. */
+  price?: number | null;
   priceString?: string;
   subscriptionPeriod?: string | null;
 };
@@ -78,6 +82,38 @@ function readPriceString(pkg: PackageLike | null | undefined): string | null {
   const price = pkg?.product?.priceString;
   if (typeof price === "string" && price.trim().length > 0) return price.trim();
   return null;
+}
+
+/** Numeric StoreKit/RevenueCat price only. Formatted currency strings are ignored. */
+function readNumericPrice(pkg: PackageLike | null | undefined): number | null {
+  const price = pkg?.product?.price;
+  if (typeof price !== "number" || !Number.isFinite(price)) return null;
+  return price;
+}
+
+/**
+ * Whole-number percent saved by annual versus 12 monthly payments.
+ * (monthly × 12 − annual) / (monthly × 12), rounded to the nearest integer.
+ * Returns null when a price is missing, invalid, zero, or annual is not cheaper.
+ */
+export function resolveAnnualSavingPercent(args: {
+  monthlyPrice: number | null | undefined;
+  annualPrice: number | null | undefined;
+}): number | null {
+  const monthly = args.monthlyPrice;
+  const annual = args.annualPrice;
+  if (typeof monthly !== "number" || typeof annual !== "number") return null;
+  if (!Number.isFinite(monthly) || !Number.isFinite(annual)) return null;
+  if (monthly <= 0 || annual <= 0) return null;
+  const twelveMonths = monthly * 12;
+  if (!(annual < twelveMonths)) return null;
+  const percent = Math.round(((twelveMonths - annual) / twelveMonths) * 100);
+  if (!Number.isFinite(percent) || percent < 1) return null;
+  return percent;
+}
+
+export function formatAnnualSavingLabel(percent: number): string {
+  return `Save ${percent}%`;
 }
 
 function readProductId(pkg: PackageLike | null | undefined): string | null {
@@ -136,6 +172,7 @@ function toOption(
     kind,
     packageIdentifier,
     productIdentifier: readProductId(pkg),
+    price: readNumericPrice(pkg),
     priceString,
     subscriptionPeriod,
     periodLabel: subscriptionPeriodLabel(subscriptionPeriod),

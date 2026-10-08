@@ -60,6 +60,17 @@ describe("Links UX — LIST / ADD / EDIT", () => {
     );
   });
 
+  it("LIST has no empty-state sentence and a left-aligned Add link row", () => {
+    assert.doesNotMatch(linksSrc, /No links yet/);
+    const addIdx = linksSrc.indexOf('data-testid="release-links-enter-add"');
+    assert.ok(addIdx > 0);
+    const addControl = linksSrc.slice(addIdx, addIdx + 420);
+    assert.match(addControl, /justify-start/);
+    assert.match(addControl, /text-left/);
+    assert.match(addControl, /min-h-11/);
+    assert.doesNotMatch(addControl, /justify-center/);
+  });
+
   it("ADD Back and successful Add return LIST; Done not under form", () => {
     assert.match(linksSrc, /release-links-sheet-cancel-add/);
     assert.match(linksSrc, /resetToList/);

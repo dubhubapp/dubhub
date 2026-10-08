@@ -472,7 +472,7 @@ export function ReleaseLinksSheet({
         headerStart={headerStart}
       >
         {view === "list" && panel === "form" ? (
-          <div className="space-y-4 min-w-0 w-full max-w-full pt-2 pb-8">
+          <div className="min-w-0 w-full max-w-full space-y-1 pt-1 pb-6">
             {draftLinks.length > 0 ? (
               <DndContext
                 sensors={sensors}
@@ -505,11 +505,7 @@ export function ReleaseLinksSheet({
                   </ul>
                 </SortableContext>
               </DndContext>
-            ) : (
-              <p className="text-sm text-muted-foreground py-2">
-                No links yet. Add streaming and music links below.
-              </p>
-            )}
+            ) : null}
 
             <button
               type="button"
@@ -517,12 +513,12 @@ export function ReleaseLinksSheet({
               data-testid="release-links-enter-add"
               onClick={beginAdd}
               className={cn(
-                "ios-press flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium text-[#0a83ff]",
+                "ios-press inline-flex min-h-11 w-full items-center justify-start gap-1.5 rounded-md py-1 text-left text-sm font-medium text-[#0a83ff]",
                 SHEET_CONTROL_FOCUS,
                 !canAddDraftLink && "cursor-not-allowed opacity-50",
               )}
             >
-              <Plus className="h-4 w-4" aria-hidden />
+              <Plus className="h-4 w-4 shrink-0" aria-hidden />
               Add link
             </button>
 

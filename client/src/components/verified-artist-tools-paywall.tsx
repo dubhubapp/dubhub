@@ -39,7 +39,9 @@ import {
   type VerifiedArtistToolsPaywallSource,
 } from "@/lib/verified-artist-tools-paywall-copy";
 import {
+  formatAnnualSavingLabel,
   parsePaywallOfferings,
+  resolveAnnualSavingPercent,
   type PaywallPackageOption,
 } from "@/lib/verified-artist-tools-offerings";
 import { purchaseVerifiedArtistToolsPackage } from "@/lib/verified-artist-tools-purchase";
@@ -794,6 +796,18 @@ export function VerifiedArtistToolsPaywall({
                     pkg.kind === "annual"
                       ? PAYWALL_UI_COPY.packageAnnualLabel
                       : PAYWALL_UI_COPY.packageMonthlyLabel;
+                  const annualSavingPercent =
+                    pkg.kind === "annual"
+                      ? resolveAnnualSavingPercent({
+                          monthlyPrice: packages.find((option) => option.kind === "monthly")
+                            ?.price,
+                          annualPrice: pkg.price,
+                        })
+                      : null;
+                  const annualSavingLabel =
+                    annualSavingPercent == null
+                      ? null
+                      : formatAnnualSavingLabel(annualSavingPercent);
                   return (
                     <button
                       key={pkg.packageIdentifier}
@@ -815,7 +829,19 @@ export function VerifiedArtistToolsPaywall({
                       data-testid={`paywall-package-${pkg.kind}`}
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">{name}</p>
+                        {annualSavingLabel ? (
+                          <p className="flex min-w-0 items-baseline gap-1.5">
+                            <span className="text-sm font-medium text-foreground">{name}</span>
+                            <span
+                              className="text-[11px] font-medium text-[#0a83ff]"
+                              data-testid="paywall-annual-saving"
+                            >
+                              {annualSavingLabel}
+                            </span>
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium text-foreground">{name}</p>
+                        )}
                         <p className="text-xs text-muted-foreground">{pkg.periodLabel}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
