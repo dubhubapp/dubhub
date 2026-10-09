@@ -18,6 +18,22 @@ export function nativeNavSheetCoversBar(phase: NativeNavSheetPhase): boolean {
   return phase === "open" || phase === "closing";
 }
 
+/**
+ * Vaul schedules `onAnimationEnd` only from its internal `setIsOpen` (500ms).
+ * A parent that sets `open` false directly never gets that callback, so phase
+ * stays `"closing"` and the native-nav cover is never released.
+ * Failsafe runs just after that timer.
+ */
+export const NATIVE_NAV_SHEET_CLOSE_FALLBACK_MS = 520;
+
+export function nativeNavSheetPhaseAfterUnfiredClose(
+  open: boolean,
+  phase: NativeNavSheetPhase,
+): NativeNavSheetPhase {
+  if (open || phase === "closed") return phase;
+  return "closed";
+}
+
 export function nativeNavShouldKeepSheetHostMounted(phase: NativeNavSheetPhase): boolean {
   return phase !== "closed";
 }

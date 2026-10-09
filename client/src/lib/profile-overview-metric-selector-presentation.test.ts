@@ -49,8 +49,15 @@ describe("profile-overview-metric-selector-presentation", () => {
   });
 
   it("active platter is ice glass without solid blue CTA fill or underline", () => {
-    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /from-white\/\[0\.16\]/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /bg-white/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /text-\[#101828\]/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /from-white\/\[0\.11\]/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /to-white\/\[0\.04\]/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /rgba\(255,255,255,0\.18\)/);
+    assert.doesNotMatch(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /from-white\/\[0\.16\]/);
+    assert.doesNotMatch(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /rgba\(255,255,255,0\.28\)/);
     assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /text-white/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:font-semibold/);
     assert.doesNotMatch(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /#0a83ff|bg-\[#0a83ff\]|dubhub-app-segment-active/);
     assert.doesNotMatch(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /after:/);
     assert.doesNotMatch(metricPresentationSrc, /after:bg-\[#0a83ff\]/);

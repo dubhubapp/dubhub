@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   RC_ENTITLEMENT_VERIFIED_ARTIST_TOOLS,
   RC_PACKAGE_ANNUAL,
@@ -7,6 +10,7 @@ import {
   RC_PACKAGE_MONTHLY,
 } from "./revenuecat-constants";
 import {
+  createOfferingsLoadGate,
   parsePaywallOfferings,
   subscriptionPeriodLabel,
 } from "./verified-artist-tools-offerings";
@@ -395,5 +399,41 @@ describe("resolveSettingsSubscriptionRowView", () => {
     assert.equal(view.mode, "needs_attention");
     assert.equal(view.statusLabel, "Subscription needs attention");
     assert.equal(view.showManage, true);
+  });
+});
+
+describe("paywall offerings load order", () => {
+  const paywallSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../components/verified-artist-tools-paywall.tsx"),
+    "utf8",
+  );
+
+  it("drops a stale getOfferings response and still lets a later refresh replace priceString", () => {
+    const gate = createOfferingsLoadGate();
+    const first = gate.begin();
+    const second = gate.begin();
+    let shown: string | null = null;
+    const resolve = (requestId: number, priceString: string) => {
+      if (!gate.isCurrent(requestId)) return;
+      shown = priceString;
+    };
+    resolve(second, "£7.99");
+    resolve(first, "$4.99");
+    assert.equal(shown, "£7.99");
+    assert.equal(gate.isCurrent(first), false);
+    const refresh = gate.begin();
+    resolve(refresh, "£8.99");
+    resolve(second, "$1.00");
+    assert.equal(shown, "£8.99");
+    assert.equal(gate.isCurrent(refresh), true);
+  });
+
+  it("renders product.priceString and does not hardcode a currency", () => {
+    assert.match(paywallSrc, /createOfferingsLoadGate/);
+    assert.match(paywallSrc, /offeringsLoadGateRef\.current\.begin\(\)/);
+    assert.match(paywallSrc, /if \(!offeringsLoadGateRef\.current\.isCurrent\(requestId\)\) return;/);
+    assert.match(paywallSrc, /\{pkg\.priceString\}/);
+    assert.match(paywallSrc, /\{selected\.priceString\}/);
+    assert.doesNotMatch(paywallSrc, /£|\$\d|USD|GBP/);
   });
 });

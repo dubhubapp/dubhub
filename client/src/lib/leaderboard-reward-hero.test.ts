@@ -25,10 +25,15 @@ import {
   getLeaderboardRewardHeroConfig,
   LEADERBOARD_REWARD_HERO_ARTISTS_COMING_SOON,
   LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON,
+  LEADERBOARD_REWARD_HERO_BETA_DISCLAIMER,
+  LEADERBOARD_REWARD_HERO_BETA_PREVIEW_CHIP,
   LEADERBOARD_REWARD_HERO_BY_SCOPE,
   LEADERBOARD_REWARD_HERO_COMMUNITY_COMING_SOON,
   LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN,
   LEADERBOARD_REWARD_HERO_NAVY,
+  leaderboardRewardHeroChipLabel,
+  leaderboardRewardHeroDisclaimer,
+  leaderboardRewardHeroIsBetaPreview,
   leaderboardRewardHeroIsComingSoon,
   leaderboardRewardHeroShowsCountdown,
   type LeaderboardRewardHeroConfig,
@@ -74,10 +79,12 @@ describe("LEADERBOARD-REWARD-HERO-2 — config module", () => {
       LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.prizeTitle,
       "2 × VIP Boomtown Tickets",
     );
+    assert.equal(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.sponsor, undefined);
     assert.equal(
-      LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.sponsor,
-      "Presented by Boomtown",
+      LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.eligibilityCopy,
+      "Example monthly reward",
     );
+    assert.equal(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.state, "beta_preview");
     assert.match(
       String(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.imageSrc),
       /boomtown-hero-qa\.jpg/,
@@ -85,7 +92,7 @@ describe("LEADERBOARD-REWARD-HERO-2 — config module", () => {
   });
 
   it("does not reuse Boomtown for Artists", () => {
-    assert.equal(LEADERBOARD_REWARD_HERO_BY_SCOPE.artists.state, "active");
+    assert.equal(LEADERBOARD_REWARD_HERO_BY_SCOPE.artists.state, "beta_preview");
     assert.match(
       String(LEADERBOARD_REWARD_HERO_BY_SCOPE.artists.imageSrc),
       /artist-placeholder-push-qa\.png/,
@@ -117,14 +124,24 @@ describe("LEADERBOARD-REWARD-HERO-2 — config module", () => {
     assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_COMING_SOON.state, "coming_soon");
   });
 
-  it("countdown only for active prizes; Coming Soon suppresses deadline", () => {
+  it("countdown only for active prizes; Coming Soon and beta preview suppress deadline", () => {
+    const active: LeaderboardRewardHeroConfig = {
+      accentColor: "#0a83ff",
+      backgroundColor: "#162038",
+      prizeTitle: "Confirmed prize",
+      eligibilityCopy: "Top ranked member this month wins",
+      state: "active",
+    };
+    assert.equal(leaderboardRewardHeroShowsCountdown(active), true);
+    assert.equal(leaderboardRewardHeroChipLabel(active, "OCTOBER"), "OCTOBER PRIZE");
+    assert.equal(leaderboardRewardHeroDisclaimer(active), undefined);
     assert.equal(
       leaderboardRewardHeroShowsCountdown(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN),
-      true,
+      false,
     );
     assert.equal(
       leaderboardRewardHeroShowsCountdown(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON),
-      true,
+      false,
     );
     assert.equal(
       leaderboardRewardHeroIsComingSoon(LEADERBOARD_REWARD_HERO_ARTISTS_COMING_SOON),
@@ -175,7 +192,10 @@ describe("LEADERBOARD-REWARD-HERO-2 — page wiring", () => {
     assert.match(leaderboardSrc, /getCurrentMonth\(\)\.toUpperCase\(\)/);
     assert.match(leaderboardSrc, /getDaysRemainingInMonth/);
     assert.match(leaderboardSrc, /formatDaysRemaining/);
-    assert.match(leaderboardSrc, /\{monthUpper\} PRIZE/);
+    assert.match(leaderboardSrc, /leaderboardRewardHeroChipLabel\(config, monthUpper\)/);
+    assert.match(leaderboardSrc, /leaderboardRewardHeroDisclaimer\(config\)/);
+    assert.match(leaderboardSrc, /rewards-banner-beta-disclaimer/);
+    assert.doesNotMatch(leaderboardSrc, /\{monthUpper\} PRIZE/);
     assert.match(leaderboardSrc, /rewards-banner-countdown/);
   });
 
@@ -700,20 +720,20 @@ describe("LEADERBOARD-HERO-16 — gesture host + neutral Artist Coming Soon", ()
     assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.backgroundColor, "#162038");
     assert.notEqual(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.accentColor, "#a78bfa");
     assert.notEqual(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.backgroundColor, "#1a1530");
-    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.state, "active");
+    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.state, "beta_preview");
     assert.match(
       String(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.imageSrc),
       /artist-placeholder-push-qa\.png/,
     );
-    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.sponsor, "Ableton");
+    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.sponsor, undefined);
     assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.prizeTitle, "Ableton Push 3");
     assert.equal(
       LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.eligibilityCopy,
-      "Top ranked artist this month wins.",
+      "Example monthly reward",
     );
     assert.equal(
       leaderboardRewardHeroShowsCountdown(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON),
-      true,
+      false,
     );
   });
 
@@ -765,12 +785,12 @@ describe("LEADERBOARD-ARTIST-PLACEHOLDER-1 — Artist image-backed hero", () => 
     assert.doesNotMatch(leaderboardSrc, /naturalWidth|image\.height|aspectRatio/);
   });
 
-  it("E/F: Artist QA is active with image; Community unchanged", () => {
-    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.state, "active");
-    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.sponsor, "Ableton");
+  it("E/F: Artist QA keeps its image; Community image unchanged", () => {
+    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.state, "beta_preview");
+    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.sponsor, undefined);
     assert.equal(
       leaderboardRewardHeroShowsCountdown(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON),
-      true,
+      false,
     );
     assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.prizeTitle, "Ableton Push 3");
     assert.equal(
@@ -785,14 +805,14 @@ describe("LEADERBOARD-ARTIST-PLACEHOLDER-1 — Artist image-backed hero", () => 
 });
 
 describe("LEADERBOARD-REWARD-META-1 — Artist metadata parity + optional terms", () => {
-  it("Artist QA matches Community metadata slots (title, sponsor, countdown, eligibility)", () => {
+  it("Artist QA matches Community metadata slots (title, eligibility, beta state)", () => {
     assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.prizeTitle, "Ableton Push 3");
-    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.sponsor, "Ableton");
+    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.sponsor, undefined);
     assert.equal(
       LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.eligibilityCopy,
-      "Top ranked artist this month wins.",
+      "Example monthly reward",
     );
-    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.state, "active");
+    assert.equal(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.state, "beta_preview");
     assert.equal(
       leaderboardRewardHeroShowsCountdown(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON),
       leaderboardRewardHeroShowsCountdown(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN),
@@ -830,9 +850,53 @@ describe("LEADERBOARD-REWARD-META-1 — Artist metadata parity + optional terms"
       LEADERBOARD_REWARD_HERO_BY_SCOPE.users,
       LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN,
     );
+    assert.equal(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.sponsor, undefined);
     assert.equal(
-      LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.sponsor,
-      "Presented by Boomtown",
+      LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.prizeTitle,
+      "2 × VIP Boomtown Tickets",
+    );
+  });
+});
+
+describe("LEADERBOARD-REWARD-BETA-PREVIEW — example rewards are not a live prize", () => {
+  it("both scopes are beta preview with example copy and no sponsor", () => {
+    for (const config of [
+      LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN,
+      LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON,
+    ]) {
+      assert.equal(leaderboardRewardHeroIsBetaPreview(config), true);
+      assert.equal(config.eligibilityCopy, "Example monthly reward");
+      assert.equal(config.sponsor, undefined);
+      assert.equal(leaderboardRewardHeroShowsCountdown(config), false);
+      assert.equal(
+        leaderboardRewardHeroChipLabel(config, "OCTOBER"),
+        LEADERBOARD_REWARD_HERO_BETA_PREVIEW_CHIP,
+      );
+      assert.equal(
+        leaderboardRewardHeroDisclaimer(config),
+        LEADERBOARD_REWARD_HERO_BETA_DISCLAIMER,
+      );
+    }
+    assert.equal(LEADERBOARD_REWARD_HERO_BETA_PREVIEW_CHIP, "BETA PREVIEW");
+    assert.equal(
+      LEADERBOARD_REWARD_HERO_BETA_DISCLAIMER,
+      "Rewards shown during beta are examples only. No prizes will be awarded during beta. Launch rewards will be announced separately. dub hub is not affiliated with or sponsored by the brands shown.",
+    );
+    assert.match(
+      String(LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN.imageSrc),
+      /boomtown-hero-qa\.jpg/,
+    );
+    assert.match(
+      String(LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON.imageSrc),
+      /artist-placeholder-push-qa\.png/,
+    );
+    assert.equal(
+      leaderboardRewardHeroDisclaimer(LEADERBOARD_REWARD_HERO_COMMUNITY_COMING_SOON),
+      undefined,
+    );
+    assert.equal(
+      leaderboardRewardHeroChipLabel(LEADERBOARD_REWARD_HERO_COMMUNITY_COMING_SOON, "OCTOBER"),
+      "OCTOBER PRIZE",
     );
   });
 });

@@ -245,3 +245,23 @@ export function parsePaywallOfferings(
     annual,
   };
 }
+
+/**
+ * Overlapping `getOfferings()` calls must not let an older response replace a
+ * newer one. A later `begin()` is the refresh that may replace localized prices.
+ */
+export function createOfferingsLoadGate(): {
+  begin(): number;
+  isCurrent(requestId: number): boolean;
+} {
+  let latest = 0;
+  return {
+    begin() {
+      latest += 1;
+      return latest;
+    },
+    isCurrent(requestId: number) {
+      return requestId === latest;
+    },
+  };
+}

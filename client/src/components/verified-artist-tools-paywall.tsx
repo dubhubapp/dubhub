@@ -39,6 +39,7 @@ import {
   type VerifiedArtistToolsPaywallSource,
 } from "@/lib/verified-artist-tools-paywall-copy";
 import {
+  createOfferingsLoadGate,
   formatAnnualSavingLabel,
   parsePaywallOfferings,
   resolveAnnualSavingPercent,
@@ -138,12 +139,15 @@ export function VerifiedArtistToolsPaywall({
   phaseRef.current = phase;
   const wasOpenRef = useRef(false);
   const bootstrappedOpenRef = useRef(false);
+  const offeringsLoadGateRef = useRef(createOfferingsLoadGate());
 
   const loadOfferings = useCallback(async () => {
+    const requestId = offeringsLoadGateRef.current.begin();
     setPhase("offerings_loading");
     setLiveMessage(PAYWALL_UI_COPY.loadingAnnouncement);
     try {
       const offerings = await Purchases.getOfferings();
+      if (!offeringsLoadGateRef.current.isCurrent(requestId)) return;
       const parsed = parsePaywallOfferings(offerings);
       if (!parsed.ok || parsed.packages.length === 0) {
         setPackages([]);
@@ -162,6 +166,7 @@ export function VerifiedArtistToolsPaywall({
       setPhase("ready");
       setLiveMessage("");
     } catch {
+      if (!offeringsLoadGateRef.current.isCurrent(requestId)) return;
       setPackages([]);
       setSelectedKind(null);
       setPhase("offerings_error");

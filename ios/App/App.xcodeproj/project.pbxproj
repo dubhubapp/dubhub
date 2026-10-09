@@ -587,7 +587,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -613,7 +613,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -635,7 +635,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReleaseCountdownWidget/ReleaseCountdownWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReleaseCountdownWidget/Info.plist;
@@ -645,7 +645,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = uk.dubhub.app.ReleaseCountdownWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -660,7 +660,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReleaseCountdownWidget/ReleaseCountdownWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReleaseCountdownWidget/Info.plist;
@@ -670,7 +670,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = uk.dubhub.app.ReleaseCountdownWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

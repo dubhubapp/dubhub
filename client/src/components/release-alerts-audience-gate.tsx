@@ -25,6 +25,10 @@ type Props = {
   info?: string;
 };
 
+/** Same Light/Dark label treatment as Artist Impact rows. */
+const RELEASE_ALERTS_AUDIENCE_LABEL_CLASS =
+  "text-sm text-foreground dark:text-gray-200";
+
 export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
   const { toast } = useToast();
   const subscription = useAuthoritativeSubscriptionStatus({ enabled });
@@ -65,7 +69,7 @@ export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
       >
         <div className="flex items-center gap-2.5">
           <Bell className="w-4 h-4 shrink-0 text-gray-400" />
-          <span className="text-sm text-gray-200">Release Alerts</span>
+          <span className={RELEASE_ALERTS_AUDIENCE_LABEL_CLASS}>Release Alerts</span>
         </div>
         <DubHubSkeletonBar tone="mid" className="h-4 w-10" />
       </div>
@@ -102,7 +106,7 @@ export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
         <div className="flex items-center justify-between pt-2.5">
           <div className="flex items-center gap-2.5">
             <Bell className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-            <span className="text-sm text-gray-200">{copy.title}</span>
+            <span className={RELEASE_ALERTS_AUDIENCE_LABEL_CLASS}>{copy.title}</span>
           </div>
           <button
             type="button"
@@ -156,7 +160,7 @@ export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
       >
         <div className="flex items-center gap-2.5">
           <Bell className="w-4 h-4 shrink-0 text-gray-400" />
-          <span className="text-sm text-gray-200">Release Alerts</span>
+          <span className={RELEASE_ALERTS_AUDIENCE_LABEL_CLASS}>Release Alerts</span>
         </div>
         <DubHubSkeletonBar tone="mid" className="h-4 w-10" />
       </div>
@@ -191,7 +195,7 @@ export function ReleaseAlertsAudienceGateRow({ enabled, info }: Props) {
     >
       <div className="flex items-center gap-2.5">
         <Bell className="w-4 h-4 shrink-0 text-gray-400" />
-        <span className="text-sm text-gray-200">Release Alerts</span>
+        <span className={RELEASE_ALERTS_AUDIENCE_LABEL_CLASS}>Release Alerts</span>
         {info ? (
           <StatInfoPopover
             label="Release Alerts"

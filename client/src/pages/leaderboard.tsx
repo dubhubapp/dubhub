@@ -120,6 +120,8 @@ import { ARTIST_IDENTITY_DISPLAY_CLASS } from "@/lib/artist-identity-presentatio
 import {
   getLeaderboardRewardHeroConfig,
   LEADERBOARD_REWARD_HERO_NAVY,
+  leaderboardRewardHeroChipLabel,
+  leaderboardRewardHeroDisclaimer,
   leaderboardRewardHeroShowsCountdown,
   type LeaderboardRewardHeroConfig,
 } from "@/lib/leaderboard-reward-hero";
@@ -403,6 +405,8 @@ export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
   const config = getLeaderboardRewardHeroConfig(tab);
   const monthUpper = getCurrentMonth().toUpperCase();
   const showCountdown = leaderboardRewardHeroShowsCountdown(config);
+  const chipLabel = leaderboardRewardHeroChipLabel(config, monthUpper);
+  const disclaimer = leaderboardRewardHeroDisclaimer(config);
   const daysRemaining = showCountdown
     ? formatDaysRemaining(getDaysRemainingInMonth())
     : null;
@@ -480,7 +484,7 @@ export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
               data-testid="rewards-banner-prize-label"
             >
               <Trophy className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
-              {monthUpper} PRIZE
+              {chipLabel}
             </span>
 
             <h3
@@ -540,6 +544,15 @@ export function RewardsBanner({ tab }: { tab: "users" | "artists" }) {
                   {config.termsLabel.trim()}
                 </p>
               )
+            ) : null}
+
+            {disclaimer ? (
+              <p
+                className="mt-1 max-w-[20rem] text-[13px] font-medium leading-relaxed text-white/92 [text-shadow:0_1px_2px_rgba(0,0,0,0.85),0_2px_12px_rgba(0,0,0,0.6)]"
+                data-testid="rewards-banner-beta-disclaimer"
+              >
+                {disclaimer}
+              </p>
             ) : null}
           </div>
         </div>

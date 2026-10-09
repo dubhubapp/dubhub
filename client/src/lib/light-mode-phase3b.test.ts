@@ -62,6 +62,7 @@ describe("phase 3B authenticated page chrome", () => {
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /text-muted-foreground/);
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /dark:text-white\/55/);
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /data-\[state=active\]:text-foreground/);
+    assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /dark:data-\[state=active\]:text-white/);
     assert.match(userProfileSrc, /data-profile-hero=\{hasReadyUploadedBanner \? "media" : "canvas"\}/);
     assert.match(publicProfileSrc, /data-profile-hero=\{hasReadyUploadedBanner \? "media" : "canvas"\}/);
     assert.match(publicProfileSrc, /APP_MATERIAL_BACK_BUTTON_CLASS/);

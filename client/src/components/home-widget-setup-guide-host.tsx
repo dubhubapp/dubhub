@@ -28,7 +28,9 @@ import {
 } from "@/lib/app-material";
 import { acquireHomeWidgetSetupGuideNativeNavCover } from "@/lib/home-widget-setup-guide-native-cover";
 import {
+  NATIVE_NAV_SHEET_CLOSE_FALLBACK_MS,
   nativeNavSheetCoversBar,
+  nativeNavSheetPhaseAfterUnfiredClose,
   nativeNavSheetPhaseOnAnimationEnd,
   nativeNavSheetPhaseOnOpenChange,
   type NativeNavSheetPhase,
@@ -96,6 +98,17 @@ export function HomeWidgetSetupGuideHost() {
     if (!coversNativeNav) return;
     return acquireHomeWidgetSetupGuideNativeNavCover();
   }, [coversNativeNav]);
+
+  // Got it / Don’t show again set `open` false without Vaul `setIsOpen`, so
+  // `onAnimationEnd(false)` never runs. Force `"closed"` anyway so the cover drops.
+  useEffect(() => {
+    if (open) return;
+    if (sheetPhase === "closed") return;
+    const t = window.setTimeout(() => {
+      setSheetPhase((phase) => nativeNavSheetPhaseAfterUnfiredClose(false, phase));
+    }, NATIVE_NAV_SHEET_CLOSE_FALLBACK_MS);
+    return () => window.clearTimeout(t);
+  }, [open, sheetPhase]);
 
   const closeSheet = (kind: HomeWidgetSetupGuideDismissKind) => {
     if (homeWidgetSetupGuideDismissWritesMarker(kind) && userId) {

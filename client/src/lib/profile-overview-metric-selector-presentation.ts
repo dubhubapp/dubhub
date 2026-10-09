@@ -17,7 +17,7 @@ export const PROFILE_METRIC_SELECTOR_SEGMENT_CLASS =
 
 /** Brighter ice-glass platter — no solid #0a83ff CTA fill. */
 export const PROFILE_METRIC_SELECTOR_ACTIVE_CLASS =
-  "bg-white font-semibold text-[#101828] shadow-[0_1px_2px_rgba(16,24,40,0.08),0_0_0_1px_rgba(16,24,40,0.06)] dark:bg-transparent dark:bg-gradient-to-b dark:from-white/[0.16] dark:to-white/[0.06] dark:font-semibold dark:text-white dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),inset_0_-0.5px_0_0_rgba(0,0,0,0.35)]" as const;
+  "bg-white font-semibold text-[#101828] shadow-[0_1px_2px_rgba(16,24,40,0.08),0_0_0_1px_rgba(16,24,40,0.06)] dark:bg-transparent dark:bg-gradient-to-b dark:from-white/[0.11] dark:to-white/[0.04] dark:font-semibold dark:text-white dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),inset_0_-0.5px_0_0_rgba(0,0,0,0.25)]" as const;
 
 export const PROFILE_METRIC_SELECTOR_INACTIVE_CLASS =
   "bg-transparent font-medium text-[#667085] hover:text-[#101828] dark:text-white/55 dark:hover:text-white/80" as const;

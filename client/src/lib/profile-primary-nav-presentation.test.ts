@@ -216,6 +216,7 @@ describe("PROFILE-SWIPE-POLISH-2 — fixed font weight + visual emphasis wiring"
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /font-semibold/);
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /text-white\/55/);
     assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /data-\[state=active\]:text-foreground/);
+    assert.match(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /dark:data-\[state=active\]:text-white/);
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /font-medium/);
     assert.doesNotMatch(PROFILE_PRIMARY_NAV_TRIGGER_BASE_CLASS, /data-\[state=active\]:font-semibold/);
     assert.match(primaryNavSrc, /active \+ inactive share `font-semibold`/);

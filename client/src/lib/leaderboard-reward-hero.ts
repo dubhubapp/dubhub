@@ -5,7 +5,7 @@
 
 import type { LeaderboardScope } from "@/lib/leaderboard-presentation";
 
-export type LeaderboardRewardHeroState = "active" | "coming_soon";
+export type LeaderboardRewardHeroState = "active" | "coming_soon" | "beta_preview";
 
 export type LeaderboardRewardHeroConfig = {
   /** Full-bleed campaign artwork. Omit for Coming Soon / gradient-only hero. */
@@ -35,6 +35,16 @@ export type LeaderboardRewardHeroConfig = {
 /** Final canvas stop shared with authenticated Leaderboard navy. */
 export const LEADERBOARD_REWARD_HERO_NAVY = "#0f1324" as const;
 
+/** Chip label while monthly prizes are example artwork only. */
+export const LEADERBOARD_REWARD_HERO_BETA_PREVIEW_CHIP = "BETA PREVIEW" as const;
+
+/**
+ * Shown under beta-preview reward cards. One string, both scopes.
+ * Not a terms-page link — it renders on the card.
+ */
+export const LEADERBOARD_REWARD_HERO_BETA_DISCLAIMER =
+  "Rewards shown during beta are examples only. No prizes will be awarded during beta. Launch rewards will be announced separately. dub hub is not affiliated with or sponsored by the brands shown." as const;
+
 /**
  * Versioned QA asset under client/src/assets/rewards/.
  * `new URL(..., import.meta.url)` keeps Vite bundling + Node test imports working
@@ -52,17 +62,17 @@ export const LEADERBOARD_REWARD_HERO_ARTIST_PLACEHOLDER_PUSH_QA_IMAGE_SRC = new 
 ).href;
 
 /**
- * TEMP / QA Community campaign — supplied Boomtown artwork proof only.
- * Not a confirmed launch reward. Replace via config when the real monthly prize lands.
+ * Beta-preview Community mock — Boomtown artwork is an example only.
+ * No sponsor line, no countdown, no prize award. Swap state back to "active"
+ * when a confirmed monthly prize replaces this card.
  */
 export const LEADERBOARD_REWARD_HERO_COMMUNITY_QA_BOOMTOWN = {
   imageSrc: LEADERBOARD_REWARD_HERO_BOOMTOWN_QA_IMAGE_SRC,
   accentColor: "#E5BC05",
   backgroundColor: "#1a2a4a",
   prizeTitle: "2 × VIP Boomtown Tickets",
-  sponsor: "Presented by Boomtown",
-  eligibilityCopy: "Top ranked Community Member this month wins",
-  state: "active",
+  eligibilityCopy: "Example monthly reward",
+  state: "beta_preview",
 } as const satisfies LeaderboardRewardHeroConfig;
 
 /** Coming Soon — Community (no sponsor art). */
@@ -84,22 +94,21 @@ export const LEADERBOARD_REWARD_HERO_ARTISTS_COMING_SOON = {
 } as const satisfies LeaderboardRewardHeroConfig;
 
 /**
- * TEMP / QA Artists campaign — Ableton Push 3 placeholder still + metadata parity.
- * Same RewardsBanner / countdown / sponsor slots as Community. terms* left unset for QA.
+ * Beta-preview Artists mock — Ableton Push 3 still is an example only.
+ * Same RewardsBanner slots as Community. terms* left unset; the beta disclaimer
+ * is supplied by state, not a per-card sponsor or terms link.
  */
 export const LEADERBOARD_REWARD_HERO_ARTISTS_QA_ABLETON = {
   imageSrc: LEADERBOARD_REWARD_HERO_ARTIST_PLACEHOLDER_PUSH_QA_IMAGE_SRC,
   accentColor: "#0a83ff",
   backgroundColor: "#162038",
   prizeTitle: "Ableton Push 3",
-  sponsor: "Presented by Ableton",
-  eligibilityCopy: "Top ranked Artist this month wins",
-  state: "active",
+  eligibilityCopy: "Example monthly reward",
+  state: "beta_preview",
 } as const satisfies LeaderboardRewardHeroConfig;
 
 /**
- * Active monthly configs. Community uses Boomtown QA asset for visual proof;
- * Artists use Ableton QA placeholder with shared metadata slots.
+ * Visible monthly configs. Both scopes are beta previews (example art + titles).
  * Monthly swap = edit these two entries (and assets under client/src/assets/rewards/).
  */
 export const LEADERBOARD_REWARD_HERO_BY_SCOPE: Record<
@@ -122,12 +131,44 @@ export function leaderboardRewardHeroIsComingSoon(
   return (config.state ?? "active") === "coming_soon";
 }
 
+export function leaderboardRewardHeroIsBetaPreview(
+  config: LeaderboardRewardHeroConfig,
+): boolean {
+  return config.state === "beta_preview";
+}
+
+/**
+ * Active prizes keep "{MONTH} PRIZE". Beta preview replaces that chip
+ * so the card is not read as a live promotion.
+ */
+export function leaderboardRewardHeroChipLabel(
+  config: LeaderboardRewardHeroConfig,
+  monthUpper: string,
+): string {
+  if (leaderboardRewardHeroIsBetaPreview(config)) {
+    return LEADERBOARD_REWARD_HERO_BETA_PREVIEW_CHIP;
+  }
+  return `${monthUpper} PRIZE`;
+}
+
+/** On-card disclaimer for beta preview. Omitted for live and coming-soon cards. */
+export function leaderboardRewardHeroDisclaimer(
+  config: LeaderboardRewardHeroConfig,
+): string | undefined {
+  return leaderboardRewardHeroIsBetaPreview(config)
+    ? LEADERBOARD_REWARD_HERO_BETA_DISCLAIMER
+    : undefined;
+}
+
 /**
  * Countdown only for confirmed active prizes (end-of-month window).
- * Coming Soon omits a fake deadline.
+ * Coming Soon and beta preview omit a deadline.
  */
 export function leaderboardRewardHeroShowsCountdown(
   config: LeaderboardRewardHeroConfig,
 ): boolean {
-  return !leaderboardRewardHeroIsComingSoon(config);
+  return (
+    !leaderboardRewardHeroIsComingSoon(config) &&
+    !leaderboardRewardHeroIsBetaPreview(config)
+  );
 }

@@ -134,9 +134,9 @@ export const SETTINGS_LOGOUT_ROW_CLASS =
 
 /**
  * Log Out footer below all Settings sections (including gated Developer).
- * Extra top margin separates it from the last grouped section.
+ * Short top margin separates it from Legal without a heading-sized gap.
  */
-export const SETTINGS_LOGOUT_FOOTER_CLASS = "mt-8" as const;
+export const SETTINGS_LOGOUT_FOOTER_CLASS = "mt-4" as const;
 
 /**
  * Theme-aware Settings Back overlay on approved geometry.

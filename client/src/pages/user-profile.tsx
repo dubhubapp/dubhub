@@ -3504,7 +3504,12 @@ export default function UserProfile() {
                     >
                       <span className={`text-[10px] font-medium leading-none ${hasReadyUploadedBanner ? "text-white/60" : "text-muted-foreground"}`}>Fav genre</span>
                       <span
-                        className={OWNER_PROFILE_GENRE_VALUE_PILL_CLASS}
+                        className={cn(
+                          OWNER_PROFILE_GENRE_VALUE_PILL_CLASS,
+                          /* Light navy type is for the pale canvas only.
+                             Over a ready banner, keep the glow-pill light text + text-shadow. */
+                          hasReadyUploadedBanner ? undefined : "dubhub-profile-dense-genre-chip",
+                        )}
                         style={ownerArtistGenrePillStyle}
                       >
                         <span className="truncate">{repBarGenreChip.label}</span>

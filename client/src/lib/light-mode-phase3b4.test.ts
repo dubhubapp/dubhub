@@ -57,12 +57,14 @@ describe("phase 3B.4 profile contrast", () => {
     assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /bg-white/);
     assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /text-\[#101828\]/);
     assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:bg-transparent/);
-    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:from-white\/\[0\.16\]/);
-    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:to-white\/\[0\.06\]/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:from-white\/\[0\.11\]/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:to-white\/\[0\.04\]/);
     assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:text-white/);
+    assert.match(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:font-semibold/);
+    assert.doesNotMatch(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /dark:from-white\/\[0\.16\]/);
     assert.match(
       PROFILE_METRIC_SELECTOR_ACTIVE_CLASS,
-      /dark:shadow-\[inset_0_1px_0_0_rgba\(255,255,255,0\.28\),inset_0_-0\.5px_0_0_rgba\(0,0,0,0\.35\)\]/,
+      /dark:shadow-\[inset_0_1px_0_0_rgba\(255,255,255,0\.18\),inset_0_-0\.5px_0_0_rgba\(0,0,0,0\.25\)\]/,
     );
     assert.doesNotMatch(PROFILE_METRIC_SELECTOR_ACTIVE_CLASS, /#0a83ff|bg-primary/);
     assert.match(PROFILE_METRIC_SELECTOR_INACTIVE_CLASS, /text-\[#667085\]/);
@@ -71,14 +73,21 @@ describe("phase 3B.4 profile contrast", () => {
     assert.match(userProfileSrc, /setArtistStatsMode/);
   });
 
-  it("darkens only dense profile genre-chip labels and leaves Home and Favourite Genre", () => {
+  it("darkens dense profile genre chips and the owner fav-genre pill, not Home", () => {
     const chip = lightRule(":root:not(.dark) .dubhub-profile-dense-genre-chip");
     assert.match(chip, /color: #101828 !important/);
     assert.doesNotMatch(chip, /background|box-shadow|border/);
     assert.match(userProfileSrc, /dubhub-profile-dense-genre-chip/);
     assert.match(userProfileSrc, /getGenreGlowPillStyle\(chip\.bgColor, chip\.textClass\)/);
     assert.match(userProfileSrc, /getGenreGlowPillStyle\(repBarGenreChip\.bgColor, repBarGenreChip\.textClass\)/);
-    assert.doesNotMatch(userProfileSrc, /OWNER_PROFILE_GENRE_VALUE_PILL_CLASS[\s\S]{0,180}dubhub-profile-dense-genre-chip/);
+    assert.match(
+      userProfileSrc,
+      /OWNER_PROFILE_GENRE_VALUE_PILL_CLASS[\s\S]{0,280}hasReadyUploadedBanner \? undefined : "dubhub-profile-dense-genre-chip"/,
+    );
+    assert.match(
+      userProfileSrc,
+      /ACTIVITY_GENRE_VALUE_PILL_CLASS\} dubhub-profile-dense-genre-chip/,
+    );
     assert.doesNotMatch(videoCardSrc, /dubhub-profile-dense-genre-chip/);
     assert.doesNotMatch(homeSrc, /dubhub-profile-dense-genre-chip/);
     assert.match(videoCardSrc, /getGenreGlowPillStyle\(genreChip\.bgColor, genreChip\.textClass\)/);

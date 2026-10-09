@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   SETTINGS_GROUP_CLASS,
+  SETTINGS_LOGOUT_FOOTER_CLASS,
   SETTINGS_NAV_ROW_CLASS,
   SETTINGS_PAGE_PAD_CLASS,
   SETTINGS_ROW_DIVIDER_CLASS,
@@ -55,6 +56,8 @@ describe("settings presentation contract", () => {
     assert.doesNotMatch(SETTINGS_NAV_ROW_CLASS, /ios-press/);
     assert.match(SETTINGS_NAV_ROW_CLASS, /active:bg-black\/\[0\.04\]/);
     assert.match(SETTINGS_SECTIONS_STACK_CLASS, /space-y-4/);
+    assert.equal(SETTINGS_LOGOUT_FOOTER_CLASS, "mt-4");
+    assert.doesNotMatch(SETTINGS_LOGOUT_FOOTER_CLASS, /mt-8|mt-6/);
     assert.match(SETTINGS_VAT_INSET_CLASS, /py-3/);
     assert.doesNotMatch(SETTINGS_VAT_INSET_CLASS, /rounded-xl|bg-black|border-white|backdrop-blur|shadow/);
     assert.doesNotMatch(SETTINGS_NAV_ROW_CLASS, /bg-\[#4ae9df\]|bg-turquoise|bg-accent/);

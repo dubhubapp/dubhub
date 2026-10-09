@@ -1628,7 +1628,8 @@ html.dark .dubhub-lb-hero-fade {
 :root:not(.dark) [data-testid="rewards-banner-title"],
 :root:not(.dark) [data-testid="rewards-banner-sponsor"],
 :root:not(.dark) [data-testid="rewards-banner-eligibility"],
-:root:not(.dark) [data-testid="rewards-banner-terms"] {
+:root:not(.dark) [data-testid="rewards-banner-terms"],
+:root:not(.dark) [data-testid="rewards-banner-beta-disclaimer"] {
   color: #101828;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
 }

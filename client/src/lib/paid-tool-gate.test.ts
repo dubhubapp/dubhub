@@ -303,6 +303,15 @@ describe("resolvePaidToolGateMode — outbound Release Alert delivery", () => {
 });
 
 describe("ARTIST-SUB-INTRO-1 audience count remains paid", () => {
+  it("labels use foreground in Light Mode and gray-200 in Dark Mode", () => {
+    assert.match(
+      gateRowSrc,
+      /RELEASE_ALERTS_AUDIENCE_LABEL_CLASS =\s*"text-sm text-foreground dark:text-gray-200"/,
+    );
+    assert.match(gateRowSrc, /\{copy\.title\}/);
+    assert.doesNotMatch(gateRowSrc, /text-sm text-gray-200/);
+  });
+
   it("owner row locks free artists and only fetches count when paid", () => {
     assert.match(gateRowSrc, /artist-release-alerts-audience-locked/);
     assert.match(gateRowSrc, /RELEASE_ALERTS_AUDIENCE_LOCKED_COPY/);
