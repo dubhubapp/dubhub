@@ -49,9 +49,13 @@ describe("VAT-ANON-3.1 feed presentation", () => {
     assert.doesNotMatch(videoCardSrc, /badge-artist-verified-anonymous-supporting/);
   });
 
-  it("onboarding still explains anonymous Identified state", () => {
-    assert.match(onboardingSrc, /ANONYMOUS_IDENTIFIED_SUPPORTING_COPY/);
-    assert.match(onboardingSrc, /ANONYMOUS_IDENTIFIED_ONBOARDING_BODY/);
+  it("onboarding status key describes hidden identity without the old standalone copy", () => {
+    assert.match(onboardingSrc, /EyeOff/);
+    assert.match(onboardingSrc, /Artist confirmed\. Hidden until release\./);
+    assert.doesNotMatch(onboardingSrc, /Artist confirmed · identity hidden\./);
+    assert.doesNotMatch(onboardingSrc, /ANONYMOUS_IDENTIFIED_SUPPORTING_COPY/);
+    assert.doesNotMatch(onboardingSrc, /ANONYMOUS_IDENTIFIED_ONBOARDING_BODY/);
+    assert.doesNotMatch(onboardingSrc, /artist verified · identity hidden/);
     assert.equal(ANONYMOUS_IDENTIFIED_SUPPORTING_COPY, "artist verified · identity hidden");
     assert.match(ANONYMOUS_IDENTIFIED_ONBOARDING_BODY, /identity hidden/i);
   });

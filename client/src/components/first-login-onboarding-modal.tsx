@@ -24,7 +24,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { GoldVerifiedTick } from "@/components/verified-artist";
-import { STATUS_GLOW_PILL_BG, getGenreGlowPillStyle } from "@/lib/genre-styles";
+import {
+  STATUS_GLOW_PILL_BG,
+  STATUS_GLOW_PILL_CLASS,
+  getGenreGlowPillStyle,
+} from "@/lib/genre-styles";
 import { playInteractionLight, playSuccessNotification } from "@/lib/haptic";
 import {
   APP_MATERIAL_DIALOG_CONTENT_CLASS,
@@ -33,11 +37,9 @@ import {
   APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS,
   APP_MATERIAL_OVERLAY_TITLE_CLASS,
 } from "@/lib/app-material";
-import {
-  ANONYMOUS_IDENTIFIED_ONBOARDING_BODY,
-  ANONYMOUS_IDENTIFIED_SUPPORTING_COPY,
-  IDENTIFIED_PILL_LABEL,
-} from "@/lib/post-identification-status";
+import { AUTH_SURFACE_CLASS } from "@/lib/auth-surface";
+import { IDENTIFIED_PILL_LABEL } from "@/lib/post-identification-status";
+import { PRELOGIN_AUTH_CANVAS_CLASS } from "@/lib/prelogin-material";
 import { cn } from "@/lib/utils";
 
 type OnboardingAudience = "user" | "artist";
@@ -48,10 +50,11 @@ interface FirstLoginOnboardingModalProps {
   onDismiss: () => void;
 }
 
-const statusPillBase =
-  "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
 const statusIconBase = "h-3 w-3 shrink-0";
 const tipIconClass = "mt-0.5 h-4 w-4 shrink-0 text-foreground";
+const statusRowClass = "flex flex-wrap items-center gap-x-2 gap-y-0.5";
+const statusDescriptionClass =
+  "min-w-[8.5rem] flex-1 text-[11px] leading-snug text-muted-foreground";
 
 /** Community-member core concepts — mental model, not control-level how-tos. */
 const communityTips = [
@@ -102,7 +105,7 @@ function StatusPill({
 }) {
   return (
     <span
-      className={statusPillBase}
+      className={STATUS_GLOW_PILL_CLASS}
       style={getGenreGlowPillStyle(
         tone === "unidentified" ? STATUS_GLOW_PILL_BG.unidentified : STATUS_GLOW_PILL_BG.identified,
         "text-white",
@@ -134,6 +137,8 @@ export function FirstLoginOnboardingModal({
         hideCloseButton
         overlayClassName={APP_MATERIAL_OVERLAY_BACKDROP_CLASS}
         className={cn(
+          AUTH_SURFACE_CLASS,
+          PRELOGIN_AUTH_CANVAS_CLASS,
           APP_MATERIAL_DIALOG_CONTENT_CLASS,
           "w-[calc(100%-2rem)] max-h-[min(90dvh,40rem)] gap-0 overflow-y-auto scrollbar-hide p-5 sm:p-6",
         )}
@@ -189,54 +194,52 @@ export function FirstLoginOnboardingModal({
             </div>
           ) : null}
 
-          <div className="mt-5 space-y-2.5" data-testid="first-login-id-status-key">
+          <div className="mt-5 space-y-2" data-testid="first-login-id-status-key">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               ID Status Key
             </p>
-            <div className="flex flex-wrap gap-2">
-              <StatusPill
-                icon={<Clock className={statusIconBase} />}
-                label="Unidentified"
-                tone="unidentified"
-              />
-              <StatusPill
-                icon={<Users className={statusIconBase} />}
-                label="Community Identified"
-              />
-              <StatusPill
-                icon={<Check className={`${statusIconBase} text-white`} />}
-                label="Moderator Confirmed"
-              />
-              <StatusPill
-                icon={<GoldVerifiedTick className={`${statusIconBase} text-[#FFD700]`} />}
-                label="Artist Identified"
-              />
-              <span
-                className="inline-flex max-w-full flex-col items-start gap-1"
-                data-testid="first-login-anonymous-identified"
-              >
+            <ul className="space-y-1.5">
+              <li className={statusRowClass}>
+                <StatusPill
+                  icon={<Clock className={statusIconBase} />}
+                  label="Unidentified"
+                  tone="unidentified"
+                />
+                <span className={statusDescriptionClass}>
+                  {"Track hasn't been identified yet."}
+                </span>
+              </li>
+              <li className={statusRowClass}>
+                <StatusPill
+                  icon={<Users className={statusIconBase} />}
+                  label="Community Identified"
+                />
+                <span className={statusDescriptionClass}>Suggested by the community.</span>
+              </li>
+              <li className={statusRowClass}>
+                <StatusPill
+                  icon={<Check className={`${statusIconBase} text-white`} />}
+                  label="Moderator Confirmed"
+                />
+                <span className={statusDescriptionClass}>Confirmed by our moderators.</span>
+              </li>
+              <li className={statusRowClass}>
+                <StatusPill
+                  icon={<GoldVerifiedTick className={`${statusIconBase} text-[#FFD700]`} />}
+                  label="Artist Identified"
+                />
+                <span className={statusDescriptionClass}>Confirmed by the artist.</span>
+              </li>
+              <li className={statusRowClass} data-testid="first-login-anonymous-identified">
                 <StatusPill
                   icon={<EyeOff className={`${statusIconBase} text-white`} aria-hidden />}
                   label={IDENTIFIED_PILL_LABEL}
                 />
-                <span
-                  className="pl-0.5 text-[11px] leading-snug text-muted-foreground"
-                  data-testid="first-login-anonymous-identified-supporting"
-                >
-                  {ANONYMOUS_IDENTIFIED_SUPPORTING_COPY}
+                <span className="whitespace-nowrap text-[11px] leading-snug text-muted-foreground">
+                  Artist confirmed. Hidden until release.
                 </span>
-              </span>
-            </div>
-            <p
-              className="text-[11px] leading-relaxed text-muted-foreground"
-              data-testid="first-login-anonymous-identified-body"
-            >
-              {ANONYMOUS_IDENTIFIED_ONBOARDING_BODY}
-            </p>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              IDs can be suggested by the community, confirmed by moderators, or confirmed by
-              artists — including anonymously when the artist chooses to stay hidden.
-            </p>
+              </li>
+            </ul>
           </div>
 
           <Button

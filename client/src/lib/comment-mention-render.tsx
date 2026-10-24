@@ -1,5 +1,10 @@
 import { GoldVerifiedTick } from "@/components/verified-artist";
-import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
+import {
+  ARTIST_IDENTITY_COMPACT_CLASS,
+  VERIFIED_NAME_CLASS,
+  VERIFIED_NAME_INLINE_CLASS,
+} from "@/lib/artist-identity-presentation";
+import { cn } from "@/lib/utils";
 import { parseCommentMentionSegments } from "@shared/mentionParsing";
 import type { MouseEvent, ReactNode } from "react";
 
@@ -42,7 +47,11 @@ export function renderCommentMentionNodes(
     return (
       <span
         key={`mention-${index}-${username}`}
-        className={className}
+        className={cn(
+          className,
+          showVerifiedTick && VERIFIED_NAME_CLASS,
+          showVerifiedTick && VERIFIED_NAME_INLINE_CLASS,
+        )}
         data-mark-id-long-press-ignore="true"
         onClick={
           onMentionClick
@@ -54,14 +63,10 @@ export function renderCommentMentionNodes(
             : undefined
         }
       >
+        {segment.display}
         {showVerifiedTick ? (
-          <span className="inline-flex items-center gap-0.5">
-            {segment.display}
-            <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" glow="inline" />
-          </span>
-        ) : (
-          segment.display
-        )}
+          <GoldVerifiedTick className="h-3 w-3 shrink-0 text-[#FFD700]" glow="inline" />
+        ) : null}
       </span>
     );
   });

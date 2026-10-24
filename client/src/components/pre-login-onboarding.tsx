@@ -137,7 +137,7 @@ const COMMUNITY_AVATAR_URL = getDefaultAvatarPublicUrl("user");
 const ARTIST_AVATAR_URL = getDefaultAvatarPublicUrl("artist");
 
 const MINI_STATUS_PILL_CLASS =
-  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10px] font-semibold leading-snug ring-1 ring-white/15";
+  "dubhub-status-pill inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10px] font-semibold leading-snug ring-1 ring-white/15";
 const MINI_GENRE_PILL_CLASS =
   "inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-1 text-[10px] font-semibold leading-snug ring-1 ring-white/15";
 

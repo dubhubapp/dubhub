@@ -13,6 +13,14 @@ export const ARTIST_IDENTITY_COMPACT_CLASS =
   "dubhub-artist-identity-compact text-foreground dark:text-[#FFD700]";
 
 /**
+ * Username → verified tick. One gap everywhere a verified name renders.
+ * Running text also uses `VERIFIED_NAME_INLINE_CLASS` so the next glyph
+ * (punctuation) does not sit on the tick. Stored comment text is unchanged.
+ */
+export const VERIFIED_NAME_CLASS = "dubhub-verified-name";
+export const VERIFIED_NAME_INLINE_CLASS = "dubhub-verified-name-inline";
+
+/**
  * Release Detail owner name only.
  * Light still uses the compact foreground (#101828). Dark is white because the
  * artwork atmosphere already carries the colour. The verification tick stays gold.

@@ -116,8 +116,11 @@ describe("ID-marking artist mentions — shared renderer semantics", () => {
     assert.match(html, /text-foreground/);
     assert.match(html, /text-\[#FFD700\]/);
     assert.match(html, /@Artist1/);
+    assert.match(html, /dubhub-verified-name/);
+    assert.match(html, /dubhub-verified-name-inline/);
     assert.match(html, /Verified Artist Profile|title="Verified Artist Profile"/);
     assert.match(html, /is this you\?/);
+    assert.doesNotMatch(html, />@Artist1\s+</);
     assert.doesNotMatch(html, /dubhub-artist-identity-compact[^>]*>is this you/);
   });
 

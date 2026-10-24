@@ -14,7 +14,7 @@ import {
 /** Compact chrome — rectangular radius, smaller type/padding than Home `STATUS_GLOW_PILL_CLASS`. */
 /** `z-10` sits above thumbnail media `z-[2]` inside the card `.ios-press` stacking context. */
 export const PROFILE_GRID_STATUS_PILL_CLASS =
-  "pointer-events-none absolute top-2 left-2 z-10 inline-flex w-fit max-w-[calc(100%-1rem)] items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ring-1 ring-white/15" as const;
+  "dubhub-status-pill pointer-events-none absolute top-2 left-2 z-10 inline-flex w-fit max-w-[calc(100%-1rem)] items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ring-1 ring-white/15" as const;
 
 export const PROFILE_GRID_STATUS_PILL_ICON_CLASS = "h-2.5 w-2.5 shrink-0" as const;
 

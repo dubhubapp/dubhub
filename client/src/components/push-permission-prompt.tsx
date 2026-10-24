@@ -24,7 +24,9 @@ import {
   requestPushPermissionAndRegister,
   type PushReceivePermission,
 } from "@/lib/push-notifications";
+import { AUTH_SURFACE_CLASS } from "@/lib/auth-surface";
 import { playInteractionLight } from "@/lib/haptic";
+import { PRELOGIN_AUTH_CANVAS_CLASS } from "@/lib/prelogin-material";
 import { cn } from "@/lib/utils";
 
 const COPY: Record<
@@ -152,6 +154,8 @@ export function PushPermissionPrompt({
         forceMount
         overlayClassName={cn(APP_MATERIAL_OVERLAY_BACKDROP_CLASS, "z-[60]")}
         className={cn(
+          AUTH_SURFACE_CLASS,
+          PRELOGIN_AUTH_CANVAS_CLASS,
           APP_MATERIAL_DIALOG_CONTENT_CLASS,
           "z-[60] w-[calc(100%-2rem)] gap-0 p-0",
         )}

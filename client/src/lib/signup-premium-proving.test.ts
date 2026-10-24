@@ -211,6 +211,15 @@ describe("Auth Material A.1 device correction — geometry", () => {
     assert.match(signUpSrc, /Go to Sign In/);
   });
 
+  it("keeps Sign Up scrollable above the iOS keyboard without closed-state inset", () => {
+    assert.match(authPageSrc, /signup-keyboard-scroll-spacer/);
+    assert.match(authPageSrc, /signupKeyboardFrame && signupKeyboardFrame\.spacer > 0/);
+    assert.match(authPageSrc, /minHeight: 0/);
+    assert.match(authPageSrc, /keyboardHeight > 0 && !isSignUp/);
+    assert.match(authPageSrc, /PRELOGIN_AUTH_PAGE_CLASS/);
+    assert.doesNotMatch(authPageSrc, /signupKeyboardFrame \? "pb-/);
+  });
+
   it("compresses Sign Up header decorative spacing", () => {
     assert.match(signUpSrc, /dubhub-prelogin-signup-header/);
     assert.match(signUpSrc, /dubhub-prelogin-signup-logo-gap mb-2/);

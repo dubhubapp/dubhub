@@ -514,6 +514,14 @@ html[data-dubhub-native-nav="on"] .light .dubhub-app-releases-fab-fade {
   background-size: 100% 100%;
 }
 
+/*
+ * Overlay cards that reuse the pre-login canvas must beat the flat overlay fill
+ * so the existing signup gradient shows through. Same #0f1324 token — not a new palette.
+ */
+.dubhub-app-overlay-surface.dubhub-prelogin-auth {
+  background-color: #0f1324 !important;
+}
+
 /**
  * Onboarding New Release miniature — indigo translucent surface without blur.
  */
@@ -1907,6 +1915,32 @@ html.dark .dubhub-lb-hero-fade {
 /* One tick baseline: slightly above the username, Light and Dark. */
 .dubhub-verified-tick-align {
   transform: translateY(-0.14em);
+}
+
+/* Shared username → tick gap. Attached, not touching. */
+.dubhub-verified-name {
+  display: inline-flex;
+  align-items: center;
+  column-gap: 0.25rem;
+  vertical-align: baseline;
+}
+
+/* Room before the next glyph when the name sits in running text. */
+.dubhub-verified-name-inline {
+  padding-inline-end: 0.22em;
+}
+
+/* Status pills centre icons with the label. Don't reuse the username baseline lift. */
+.dubhub-status-pill .dubhub-verified-tick-align {
+  transform: none;
+}
+
+/*
+ * Lucide eye-off draws the eye above the viewBox centre. The slash still
+ * crosses the middle, so the shared pill slot looks high. Nudge the glyph only.
+ */
+.dubhub-status-pill .lucide-eye-off {
+  transform: translateY(18%);
 }
 
 .dubhub-app-sheet-surface {

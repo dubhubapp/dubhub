@@ -292,6 +292,15 @@ describe("runSignupWithDob orchestration", () => {
 });
 
 describe("SignUp.tsx Phase 3A wiring", () => {
+  it("keeps under-13 copy inline and out of the global error box", () => {
+    assert.match(signUpSrc, /SIGNUP_UNDER_13_MESSAGE/);
+    assert.match(signUpSrc, /text-dob-error/);
+    assert.match(signUpSrc, /flow\.message !== SIGNUP_UNDER_13_MESSAGE/);
+    assert.match(signUpSrc, /errorMessage !== SIGNUP_UNDER_13_MESSAGE/);
+    assert.match(signUpSrc, /setDobError\(flow\.message\)/);
+    assert.match(flowSrc, /age-gate/);
+  });
+
   it("includes DOB field without permanent age helper", () => {
     assert.match(signUpSrc, /input-date-of-birth/);
     assert.match(signUpSrc, /Date of birth/);

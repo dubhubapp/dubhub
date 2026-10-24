@@ -27,6 +27,7 @@ import {
   isClaimHttpRetryable,
   runSignupWithDob,
   SIGNUP_INVALID_DOB_MESSAGE,
+  SIGNUP_UNDER_13_MESSAGE,
 } from '@/lib/signup-dob-flow';
 import {
   canAdvanceSignupStep1,
@@ -592,7 +593,10 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
         ) {
           setDobError(flow.message);
         }
-        setErrorMessage(flow.message);
+        // Under-13 is already shown inline under the DOB field.
+        if (flow.message !== SIGNUP_UNDER_13_MESSAGE) {
+          setErrorMessage(flow.message);
+        }
         return;
       }
       return;
@@ -1026,7 +1030,7 @@ export function SignUp({ onToggleMode, onAuthSuccess, initialAccountType }: Sign
             </p>
           )}
 
-          {errorMessage && (
+          {errorMessage && errorMessage !== SIGNUP_UNDER_13_MESSAGE && (
             <div className="mt-4 rounded-[15px] border border-red-500/40 bg-red-500/10 p-3">
               <p className="text-sm font-medium text-red-300" data-testid="text-error-message">{errorMessage}</p>
             </div>

@@ -78,6 +78,21 @@ describe("phase 3D.2 final consistency", () => {
     assert.doesNotMatch(videoCardSrc, /align-\[-0\.1em\]|-mt-0\.5/);
   });
 
+  it("shares one username-tick gap and centres status-pill icons", () => {
+    assert.match(cssSrc, /\.dubhub-verified-name \{[\s\S]*?column-gap: 0\.25rem/);
+    assert.match(cssSrc, /\.dubhub-verified-name-inline \{[\s\S]*?padding-inline-end: 0\.22em/);
+    assert.match(nameSrc, /VERIFIED_NAME_CLASS/);
+    assert.doesNotMatch(nameSrc, /ml-0\.5/);
+    assert.equal(commentsSrc.split("VERIFIED_NAME_CLASS").length - 1, 4);
+    assert.doesNotMatch(commentsSrc, /flex items-center space-x-1 \$\{/);
+    const pillReset = cssSrc.slice(
+      cssSrc.indexOf(".dubhub-status-pill .dubhub-verified-tick-align"),
+      cssSrc.indexOf("}", cssSrc.indexOf(".dubhub-status-pill .dubhub-verified-tick-align")),
+    );
+    assert.match(pillReset, /transform: none/);
+    assert.match(cssSrc, /\.dubhub-status-pill \.lucide-eye-off \{[\s\S]*?translateY\(18%\)/);
+  });
+
   it("deepens the Light Identified pill and leaves the Home media pill", () => {
     assert.equal(IDENTIFIED_PILL_PAGE_LABEL_COLOR, "#166534");
     assert.match(IDENTIFIED_PILL_PAGE_FILL, /rgba\(34,197,94,0\.78\)/);

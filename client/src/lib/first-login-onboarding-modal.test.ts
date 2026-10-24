@@ -72,19 +72,30 @@ describe("HINTS-ALIGN-2B first-login community content", () => {
 });
 
 describe("HINTS-ALIGN-2B ID Status Key preserved", () => {
-  it("keeps all four ID provenance states plus explanatory line", () => {
+  it("lists five statuses vertically and drops the old standalone explainer", () => {
     assert.match(modalSrc, /ID Status Key/);
     assert.match(modalSrc, /Unidentified/);
+    assert.match(modalSrc, /Track hasn't been identified yet\./);
     assert.match(modalSrc, /Community Identified/);
+    assert.match(modalSrc, /Suggested by the community\./);
     assert.match(modalSrc, /Moderator Confirmed/);
+    assert.match(modalSrc, /Confirmed by our moderators\./);
     assert.match(modalSrc, /Artist Identified/);
+    assert.match(modalSrc, /Confirmed by the artist\./);
     assert.match(modalSrc, /first-login-anonymous-identified/);
+    assert.match(modalSrc, /Artist confirmed\. Hidden until release\./);
+    assert.doesNotMatch(modalSrc, /Artist confirmed · identity hidden\./);
     assert.match(modalSrc, /EyeOff/);
-    assert.match(
-      modalSrc,
-      /IDs can be suggested by the community, confirmed by moderators, or confirmed by\s+artists/,
-    );
     assert.match(modalSrc, /first-login-id-status-key/);
+    assert.match(modalSrc, /PRELOGIN_AUTH_CANVAS_CLASS/);
+    assert.match(modalSrc, /AUTH_SURFACE_CLASS/);
+    assert.doesNotMatch(modalSrc, /ANONYMOUS_IDENTIFIED_SUPPORTING_COPY/);
+    assert.doesNotMatch(modalSrc, /ANONYMOUS_IDENTIFIED_ONBOARDING_BODY/);
+    assert.doesNotMatch(modalSrc, /artist verified · identity hidden/);
+    assert.doesNotMatch(
+      modalSrc,
+      /IDs can be suggested by the community, confirmed by moderators/,
+    );
   });
 });
 

@@ -75,7 +75,9 @@ describe("C2 opt-in overlay material (not global primitive rewrite)", () => {
     assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
     assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_DESTRUCTIVE_ACTION_CLASS/);
     assert.match(commentsSrc, /APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS/);
-    // Push permission prompts (post-onboarding + Releases) share overlay material.
+    // Push permission prompts (post-onboarding + Releases) share the Welcome modal surface.
+    assert.match(pushSrc, /AUTH_SURFACE_CLASS/);
+    assert.match(pushSrc, /PRELOGIN_AUTH_CANVAS_CLASS/);
     assert.match(pushSrc, /APP_MATERIAL_DIALOG_CONTENT_CLASS/);
     assert.match(pushSrc, /APP_MATERIAL_OVERLAY_BACKDROP_CLASS/);
     assert.match(pushSrc, /APP_MATERIAL_OVERLAY_PRIMARY_ACTION_CLASS/);

@@ -104,7 +104,7 @@ export const STATUS_GLOW_PILL_BG = {
 
 /** Shared Identified / Unidentified / Under-review pill chrome (Home post + Comments). */
 export const STATUS_GLOW_PILL_CLASS =
-  "inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
+  "dubhub-status-pill inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-snug ring-1 ring-white/15";
 
 /**
  * Light page/sheet Identified contrast. Same green family as the media pill.

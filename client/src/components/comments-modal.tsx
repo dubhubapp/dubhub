@@ -56,7 +56,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { GoldVerifiedTick, goldAvatarGlowShadowClass } from "./verified-artist";
-import { ARTIST_IDENTITY_COMPACT_CLASS } from "@/lib/artist-identity-presentation";
+import {
+  ARTIST_IDENTITY_COMPACT_CLASS,
+  VERIFIED_NAME_CLASS,
+} from "@/lib/artist-identity-presentation";
 import { getGenreGlowPillStyle, STATUS_GLOW_PILL_BG, STATUS_GLOW_PILL_CLASS } from "@/lib/genre-styles";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { useDelayedReleaseFeedSkeleton } from "@/lib/use-delayed-release-feed-skeleton";
@@ -2541,12 +2544,13 @@ export function CommentsModal({
                     <div className="relative min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <div
-                          className={`flex items-center space-x-1 ${
+                          className={cn(
+                            VERIFIED_NAME_CLASS,
                             pinnedVerifiedReply.user.account_type === "artist" &&
-                            pinnedVerifiedReply.user.verified_artist
+                              pinnedVerifiedReply.user.verified_artist
                               ? ARTIST_IDENTITY_COMPACT_CLASS
-                              : ""
-                          }`}
+                              : "",
+                          )}
                         >
                           <span
                             data-mark-id-long-press-ignore="true"
@@ -2670,11 +2674,12 @@ export function CommentsModal({
                 <>
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <div
-                    className={`flex items-center space-x-1 ${
+                    className={cn(
+                      VERIFIED_NAME_CLASS,
                       comment.user.account_type === "artist" && comment.user.verified_artist
                         ? ARTIST_IDENTITY_COMPACT_CLASS
-                        : ""
-                    }`}
+                        : "",
+                    )}
                   >
                     <span 
                       data-mark-id-long-press-ignore="true"
@@ -2982,11 +2987,12 @@ export function CommentsModal({
                             <div className="relative">
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                             <div
-                              className={`flex items-center space-x-1 ${
+                              className={cn(
+                                VERIFIED_NAME_CLASS,
                                 reply.user.account_type === "artist" && reply.user.verified_artist
                                   ? ARTIST_IDENTITY_COMPACT_CLASS
-                                  : ""
-                              }`}
+                                  : "",
+                              )}
                             >
                               <span 
                                 data-mark-id-long-press-ignore="true"
