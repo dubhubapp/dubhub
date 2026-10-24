@@ -49,7 +49,7 @@ final class DubHubNativeTabBarLeaderboardEQOverlay: NSObject {
         cancelAll(in: nil)
         let session = DubHubNativeTabBarLeaderboardEQOverlay()
         activeSession = session
-        session.sourceImageView = imageView
+        session.sourceImageView = DubHubNativeTabBarIconSwapOverlay.begin(over: imageView)
         session.fallbackTint = fallbackTint
         session.completion = completion
         session.artboardDeltas = Self.faderSpecs.map { spec in
@@ -65,11 +65,23 @@ final class DubHubNativeTabBarLeaderboardEQOverlay: NSObject {
         session.startDisplayLinkClock()
     }
 
+    private func endOverlay() {
+        let animated = sourceImageView
+        sourceImageView = nil
+        if let animated {
+            DubHubNativeTabBarIconSwapOverlay.end(animated)
+        }
+    }
+
     func cancelAndRestore() {
         stopDisplayLink()
         restoreCanonicalImage()
         didFinish = true
+        let animated = sourceImageView
         sourceImageView = nil
+        if let animated {
+            DubHubNativeTabBarIconSwapOverlay.end(animated)
+        }
         if Self.activeSession === self {
             Self.activeSession = nil
         }
@@ -259,6 +271,7 @@ final class DubHubNativeTabBarLeaderboardEQOverlay: NSObject {
             abortDueToDetach()
             return
         }
+        DubHubNativeTabBarIconSwapOverlay.holdInPlace(imageView)
         let tint = resolvedTint(for: imageView)
         let scale = imageView.traitCollection.displayScale > 0
             ? imageView.traitCollection.displayScale
@@ -328,7 +341,7 @@ final class DubHubNativeTabBarLeaderboardEQOverlay: NSObject {
         didFinish = true
         stopDisplayLink()
         restoreCanonicalImage()
-        sourceImageView = nil
+        endOverlay()
         if Self.activeSession === self {
             Self.activeSession = nil
         }
@@ -338,4 +351,5 @@ final class DubHubNativeTabBarLeaderboardEQOverlay: NSObject {
             done?()
         }
     }
+
 }

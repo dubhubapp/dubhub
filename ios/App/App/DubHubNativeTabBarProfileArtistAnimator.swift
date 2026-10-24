@@ -169,7 +169,7 @@ final class DubHubNativeTabBarProfileArtistAnimator: NSObject {
         cancelAll(in: nil, restoreAssetName: artistAssetName)
         let session = DubHubNativeTabBarProfileArtistAnimator()
         activeSession = session
-        session.sourceImageView = imageView
+        session.sourceImageView = DubHubNativeTabBarIconSwapOverlay.begin(over: imageView)
         session.fallbackTint = fallbackTint
         session.sessionTint = session.resolvedTint(for: imageView)
         session.restoreAssetName = artistAssetName
@@ -179,12 +179,20 @@ final class DubHubNativeTabBarProfileArtistAnimator: NSObject {
         session.startDisplayLinkClock()
     }
 
+    private func endOverlay() {
+        let animated = sourceImageView
+        sourceImageView = nil
+        if let animated {
+            DubHubNativeTabBarIconSwapOverlay.end(animated)
+        }
+    }
+
     func cancelAndRestore(assetName: String) {
         restoreAssetName = assetName
         stopDisplayLink()
         restoreCanonicalImage()
         didFinish = true
-        sourceImageView = nil
+        endOverlay()
         if Self.activeSession === self {
             Self.activeSession = nil
         }
@@ -302,6 +310,7 @@ final class DubHubNativeTabBarProfileArtistAnimator: NSObject {
             abortDueToDetach()
             return
         }
+        DubHubNativeTabBarIconSwapOverlay.holdInPlace(imageView)
         let scale = imageView.traitCollection.displayScale > 0
             ? imageView.traitCollection.displayScale
             : UIScreen.main.scale
@@ -363,7 +372,7 @@ final class DubHubNativeTabBarProfileArtistAnimator: NSObject {
     private func finish(silently: Bool) {
         guard !didFinish else { return }
         didFinish = true
-        sourceImageView = nil
+        endOverlay()
         if Self.activeSession === self {
             Self.activeSession = nil
         }

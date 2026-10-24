@@ -75,7 +75,7 @@ final class DubHubNativeTabBarReleasesVinylAnimator: NSObject {
         cancelAll(in: nil)
         let session = DubHubNativeTabBarReleasesVinylAnimator()
         activeSession = session
-        session.sourceImageView = imageView
+        session.sourceImageView = DubHubNativeTabBarIconSwapOverlay.begin(over: imageView)
         session.fallbackTint = fallbackTint
         session.sessionTint = session.resolvedTint(for: imageView)
         session.completion = completion
@@ -87,12 +87,24 @@ final class DubHubNativeTabBarReleasesVinylAnimator: NSObject {
         session.startDisplayLinkClock()
     }
 
+    private func endOverlay() {
+        let animated = sourceImageView
+        sourceImageView = nil
+        if let animated {
+            DubHubNativeTabBarIconSwapOverlay.end(animated)
+        }
+    }
+
     func cancelAndRestore() {
         stopDisplayLink()
         restoreCanonicalImage()
         restoreHostOverflow()
         didFinish = true
+        let animated = sourceImageView
         sourceImageView = nil
+        if let animated {
+            DubHubNativeTabBarIconSwapOverlay.end(animated)
+        }
         if Self.activeSession === self {
             Self.activeSession = nil
         }
@@ -440,6 +452,7 @@ final class DubHubNativeTabBarReleasesVinylAnimator: NSObject {
             abortDueToDetach()
             return
         }
+        DubHubNativeTabBarIconSwapOverlay.holdInPlace(imageView)
         let scale = imageView.traitCollection.displayScale > 0
             ? imageView.traitCollection.displayScale
             : UIScreen.main.scale
@@ -508,7 +521,7 @@ final class DubHubNativeTabBarReleasesVinylAnimator: NSObject {
         stopDisplayLink()
         restoreCanonicalImage()
         restoreHostOverflow()
-        sourceImageView = nil
+        endOverlay()
         if Self.activeSession === self {
             Self.activeSession = nil
         }

@@ -1179,9 +1179,15 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate, WKScriptMessag
     }
 
     func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
-        if applyingSelection { return }
-        if !isVisuallyShown { return }
-        guard let tab = tagToTabId[item.tag] else { return }
+        if applyingSelection {
+            return
+        }
+        if !isVisuallyShown {
+            return
+        }
+        guard let tab = tagToTabId[item.tag] else {
+            return
+        }
         let event = (tab == selectedTabId) ? "reselectTab" : "selectTab"
         selectedTabId = tab
         applyResolvedItemTints()

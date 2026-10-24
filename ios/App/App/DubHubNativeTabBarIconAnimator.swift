@@ -2,15 +2,324 @@ import UIKit
 
 /// Thin UITabBar subclass that exposes finger-down state so icon micro-animations
 /// can wait for commit (touch end) while drag-across only updates system highlight.
+///
+/// IOS18-NAV-FALLBACK: on iOS 26+ this class does not paint a background.
+/// System Liquid Glass (`_UITabBarPlatterView`) stays authoritative.
+/// Earlier systems hide the legacy `_UIBarBackground` and show a rounded
+/// material behind the tab controls only. The bar frame is unchanged.
 final class DubHubNativeTabBar: UITabBar {
     var onInteractionEnded: (() -> Void)?
     /// PROFILE-NAV-BADGE-2D: rebind Profile unread badge if UIKit rebuilds the glyph host.
     var onDidLayoutSubviews: (() -> Void)?
     private(set) var isInteractionActive = false
+    /// Pre-iOS 26 floating surface. Never created on iOS 26+.
+    private var legacyFloatingSurface: UIVisualEffectView?
+    /// Pre-iOS 26 selected-icon bubble. Never created on iOS 26+.
+    private var legacySelectionBubble: UIVisualEffectView?
+    /// Coalesces bubble placement until UIKit finishes the current layout pass.
+    private var legacySelectionBubblePlacement: DispatchWorkItem?
+    /// False after hide/first show so the bubble appears in place instead of sliding.
+    private var legacySelectionBubbleHasSettledFrame = false
+    private var legacySelectionBubbleTarget: CGRect = .zero
+    /// Holds the chrome material part-way toward clear. Retained so the blur does not snap back.
+    private var legacySurfaceFade: UIViewPropertyAnimator?
+    private var isLayingOutLegacySurface = false
+    private static let legacySelectionSlideDuration: TimeInterval = 0.24
+    /// How far systemChromeMaterial moves toward no effect. 0 keeps it unchanged.
+    private static let legacySurfaceClearFraction: CGFloat = 0.34
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if !isLayingOutLegacySurface {
+            isLayingOutLegacySurface = true
+            layoutLegacyFloatingSurfaceIfNeeded()
+            layoutLegacySelectionBubbleIfNeeded()
+            isLayingOutLegacySurface = false
+        }
         onDidLayoutSubviews?()
+        DubHubNativeTabBarIconSwapOverlay.syncActiveCovers()
+    }
+
+
+    /// iOS 26+ returns immediately. No appearance object, no fallback view.
+    private func layoutLegacyFloatingSurfaceIfNeeded() {
+        if #available(iOS 26.0, *) {
+            return
+        }
+        suppressLegacyTabBarBackground()
+        let surface = ensureLegacyFloatingSurface()
+        guard let band = legacyFloatingBand(), band.width > 1, band.height > 1 else {
+            surface.isHidden = true
+            return
+        }
+        surface.isHidden = false
+        surface.frame = band
+        surface.layer.cornerRadius = band.height * 0.5
+        let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 1
+        surface.layer.borderWidth = 1 / scale
+        surface.layer.borderColor = UIColor.separator.withAlphaComponent(0.6)
+            .resolvedColor(with: traitCollection).cgColor
+        if surface.superview === self, subviews.first !== surface {
+            sendSubviewToBack(surface)
+        }
+    }
+
+    /// One capsule behind the selected icon. iOS 26+ returns before any view is created.
+    /// Placement is deferred so a mid-layout UITabBarButton frame cannot pin the bubble
+    /// to the button origin. Routing and icon animation are not delayed.
+    private func layoutLegacySelectionBubbleIfNeeded() {
+        if #available(iOS 26.0, *) {
+            return
+        }
+        legacySelectionBubblePlacement?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.applyLegacySelectionBubble()
+        }
+        legacySelectionBubblePlacement = work
+        DispatchQueue.main.async(execute: work)
+    }
+
+    private func applyLegacySelectionBubble() {
+        if #available(iOS 26.0, *) {
+            return
+        }
+        guard let item = selectedItem,
+              let icon = DubHubNativeTabBarIconAnimator.resolveIconImageView(
+                for: item,
+                in: self,
+                requireWindow: false
+              )
+        else {
+            legacySelectionBubble?.isHidden = true
+            legacySelectionBubbleHasSettledFrame = false
+            return
+        }
+        let iconFrame = icon.convert(icon.bounds, to: self)
+        guard iconFrame.width > 12, iconFrame.height > 12, iconFrame.minX > 8, iconFrame.minY > 4 else {
+            return
+        }
+        let bubble = ensureLegacySelectionBubble()
+        let width = min(iconFrame.width + 16, 48)
+        let height = min(iconFrame.height + 10, 40)
+        var next = CGRect(
+            x: iconFrame.midX - width / 2,
+            y: iconFrame.midY - height / 2,
+            width: width,
+            height: height
+        )
+        if let band = legacyFloatingBand(), band.width > 1, band.height > 1 {
+            next = legacyBubbleFrame(next, within: band)
+        }
+        bubble.layer.cornerRadius = next.height * 0.5
+        let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 1
+        bubble.layer.borderWidth = 1 / scale
+        bubble.layer.borderColor = UIColor.separator.withAlphaComponent(0.6)
+            .resolvedColor(with: traitCollection).cgColor
+        bubble.isHidden = false
+        if let surface = legacyFloatingSurface, surface.superview === self {
+            if bubble.superview !== self || subviews.firstIndex(of: bubble) != (subviews.firstIndex(of: surface) ?? 0) + 1 {
+                insertSubview(bubble, aboveSubview: surface)
+            }
+        } else if bubble.superview !== self {
+            insertSubview(bubble, at: 0)
+        }
+        placeLegacySelectionBubble(bubble, at: next)
+    }
+
+    /// Keeps the bubble's own curve inside the outer pill. The bounding box is wider
+    /// than the capsule, so the limit is sampled along the bubble outline.
+    /// Shifts only as far as that curve requires.
+    private func legacyBubbleFrame(_ proposed: CGRect, within band: CGRect) -> CGRect {
+        let bandRadius = band.height * 0.5
+        func curveInset(at y: CGFloat) -> CGFloat {
+            let dy = min(abs(y - band.midY), bandRadius)
+            return bandRadius - sqrt(max(0, bandRadius * bandRadius - dy * dy))
+        }
+        var frame = proposed
+        let bubbleRadius = min(frame.width, frame.height) * 0.5
+        let pad: CGFloat = 2
+        var shiftRight: CGFloat = 0
+        var shiftLeft: CGFloat = 0
+        var dy = -bubbleRadius
+        while dy <= bubbleRadius {
+            let y = frame.midY + dy
+            let reach = sqrt(max(0, bubbleRadius * bubbleRadius - dy * dy))
+            let minX = band.minX + curveInset(at: y) + pad
+            let maxX = band.maxX - curveInset(at: y) - pad
+            shiftRight = max(shiftRight, minX - (frame.midX - reach))
+            shiftLeft = max(shiftLeft, (frame.midX + reach) - maxX)
+            dy += 2
+        }
+        if shiftRight > 0, shiftLeft > 0 {
+            let available = max(band.width - (curveInset(at: frame.midY) + pad) * 2, 1)
+            frame.size.width = min(frame.width, available)
+            frame.origin.x = band.midX - frame.size.width / 2
+        } else if shiftRight > 0 {
+            frame.origin.x += shiftRight
+        } else if shiftLeft > 0 {
+            frame.origin.x -= shiftLeft
+        }
+        let minY = band.minY + pad
+        let maxY = band.maxY - pad - frame.height
+        if maxY >= minY {
+            frame.origin.y = min(max(frame.origin.y, minY), maxY)
+        }
+        return frame
+    }
+
+    private func placeLegacySelectionBubble(_ bubble: UIVisualEffectView, at next: CGRect) {
+        let barHidden = isHidden || alpha < 0.01 || window == nil
+            || (superview.map { frame.minY >= $0.bounds.height - 1 } ?? true)
+        let sliding = bubble.layer.animation(forKey: "position") != nil
+            || bubble.layer.animation(forKey: "bounds") != nil
+        if sliding, legacyFramesMatch(next, legacySelectionBubbleTarget) {
+            return
+        }
+        let canSlide = legacySelectionBubbleHasSettledFrame
+            && !barHidden
+            && bubble.bounds.width > 1
+            && bubble.window != nil
+        legacySelectionBubbleTarget = next
+        guard canSlide, !legacyFramesMatch(bubble.frame, next) || sliding else {
+            bubble.layer.removeAllAnimations()
+            bubble.frame = next
+            legacySelectionBubbleHasSettledFrame = !barHidden
+            return
+        }
+        let presented = bubble.layer.presentation()?.frame ?? bubble.frame
+        bubble.layer.removeAllAnimations()
+        bubble.frame = presented
+        UIView.animate(
+            withDuration: Self.legacySelectionSlideDuration,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
+        ) {
+            bubble.frame = next
+        }
+    }
+
+    private func legacyFramesMatch(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) < 0.5
+            && abs(lhs.minY - rhs.minY) < 0.5
+            && abs(lhs.width - rhs.width) < 0.5
+            && abs(lhs.height - rhs.height) < 0.5
+    }
+
+    private func ensureLegacySelectionBubble() -> UIVisualEffectView {
+        if let legacySelectionBubble {
+            return legacySelectionBubble
+        }
+        let created = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        created.isUserInteractionEnabled = false
+        created.clipsToBounds = true
+        created.layer.cornerCurve = .continuous
+        created.contentView.backgroundColor = UIColor.tertiarySystemFill
+        created.accessibilityIdentifier = "dubhub.nativeTabBar.legacySelectionBubble"
+        created.isAccessibilityElement = false
+        created.accessibilityElementsHidden = true
+        legacySelectionBubble = created
+        return created
+    }
+
+    private func ensureLegacyFloatingSurface() -> UIVisualEffectView {
+        let surface: UIVisualEffectView
+        if let legacyFloatingSurface {
+            surface = legacyFloatingSurface
+        } else {
+            let created = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+            created.isUserInteractionEnabled = false
+            created.clipsToBounds = true
+            created.layer.cornerCurve = .continuous
+            created.accessibilityIdentifier = "dubhub.nativeTabBar.legacyFloatingSurface"
+            created.isAccessibilityElement = false
+            created.accessibilityElementsHidden = true
+            legacyFloatingSurface = created
+            surface = created
+            backgroundColor = .clear
+            softenLegacySurface(created)
+        }
+        if surface.superview !== self {
+            insertSubview(surface, at: 0)
+        }
+        return surface
+    }
+
+    /// Keeps systemChromeMaterial, pulled part-way toward clear so the feed reads through.
+    private func softenLegacySurface(_ surface: UIVisualEffectView) {
+        let fade = UIViewPropertyAnimator(duration: 1, curve: .linear) {
+            surface.effect = nil
+        }
+        fade.startAnimation()
+        fade.pauseAnimation()
+        fade.fractionComplete = Self.legacySurfaceClearFraction
+        legacySurfaceFade = fade
+    }
+
+    /// Stop the pre-iOS 26 `_UIBarBackground` from filling this inset frame,
+    /// including the home-indicator band. Does not run on iOS 26.
+    private func suppressLegacyTabBarBackground() {
+        func walk(_ view: UIView) {
+            if view === legacyFloatingSurface || view === legacySelectionBubble { return }
+            let name = NSStringFromClass(type(of: view))
+            if name.contains("BarBackground") {
+                view.isHidden = true
+                view.alpha = 0
+                return
+            }
+            if DubHubNativeTabBarIconAnimator.isTabItemButtonCandidate(view) {
+                return
+            }
+            for child in view.subviews {
+                walk(child)
+            }
+        }
+        for child in subviews {
+            walk(child)
+        }
+    }
+
+    /// Visible control band inside the existing frame.
+    /// Home-indicator phones: `safeAreaInsets.bottom` is the indicator region
+    /// already included in `sizeThatFits`, so the material stops above it.
+    /// If that inset is missing, follow the glyph cluster instead of rounding
+    /// the full bar bounds down to the screen edge.
+    private func legacyFloatingBand() -> CGRect? {
+        let width = bounds.width
+        guard width > 1, bounds.height > 1 else { return nil }
+        let safeBottom = safeAreaInsets.bottom
+        if safeBottom > 0.5 {
+            let height = bounds.height - safeBottom
+            guard height > 1 else { return nil }
+            return CGRect(x: 0, y: 0, width: width, height: height)
+        }
+        guard let cluster = legacyControlCluster() else { return nil }
+        let leftover = bounds.height - cluster.maxY
+        if leftover > 12 {
+            return CGRect(x: 0, y: 0, width: width, height: max(cluster.maxY, 1))
+        }
+        return bounds
+    }
+
+    /// Glyph union plus room for the system label. Width stays the bar width.
+    private func legacyControlCluster() -> CGRect? {
+        let buttons = DubHubNativeTabBarIconAnimator.dedupedTabButtons(in: self, requireWindow: false)
+        var union: CGRect?
+        for button in buttons {
+            guard let icon = DubHubNativeTabBarIconAnimator.preferredIconImageView(in: button) else { continue }
+            let frame = icon.convert(icon.bounds, to: self)
+            guard frame.width > 1, frame.height > 1 else { continue }
+            union = union.map { $0.union(frame) } ?? frame
+        }
+        guard let icons = union else { return nil }
+        let topPad: CGFloat = 6
+        let belowGlyph: CGFloat = 18
+        let y = max(0, icons.minY - topPad)
+        var height = icons.height + topPad + belowGlyph
+        if y + height > bounds.height {
+            height = bounds.height - y
+        }
+        guard height > 1 else { return nil }
+        return CGRect(x: 0, y: y, width: bounds.width, height: height)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -45,8 +354,147 @@ final class DubHubNativeTabBar: UITabBar {
     }
 }
 
+/// Pre-iOS 26 image-swap host.
+/// Legacy `UITabBarSwappableImageView` ignores direct image replacement.
+/// iOS 26+ returns the resolved icon and never creates a view.
+enum DubHubNativeTabBarIconSwapOverlay {
+    private final class Cover {
+        weak var native: UIImageView?
+        let overlay: UIImageView
+        let savedAlpha: CGFloat
+        var liftedBadges: [UIView] = []
+
+        init(native: UIImageView, overlay: UIImageView, savedAlpha: CGFloat) {
+            self.native = native
+            self.overlay = overlay
+            self.savedAlpha = savedAlpha
+        }
+    }
+
+    private static var coversByOverlay: [ObjectIdentifier: Cover] = [:]
+    private static var overlayIDByNative: [ObjectIdentifier: ObjectIdentifier] = [:]
+
+    /// View that should receive image-swap frames. iOS 26+ is `native` itself.
+    static func begin(over native: UIImageView) -> UIImageView {
+        if #available(iOS 26.0, *) {
+            return native
+        }
+        endCovering(native)
+        guard let parent = native.superview, native.window != nil else {
+            return native
+        }
+        let overlay = UIImageView(image: native.image)
+        overlay.frame = native.frame
+        overlay.contentMode = native.contentMode
+        overlay.tintColor = inheritedTint(of: native)
+        overlay.clipsToBounds = native.clipsToBounds
+        overlay.isUserInteractionEnabled = false
+        overlay.isAccessibilityElement = false
+        overlay.accessibilityElementsHidden = true
+        overlay.backgroundColor = .clear
+        parent.insertSubview(overlay, aboveSubview: native)
+        let cover = Cover(native: native, overlay: overlay, savedAlpha: native.alpha)
+        coversByOverlay[ObjectIdentifier(overlay)] = cover
+        overlayIDByNative[ObjectIdentifier(native)] = ObjectIdentifier(overlay)
+        native.alpha = 0
+        sync(cover)
+        return overlay
+    }
+
+    /// Keeps a pre-iOS 26 overlay aligned with its native icon. No-op on iOS 26+.
+    static func holdInPlace(_ animatedView: UIImageView) {
+        if #available(iOS 26.0, *) { return }
+        guard let cover = coversByOverlay[ObjectIdentifier(animatedView)] else { return }
+        sync(cover)
+    }
+
+    /// Re-aligns every active pre-iOS 26 overlay after UIKit layout. No-op on iOS 26+.
+    static func syncActiveCovers() {
+        if #available(iOS 26.0, *) { return }
+        for cover in coversByOverlay.values {
+            sync(cover)
+        }
+    }
+
+    static func isAnimationOverlay(_ view: UIView) -> Bool {
+        coversByOverlay[ObjectIdentifier(view)] != nil
+    }
+
+    static func isCoveredNative(_ view: UIView) -> Bool {
+        overlayIDByNative[ObjectIdentifier(view)] != nil
+    }
+
+    /// Restores the native icon and removes the overlay. No-op on iOS 26+ and on the native view.
+    static func end(_ animatedView: UIImageView) {
+        if #available(iOS 26.0, *) { return }
+        let key = ObjectIdentifier(animatedView)
+        if let cover = coversByOverlay.removeValue(forKey: key) {
+            restore(cover)
+            return
+        }
+        endCovering(animatedView)
+    }
+
+    private static func endCovering(_ native: UIImageView) {
+        guard let overlayID = overlayIDByNative[ObjectIdentifier(native)],
+              let cover = coversByOverlay.removeValue(forKey: overlayID) else { return }
+        restore(cover)
+    }
+
+    private static func sync(_ cover: Cover) {
+        guard let native = cover.native,
+              let parent = native.superview,
+              cover.overlay.superview === parent else { return }
+        cover.overlay.frame = native.frame
+        if native.alpha != 0 {
+            native.alpha = 0
+        }
+        for child in native.subviews where isProfileBadge(child) {
+            let frame = native.convert(child.frame, to: parent)
+            parent.insertSubview(child, aboveSubview: cover.overlay)
+            child.frame = frame
+            if !cover.liftedBadges.contains(where: { $0 === child }) {
+                cover.liftedBadges.append(child)
+            }
+        }
+    }
+
+    private static func restore(_ cover: Cover) {
+        let overlayID = ObjectIdentifier(cover.overlay)
+        if let native = cover.native {
+            overlayIDByNative.removeValue(forKey: ObjectIdentifier(native))
+            for badge in cover.liftedBadges where badge.superview !== native {
+                let frame = badge.superview?.convert(badge.frame, to: native) ?? badge.frame
+                native.addSubview(badge)
+                badge.frame = frame
+            }
+            cover.liftedBadges.removeAll()
+            native.alpha = cover.savedAlpha
+        } else {
+            overlayIDByNative = overlayIDByNative.filter { $0.value != overlayID }
+            cover.liftedBadges.removeAll()
+        }
+        cover.overlay.removeFromSuperview()
+    }
+
+    private static func isProfileBadge(_ view: UIView) -> Bool {
+        NSStringFromClass(type(of: view)).contains("DubHubNativeProfileUnreadBadgeView")
+    }
+
+    private static func inheritedTint(of view: UIView) -> UIColor? {
+        if let tint = view.tintColor { return tint }
+        var node = view.superview
+        while let current = node {
+            if let tint = current.tintColor { return tint }
+            node = current.superview
+        }
+        return nil
+    }
+}
+
 /// NATIVE-NAV-PREMIUM-2B / RELEASES-2: committed-selection icon transforms
 /// (Submit + Home + Releases). Does not touch labels, tint, geometry, or route timing.
+
 enum DubHubNativeTabBarIconAnimator {
     static let submitDuration: TimeInterval = 0.20
     /// NATIVE-NAV-HOME-17: pause ↔ play cross-dissolve with start delay + longer hold.
@@ -86,6 +534,7 @@ enum DubHubNativeTabBarIconAnimator {
         homeSessionGeneration &+= 1
         guard let imageView else { return }
         resetHome(imageView)
+        DubHubNativeTabBarIconSwapOverlay.end(imageView)
     }
 
     static func playCommittedSelection(
@@ -122,7 +571,7 @@ enum DubHubNativeTabBarIconAnimator {
             playProfile(item: item, tabBar: tabBar, generation: generation)
             return
         }
-        if let imageView = resolveIconImageView(for: item, in: tabBar) {
+        if let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) {
             play(tabId: tabId, imageView: imageView, tabBar: tabBar, generation: generation)
             return
         }
@@ -130,7 +579,7 @@ enum DubHubNativeTabBarIconAnimator {
         DispatchQueue.main.async {
             guard generation == committedAnimationGeneration else { return }
             tabBar.layoutIfNeeded()
-            guard let imageView = resolveIconImageView(for: item, in: tabBar) else {
+            guard let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) else {
                 return
             }
             guard generation == committedAnimationGeneration else { return }
@@ -163,29 +612,37 @@ enum DubHubNativeTabBarIconAnimator {
         generation: UInt64
     ) {
         if DubHubNativeTabBarChrome.shared.isArtistProfileIconRole {
-            if let imageView = resolveIconImageView(for: item, in: tabBar) {
+            if let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) {
                 animateProfileArtist(imageView, tabBar: tabBar)
                 return
             }
             DispatchQueue.main.async {
                 guard generation == committedAnimationGeneration else { return }
                 tabBar.layoutIfNeeded()
-                guard DubHubNativeTabBarChrome.shared.isArtistProfileIconRole else { return }
-                guard let imageView = resolveIconImageView(for: item, in: tabBar) else { return }
+                guard DubHubNativeTabBarChrome.shared.isArtistProfileIconRole else {
+                    return
+                }
+                guard let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) else {
+                    return
+                }
                 guard generation == committedAnimationGeneration else { return }
                 animateProfileArtist(imageView, tabBar: tabBar)
             }
             return
         }
-        if let imageView = resolveIconImageView(for: item, in: tabBar) {
+        if let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) {
             animateProfileCommunity(imageView, tabBar: tabBar)
             return
         }
         DispatchQueue.main.async {
             guard generation == committedAnimationGeneration else { return }
             tabBar.layoutIfNeeded()
-            guard !DubHubNativeTabBarChrome.shared.isArtistProfileIconRole else { return }
-            guard let imageView = resolveIconImageView(for: item, in: tabBar) else { return }
+            guard !DubHubNativeTabBarChrome.shared.isArtistProfileIconRole else {
+                return
+            }
+            guard let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) else {
+                return
+            }
             guard generation == committedAnimationGeneration else { return }
             animateProfileCommunity(imageView, tabBar: tabBar)
         }
@@ -260,6 +717,7 @@ enum DubHubNativeTabBarIconAnimator {
             completion()
             return
         }
+        DubHubNativeTabBarIconSwapOverlay.holdInPlace(imageView)
         UIView.transition(
             with: imageView,
             duration: homeCrossDissolveDuration,
@@ -278,28 +736,42 @@ enum DubHubNativeTabBarIconAnimator {
 
     /// NATIVE-NAV-HOME-17: delay → pause → play → hold → pause via cross-dissolve only.
     private static func animateHome(_ imageView: UIImageView, generation: UInt64) {
-        resetHome(imageView)
+        let animated = DubHubNativeTabBarIconSwapOverlay.begin(over: imageView)
+        resetHome(animated)
         homeSessionGeneration = generation
-        activeHomeImageView = imageView
+        activeHomeImageView = animated
 
         DispatchQueue.main.asyncAfter(deadline: .now() + homeStartDelay) {
-            guard isHomeSessionCurrent(generation, imageView: imageView) else { return }
+            guard isHomeSessionCurrent(generation, imageView: animated) else {
+                DubHubNativeTabBarIconSwapOverlay.end(animated)
+                return
+            }
             crossDissolveHomeImage(
-                imageView,
+                animated,
                 to: playingHomeImage(),
                 generation: generation
             ) {
-                guard isHomeSessionCurrent(generation, imageView: imageView) else { return }
+                guard isHomeSessionCurrent(generation, imageView: animated) else {
+                    DubHubNativeTabBarIconSwapOverlay.end(animated)
+                    return
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + homeHoldDuration) {
-                    guard isHomeSessionCurrent(generation, imageView: imageView) else { return }
+                    guard isHomeSessionCurrent(generation, imageView: animated) else {
+                        DubHubNativeTabBarIconSwapOverlay.end(animated)
+                        return
+                    }
                     crossDissolveHomeImage(
-                        imageView,
+                        animated,
                         to: canonicalHomeImage(),
                         generation: generation
                     ) {
-                        guard isHomeSessionCurrent(generation, imageView: imageView) else { return }
-                        resetHome(imageView)
+                        guard isHomeSessionCurrent(generation, imageView: animated) else {
+                            DubHubNativeTabBarIconSwapOverlay.end(animated)
+                            return
+                        }
+                        resetHome(animated)
                         activeHomeImageView = nil
+                        DubHubNativeTabBarIconSwapOverlay.end(animated)
                     }
                 }
             }
@@ -312,14 +784,16 @@ enum DubHubNativeTabBarIconAnimator {
         tabBar: UITabBar,
         generation: UInt64
     ) {
-        if let imageView = resolveIconImageView(for: item, in: tabBar) {
+        if let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) {
             animateLeaderboard(imageView, tabBar: tabBar)
             return
         }
         DispatchQueue.main.async {
             guard generation == committedAnimationGeneration else { return }
             tabBar.layoutIfNeeded()
-            guard let imageView = resolveIconImageView(for: item, in: tabBar) else { return }
+            guard let imageView = resolveIconImageViewForCommittedAnimation(for: item, in: tabBar) else {
+                return
+            }
             guard generation == committedAnimationGeneration else { return }
             animateLeaderboard(imageView, tabBar: tabBar)
         }
@@ -350,7 +824,16 @@ enum DubHubNativeTabBarIconAnimator {
         guard let button = resolveTabButton(for: item, in: tabBar, requireWindow: requireWindow) else {
             return nil
         }
-        return preferredIconImageView(in: button)
+        let imageView = preferredIconImageView(in: button)
+        return imageView
+    }
+
+    /// Animation-only resolve. Same picker as `resolveIconImageView`.
+    private static func resolveIconImageViewForCommittedAnimation(
+        for item: UITabBarItem,
+        in tabBar: UITabBar
+    ) -> UIImageView? {
+        return resolveIconImageView(for: item, in: tabBar)
     }
 
     /// PROFILE-NAV-BADGE-2C/2E: stable tab-slot host (does not morph with glyph selection anim).
@@ -393,7 +876,15 @@ enum DubHubNativeTabBarIconAnimator {
 
     static func isTabItemButtonCandidate(_ view: UIView) -> Bool {
         let name = NSStringFromClass(type(of: view))
-        guard name.contains("TabButton") else { return false }
+        // iOS 26 `_UITabButton` matches TabButton. Pre-iOS 26 also accepts
+        // `UITabBarButton` (TabBarButton). Labels and chrome stay excluded.
+        let matchesButton: Bool
+        if #available(iOS 26.0, *) {
+            matchesButton = name.contains("TabButton")
+        } else {
+            matchesButton = name.contains("TabButton") || name.contains("TabBarButton")
+        }
+        guard matchesButton else { return false }
         if name.contains("Label") { return false }
         if isNonButtonChromeClassName(name) { return false }
         return true
@@ -618,7 +1109,11 @@ enum DubHubNativeTabBarIconAnimator {
             }
         }
         walk(root)
-        let visible = candidates.filter { !$0.isHidden && $0.alpha > 0.01 }
+        let visible = candidates.filter { imageView in
+            if DubHubNativeTabBarIconSwapOverlay.isAnimationOverlay(imageView) { return false }
+            if DubHubNativeTabBarIconSwapOverlay.isCoveredNative(imageView) { return true }
+            return !imageView.isHidden && imageView.alpha > 0.01
+        }
         let iconSized = visible.filter { imageView in
             let width = max(imageView.bounds.width, imageView.frame.width)
             let height = max(imageView.bounds.height, imageView.frame.height)
@@ -662,5 +1157,6 @@ enum DubHubNativeTabBarIconAnimator {
             imageView.transform = .identity
         }
     }
+
 
 }

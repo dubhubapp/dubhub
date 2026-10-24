@@ -299,6 +299,21 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.doesNotMatch(overlaySrc, /backgroundEffect/);
   });
 
+  it("IOS18-NAV-FALLBACK: pre-iOS 26 rounded material, iOS 26 glass left alone", () => {
+    assert.match(animatorSrc, /if #available\(iOS 26\.0, \*\) \{\s*return\s*\}/);
+    assert.match(animatorSrc, /UIVisualEffectView\(effect: UIBlurEffect\(style: \.systemChromeMaterial\)\)/);
+    assert.match(animatorSrc, /name\.contains\("BarBackground"\)/);
+    assert.match(animatorSrc, /bounds\.height - safeBottom/);
+    assert.match(animatorSrc, /layer\.cornerRadius = band\.height \* 0\.5/);
+    assert.match(animatorSrc, /dubhub\.nativeTabBar\.legacyFloatingSurface/);
+    assert.doesNotMatch(animatorSrc, /UITabBarAppearance\s*\(/);
+    assert.doesNotMatch(animatorSrc, /configureWithOpaqueBackground|configureWithTransparentBackground/);
+    assert.doesNotMatch(overlaySrc, /UITabBarAppearance\s*\(/);
+    assert.match(overlaySrc, /let sideInset: CGFloat = 16/);
+    assert.match(overlaySrc, /hostSafeBottom > 0 \? Self\.homeIndicatorPhysicalInset : Self\.minimumBottomInset/);
+    assert.doesNotMatch(animatorSrc, /sideInset/);
+  });
+
   it("keeps Light selected and unselected tab ink at #101828 and Dark tints unchanged", () => {
     assert.match(
       overlaySrc,
@@ -840,7 +855,21 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.match(animatorSrc, /func collectTabButtonCandidates\(in root:/);
     assert.match(animatorSrc, /func dedupedTabButtons\(in tabBar:/);
     assert.match(animatorSrc, /contains\("TabButton"\)/);
-    assert.doesNotMatch(animatorSrc, /contains\("TabBarButton"\)/);
+    {
+      const candidateStart = animatorSrc.indexOf("static func isTabItemButtonCandidate");
+      const candidateEnd = animatorSrc.indexOf("private static func isNonButtonChromeClassName");
+      const candidateFn = animatorSrc.slice(candidateStart, candidateEnd);
+      const availableAt = candidateFn.indexOf("if #available(iOS 26.0, *)");
+      const elseAt = candidateFn.indexOf("} else {");
+      assert.ok(availableAt >= 0 && elseAt > availableAt);
+      const ios26Branch = candidateFn.slice(availableAt, elseAt);
+      const legacyBranch = candidateFn.slice(elseAt);
+      assert.match(ios26Branch, /contains\("TabButton"\)/);
+      assert.doesNotMatch(ios26Branch, /TabBarButton/);
+      assert.match(legacyBranch, /contains\("TabButton"\)/);
+      assert.match(legacyBranch, /contains\("TabBarButton"\)/);
+      assert.match(candidateFn, /contains\("Label"\)/);
+    }
     assert.doesNotMatch(animatorSrc, /tabBar\.subviews\s*\n\s*\.filter/);
     assert.match(animatorSrc, /layoutIfNeeded\(\)/);
     assert.match(animatorSrc, /DispatchQueue\.main\.async/);
