@@ -67,7 +67,7 @@ describe("Leaderboard profile preview sheet — seed / genre / cache", () => {
   it("seeds identity from leaderboard row fields before network", () => {
     const openSlice = leaderboardSrc.slice(
       leaderboardSrc.indexOf("const handleOpenProfile"),
-      leaderboardSrc.indexOf("const handleOpenProfile") + 900,
+      leaderboardSrc.indexOf("const handleOpenProfile") + 1400,
     );
     assert.match(openSlice, /onOpenProfile\(entry\.username/);
     assert.match(openSlice, /seed:\s*\{/);
@@ -76,6 +76,10 @@ describe("Leaderboard profile preview sheet — seed / genre / cache", () => {
     assert.match(openSlice, /account_type:\s*entry\.account_type/);
     assert.match(openSlice, /verified_artist:\s*entry\.verified_artist/);
     assert.match(openSlice, /moderator:\s*entry\.moderator/);
+    assert.match(openSlice, /reputation:\s*entry\.reputation/);
+    assert.match(openSlice, /correct_ids:\s*entry\.correct_ids/);
+    assert.match(openSlice, /hasMonthlyTop100:\s*entry\.hasMonthlyTop100 === true/);
+    assert.match(openSlice, /created_at:\s*entry\.created_at/);
     assert.match(openSlice, /surfaceGenreHint:\s*entry\.favorite_genre/);
   });
 

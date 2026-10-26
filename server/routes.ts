@@ -11,6 +11,7 @@ import { registerReleaseSharePreviewRoutes } from "./releaseSharePreview";
 import { registerArtistProfileSharePreviewRoutes } from "./artistProfileSharePreview";
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
+import { commentsReadViewer } from "./comments-read-viewer";
 import {
   freezeLeaderboardMonth,
   getUserLeaderboardAchievements,
@@ -1833,81 +1834,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get user profile by username
   app.get("/api/user/profile/:username", async (req, res) => {
+    const handlerStarted = performance.now();
+    const timing = { lookup: 0, karma: 0, light: 0, achievements: 0, parallel: 0 };
+    const writeShellTiming = () => {
+      const handler = performance.now() - handlerStarted;
+      res.setHeader(
+        "Server-Timing",
+        [
+          `lookup;dur=${timing.lookup.toFixed(1)}`,
+          `karma;dur=${timing.karma.toFixed(1)}`,
+          `light;dur=${timing.light.toFixed(1)}`,
+          `achievements;dur=${timing.achievements.toFixed(1)}`,
+          `parallel;dur=${timing.parallel.toFixed(1)}`,
+          `handler;dur=${handler.toFixed(1)}`,
+        ].join(", "),
+      );
+    };
     try {
       const { username } = req.params;
+      const lookupStarted = performance.now();
       const user = await storage.getUserByUsername(username);
+      timing.lookup = performance.now() - lookupStarted;
       
       if (!user) {
+        writeShellTiming();
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Hardened community trust — read via karmaService (same as GET /api/user/:id/karma).
-      const { score: reputation, correct_ids: correctIdsAgg } = await getUserKarmaAggregate(user.id);
-      
-      let publicLight: import("@shared/schema").PublicLightProfileStats | undefined;
-      try {
-        publicLight = await fetchPublicLightProfileStats(user.id);
-      } catch (statsErr) {
-        console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
-      }
-
-      let publicReleases: { upcoming: any[]; released: any[] } | undefined;
-      const isVerifiedArtistProfile = user.verified_artist === true && user.account_type === "artist";
-      let publicProfileQuestionAnswers: import("@shared/schema").PublicArtistProfileQuestionAnswer[] | undefined;
-      if (isVerifiedArtistProfile) {
-        try {
-          publicReleases = await buildPublicReleasesPayload(user.id);
-        } catch (releasesErr) {
-          console.error("[/api/user/profile/:username] publicReleases:", releasesErr);
-        }
-        try {
-          const answerRecords = await storage.getArtistProfileQuestionAnswers(user.id);
-          const publicAnswers = toPublicArtistProfileQuestionAnswers(answerRecords);
-          if (publicAnswers.length > 0) {
-            publicProfileQuestionAnswers = publicAnswers;
+      // Light shell only. Discography, saved releases, community overview, and
+      // artist Q&A load from GET /api/user/:id/public-profile-sections.
+      const parallelStarted = performance.now();
+      const [karmaAgg, publicLight, achievements] = await Promise.all([
+        (async () => {
+          const started = performance.now();
+          try {
+            return await getUserKarmaAggregate(user.id);
+          } finally {
+            timing.karma = performance.now() - started;
           }
-        } catch (answersErr) {
-          console.error("[/api/user/profile/:username] publicProfileQuestionAnswers:", answersErr);
-        }
-      }
-
-      let publicCommunityOverview: import("@shared/schema").PublicCommunityOverviewStats | undefined;
-      let publicSavedReleases: { upcoming: any[]; released: any[] } | undefined;
-      if (!isVerifiedArtistProfile) {
-        try {
-          publicCommunityOverview = await fetchPublicCommunityOverviewStats(user.id);
-        } catch (overviewErr) {
-          console.error("[/api/user/profile/:username] publicCommunityOverview:", overviewErr);
-        }
-        try {
-          publicSavedReleases = await buildPublicSavedReleasesPayload(user.id);
-        } catch (savedErr) {
-          console.error("[/api/user/profile/:username] publicSavedReleases:", savedErr);
-        }
-      }
+        })(),
+        (async () => {
+          const started = performance.now();
+          try {
+            return await fetchPublicLightProfileStats(user.id);
+          } catch (statsErr) {
+            console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
+            return undefined;
+          } finally {
+            timing.light = performance.now() - started;
+          }
+        })(),
+        (async () => {
+          const started = performance.now();
+          try {
+            return await getUserLeaderboardAchievements(user.id, user.account_type);
+          } finally {
+            timing.achievements = performance.now() - started;
+          }
+        })(),
+      ]);
+      timing.parallel = performance.now() - parallelStarted;
 
       const { email: _email, ...publicUser } = user;
-      const achievements = await getUserLeaderboardAchievements(
-        user.id,
-        user.account_type,
-      );
-      const userProfile = {
+      writeShellTiming();
+      res.json({
         ...publicUser,
-        reputation,
-        correct_ids: correctIdsAgg,
-        karma: reputation,
+        reputation: karmaAgg.score,
+        correct_ids: karmaAgg.correct_ids,
+        karma: karmaAgg.score,
         ...achievements,
         ...(publicLight !== undefined ? { publicLight } : {}),
-        ...(publicReleases !== undefined ? { publicReleases } : {}),
-        ...(publicProfileQuestionAnswers !== undefined ? { publicProfileQuestionAnswers } : {}),
-        ...(publicCommunityOverview !== undefined ? { publicCommunityOverview } : {}),
-        ...(publicSavedReleases !== undefined ? { publicSavedReleases } : {}),
-      };
-
-      res.json(userProfile);
+      });
     } catch (error) {
       console.error('Error fetching user profile:', error);
       res.status(500).json({ message: "Failed to get user profile" });
+    }
+  });
+
+  // Heavy public-profile sections. Same visibility rules as the former inline profile payload.
+  app.get("/api/user/:id/public-profile-sections", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const isVerifiedArtistProfile = user.verified_artist === true && user.account_type === "artist";
+      if (isVerifiedArtistProfile) {
+        const [publicReleases, publicProfileQuestionAnswers] = await Promise.all([
+          buildPublicReleasesPayload(user.id).catch((releasesErr) => {
+            console.error("[/api/user/:id/public-profile-sections] publicReleases:", releasesErr);
+            return undefined;
+          }),
+          storage
+            .getArtistProfileQuestionAnswers(user.id)
+            .then((answerRecords) => {
+              const publicAnswers = toPublicArtistProfileQuestionAnswers(answerRecords);
+              return publicAnswers.length > 0 ? publicAnswers : undefined;
+            })
+            .catch((answersErr) => {
+              console.error("[/api/user/:id/public-profile-sections] publicProfileQuestionAnswers:", answersErr);
+              return undefined;
+            }),
+        ]);
+        return res.json({
+          ...(publicReleases !== undefined ? { publicReleases } : {}),
+          ...(publicProfileQuestionAnswers !== undefined ? { publicProfileQuestionAnswers } : {}),
+        });
+      }
+
+      const [publicCommunityOverview, publicSavedReleases] = await Promise.all([
+        fetchPublicCommunityOverviewStats(user.id).catch((overviewErr) => {
+          console.error("[/api/user/:id/public-profile-sections] publicCommunityOverview:", overviewErr);
+          return undefined;
+        }),
+        buildPublicSavedReleasesPayload(user.id).catch((savedErr) => {
+          console.error("[/api/user/:id/public-profile-sections] publicSavedReleases:", savedErr);
+          return undefined;
+        }),
+      ]);
+      res.json({
+        ...(publicCommunityOverview !== undefined ? { publicCommunityOverview } : {}),
+        ...(publicSavedReleases !== undefined ? { publicSavedReleases } : {}),
+      });
+    } catch (error) {
+      console.error("[/api/user/:id/public-profile-sections] Error:", error);
+      res.status(500).json({ message: "Failed to get profile sections" });
     }
   });
 
@@ -2512,13 +2563,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get post comments
-  app.get("/api/posts/:id/comments", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/posts/:id/comments", commentsReadViewer, async (req: AuthenticatedRequest, res) => {
+    const stage = { commentVotesCheck: 0, commentsQuery: 0 };
+    const writeTiming = () => {
+      const auth = (res.locals.commentsReadPerf ?? {}) as {
+        started?: number;
+        auth?: number;
+        userResolve?: number;
+        profileState?: number;
+      };
+      const handler = auth.started != null ? performance.now() - auth.started : 0;
+      const dur = (value: number | undefined) =>
+        (typeof value === "number" && Number.isFinite(value) ? value : 0).toFixed(1);
+      res.setHeader(
+        "Server-Timing",
+        [
+          `auth;dur=${dur(auth.auth)}`,
+          `userResolve;dur=${dur(auth.userResolve)}`,
+          `profileState;dur=${dur(auth.profileState)}`,
+          `commentVotesCheck;dur=${dur(stage.commentVotesCheck)}`,
+          `commentsQuery;dur=${dur(stage.commentsQuery)}`,
+          `handler;dur=${dur(handler)}`,
+        ].join(", "),
+      );
+    };
     try {
       const postId = req.params.id;
       const currentUserId = req.dbUser?.id || undefined;
-      const comments = await storage.getPostComments(postId, currentUserId);
+      const comments = await storage.getPostComments(postId, currentUserId, stage);
+      writeTiming();
       res.json(comments);
     } catch (error) {
+      writeTiming();
       res.status(500).json({ message: "Failed to get comments" });
     }
   });

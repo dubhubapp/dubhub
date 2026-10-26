@@ -107,40 +107,65 @@ export async function withSupabaseUser(
   }
 }
 
+function commentsReadClock(req: Request): number | null {
+  if (req.method !== "GET") return null;
+  if (!/^\/api\/posts\/[^/]+\/comments\/?$/.test(req.path)) return null;
+  return performance.now();
+}
+
 export async function optionalSupabaseUser(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) {
+  const commentsStarted = commentsReadClock(req);
+  let userResolveMs = 0;
+  let profileMs = 0;
+  const finishCommentsAuth = () => {
+    if (commentsStarted == null) return;
+    res.locals.commentsReadPerf = {
+      started: commentsStarted,
+      auth: performance.now() - commentsStarted,
+      userResolve: userResolveMs,
+      profile: profileMs,
+    };
+  };
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       // No auth header, continue without user context
+      finishCommentsAuth();
       return next();
     }
 
     const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
 
     // Verify the token with Supabase
+    const userResolveStarted = performance.now();
     const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    userResolveMs = performance.now() - userResolveStarted;
 
     if (error || !user) {
       // Invalid/expired token, continue without user context
       console.log(`[Optional Auth] Invalid token or no user:`, error?.message || 'No user');
+      finishCommentsAuth();
       return next();
     }
 
     // Fetch full profile from Supabase profiles table
+    const profileStarted = performance.now();
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count, country_code, country_prompt_pending')
       .eq('id', user.id)
       .single();
+    profileMs = performance.now() - profileStarted;
 
     if (profileError) {
       console.error(`[Optional Auth] Error fetching profile for ${user.id}:`, profileError);
       // Continue without user context
+      finishCommentsAuth();
       return next();
     }
 
@@ -176,10 +201,12 @@ export async function optionalSupabaseUser(
       }
     }
 
+    finishCommentsAuth();
     next();
   } catch (error: any) {
     console.error('[Optional Auth] Unexpected error:', error?.message || error);
     // Continue without user context on error
+    finishCommentsAuth();
     next();
   }
 }

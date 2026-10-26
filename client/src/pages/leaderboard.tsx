@@ -270,6 +270,10 @@ export function LeaderboardEntryRow({
         account_type: entry.account_type,
         verified_artist: entry.verified_artist,
         moderator: entry.moderator,
+        reputation: entry.reputation,
+        correct_ids: entry.correct_ids,
+        hasMonthlyTop100: entry.hasMonthlyTop100 === true,
+        created_at: entry.created_at,
       },
     });
   };

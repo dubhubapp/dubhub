@@ -134,9 +134,6 @@ import {
   PROFILE_NOTIFICATION_MEDIA_FALLBACK_ICON_CLASS,
   PROFILE_NOTIFICATION_MEDIA_FRAME_CLASS,
   PROFILE_NOTIFICATION_ROW_SURFACE_CLASS,
-  PROFILE_NOTIFICATION_SKELETON_MEDIA_CIRCLE_CLASS,
-  PROFILE_NOTIFICATION_SKELETON_MEDIA_SQUARE_CLASS,
-  PROFILE_NOTIFICATION_SKELETON_ROW_CLASS,
   PROFILE_NOTIFICATION_UNREAD_DOT_CLASS,
   PROFILE_NOTIFICATIONS_MASK_SHELL_CLASS,
   PROFILE_NOTIFICATIONS_PTR_MIN_REFRESH_VISIBLE_MS,
@@ -219,35 +216,6 @@ import {
 
 const PROFILE_POSTS_LIKES_CARD_CLASS =
   "ios-press group relative aspect-[9/16] overflow-hidden rounded-xl bg-zinc-950 border border-white/10 hover:border-white/25 transition-colors text-left";
-
-/** Compact skeleton rows for Profile → Notifications initial load. */
-function ProfileNotificationsLoadingSkeleton() {
-  return (
-    <div
-      className={SETTINGS_ROWS_STACK_CLASS}
-      aria-busy="true"
-      data-testid="profile-notifications-skeleton"
-    >
-      {[0, 1, 2].map((index) => (
-        <div key={index} className={PROFILE_NOTIFICATION_SKELETON_ROW_CLASS}>
-          <div
-            className={
-              index === 0
-                ? PROFILE_NOTIFICATION_SKELETON_MEDIA_CIRCLE_CLASS
-                : PROFILE_NOTIFICATION_SKELETON_MEDIA_SQUARE_CLASS
-            }
-            aria-hidden
-          />
-          <div className="min-w-0 flex-1 space-y-2 pt-0.5">
-            <DubHubSkeletonBar className="h-3.5 w-[88%]" />
-            <DubHubSkeletonBar className="h-3 w-[64%]" tone="mid" />
-            <DubHubSkeletonBar className="h-2.5 w-14" tone="faint" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /** Radix Tabs `value` must always match a trigger id (label "Likes" still uses key `"liked"`). */
 const PROFILE_TAB_IDS = ["profile", "posts", "liked", "notifications"] as const;
@@ -950,6 +918,14 @@ export default function UserProfile() {
     enabled: !!currentUser?.id && postsTabOpen,
   });
 
+  const profileShellReady = !!currentUser?.id && !statsLoading && !reputationLoading;
+  useEffect(() => {
+    if (!profileShellReady || !currentUser?.id) return;
+    const userId = currentUser.id;
+    void queryClient.prefetchQuery({ queryKey: ["/api/user", userId, "posts"] });
+    void queryClient.prefetchQuery({ queryKey: ["/api/user", userId, "liked-posts"] });
+  }, [profileShellReady, currentUser?.id, queryClient]);
+
   type IdentifiedGenresResponse = { genres: { genreKey: string; count: number }[] };
 
   const { data: identifiedGenresData, isLoading: identifiedGenresLoading } = useQuery<IdentifiedGenresResponse>({
@@ -1022,6 +998,7 @@ export default function UserProfile() {
     karmaLoading: reputationLoading,
     rankEnabled: karmaScore !== undefined,
     rankLoading: karmaScore !== undefined && karmaRank === undefined && !karmaRankError,
+    warmSecondary: profileShellReady,
     postsEnabled: postsTabOpen,
     likesEnabled: likesTabOpen,
     postsLoading,
@@ -1268,7 +1245,7 @@ export default function UserProfile() {
   const ownerArtistGenrePillStyle = repBarGenreChip
     ? (getGenreGlowPillStyle(repBarGenreChip.bgColor, repBarGenreChip.textClass) as CSSProperties)
     : null;
-  const favGenrePending = !repBarGenreChip && (identifiedGenresLoading || postsLoading);
+  const favGenrePending = !repBarGenreChip && (identifiedGenresLoading || (postsTabOpen && postsLoading));
   const hundredClubEarned = userStats?.hasMonthlyTop100 === true;
 
   const hasAnyArtistImpact =
@@ -3539,7 +3516,7 @@ export default function UserProfile() {
                     )}
                   </div>
                   <span
-                    className="relative inline-flex shrink-0"
+                    className="relative inline-flex h-[1.625rem] shrink-0 items-center"
                     data-testid="owner-profile-hundred-club-slot"
                     data-state={statsLoading ? "loading" : hundredClubEarned ? "earned" : "absent"}
                   >
@@ -3552,7 +3529,7 @@ export default function UserProfile() {
                       <MonthlyTop100Badge earned context="profile" />
                     </span>
                     {statsLoading ? (
-                      <DubHubSkeletonBar tone="faint" className="absolute inset-0 rounded-full" />
+                      <DubHubSkeletonBar tone="faint" className="absolute inset-0 rounded" />
                     ) : null}
                   </span>
                   {userData.username ? (
@@ -3569,7 +3546,7 @@ export default function UserProfile() {
 
               <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
                 {keyStatRow.map(({ label, value, Icon, iconTone }) => {
-                  const valuePending = label === "IDs" || label === "Rep" ? reputationLoading : statsLoading;
+                  const valuePending = statsLoading || reputationLoading;
                   return (
                     <div key={label} className="flex flex-col items-center gap-1 text-center">
                       <Icon
@@ -3589,7 +3566,7 @@ export default function UserProfile() {
                             data-testid="profile-key-stat-skeleton"
                           />
                         ) : (
-                          <span className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
+                          <span className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:[animation-duration:150ms]">
                             {value}
                           </span>
                         )}
@@ -3839,7 +3816,7 @@ export default function UserProfile() {
                       onToggleGenres={() => setShowActivityGenres((prev) => !prev)}
                       identifiedGenresLoading={identifiedGenresLoading}
                       identifiedGenreStats={identifiedGenreStats}
-                      postsLoading={postsLoading}
+                      postsLoading={postsTabOpen && postsLoading}
                       genreStats={genreStats}
                     />
                   )}
@@ -3853,7 +3830,7 @@ export default function UserProfile() {
                     onToggleGenres={() => setShowActivityGenres((prev) => !prev)}
                     identifiedGenresLoading={identifiedGenresLoading}
                     identifiedGenreStats={identifiedGenreStats}
-                    postsLoading={postsLoading}
+                    postsLoading={postsTabOpen && postsLoading}
                     genreStats={genreStats}
                   />
                 </section>
@@ -3933,9 +3910,8 @@ export default function UserProfile() {
               )}
 
               {postsLoading ? (
-                <div className="text-center py-8">
-                  <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
-                  <p className="text-muted-foreground dark:text-gray-400">Loading your posts...</p>
+                <div className="flex justify-center py-10" data-testid="profile-posts-loading">
+                  <VinylLoader size="md" />
                 </div>
               ) : filteredPosts.length === 0 ? (
                 <div className="text-center py-12">
@@ -4047,9 +4023,8 @@ export default function UserProfile() {
               )}
 
               {likedLoading ? (
-                <div className="text-center py-8">
-                  <InlineSpinner className="mx-auto mb-2 border-primary" sizeClassName="h-8 w-8" />
-                  <p className="text-muted-foreground dark:text-gray-400">Loading liked videos...</p>
+                <div className="flex justify-center py-10" data-testid="profile-likes-loading">
+                  <VinylLoader size="md" />
                 </div>
               ) : filteredLikedPosts.length === 0 ? (
                 <div className="text-center py-12">
@@ -4144,7 +4119,9 @@ export default function UserProfile() {
               className={profilePagerPanelClass(3, PROFILE_NOTIFICATIONS_TAB_CONTENT_CLASS)}
             >
               {isInitialNotificationsLoading && !hasLoadedNotifications && notifications.length === 0 ? (
-                <ProfileNotificationsLoadingSkeleton />
+                <div className="flex justify-center py-10" data-testid="profile-notifications-loading">
+                  <VinylLoader size="md" />
+                </div>
               ) : hasLoadedNotifications && visibleNotifications.length === 0 ? (
                 <div className="px-1 py-12 text-center">
                   <Bell className="mx-auto mb-3 h-8 w-8 text-muted-foreground/45" aria-hidden />

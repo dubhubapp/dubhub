@@ -37,6 +37,7 @@ function homeProfileSheetSurfaceClass(): string {
     HOME_PROFILE_PREVIEW_SHEET_HEIGHT_CLASS,
     "pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
     "[&>div:first-child]:hidden",
+    "outline-none focus:outline-none focus-visible:outline-none [-webkit-tap-highlight-color:transparent]",
   ].join(" ");
 }
 
@@ -169,6 +170,23 @@ describe("Home profile preview sheet — helpers", () => {
       cacheComplete: true,
     });
     assert.equal(warm.profileLoadPending, false);
+    const seededStats = mergeProfilePreviewOpenState({
+      username: "dj_k",
+      seed: {
+        id: "u1",
+        reputation: 80,
+        correct_ids: 12,
+        hasMonthlyTop100: true,
+        created_at: "2024-03-01T00:00:00.000Z",
+      },
+      cached: null,
+      cacheComplete: false,
+    });
+    assert.equal(seededStats.reputation, 80);
+    assert.equal(seededStats.correct_ids, 12);
+    assert.equal(seededStats.hasMonthlyTop100, true);
+    assert.equal(seededStats.created_at, "2024-03-01T00:00:00.000Z");
+    assert.equal(seededStats.profileLoadPending, true);
     assert.equal(warm.avatar_url, "https://cdn.example/cached.png");
     assert.equal(warm.publicLight?.topGenreKey, "dnb");
   });
@@ -217,6 +235,10 @@ describe("Home profile preview sheet — visual refinement", () => {
     assert.match(
       popupSrc,
       /Do NOT add `relative` here — twMerge would strip DrawerContent's `fixed`/,
+    );
+    assert.match(
+      popupSrc,
+      /HOME_PROFILE_SHEET_SURFACE_CLASS[\s\S]{0,900}outline-none focus:outline-none focus-visible:outline-none/,
     );
     const surface = homeProfileSheetSurfaceClass();
     assert.doesNotMatch(surface, /\brelative\b/);
@@ -413,7 +435,7 @@ describe("Home profile preview sheet — drawer / nav / actions", () => {
   it("Profile Preview closeThreshold 0.09; no snap points; other drawers unchanged", () => {
     const sheetFnIdx = popupSrc.indexOf("function UserProfilePreviewSheet");
     assert.ok(sheetFnIdx > 0);
-    const sheetSlice = popupSrc.slice(sheetFnIdx, sheetFnIdx + 2500);
+    const sheetSlice = popupSrc.slice(sheetFnIdx, sheetFnIdx + 3400);
     assert.match(sheetSlice, /closeThreshold=\{0\.09\}/);
     assert.doesNotMatch(sheetSlice, /snapPoints/);
     assert.doesNotMatch(sheetSlice, /activeSnapPoint/);

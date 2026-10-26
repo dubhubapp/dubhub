@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   PERF_DEBUG_STORAGE_KEY,
   perfCacheReport,
   perfDebugEnabled,
   perfLog,
+  perfLogProfileShell,
   perfNetworkStarted,
+  perfTimedCommentsResponse,
   perfNoteFetch,
   perfSessionStart,
 } from "./perf-debug";
@@ -97,6 +100,77 @@ describe("perf debug gate", () => {
     assert.equal("data" in profile, false);
     assert.equal(JSON.stringify(detail).includes("secret"), false);
     assert.equal(JSON.stringify(detail).includes("https://"), false);
+  });
+
+  it("logs profile shell durations only", () => {
+    installStorage("1");
+    const calls: unknown[][] = [];
+    const original = console.info;
+    console.info = (...args: unknown[]) => {
+      calls.push(args);
+    };
+    try {
+      perfLogProfileShell(
+        new Response(null, {
+          headers: {
+            "Server-Timing":
+              "lookup;dur=12.34, karma;dur=3, light;dur=1.2, achievements;dur=4, parallel;dur=4.4, handler;dur=20, username;dur=9",
+          },
+        }),
+        40.16,
+      );
+    } finally {
+      console.info = original;
+    }
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], "[Perf] profile-popup shell");
+    const detail = calls[0][1] as Record<string, unknown>;
+    assert.equal(detail.clientMs, 40.2);
+    assert.equal(detail.lookup, 12.3);
+    assert.equal(detail.publicLight, 1.2);
+    assert.equal(detail.handler, 20);
+    assert.equal("username" in detail, false);
+  });
+
+  it("logs comments shell durations and cache flags only", async () => {
+    installStorage("1");
+    const calls: unknown[][] = [];
+    const original = console.info;
+    console.info = (...args: unknown[]) => {
+      calls.push(args);
+    };
+    try {
+      const response = await perfTimedCommentsResponse(
+        { getQueryState: () => ({ data: [] }) } as unknown as QueryClient,
+        "post",
+        async () =>
+          new Response(JSON.stringify([{ body: "secret", username: "hidden" }]), {
+            headers: {
+              "Server-Timing":
+                "auth;dur=80.2, userResolve;dur=50, profileState;dur=30.1, commentVotesCheck;dur=4, commentsQuery;dur=12.34, handler;dur=100, token;dur=9, username;dur=1",
+            },
+          }),
+      );
+      assert.equal(Array.isArray(await response.json()), true);
+    } finally {
+      console.info = original;
+    }
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], "[Perf] comments shell");
+    const detail = calls[0][1] as Record<string, unknown>;
+    assert.equal(detail.cache, "hit");
+    assert.equal(detail.refetch, true);
+    assert.equal(detail.auth, 80.2);
+    assert.equal(detail.userResolve, 50);
+    assert.equal(detail.profileState, 30.1);
+    assert.equal("profile" in detail, false);
+    assert.equal(detail.commentVotesCheck, 4);
+    assert.equal(detail.commentsQuery, 12.3);
+    assert.equal(detail.handler, 100);
+    assert.equal("token" in detail, false);
+    assert.equal("username" in detail, false);
+    assert.equal("body" in detail, false);
+    assert.equal(JSON.stringify(detail).includes("secret"), false);
   });
 });
 

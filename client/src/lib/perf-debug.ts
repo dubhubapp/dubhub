@@ -140,6 +140,62 @@ function sanitizeDetail(detail: Record<string, unknown>): Record<string, unknown
   return out;
 }
 
+function readServerTiming(response: Response): Record<string, number> {
+  const header = response.headers.get("Server-Timing") ?? "";
+  const server: Record<string, number> = {};
+  for (const part of header.split(",")) {
+    const bits = part.trim().split(";");
+    const name = bits[0]?.trim() ?? "";
+    const durBit = bits.find((bit) => bit.trim().startsWith("dur="));
+    if (!/^[a-z]+$/i.test(name) || !durBit) continue;
+    const dur = Number(durBit.trim().slice(4));
+    if (Number.isFinite(dur)) server[name] = roundTiming(dur);
+  }
+  return server;
+}
+
+/** Durations only. The header carries no ids, names, or payloads. */
+export function perfLogProfileShell(response: Response, clientMs: number): void {
+  if (!perfDebugEnabled()) return;
+  const server = readServerTiming(response);
+  perfLog("profile-popup shell", {
+    clientMs: roundTiming(clientMs),
+    lookup: server.lookup,
+    karma: server.karma,
+    publicLight: server.light,
+    achievements: server.achievements,
+    parallel: server.parallel,
+    handler: server.handler,
+  });
+}
+
+/** Durations and cache flags only. Does not read the comments payload. */
+export async function perfTimedCommentsResponse(
+  queryClient: QueryClient,
+  postId: string,
+  request: () => Promise<Response>,
+): Promise<Response> {
+  const state = queryClient.getQueryState(["/api/posts", postId, "comments"]);
+  const cache = state?.data !== undefined ? "hit" : "miss";
+  const started = performance.now();
+  const response = await request();
+  if (perfDebugEnabled()) {
+    const server = readServerTiming(response);
+    perfLog("comments shell", {
+      clientMs: roundTiming(performance.now() - started),
+      auth: server.auth,
+      userResolve: server.userResolve,
+      profileState: server.profileState,
+      commentVotesCheck: server.commentVotesCheck,
+      commentsQuery: server.commentsQuery,
+      handler: server.handler,
+      cache,
+      refetch: cache === "hit",
+    });
+  }
+  return response;
+}
+
 export function perfLog(event: string, detail?: Record<string, unknown>): void {
   try {
     if (!perfDebugEnabled()) return;
@@ -268,6 +324,7 @@ export function useProfilePopupPerf(input: {
   userId: string | undefined;
   profileReady: boolean;
   contentReady: boolean;
+  seeded?: boolean;
 }): void {
   const queryClient = useQueryClient();
   const { open, userId, profileReady, contentReady } = input;
@@ -303,9 +360,11 @@ export function useProfilePopupPerf(input: {
     if (contentReady) {
       popupMark(slot, "first", "profile-popup first-content", {
         cache: slot.profile.cache,
+        seeded: input.seeded === true,
+        duplicateSkipped: statsNetwork !== true && karmaNetwork !== true,
       });
     }
-  }, [open, userId, profileReady, contentReady, queryClient]);
+  }, [open, userId, profileReady, contentReady, input.seeded, queryClient]);
 }
 
 export function useOwnProfilePerf(input: {
@@ -316,6 +375,7 @@ export function useOwnProfilePerf(input: {
   karmaLoading: boolean;
   rankEnabled: boolean;
   rankLoading: boolean;
+  warmSecondary: boolean;
   postsEnabled: boolean;
   likesEnabled: boolean;
   postsLoading: boolean;
@@ -328,6 +388,7 @@ export function useOwnProfilePerf(input: {
     karmaLoading,
     rankEnabled,
     rankLoading,
+    warmSecondary,
     postsEnabled,
     likesEnabled,
     postsLoading,
@@ -344,8 +405,6 @@ export function useOwnProfilePerf(input: {
     perf.note("stats", perfNetworkStarted(stats, "if-stale", true));
     perf.note("karma", perfNetworkStarted(karma, "if-stale", true));
     perf.note("rank", perfNetworkStarted(rank, "if-stale", rankEnabled));
-    perf.note("posts", perfNetworkStarted(posts, "if-stale", postsEnabled));
-    perf.note("likes", perfNetworkStarted(likes, "if-stale", likesEnabled));
     const postsCache = remember(perf, "postsCache", posts.cache);
     const likesCache = remember(perf, "likesCache", likes.cache);
     const cache = remember(perf, "cache", stats.cache === "hit" && karma.cache === "hit" ? "hit" : "miss");
@@ -374,6 +433,46 @@ export function useOwnProfilePerf(input: {
         network: perf.noted("rank"),
       });
     }
+    if (warmSecondary || postsEnabled) {
+      perf.note("posts", perfNetworkStarted(posts, "if-stale", true));
+    }
+    if (warmSecondary || likesEnabled) {
+      perf.note("likes", perfNetworkStarted(likes, "if-stale", true));
+    }
+    if (warmSecondary) {
+      perf.mark("posts-prefetch", "profile posts prefetch", {
+        cache: posts.cache,
+        network: perf.noted("posts"),
+      });
+      perf.mark("likes-prefetch", "profile likes prefetch", {
+        cache: likes.cache,
+        network: perf.noted("likes"),
+      });
+    }
+    if (warmSecondary && posts.hasData) {
+      perf.mark("posts-prefetch-done", "profile posts prefetch done", {
+        cache: posts.cache,
+        network: perf.noted("posts"),
+      });
+    }
+    if (warmSecondary && likes.hasData) {
+      perf.mark("likes-prefetch-done", "profile likes prefetch done", {
+        cache: likes.cache,
+        network: perf.noted("likes"),
+      });
+    }
+    if (postsEnabled) {
+      perf.mark("posts-tab", "profile posts tab", {
+        cache: posts.cache,
+        waited: !posts.hasData,
+      });
+    }
+    if (likesEnabled) {
+      perf.mark("likes-tab", "profile likes tab", {
+        cache: likes.cache,
+        waited: !likes.hasData,
+      });
+    }
     if (posts.hasData && likes.hasData) {
       perf.mark("secondary", "profile secondary", {
         posts: postsCache,
@@ -389,6 +488,7 @@ export function useOwnProfilePerf(input: {
     karmaLoading,
     rankEnabled,
     rankLoading,
+    warmSecondary,
     postsEnabled,
     likesEnabled,
     postsLoading,
@@ -407,6 +507,9 @@ export function usePublicProfilePerf(input: {
   profileId: string | undefined;
   karmaLoading: boolean;
   karmaFetching: boolean;
+  sectionsEnabled?: boolean;
+  sectionsLoading?: boolean;
+  sectionsFetching?: boolean;
 }): void {
   const perf = usePerfVisit(input.active, input.username);
   const {
@@ -417,6 +520,9 @@ export function usePublicProfilePerf(input: {
     profileId,
     karmaLoading,
     karmaFetching,
+    sectionsEnabled = false,
+    sectionsLoading = false,
+    sectionsFetching = false,
     queryClient,
   } = input;
   useLayoutEffect(() => {
@@ -424,7 +530,7 @@ export function usePublicProfilePerf(input: {
     const profile = perfCacheReport(
       queryClient.getQueryState(["/api/user/profile", username]),
     );
-    perf.note("profile", perfNetworkStarted(profile, "always", true));
+    perf.note("profile", perfNetworkStarted(profile, "if-stale", true));
     const karma = profileId
       ? perfCacheReport(queryClient.getQueryState(["/api/user", profileId, "karma"]))
       : undefined;
@@ -454,6 +560,18 @@ export function usePublicProfilePerf(input: {
         karma: karmaCache,
       });
     }
+    if (sectionsEnabled && profileId) {
+      const sections = perfCacheReport(
+        queryClient.getQueryState(["/api/user", profileId, "public-profile-sections"]),
+      );
+      perf.note("sections", perfNetworkStarted(sections, "if-stale", true));
+      if (!sectionsLoading && !sectionsFetching) {
+        perf.mark("sections", "public-profile sections", {
+          cache: sections.cache,
+          network: perf.noted("sections"),
+        });
+      }
+    }
   }, [
     perf.active,
     perf.generation,
@@ -464,6 +582,9 @@ export function usePublicProfilePerf(input: {
     profileId,
     karmaLoading,
     karmaFetching,
+    sectionsEnabled,
+    sectionsLoading,
+    sectionsFetching,
     queryClient,
   ]);
 }

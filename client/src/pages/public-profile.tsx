@@ -60,8 +60,10 @@ import { ArtistProfileShareButton } from "@/components/artist-profile-share-butt
 import { ArtistProfileQuestionsPublic } from "@/components/artist-profile-questions-public";
 import {
   normalizePublicProfileResponse,
+  PUBLIC_PROFILE_STALE_MS,
   publicProfileQueryKey,
   type PublicProfileResponse,
+  type PublicProfileSectionsResponse,
   type PublicReleasesResponse,
 } from "@/lib/public-profile-query";
 
@@ -107,15 +109,19 @@ function PublicProfileKeyStat({
   label,
   icon: Icon,
   value,
+  pending = false,
 }: {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   value: string;
+  pending?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col items-center gap-1 text-center">
       <Icon className={PUBLIC_KEY_STAT_ICON_CLASS} />
-      <span className={PUBLIC_KEY_STAT_VALUE_CLASS}>{value}</span>
+      <span className={`${PUBLIC_KEY_STAT_VALUE_CLASS} flex min-h-4 items-center justify-center`}>
+        {pending ? <DubHubSkeletonBar tone="mid" className="h-4 w-8" /> : value}
+      </span>
       <span className={PUBLIC_KEY_STAT_LABEL_CLASS}>{label}</span>
     </div>
   );
@@ -244,8 +250,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
     queryKey: publicProfileQueryKey(routeUsername),
     enabled: routeUsername.length > 0 && routeNormalized !== viewerNormalized,
     retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: PUBLIC_PROFILE_STALE_MS,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/profile/${encodeURIComponent(routeUsername)}`);
       if (!res.ok) {
@@ -299,6 +304,23 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   const profileIsVerifiedArtist = profile?.verified_artist === true;
   const embeddedReleases = profile?.publicReleases;
 
+  const {
+    data: profileSections,
+    isLoading: sectionsLoading,
+    isFetching: sectionsFetching,
+    isError: sectionsError,
+  } = useQuery<PublicProfileSectionsResponse>({
+    queryKey: ["/api/user", profileId, "public-profile-sections"],
+    enabled: Boolean(profileId),
+    retry: false,
+    staleTime: PUBLIC_PROFILE_STALE_MS,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/user/${profileId}/public-profile-sections`);
+      if (!res.ok) throw new Error("Failed to load profile sections");
+      return res.json();
+    },
+  });
+
   const { data: karmaData, isLoading: karmaLoading, isFetching: karmaFetching } = useQuery<{
     communityTopPercent?: number | null;
   }>({
@@ -314,7 +336,9 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
 
   const { data: fetchedReleases, isLoading: fetchedReleasesLoading } = useQuery<PublicReleasesResponse>({
     queryKey: ["/api/artists", profileId, "public-releases"],
-    enabled: Boolean(profileId && profileIsVerifiedArtist && embeddedReleases === undefined),
+    enabled: Boolean(
+      profileId && profileIsVerifiedArtist && embeddedReleases === undefined && sectionsError,
+    ),
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/artists/${profileId}/public-releases`);
@@ -336,11 +360,19 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
     profileId,
     karmaLoading,
     karmaFetching,
+    sectionsEnabled: Boolean(profileId),
+    sectionsLoading,
+    sectionsFetching,
   });
 
-  const publicReleases = embeddedReleases ?? fetchedReleases;
+  const sectionReleases = profileSections?.publicReleases;
+  const publicReleases = embeddedReleases ?? sectionReleases ?? fetchedReleases;
   const releasesLoading =
-    profileIsVerifiedArtist && embeddedReleases === undefined && fetchedReleasesLoading;
+    profileIsVerifiedArtist &&
+    embeddedReleases === undefined &&
+    sectionReleases === undefined &&
+    (sectionsLoading || fetchedReleasesLoading) &&
+    !sectionsError;
 
   const openRelease = useCallback(
     (release: ReleaseFeedCardData) => {
@@ -447,7 +479,8 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
 
   const light = profile.publicLight;
   const statsReady = light != null;
-  const communityOverview = profile.publicCommunityOverview;
+  const communityOverview = profile.publicCommunityOverview ?? profileSections?.publicCommunityOverview;
+  const artistIdsPending = !isVerifiedArtist && communityOverview == null && sectionsLoading && !sectionsError;
 
   const topGenreKey = light?.topGenreKey ?? null;
   const genreChip = topGenreKey ? getGenreChipStyle(topGenreKey) : null;
@@ -486,7 +519,14 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   const releasedReleases = publicReleases?.released ?? [];
   const hasAnyReleases = upcomingReleases.length > 0 || releasedReleases.length > 0;
 
-  const savedReleases = profile.publicSavedReleases;
+  const savedReleases =
+    profile.publicSavedReleases ??
+    profileSections?.publicSavedReleases ??
+    (!isVerifiedArtist && !sectionsLoading && (profileSections != null || sectionsError)
+      ? { upcoming: [], released: [] }
+      : undefined);
+  const questionAnswers =
+    profile.publicProfileQuestionAnswers ?? profileSections?.publicProfileQuestionAnswers;
   const upcomingSaved = savedReleases?.upcoming ?? [];
   const releasedSaved = savedReleases?.released ?? [];
   const hasAnySavedReleases = upcomingSaved.length > 0 || releasedSaved.length > 0;
@@ -706,6 +746,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                         label="Artist IDs"
                         value={artistIdsValue}
                         icon={PublicArtistIdsStatIcon}
+                        pending={artistIdsPending}
                       />
                     ) : null}
                   </div>
@@ -785,12 +826,9 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
               </section>
             )}
 
-            {isVerifiedArtist &&
-            profile.publicProfileQuestionAnswers &&
-            profile.publicProfileQuestionAnswers.length > 0 &&
-            profile.username ? (
+            {isVerifiedArtist && questionAnswers && questionAnswers.length > 0 && profile.username ? (
               <ArtistProfileQuestionsPublic
-                answers={profile.publicProfileQuestionAnswers}
+                answers={questionAnswers}
                 username={profile.username}
               />
             ) : null}

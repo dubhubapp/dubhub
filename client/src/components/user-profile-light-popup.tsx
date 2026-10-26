@@ -40,6 +40,7 @@ import {
 import {
   perfCacheReport,
   perfDebugEnabled,
+  perfLogProfileShell,
   perfPopupArm,
   useProfilePopupPerf,
 } from "@/lib/perf-debug";
@@ -119,6 +120,9 @@ const HOME_PROFILE_SHEET_SURFACE_CLASS = cn(
   "pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
   // Hide shared DrawerContent grabber — Home sheet draws its own handle under the genre wash.
   "[&>div:first-child]:hidden",
+  // The sheet itself is not a control. Vaul/Radix can focus this dialog node on open,
+  // and WKWebView then paints the system blue outline around the whole surface.
+  "outline-none focus:outline-none focus-visible:outline-none [-webkit-tap-highlight-color:transparent]",
 );
 
 /** Leaderboard SQL uses `other` when no genre rows exist — not a profile fav genre. */
@@ -319,7 +323,9 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
       }
 
       try {
+        const shellStarted = performance.now();
         const response = await apiRequest("GET", `/api/user/profile/${trimmed}`);
+        perfLogProfileShell(response, performance.now() - shellStarted);
         const userData = (await response.json()) as ProfilePopupUser;
         if (seq !== profileOpenSeqRef.current) return;
 
@@ -345,7 +351,21 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
         const cacheUsername = (merged.username ?? trimmed).trim();
         queryClient.setQueryData(
           publicProfileQueryKey(cacheUsername),
-          normalizePublicProfileResponse(userData as PublicProfileResponse),
+          (previous: PublicProfileResponse | undefined) =>
+            normalizePublicProfileResponse({
+              ...previous,
+              ...(userData as PublicProfileResponse),
+              publicReleases:
+                (userData as PublicProfileResponse).publicReleases ?? previous?.publicReleases,
+              publicSavedReleases:
+                (userData as PublicProfileResponse).publicSavedReleases ?? previous?.publicSavedReleases,
+              publicCommunityOverview:
+                (userData as PublicProfileResponse).publicCommunityOverview ??
+                previous?.publicCommunityOverview,
+              publicProfileQuestionAnswers:
+                (userData as PublicProfileResponse).publicProfileQuestionAnswers ??
+                previous?.publicProfileQuestionAnswers,
+            }),
         );
 
         maybePrefetchReleaseAlerts(userData);
@@ -616,9 +636,19 @@ function useProfilePreviewModel(
   const light = user?.publicLight;
   const userId = user?.id;
 
+  const lightHasPosts = light?.posts != null;
+  const lightHasTrust = light?.correct_ids != null && light?.reputation != null;
+  const seedHasTrust =
+    (user?.correct_ids != null && (user?.reputation != null || user?.karma != null));
   const { data: karmaData, isFetching: isFetchingKarma } = useQuery<any>({
     queryKey: ["/api/user", userId, "karma"],
-    enabled: holdSubscriptions && !!user && !!userId,
+    enabled:
+      holdSubscriptions &&
+      !!user &&
+      !!userId &&
+      !user.profileLoadPending &&
+      !lightHasTrust &&
+      !seedHasTrust,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/karma`);
@@ -628,7 +658,8 @@ function useProfilePreviewModel(
 
   const { data: statsData, isFetching: isFetchingStats } = useQuery<any>({
     queryKey: ["/api/user", userId, "stats"],
-    enabled: holdSubscriptions && !!user && !!userId,
+    enabled:
+      holdSubscriptions && !!user && !!userId && !user.profileLoadPending && !lightHasPosts,
     retry: false,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/user/${userId}/stats`);
@@ -753,12 +784,11 @@ function useProfilePreviewModel(
   const reputationDisplayValue = reputationTrust?.displayName ?? "—";
 
   const showPostsStatPulse =
-    profileLoadPending || (postsValue === "—" && !!userId && isFetchingStats);
+    postsValue === "—" && (profileLoadPending || (!!userId && isFetchingStats));
   const showIdsStatPulse =
-    profileLoadPending || (idsValue === "—" && !!userId && isFetchingKarma);
+    idsValue === "—" && (profileLoadPending || (!!userId && isFetchingKarma));
   const showRepStatPulse =
-    profileLoadPending ||
-    (reputationDisplayValue === "—" && !!userId && isFetchingKarma);
+    reputationDisplayValue === "—" && (profileLoadPending || (!!userId && isFetchingKarma));
 
   const showSeededIdentityChrome =
     !profileLoadPending ||
@@ -1295,6 +1325,12 @@ function UserProfilePreviewSheet({
   useProfilePopupPerf({
     open,
     userId: user?.id,
+    seeded:
+      user?.publicLight != null ||
+      user?.reputation != null ||
+      user?.correct_ids != null ||
+      user?.hasMonthlyTop100 != null ||
+      Boolean(user?.created_at),
     profileReady: !!model && model.profileLoadPending !== true,
     contentReady:
       !!model &&
@@ -1404,6 +1440,12 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
   useProfilePopupPerf({
     open,
     userId: user?.id,
+    seeded:
+      user?.publicLight != null ||
+      user?.reputation != null ||
+      user?.correct_ids != null ||
+      user?.hasMonthlyTop100 != null ||
+      Boolean(user?.created_at),
     profileReady: !!model && model.profileLoadPending !== true,
     contentReady:
       !!model &&

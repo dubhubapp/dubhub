@@ -66,6 +66,11 @@ export type ProfilePreviewSeed = {
   verified_artist?: boolean;
   moderator?: boolean;
   account_type?: string;
+  reputation?: number;
+  correct_ids?: number;
+  karma?: number;
+  hasMonthlyTop100?: boolean;
+  created_at?: string;
 };
 
 export type ProfilePreviewOpenUser = {
@@ -128,6 +133,11 @@ export function mergeProfilePreviewOpenState(input: {
     if (seed.verified_artist !== undefined) merged.verified_artist = seed.verified_artist;
     if (seed.moderator !== undefined) merged.moderator = seed.moderator;
     if (seed.account_type !== undefined) merged.account_type = seed.account_type;
+    if (seed.reputation != null) merged.reputation = seed.reputation;
+    if (seed.correct_ids != null) merged.correct_ids = seed.correct_ids;
+    if (seed.karma != null) merged.karma = seed.karma;
+    if (seed.hasMonthlyTop100 != null) merged.hasMonthlyTop100 = seed.hasMonthlyTop100;
+    if (seed.created_at) merged.created_at = seed.created_at;
   }
 
   if (cached) {

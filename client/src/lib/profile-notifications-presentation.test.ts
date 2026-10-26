@@ -209,17 +209,18 @@ describe("profile-notifications-presentation loading skeleton", () => {
 describe("Profile Notifications tab wiring", () => {
   it("wires presentation helpers and skeleton loading", () => {
     assert.match(userProfileSrc, /from "@\/lib\/profile-notifications-presentation"/);
-    assert.match(userProfileSrc, /ProfileNotificationsLoadingSkeleton/);
     assert.match(userProfileSrc, /getProfileNotificationUnreadSurfaceClass/);
     assert.match(userProfileSrc, /PROFILE_NOTIFICATION_MEDIA_FRAME_CLASS/);
     assert.match(userProfileSrc, /PROFILE_NOTIFICATION_UNREAD_DOT_CLASS/);
-    assert.match(notifTabSrc, /ProfileNotificationsLoadingSkeleton/);
-    assert.match(userProfileSrc, /data-testid="profile-notifications-skeleton"/);
+    assert.match(notifTabSrc, /VinylLoader size="md"/);
+    assert.match(notifTabSrc, /data-testid="profile-notifications-loading"/);
     assert.doesNotMatch(notifTabSrc, /Loading notifications\.\.\./);
-    assert.doesNotMatch(
-      notifTabSrc,
-      /isInitialNotificationsLoading[\s\S]{0,200}InlineSpinner/,
+    assert.doesNotMatch(notifTabSrc, /ProfileNotificationsLoadingSkeleton/);
+    const initialNotificationsLoading = notifTabSrc.slice(
+      notifTabSrc.indexOf("isInitialNotificationsLoading"),
+      notifTabSrc.indexOf("profile-notifications-mask-shell"),
     );
+    assert.doesNotMatch(initialNotificationsLoading, /InlineSpinner/);
   });
 
   it("removes amber/green category unread washes from the tab", () => {

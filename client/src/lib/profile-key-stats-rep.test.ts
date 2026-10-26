@@ -48,6 +48,9 @@ describe("PROFILE-REFINEMENT-B — top strip Rep replacement", () => {
     const render = keyStatBlock();
     assert.match(render, /grid-cols-5/);
     assert.doesNotMatch(render, /Accuracy/);
+    assert.match(render, /const valuePending = statsLoading \|\| reputationLoading/);
+    assert.match(render, /animation-duration:150ms/);
+    assert.doesNotMatch(render, /label === "IDs" \|\| label === "Rep" \? reputationLoading/);
   });
 
   it("Rep uses deriveTrustLevel categorical model (not numeric score)", () => {

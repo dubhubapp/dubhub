@@ -58,6 +58,11 @@ describe("100 Club achievement polish — pill + label", () => {
     assert.match(MONTHLY_TOP_100_BADGE_BASE_CLASS, /justify-center/);
     assert.doesNotMatch(MONTHLY_TOP_100_BADGE_BASE_CLASS, /#FFD700|0a83ff|bg-black\/30/);
     assert.match(MONTHLY_TOP_100_BADGE_PROFILE_CLASS, /pr-\[9px\]/);
+    assert.match(MONTHLY_TOP_100_BADGE_PROFILE_CLASS, /h-\[1\.625rem\]/);
+    assert.match(MONTHLY_TOP_100_BADGE_PROFILE_CLASS, /min-h-\[1\.625rem\]/);
+    assert.match(MONTHLY_TOP_100_BADGE_PROFILE_CLASS, /\brounded\b/);
+    assert.doesNotMatch(MONTHLY_TOP_100_BADGE_POPUP_CLASS, /h-\[1\.625rem\]/);
+    assert.doesNotMatch(MONTHLY_TOP_100_BADGE_LEADERBOARD_CLASS, /h-\[1\.625rem\]/);
     assert.match(MONTHLY_TOP_100_BADGE_POPUP_CLASS, /text-\[10px\]/);
     assert.match(MONTHLY_TOP_100_BADGE_LEADERBOARD_CLASS, /border-white\/35|from-white/);
     assert.match(MONTHLY_TOP_100_BADGE_LABEL_CLASS, /translate-y-\[0\.5px\]/);

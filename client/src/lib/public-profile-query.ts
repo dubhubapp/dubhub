@@ -29,6 +29,21 @@ export type PublicProfileResponse = {
   publicProfileQuestionAnswers?: PublicArtistProfileQuestionAnswer[];
 };
 
+/**
+ * Local to public profile. Long enough that leaving and reopening does not
+ * refetch the shell, short enough that a later visit still refreshes.
+ * Cached data stays on screen while a stale refetch runs.
+ */
+export const PUBLIC_PROFILE_STALE_MS = 60_000;
+
+export type PublicProfileSectionsResponse = Pick<
+  PublicProfileResponse,
+  | "publicReleases"
+  | "publicCommunityOverview"
+  | "publicSavedReleases"
+  | "publicProfileQuestionAnswers"
+>;
+
 /** Must match `routeUsername` in `public-profile.tsx` (trimmed, decoded route param). */
 export function publicProfileQueryKey(username: string): readonly ["/api/user/profile", string] {
   return ["/api/user/profile", username.trim()] as const;

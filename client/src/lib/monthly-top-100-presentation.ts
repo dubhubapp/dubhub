@@ -29,9 +29,13 @@ export type HundredClubMarkSize = "md" | "sm" | "micro";
 export const MONTHLY_TOP_100_BADGE_BASE_CLASS =
   "inline-flex shrink-0 items-center justify-center rounded-full border border-white/35 bg-gradient-to-b from-white/[0.16] to-white/[0.06] font-semibold text-white/90 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),inset_0_-0.5px_0_0_rgba(0,0,0,0.35)]" as const;
 
-/** Profile: optical pad — slightly more trailing space so “Club” balances the vinyl mass. */
+/**
+ * Profile: same outer height and corner radius as the fav-genre pill (1.625rem).
+ * py-0 keeps the 17px mark inside that box; items-center keeps icon and label centred.
+ * Trailing pad stays so “Club” balances the vinyl mass. Wider than the genre pill.
+ */
 export const MONTHLY_TOP_100_BADGE_PROFILE_CLASS =
-  `${MONTHLY_TOP_100_BADGE_BASE_CLASS} gap-[3px] py-[3px] pl-[5px] pr-[9px] text-xs leading-none` as const;
+  `${MONTHLY_TOP_100_BADGE_BASE_CLASS} h-[1.625rem] min-h-[1.625rem] gap-[3px] rounded py-0 pl-[5px] pr-[9px] text-[10px] leading-none` as const;
 
 export const MONTHLY_TOP_100_BADGE_POPUP_CLASS =
   `${MONTHLY_TOP_100_BADGE_BASE_CLASS} gap-[2px] py-[2px] pl-[4px] pr-[7px] text-[10px] leading-none` as const;

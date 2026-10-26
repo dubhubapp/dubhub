@@ -266,7 +266,11 @@ export interface IStorage {
 
   // Comments
   createComment(postId: string, userId: string, body: string, artistTag?: string | null, parentId?: string | null): Promise<any>;
-  getPostComments(postId: string, currentUserId?: string): Promise<any[]>;
+  getPostComments(
+    postId: string,
+    currentUserId?: string,
+    timing?: { commentVotesCheck: number; commentsQuery: number },
+  ): Promise<any[]>;
 
   // Artist Tagging
   createArtistVideoTag(tag: { postId: string; artistId: string; taggedBy: string }): Promise<any>;
@@ -598,24 +602,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<any | undefined> {
-    const normalized = username?.trim().toLowerCase();
-    if (!normalized) return undefined;
+    if (typeof username !== "string" || !username.trim()) return undefined;
 
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(
-          "id, username, avatar_url, banner_url, account_type, moderator, verified_artist, banned, suspended_until, created_at",
-        )
-        .ilike("username", normalized)
-        .maybeSingle();
-
-      if (error) {
-        console.error("[getUserByUsername] Supabase error:", error);
-        return undefined;
-      }
-
-      return data || undefined;
+      // Live unique index is username_unique_lowercase on lower(username).
+      // TRIM stays on the parameter so a trim of the column does not seq-scan.
+      const result = await db.execute(sql`
+        SELECT
+          id,
+          username,
+          avatar_url,
+          banner_url,
+          account_type,
+          moderator,
+          verified_artist,
+          banned,
+          suspended_until,
+          created_at
+        FROM profiles
+        WHERE lower(username) = lower(trim(${username}))
+        LIMIT 1
+      `);
+      const row = ((result as { rows?: unknown[] }).rows ?? [])[0];
+      return row || undefined;
     } catch (error) {
       console.error("[getUserByUsername] Error:", error);
       return undefined;
@@ -1441,14 +1450,20 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getPostComments(postId: string, currentUserId?: string): Promise<any[]> {
+  async getPostComments(
+    postId: string,
+    currentUserId?: string,
+    timing?: { commentVotesCheck: number; commentsQuery: number },
+  ): Promise<any[]> {
     try {
       // Comment likes are stored in comment_votes. If that table hasn't been created
       // in the connected DB yet, we still want comments to load (likes will be 0).
       // Use pg pool directly here so row keys match the SQL aliases reliably (moderator flag for UI).
+      const votesStarted = performance.now();
       const commentVotesRegResult = await pool.query<{
         regclass: string | null;
       }>(`SELECT to_regclass('public.comment_votes') AS regclass`);
+      if (timing) timing.commentVotesCheck = performance.now() - votesStarted;
 
       const hasCommentVotes = !!commentVotesRegResult.rows?.[0]?.regclass;
 
@@ -1467,6 +1482,7 @@ export class DatabaseStorage implements IStorage {
               COALESCE(p.moderator, false) AS profile_moderator`;
 
       let rows: any[];
+      const queryStarted = performance.now();
       if (hasCommentVotes) {
         if (currentUserId) {
           const res = await pool.query(
@@ -1522,6 +1538,7 @@ export class DatabaseStorage implements IStorage {
         );
         rows = res.rows;
       }
+      if (timing) timing.commentsQuery = performance.now() - queryStarted;
 
       const flatComments: any[] = rows.map((row: any) => ({
         id: row.id,
