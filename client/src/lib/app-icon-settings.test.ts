@@ -86,7 +86,7 @@ describe("app icon native contract", () => {
       assert.match(pluginSrc, new RegExp(`"${name}"`));
       assert.equal(name.startsWith("AppIcon"), false);
     }
-    assert.equal(APP_ICON_ALTERNATES.length, 7);
+    assert.equal(APP_ICON_ALTERNATES.length, 8);
     assert.doesNotMatch(pluginSrc, /DubHubIconAlternateProof/);
     assert.doesNotMatch(pbxSrc, /DubHubIconAlternateProof/);
     const listed = pbxSrc.match(
@@ -387,7 +387,7 @@ describe("app icon display order", () => {
   it("uses the exact gallery order and display names", () => {
     assert.deepEqual(
       APP_ICON_ALTERNATES.map((icon) => icon.label),
-      ["Beta Blue", "Eyesore", "Clean", "Clean Granite", "OG", "OG Granite", "Government Name"],
+      ["Beta Blue", "Eyesore", "Clean", "Clean Granite", "OG", "OG Granite", "Government Name", "Spicy"],
     );
     assert.deepEqual(
       APP_ICON_ALTERNATES.map((icon) => icon.name),
@@ -399,6 +399,7 @@ describe("app icon display order", () => {
         "DubHubIconOG",
         "DubHubIconOGDark",
         "DubHubIconWordmark",
+        "DubHubIconSpicy",
       ],
     );
     const tiles = pageSrc.indexOf('label: "Default (Stock)"');

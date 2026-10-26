@@ -24,6 +24,7 @@ public class DubHubAppIconPlugin: CAPPlugin, CAPBridgedPlugin {
         "DubHubIconCleanDark",
         "DubHubIconBlue",
         "DubHubIconWordmark",
+        "DubHubIconSpicy",
     ]
 
     @objc func getAppIconState(_ call: CAPPluginCall) {

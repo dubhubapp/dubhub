@@ -11,6 +11,7 @@ export const APP_ICON_ALTERNATES = [
   { name: "DubHubIconOG", label: "OG" },
   { name: "DubHubIconOGDark", label: "OG Granite" },
   { name: "DubHubIconWordmark", label: "Government Name" },
+  { name: "DubHubIconSpicy", label: "Spicy" },
 ] as const;
 
 export type AppIconAlternateName = (typeof APP_ICON_ALTERNATES)[number]["name"];

@@ -50,6 +50,7 @@ import cleanUrl from "../../../ios/App/App/Assets.xcassets/DubHubIconClean.appic
 import cleanDarkUrl from "../../../ios/App/App/Assets.xcassets/DubHubIconCleanDark.appiconset/DubHubIconCleanDark.png?url";
 import blueUrl from "../../../ios/App/App/Assets.xcassets/DubHubIconBlue.appiconset/DubHubIconBlue.png?url";
 import wordmarkUrl from "../../../ios/App/App/Assets.xcassets/DubHubIconWordmark.appiconset/DubHubIconWordmark.png?url";
+import spicyUrl from "../../../ios/App/App/Assets.xcassets/DubHubIconSpicy.appiconset/DubHubIconSpicy.png?url";
 
 const PREVIEW_URL: Record<AppIconAlternateName, string> = {
   DubHubIconLight: lightUrl,
@@ -59,6 +60,7 @@ const PREVIEW_URL: Record<AppIconAlternateName, string> = {
   DubHubIconCleanDark: cleanDarkUrl,
   DubHubIconBlue: blueUrl,
   DubHubIconWordmark: wordmarkUrl,
+  DubHubIconSpicy: spicyUrl,
 };
 
 const TILES: Array<{ id: AppIconChoice; label: string; src: string }> = [

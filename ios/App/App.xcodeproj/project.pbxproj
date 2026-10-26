@@ -582,12 +582,12 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "DubHubIconLight DubHubIconOG DubHubIconOGDark DubHubIconClean DubHubIconCleanDark DubHubIconBlue DubHubIconWordmark";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "DubHubIconLight DubHubIconOG DubHubIconOGDark DubHubIconClean DubHubIconCleanDark DubHubIconBlue DubHubIconWordmark DubHubIconSpicy";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -608,12 +608,12 @@
 		504EC3181FED79650016851F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "DubHubIconLight DubHubIconOG DubHubIconOGDark DubHubIconClean DubHubIconCleanDark DubHubIconBlue DubHubIconWordmark";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "DubHubIconLight DubHubIconOG DubHubIconOGDark DubHubIconClean DubHubIconCleanDark DubHubIconBlue DubHubIconWordmark DubHubIconSpicy";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -635,7 +635,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReleaseCountdownWidget/ReleaseCountdownWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReleaseCountdownWidget/Info.plist;
@@ -660,7 +660,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReleaseCountdownWidget/ReleaseCountdownWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = SYWKN9QAQ2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReleaseCountdownWidget/Info.plist;
