@@ -35,7 +35,6 @@ import {
 } from "@shared/deleted-comment";
 import { ApiRequestError } from "@/lib/apiDiagnostics";
 import { apiRequest } from "@/lib/queryClient";
-import { perfTimedCommentsResponse, useCommentsPerf } from "@/lib/perf-debug";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -1253,9 +1252,7 @@ export function CommentsModal({
       if (debugComments) {
         console.log("[CommentsModal] fetching", { modalPostId: post.id, url: `/api/posts/${post.id}/comments` });
       }
-      const response = await perfTimedCommentsResponse(queryClient, post.id, () =>
-        apiRequest("GET", `/api/posts/${post.id}/comments`),
-      );
+      const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
       const data = await response.json();
       if (!Array.isArray(data)) {
         console.warn("[DubHub][CommentsModal] Non-array comments payload", data);
@@ -1272,14 +1269,6 @@ export function CommentsModal({
     enabled: isOpen,
     staleTime: 0,
     refetchOnMount: "always",
-  });
-  useCommentsPerf({
-    active: isOpen,
-    postId: post.id,
-    queryClient,
-    fetching: isFetchingComments,
-    loading: isLoadingComments,
-    hasData: commentsData !== undefined,
   });
   const comments = Array.isArray(commentsData) ? commentsData : [];
   const isAnonymousIdentifiedPost =

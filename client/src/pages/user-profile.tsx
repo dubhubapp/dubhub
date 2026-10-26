@@ -31,7 +31,6 @@ import {
   resolveViewerReleaseAlertDeliveryEnabled,
 } from "@/lib/release-alert-enabled-artist-copy";
 import { useUser } from "@/lib/user-context";
-import { useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
 import type { UserStats, NotificationWithUser, PostWithUser } from "@shared/schema";
 import { deriveTrustLevel } from "@shared/trust-level";
 import { ProfileRepOverview } from "@/components/profile-rep-overview";
@@ -189,7 +188,6 @@ import {
   rebuildProfileViewerReleaseSequence,
 } from "@/lib/profile-viewer-release-return";
 import { routePathname } from "@/lib/interactive-page-transitions";
-import { useOwnProfilePerf } from "@/lib/perf-debug";
 import { clampPostSequenceInitialIndex } from "@/lib/full-screen-post-sequence-viewer";
 import {
   consumeProfileNotificationsTabIntent,
@@ -766,7 +764,6 @@ function dedupeBurstNotificationsKeepNewestFirst(
 }
 
 export default function UserProfile() {
-  useLgNav5aDestinationProbe("profile");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profileImage, bannerUrl, username, updateProfileImage, updateProfileBanner, currentUser, verifiedArtist, isModerator, userType } = useUser();
@@ -988,21 +985,6 @@ export default function UserProfile() {
           ? payload.notifications
           : [];
     },
-  });
-
-  useOwnProfilePerf({
-    active: routePathname(profileLocation) === "/profile",
-    queryClient,
-    userId: currentUser?.id,
-    statsLoading,
-    karmaLoading: reputationLoading,
-    rankEnabled: karmaScore !== undefined,
-    rankLoading: karmaScore !== undefined && karmaRank === undefined && !karmaRankError,
-    warmSecondary: profileShellReady,
-    postsEnabled: postsTabOpen,
-    likesEnabled: likesTabOpen,
-    postsLoading,
-    likesLoading: likedLoading,
   });
 
   const unreadCount = useMemo(() => {
@@ -2643,15 +2625,6 @@ export default function UserProfile() {
     };
   }, [pendingBannerSrc]);
 
-  useLgNav5aRenderCycle("profile", {
-    tab: activeTab,
-    statsLoading,
-    postsLoading,
-    likedLoading,
-    posts: Array.isArray(userPosts) ? userPosts.length : 0,
-    liked: Array.isArray(likedPosts) ? likedPosts.length : 0,
-  });
-
   const profileOverviewStatsLoading = statsLoading || reputationLoading;
 
   // User data from current user context - ONLY use real data from Supabase
@@ -3485,7 +3458,7 @@ export default function UserProfile() {
                   Fav genre
                 </span>
                 <div className="flex items-center gap-2" data-testid="artist-profile-actions">
-                  <div className="w-[5.5rem] shrink-0" data-testid="owner-profile-fav-genre">
+                  <div className="flex w-[5.5rem] shrink-0 items-center" data-testid="owner-profile-fav-genre">
                     {repBarGenreChip && ownerArtistGenrePillStyle ? (
                       <span
                         className={cn(
@@ -3516,12 +3489,13 @@ export default function UserProfile() {
                     )}
                   </div>
                   <span
-                    className="relative inline-flex h-[1.625rem] shrink-0 items-center"
+                    className="relative inline-flex h-[1.625rem] shrink-0 items-center leading-none"
                     data-testid="owner-profile-hundred-club-slot"
                     data-state={statsLoading ? "loading" : hundredClubEarned ? "earned" : "absent"}
                   >
                     <span
                       className={cn(
+                        "inline-flex h-full items-center leading-none",
                         statsLoading || !hundredClubEarned ? "invisible" : "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300",
                       )}
                       aria-hidden={statsLoading || !hundredClubEarned}

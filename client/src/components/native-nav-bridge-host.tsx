@@ -29,11 +29,7 @@ import {
   setNativeSelectedTab,
   setNativeTabs,
 } from "@/lib/native-nav-bridge";
-import {
-  applyNativeNavLayoutToDocument,
-  logNativeNav5c1Geometry,
-} from "@/lib/native-nav-layout";
-import { lgNav5aMark } from "@/lib/lg-nav-5a-timing";
+import { applyNativeNavLayoutToDocument } from "@/lib/native-nav-layout";
 import { cn } from "@/lib/utils";
 import { dubhubVideoDebugLog } from "@/lib/video-debug";
 import { cancelPostAndReturnToHome } from "@/lib/post-flow";
@@ -266,11 +262,9 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
     let remove = () => undefined;
     void readNativeNavGeometry().then((geometry) => {
       applyNativeNavLayoutToDocument({ enabled: true, geometry });
-      requestAnimationFrame(() => logNativeNav5c1Geometry(geometry));
     });
     void listenToNativeNavGeometry((geometry) => {
       applyNativeNavLayoutToDocument({ enabled: true, geometry });
-      requestAnimationFrame(() => logNativeNav5c1Geometry(geometry));
     }).then((unlisten) => {
       remove = unlisten;
     });
@@ -285,7 +279,6 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
 
     const handleTab = (tab: AppTab) => {
       const intent = nativeTabIntent(tab, location);
-      lgNav5aMark("intent-handler", { tab, intent, location });
       switch (intent) {
         case "homeReselect":
           invokeHomeWhileOnHome();
@@ -298,11 +291,9 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
           setShowCancelPostDialog(true);
           return;
         case "navigateHome":
-          lgNav5aMark("navigate", { tab, to: "/" });
           navigate("/");
           return;
         case "navigateLeaderboard":
-          lgNav5aMark("navigate", { tab, to: "/leaderboard" });
           navigate("/leaderboard");
           return;
         case "openSubmit":
@@ -312,15 +303,12 @@ export function NativeNavBridgeHost({ onboardingOpen, startupOverlayActive = fal
           openSubmitClip();
           return;
         case "navigateReleases":
-          lgNav5aMark("navigate", { tab, to: "/releases" });
           navigate("/releases");
           return;
         case "navigateProfile":
-          lgNav5aMark("navigate", { tab, to: "/profile" });
           navigate("/profile");
           return;
         case "navigateModerator":
-          lgNav5aMark("navigate", { tab, to: "/moderator" });
           navigate("/moderator");
           return;
       }

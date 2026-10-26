@@ -8,8 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type CSSProperties,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Trophy, Calendar } from "lucide-react";
@@ -132,9 +131,6 @@ import {
   repProgressPremiumGradientFromGenreBg,
   whiteRepProgressGradient,
 } from "@/lib/profile-rep-styles";
-import { lgNav5aMark, useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
-import { perfTimedLeaderboardResponse, useLeaderboardPerf } from "@/lib/perf-debug";
-import { routePathname } from "@/lib/interactive-page-transitions";
 import { lbSwipe8Ensure, lbSwipe8Log } from "@/lib/leaderboard-swipe-8-runtime-audit";
 
 interface LeaderboardEntry {
@@ -659,9 +655,6 @@ export function LeaderboardList({
 }
 
 export default function Leaderboard() {
-  useLgNav5aDestinationProbe("leaderboard");
-  const [leaderboardLocation] = useLocation();
-  const queryClient = useQueryClient();
   const { currentUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     presentation: "sheet",
@@ -729,10 +722,7 @@ export default function Leaderboard() {
   const {
     data: userLeaderboard = [],
     isLoading: isLoadingUsers,
-    isFetching: isFetchingUsers,
     status: usersQueryStatus,
-    fetchStatus: usersFetchStatus,
-    dataUpdatedAt: usersDataUpdatedAt,
     isPlaceholderData: usersListIsPlaceholder,
   } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardUsersQueryKey(timeFilter),
@@ -742,12 +732,7 @@ export default function Leaderboard() {
     placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
-      const res = await perfTimedLeaderboardResponse(
-        queryClient,
-        leaderboardUsersQueryKey(timeFilter),
-        `users:${timeFilter}`,
-        () => apiRequest("GET", `/api/leaderboard/users?${params.toString()}`),
-      );
+      const res = await apiRequest("GET", `/api/leaderboard/users?${params.toString()}`);
       return res.json();
     },
   });
@@ -756,9 +741,7 @@ export default function Leaderboard() {
   const {
     data: artistLeaderboard = [],
     isLoading: isLoadingArtists,
-    isFetching: isFetchingArtists,
     status: artistsQueryStatus,
-    fetchStatus: artistsFetchStatus,
     isPlaceholderData: artistsListIsPlaceholder,
   } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardArtistsQueryKey(timeFilter),
@@ -768,21 +751,13 @@ export default function Leaderboard() {
     placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
-      const res = await perfTimedLeaderboardResponse(
-        queryClient,
-        leaderboardArtistsQueryKey(timeFilter),
-        `artists:${timeFilter}`,
-        () => apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`),
-      );
+      const res = await apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`);
       return res.json();
     },
   });
 
   const {
     data: userMyRank,
-    status: userRankQueryStatus,
-    isLoading: isLoadingUserRank,
-    isFetching: isFetchingUserRank,
   } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
     enabled: leaderboardMyRankQueryEnabled({
@@ -797,15 +772,9 @@ export default function Leaderboard() {
         userId: currentUserId!,
         timeFilter,
       });
-      const res = await perfTimedLeaderboardResponse(
-        queryClient,
-        leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
-        `rank:users:${timeFilter}`,
-        () =>
-          fetch(apiUrl(`/api/leaderboard/users/my-rank?${params.toString()}`), {
-            credentials: "include",
-          }),
-      );
+      const res = await fetch(apiUrl(`/api/leaderboard/users/my-rank?${params.toString()}`), {
+        credentials: "include",
+      });
       if (res.status === 404) return { rank: 0, entry: null };
       if (!res.ok) throw new Error("Failed to fetch users rank");
       return res.json();
@@ -815,9 +784,6 @@ export default function Leaderboard() {
 
   const {
     data: artistMyRank,
-    status: artistRankQueryStatus,
-    isLoading: isLoadingArtistRank,
-    isFetching: isFetchingArtistRank,
   } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
     enabled: leaderboardMyRankQueryEnabled({
@@ -832,41 +798,15 @@ export default function Leaderboard() {
         userId: currentUserId!,
         timeFilter,
       });
-      const res = await perfTimedLeaderboardResponse(
-        queryClient,
-        leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
-        `rank:artists:${timeFilter}`,
-        () =>
-          fetch(apiUrl(`/api/leaderboard/artists/my-rank?${params.toString()}`), {
-            credentials: "include",
-          }),
-      );
+      const res = await fetch(apiUrl(`/api/leaderboard/artists/my-rank?${params.toString()}`), {
+        credentials: "include",
+      });
       if (res.status === 404) return { rank: 0, entry: null };
       if (!res.ok) throw new Error("Failed to fetch artists rank");
       return res.json();
     },
     retry: false,
   });
-  useLeaderboardPerf({
-    active: routePathname(leaderboardLocation) === "/leaderboard",
-    queryClient,
-    timeframe: timeFilter,
-    scope: activeTab,
-    userId: currentUserId,
-    usersLoading: isLoadingUsers,
-    usersFetching: isFetchingUsers,
-    artistsLoading: isLoadingArtists,
-    artistsFetching: isFetchingArtists,
-    userRankLoading: isLoadingUserRank,
-    userRankFetching: isFetchingUserRank,
-    artistRankLoading: isLoadingArtistRank,
-    artistRankFetching: isFetchingArtistRank,
-  });
-  useEffect(() => {
-    if (!isLoadingUsers) {
-      lgNav5aMark("destination-data", { name: "leaderboard", list: "users", rows: userLeaderboard.length });
-    }
-  }, [isLoadingUsers, userLeaderboard.length]);
 
   const userTopEntries = useMemo(
     () => userLeaderboard.slice(0, LEADERBOARD_TOP_LIMIT),
@@ -923,34 +863,6 @@ export default function Leaderboard() {
     activeTab === "users" ? usersFirstPaintReleased : artistsFirstPaintReleased;
   const paintedEntries =
     activeTab === "users" ? paintedUserEntries : paintedArtistEntries;
-
-  useLgNav5aRenderCycle("leaderboard", {
-    tab: activeTab,
-    timeFilter,
-    users: {
-      status: usersQueryStatus,
-      fetchStatus: usersFetchStatus,
-      isLoading: isLoadingUsers,
-      isFetching: isFetchingUsers,
-      rows: userLeaderboard.length,
-      paintedRows: activeTab === "users" ? paintedEntries.length : 0,
-      firstPaintReleased,
-      initialPaintRows: LEADERBOARD_INITIAL_PAINT_ROWS,
-      dataUpdatedAt: usersDataUpdatedAt,
-    },
-    artists: {
-      status: artistsQueryStatus,
-      fetchStatus: artistsFetchStatus,
-      isLoading: isLoadingArtists,
-      isFetching: isFetchingArtists,
-      rows: artistLeaderboard.length,
-      enabled: activeTab === "artists",
-    },
-    rank: {
-      users: userRankQueryStatus,
-      artists: artistRankQueryStatus,
-    },
-  });
 
   const applyPrimaryNavIndicator = useCallback(
     (

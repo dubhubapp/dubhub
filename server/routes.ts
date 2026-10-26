@@ -1836,69 +1836,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get user profile by username
   app.get("/api/user/profile/:username", async (req, res) => {
-    const handlerStarted = performance.now();
-    const timing = { lookup: 0, karma: 0, light: 0, achievements: 0, parallel: 0 };
-    const writeShellTiming = () => {
-      const handler = performance.now() - handlerStarted;
-      res.setHeader(
-        "Server-Timing",
-        [
-          `lookup;dur=${timing.lookup.toFixed(1)}`,
-          `karma;dur=${timing.karma.toFixed(1)}`,
-          `light;dur=${timing.light.toFixed(1)}`,
-          `achievements;dur=${timing.achievements.toFixed(1)}`,
-          `parallel;dur=${timing.parallel.toFixed(1)}`,
-          `handler;dur=${handler.toFixed(1)}`,
-        ].join(", "),
-      );
-    };
     try {
       const { username } = req.params;
-      const lookupStarted = performance.now();
       const user = await storage.getUserByUsername(username);
-      timing.lookup = performance.now() - lookupStarted;
       
       if (!user) {
-        writeShellTiming();
         return res.status(404).json({ message: "User not found" });
       }
 
       // Light shell only. Discography, saved releases, community overview, and
       // artist Q&A load from GET /api/user/:id/public-profile-sections.
-      const parallelStarted = performance.now();
       const [karmaAgg, publicLight, achievements] = await Promise.all([
-        (async () => {
-          const started = performance.now();
-          try {
-            return await getUserKarmaAggregate(user.id);
-          } finally {
-            timing.karma = performance.now() - started;
-          }
-        })(),
-        (async () => {
-          const started = performance.now();
-          try {
-            return await fetchPublicLightProfileStats(user.id);
-          } catch (statsErr) {
-            console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
-            return undefined;
-          } finally {
-            timing.light = performance.now() - started;
-          }
-        })(),
-        (async () => {
-          const started = performance.now();
-          try {
-            return await getUserLeaderboardAchievements(user.id, user.account_type);
-          } finally {
-            timing.achievements = performance.now() - started;
-          }
-        })(),
+        getUserKarmaAggregate(user.id),
+        fetchPublicLightProfileStats(user.id).catch((statsErr) => {
+          console.error("[/api/user/profile/:username] publicLight stats:", statsErr);
+          return undefined;
+        }),
+        getUserLeaderboardAchievements(user.id, user.account_type),
       ]);
-      timing.parallel = performance.now() - parallelStarted;
 
       const { email: _email, ...publicUser } = user;
-      writeShellTiming();
       res.json({
         ...publicUser,
         reputation: karmaAgg.score,
@@ -2566,37 +2523,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get post comments
   app.get("/api/posts/:id/comments", commentsReadViewer, async (req: AuthenticatedRequest, res) => {
-    const stage = { commentVotesCheck: 0, commentsQuery: 0 };
-    const writeTiming = () => {
-      const auth = (res.locals.commentsReadPerf ?? {}) as {
-        started?: number;
-        auth?: number;
-        userResolve?: number;
-        profileState?: number;
-      };
-      const handler = auth.started != null ? performance.now() - auth.started : 0;
-      const dur = (value: number | undefined) =>
-        (typeof value === "number" && Number.isFinite(value) ? value : 0).toFixed(1);
-      res.setHeader(
-        "Server-Timing",
-        [
-          `auth;dur=${dur(auth.auth)}`,
-          `userResolve;dur=${dur(auth.userResolve)}`,
-          `profileState;dur=${dur(auth.profileState)}`,
-          `commentVotesCheck;dur=${dur(stage.commentVotesCheck)}`,
-          `commentsQuery;dur=${dur(stage.commentsQuery)}`,
-          `handler;dur=${dur(handler)}`,
-        ].join(", "),
-      );
-    };
     try {
       const postId = req.params.id;
       const currentUserId = req.dbUser?.id || undefined;
-      const comments = await storage.getPostComments(postId, currentUserId, stage);
-      writeTiming();
+      const comments = await storage.getPostComments(postId, currentUserId);
       res.json(comments);
-    } catch (error) {
-      writeTiming();
+    } catch {
       res.status(500).json({ message: "Failed to get comments" });
     }
   });
@@ -6226,98 +6158,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  function setLeaderboardReadTiming(
-    res: { setHeader: (name: string, value: string) => void },
-    started: number,
-    stage: { window: number; ranking: number },
-  ) {
-    const dur = (value: number) => (Number.isFinite(value) ? value : 0).toFixed(1);
-    res.setHeader(
-      "Server-Timing",
-      [
-        `window;dur=${dur(stage.window)}`,
-        `ranking;dur=${dur(stage.ranking)}`,
-        `handler;dur=${dur(performance.now() - started)}`,
-      ].join(", "),
-    );
-  }
-
   // Leaderboard endpoints
   app.get("/api/leaderboard/users", async (req, res) => {
-    const started = performance.now();
-    const stage = { window: 0, ranking: 0 };
     try {
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const leaderboard = await storage.getLeaderboard("user", timeFilter, stage);
-      setLeaderboardReadTiming(res, started, stage);
+      const leaderboard = await storage.getLeaderboard("user", timeFilter);
       res.json(leaderboard);
     } catch (error) {
       console.error("Error fetching user leaderboard:", error);
-      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get user leaderboard" });
     }
   });
 
   app.get("/api/leaderboard/artists", async (req, res) => {
-    const started = performance.now();
-    const stage = { window: 0, ranking: 0 };
     try {
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const leaderboard = await storage.getLeaderboard("artist", timeFilter, stage);
-      setLeaderboardReadTiming(res, started, stage);
+      const leaderboard = await storage.getLeaderboard("artist", timeFilter);
       res.json(leaderboard);
     } catch (error) {
       console.error("Error fetching artist leaderboard:", error);
-      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get artist leaderboard" });
     }
   });
 
   app.get("/api/leaderboard/users/my-rank", async (req, res) => {
-    const started = performance.now();
-    const stage = { window: 0, ranking: 0 };
     try {
       const userId = String(req.query.userId ?? "").trim();
       if (!userId) return res.status(400).json({ message: "Missing userId" });
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const result = await storage.getLeaderboardUserRank("user", userId, timeFilter, stage);
-      setLeaderboardReadTiming(res, started, stage);
+      const result = await storage.getLeaderboardUserRank("user", userId, timeFilter);
       res.json(result);
     } catch (error) {
       console.error("Error fetching users leaderboard rank:", error);
-      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get users leaderboard rank" });
     }
   });
 
   app.get("/api/leaderboard/artists/my-rank", async (req, res) => {
-    const started = performance.now();
-    const stage = { window: 0, ranking: 0 };
     try {
       const userId = String(req.query.userId ?? "").trim();
       if (!userId) return res.status(400).json({ message: "Missing userId" });
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const result = await storage.getLeaderboardUserRank("artist", userId, timeFilter, stage);
-      setLeaderboardReadTiming(res, started, stage);
+      const result = await storage.getLeaderboardUserRank("artist", userId, timeFilter);
       res.json(result);
     } catch (error) {
       console.error("Error fetching artists leaderboard rank:", error);
-      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get artists leaderboard rank" });
     }
   });
 
   app.get("/api/leaderboard/:type/my-rank", async (req, res) => {
-    const started = performance.now();
-    const stage = { window: 0, ranking: 0 };
     try {
       const typeParam = String(req.params.type ?? "").toLowerCase();
       const userType = typeParam === "artists" ? "artist" : typeParam === "users" ? "user" : null;
@@ -6334,12 +6232,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
 
-      const result = await storage.getLeaderboardUserRank(userType, userId, timeFilter, stage);
-      setLeaderboardReadTiming(res, started, stage);
+      const result = await storage.getLeaderboardUserRank(userType, userId, timeFilter);
       res.json(result);
     } catch (error) {
       console.error("Error fetching leaderboard user rank:", error);
-      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get leaderboard user rank" });
     }
   });
@@ -6431,75 +6327,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  function setReleasesFeedTiming(
-    res: { setHeader: (name: string, value: string) => void },
-    started: number,
-    stage: {
-      auth: number;
-      userResolve: number;
-      profileState: number;
-      feed: number;
-      links: number;
-      releaseCount: number;
-      linkQueryCount: number;
-    },
-  ) {
-    const dur = (value: number) => (Number.isFinite(value) ? value : 0).toFixed(1);
-    res.setHeader(
-      "Server-Timing",
-      [
-        `auth;dur=${dur(stage.auth)}`,
-        `userResolve;dur=${dur(stage.userResolve)}`,
-        `profileState;dur=${dur(stage.profileState)}`,
-        `feed;dur=${dur(stage.feed)}`,
-        `links;dur=${dur(stage.links)}`,
-        `releaseCount;dur=${dur(stage.releaseCount)}`,
-        `linkQueryCount;dur=${dur(stage.linkQueryCount)}`,
-        `handler;dur=${dur(performance.now() - started)}`,
-      ].join(", "),
-    );
-  }
-
   app.get("/api/releases/feed", releasesFeedViewer, async (req: AuthenticatedRequest, res) => {
-    const authPerf = (res.locals.releasesFeedPerf ?? {}) as {
-      started?: number;
-      auth?: number;
-      userResolve?: number;
-      profileState?: number;
-    };
-    const started = authPerf.started ?? performance.now();
-    const stage = {
-      auth: authPerf.auth ?? 0,
-      userResolve: authPerf.userResolve ?? 0,
-      profileState: authPerf.profileState ?? 0,
-      feed: 0,
-      links: 0,
-      releaseCount: 0,
-      linkQueryCount: 0,
-    };
     try {
       const userId = req.dbUser?.id ?? null;
       if (!userId) {
-        setReleasesFeedTiming(res, started, stage);
         return res.json([]);
       }
       const view = (req.query.view as "upcoming" | "past" | "collaborations") || "upcoming";
       const scope = (req.query.scope as "my" | "saved") || "my";
-      const feedStarted = performance.now();
       const feed = await storage.getReleasesFeed(userId, view, scope);
-      stage.feed = performance.now() - feedStarted;
       if (process.env.NODE_ENV === "development") {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
         (res as any).set("etag", false);
       }
-      const linksStarted = performance.now();
       const linksByReleaseId =
         feed.length > 0
           ? await storage.getReleaseLinksForReleases(feed.map((r: any) => String(r.id ?? "")))
           : new Map();
-      stage.links = performance.now() - linksStarted;
-      stage.releaseCount = feed.length;
-      stage.linkQueryCount = feed.length > 0 ? 1 : 0;
       const withArtworkAndLinks = attachBatchedReleaseLinks(feed, linksByReleaseId).map((r) => ({
         ...r,
         artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
@@ -6508,11 +6352,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const withZeroLinks = withArtworkAndLinks.filter((r: any) => !r.links?.length);
         console.log("[/api/releases/feed]", scope, view, "total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
       }
-      setReleasesFeedTiming(res, started, stage);
       res.json(withArtworkAndLinks);
     } catch (error) {
       console.error("[/api/releases/feed] Error:", error);
-      setReleasesFeedTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get releases feed" });
     }
   });

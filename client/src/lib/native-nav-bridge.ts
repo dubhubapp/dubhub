@@ -5,8 +5,6 @@ import {
 } from "@/lib/native-nav-presentation";
 import { isAppTab, type AppTab } from "@/lib/native-nav-contract";
 import type { NativeNavGeometry } from "@/lib/native-nav-layout";
-import { lgNav5aMark } from "@/lib/lg-nav-5a-timing";
-
 type NativeNavigationPlugin = {
   getPresentationState(): Promise<{ enabled?: boolean }>;
   getGeometry(): Promise<NativeNavGeometry>;
@@ -158,13 +156,11 @@ export async function listenToNativeTabIntents(
   try {
     handles.push(
       await DubHubNativeNavigation.addListener("selectTab", (event) => {
-        lgNav5aMark("js-listener", { tab: event?.tab, nativeT: event?.t, kind: "selectTab" });
         if (isAppTab(event?.tab)) onSelect(event.tab);
       }),
     );
     handles.push(
       await DubHubNativeNavigation.addListener("reselectTab", (event) => {
-        lgNav5aMark("js-listener", { tab: event?.tab, nativeT: event?.t, kind: "reselectTab" });
         if (isAppTab(event?.tab)) onReselect(event.tab);
       }),
     );

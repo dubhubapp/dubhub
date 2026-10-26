@@ -10,39 +10,22 @@ export async function commentsReadViewer(
   res: Response,
   next: NextFunction,
 ) {
-  const started = performance.now();
-  let userResolveMs = 0;
-  let profileStateMs = 0;
-  const finish = () => {
-    res.locals.commentsReadPerf = {
-      started,
-      auth: performance.now() - started,
-      userResolve: userResolveMs,
-      profileState: profileStateMs,
-    };
-  };
-
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      finish();
       return next();
     }
 
     const accessToken = authHeader.substring(7);
-    const userResolveStarted = performance.now();
     const {
       data: { user },
       error,
     } = await supabase.auth.getUser(accessToken);
-    userResolveMs = performance.now() - userResolveStarted;
     if (error || !user?.id) {
       console.log("[Comments Read] Invalid token or no user:", error?.message || "No user");
-      finish();
       return next();
     }
 
-    const profileStarted = performance.now();
     let profile: CommentsProfileState | null = null;
     try {
       const result = await pool.query<CommentsProfileState>(
@@ -54,12 +37,9 @@ export async function commentsReadViewer(
       );
       profile = result.rows[0] ?? null;
     } catch {
-      profileStateMs = performance.now() - profileStarted;
       console.error("[Comments Read] profile state lookup failed");
-      finish();
       return next();
     }
-    profileStateMs = performance.now() - profileStarted;
 
     const viewerId = resolveCommentsReadViewerId(user.id, profile);
     if (viewerId) {
@@ -73,11 +53,9 @@ export async function commentsReadViewer(
       };
     }
 
-    finish();
     next();
   } catch {
     console.error("[Comments Read] viewer resolution failed");
-    finish();
     next();
   }
 }

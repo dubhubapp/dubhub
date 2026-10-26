@@ -544,6 +544,10 @@ describe("LG-NAV-3 native nav contract", () => {
     assert.match(overlaySrc, /badgeHeight:\s*CGFloat\s*=\s*16/);
     assert.match(overlaySrc, /horizontalPadding:\s*CGFloat\s*=\s*5/);
     assert.match(overlaySrc, /UIColor\.systemRed/);
+    assert.match(overlaySrc, /\.withAlphaComponent\(1\)/);
+    assert.match(overlaySrc, /tintAdjustmentMode = \.normal/);
+    assert.match(overlaySrc, /override var alpha: CGFloat/);
+    assert.match(overlaySrc, /super\.alpha = 1/);
     assert.match(overlaySrc, /monospacedDigitSystemFont\(ofSize:\s*11,\s*weight:\s*\.semibold\)/);
     assert.match(overlaySrc, /baselineAdjustment\s*=\s*\.alignCenters/);
     // Dual renderers, one count — CONFIRMED COMPLETE (physical QA).

@@ -82,8 +82,8 @@ describe("batched release feed links", () => {
     const feedStart = routesSrc.indexOf('app.get("/api/releases/feed"');
     const feedEnd = routesSrc.indexOf('app.get("/api/releases/creation-capacity"', feedStart);
     const block = routesSrc.slice(feedStart, feedEnd);
-    assert.match(block, /feed\.length > 0/);
+    assert.match(block, /feed\.length > 0\s*\?\s*await storage\.getReleaseLinksForReleases/);
     assert.match(block, /: new Map\(\)/);
-    assert.match(block, /feed\.length > 0 \? 1 : 0/);
+    assert.doesNotMatch(block, /linkQueryCount/);
   });
 });

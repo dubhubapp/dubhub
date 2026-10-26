@@ -93,7 +93,6 @@ import {
   releaseDetailProfileUnderlayMatchesLocation,
   revealReleaseDetailReturnStill,
 } from "@/lib/release-detail-profile-underlay";
-import { lgNav5aProfiledPage } from "@/lib/lg-nav-5a-timing";
 import { SETTINGS_SHELL_ATMOSPHERE_CLASS } from "@/lib/settings-presentation";
 import {
   SettingsTransitionProvider,
@@ -117,6 +116,7 @@ import {
   isWholesaleStackReplacement,
   isReleaseDetailPath,
   prefersReducedPageMotion,
+  shouldDismissStoredHomeFeedReturnVisit,
   shouldUseCommentsHomeStaticPop,
   shouldUseHomeFeedReleaseStaticPop,
   shouldUseProfileViewerReleaseStaticPop,
@@ -134,9 +134,6 @@ import {
   type InteractiveSwipeGesture,
 } from "@/lib/interactive-page-transitions";
 
-const UserProfile = lgNav5aProfiledPage("profile", UserProfilePage);
-const Leaderboard = lgNav5aProfiledPage("leaderboard", LeaderboardPage);
-const ReleaseTracker = lgNav5aProfiledPage("releases", ReleaseTrackerPage);
 
 type InteractiveSettingsStackProps = {
   onSignOut?: () => Promise<void> | void;
@@ -273,9 +270,9 @@ function renderInteractivePage(
 ) {
   const settingsPage = renderSettingsPage(path, onSignOut, onAccountDeleted);
   if (settingsPage) return settingsPage;
-  if (path === "/profile") return <UserProfile />;
-  if (path === "/leaderboard") return <Leaderboard />;
-  if (path === "/releases") return <ReleaseTracker />;
+  if (path === "/profile") return <UserProfilePage />;
+  if (path === "/leaderboard") return <LeaderboardPage />;
+  if (path === "/releases") return <ReleaseTrackerPage />;
   if (isPublicProfilePath(path)) return <PublicProfile stackPath={path} />;
   if (isReleaseDetailPath(path)) return <ReleaseDetail />;
   return null;
@@ -527,8 +524,16 @@ export function InteractiveSettingsStack({
         window.clearTimeout(timer);
       };
     }
-    if (!onChild) dismissHomeFeedReleaseReturnVisit(visit.id);
-  }, [fullLocation]);
+    if (
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: visit.releasePath,
+        fullLocation,
+        pages,
+      })
+    ) {
+      dismissHomeFeedReleaseReturnVisit(visit.id);
+    }
+  }, [fullLocation, pages]);
 
   useEffect(() => {
     const visit = getProfileViewerReleaseReturnVisit();

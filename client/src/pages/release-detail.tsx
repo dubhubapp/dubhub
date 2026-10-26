@@ -69,7 +69,6 @@ import {
   shouldUseHomeFeedReleaseStaticPop,
   shouldUseProfileViewerReleaseStaticPop,
 } from "@/lib/interactive-page-transitions";
-import { perfDebugEnabled, useReleaseDetailPerf } from "@/lib/perf-debug";
 import { getProfileViewerReleaseReturnVisit } from "@/lib/profile-viewer-release-return";
 import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ReleaseDetailSkeleton } from "@/components/release-detail-skeleton";
@@ -277,22 +276,6 @@ export default function ReleaseDetail() {
   const holdForAtmosphere = shouldHoldReleaseDetailForAtmosphere({
     artworkUrl: artworkAtmosphereUrl,
     atmosphereReady,
-  });
-  useReleaseDetailPerf({
-    active: !!id && id !== "new" && routePathname(location) === `/releases/${id}`,
-    queryClient,
-    releaseId: id ?? "",
-    detailFetching: isFetching,
-    detailPending: isPending,
-    hasRelease: !!release,
-    hasFullDetail,
-    hasError: !!error,
-    holdForAtmosphere,
-    placeholderFromFeed:
-      perfDebugEnabled() && !!id ? findReleaseInFeedCaches(queryClient, id) != null : false,
-    statsEnabled: !!id && id !== "new" && !isPausedPublicPayload,
-    statsFetching: isStatsFetching,
-    statsLoading: isStatsLoading,
   });
   /** Cold settle → subtle content opacity only (theme already applied). */
   const revealContentAfterAtmosphereHold = Boolean(atmosphereFromExtract);

@@ -78,7 +78,7 @@ describe("releases feed viewer state", () => {
       /SELECT banned, suspended_until\s+FROM profiles\s+WHERE id = \$1\s+LIMIT 1/,
     );
     assert.match(viewerSrc, /resolveReleasesFeedViewerId\(user\.id, profile\)/);
-    assert.match(viewerSrc, /profileState: profileStateMs/);
+    assert.doesNotMatch(viewerSrc, /profileState/);
     assert.doesNotMatch(viewerSrc, /\.from\('profiles'\)/);
     assert.doesNotMatch(viewerSrc, /optionalSupabaseUser/);
   });

@@ -274,7 +274,6 @@ export interface IStorage {
   getPostComments(
     postId: string,
     currentUserId?: string,
-    timing?: { commentVotesCheck: number; commentsQuery: number },
   ): Promise<any[]>;
 
   // Artist Tagging
@@ -345,13 +344,11 @@ export interface IStorage {
   getLeaderboard(
     userType: "user" | "artist",
     timeFilter?: "month" | "year" | "all",
-    timing?: { window: number; ranking: number },
   ): Promise<any[]>;
   getLeaderboardUserRank(
     userType: "user" | "artist",
     userId: string,
     timeFilter?: "month" | "year" | "all",
-    timing?: { window: number; ranking: number },
   ): Promise<{
     rank: number;
     entry: any | null;
@@ -1464,17 +1461,14 @@ export class DatabaseStorage implements IStorage {
   async getPostComments(
     postId: string,
     currentUserId?: string,
-    timing?: { commentVotesCheck: number; commentsQuery: number },
   ): Promise<any[]> {
     try {
       // Comment likes are stored in comment_votes. If that table hasn't been created
       // in the connected DB yet, we still want comments to load (likes will be 0).
       // Use pg pool directly here so row keys match the SQL aliases reliably (moderator flag for UI).
-      const votesStarted = performance.now();
       const commentVotesRegResult = await pool.query<{
         regclass: string | null;
       }>(`SELECT to_regclass('public.comment_votes') AS regclass`);
-      if (timing) timing.commentVotesCheck = performance.now() - votesStarted;
 
       const hasCommentVotes = !!commentVotesRegResult.rows?.[0]?.regclass;
 
@@ -1493,7 +1487,6 @@ export class DatabaseStorage implements IStorage {
               COALESCE(p.moderator, false) AS profile_moderator`;
 
       let rows: any[];
-      const queryStarted = performance.now();
       if (hasCommentVotes) {
         if (currentUserId) {
           const res = await pool.query(
@@ -1549,7 +1542,6 @@ export class DatabaseStorage implements IStorage {
         );
         rows = res.rows;
       }
-      if (timing) timing.commentsQuery = performance.now() - queryStarted;
 
       const flatComments: any[] = rows.map((row: any) => ({
         id: row.id,
@@ -3200,7 +3192,6 @@ export class DatabaseStorage implements IStorage {
   async getLeaderboard(
     userType: "user" | "artist",
     timeFilter: "month" | "year" | "all" = "all",
-    timing?: { window: number; ranking: number },
   ): Promise<any[]> {
     try {
       // Read-only leaderboard reads. All score / correct_ids **writes** must go through `server/karmaService.ts`.
@@ -3210,13 +3201,10 @@ export class DatabaseStorage implements IStorage {
       // Ranking (ORDER BY): period event score + period confirmed IDs when filtered, else lifetime aggregates
       const accountType = userType === "user" ? "user" : "artist";
       const achievementScope = leaderboardScopeFromUserType(userType);
-      const windowStarted = performance.now();
       const window = await this.resolveLiveLeaderboardPeriodWindow(timeFilter);
-      if (timing) timing.window = performance.now() - windowStarted;
       const applyPeriod = window != null;
       const periodStart = window?.periodStart ?? new Date(0);
       const periodEnd = window?.periodEnd ?? new Date(0);
-      const rankingStarted = performance.now();
       const result = await db.execute(sql`
         WITH period_events AS (
           SELECT
@@ -3310,7 +3298,6 @@ export class DatabaseStorage implements IStorage {
           p.id ASC
         LIMIT 100
       `);
-      if (timing) timing.ranking = performance.now() - rankingStarted;
 
       return ((result as any).rows || []).map((row: any) => ({
         ...row,
@@ -3327,7 +3314,6 @@ export class DatabaseStorage implements IStorage {
     userType: "user" | "artist",
     userId: string,
     timeFilter: "month" | "year" | "all" = "all",
-    timing?: { window: number; ranking: number },
   ): Promise<{
     rank: number;
     entry: any | null;
@@ -3339,14 +3325,11 @@ export class DatabaseStorage implements IStorage {
       // so ROW_NUMBER ranks by period activity when filtered while `reputation` stays lifetime for UI.
       const accountType = userType === "user" ? "user" : "artist";
       const achievementScope = leaderboardScopeFromUserType(userType);
-      const windowStarted = performance.now();
       const window = await this.resolveLiveLeaderboardPeriodWindow(timeFilter);
-      if (timing) timing.window = performance.now() - windowStarted;
       const applyPeriod = window != null;
       const periodStart = window?.periodStart ?? new Date(0);
       const periodEnd = window?.periodEnd ?? new Date(0);
 
-      const rankingStarted = performance.now();
       const result = await db.execute(sql`
         WITH period_events AS (
           SELECT
@@ -3461,7 +3444,6 @@ export class DatabaseStorage implements IStorage {
         WHERE user_id = ${userId}
         LIMIT 1
       `);
-      if (timing) timing.ranking = performance.now() - rankingStarted;
 
       const row = (result as any).rows?.[0] ?? null;
       if (!row) return { rank: 0, entry: null, communityTotal: 0, communityTopPercent: null };

@@ -176,6 +176,26 @@ export function shouldUseHomeFeedReleaseStaticPop(location: string, hasReturnVis
 }
 
 /**
+ * Stored Home return still. Drop it only after its child page has left the
+ * mounted stack. Profile → Release keeps that profile underneath, so the
+ * frozen card must survive. Bridging cleanup is decided separately.
+ * `visitPath` is the stored child location (`visit.releasePath`).
+ */
+export function shouldDismissStoredHomeFeedReturnVisit(input: {
+  visitPath: string;
+  fullLocation: string;
+  pages: readonly string[];
+}): boolean {
+  const stored = routePathname(input.visitPath);
+  if (!stored || stored === "/") return true;
+  const onChild =
+    routePathname(input.fullLocation) === stored &&
+    isHomeFeedStaticReturnLocation(input.fullLocation);
+  if (onChild) return false;
+  return !input.pages.some((page) => routePathname(page) === stored);
+}
+
+/**
  * Release Detail opened from Own Profile Posts/Likes viewer.
  * `from=profile-viewer` is not `from=feed` and not public-profile `from=profile`.
  */

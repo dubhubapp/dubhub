@@ -52,6 +52,7 @@ import {
   shouldArmHomeFeedPublicProfilePoster,
   shouldArmHomeFeedReleasePoster,
   shouldArmReleaseDetailProfilePush,
+  shouldDismissStoredHomeFeedReturnVisit,
   shouldPlayCommentsProfilePush,
   shouldPlayHomeContextualPosterPush,
   shouldPlayHomeFeedReleasePosterPush,
@@ -1752,6 +1753,134 @@ describe("home profile popup static pop", () => {
     assert.match(stackSrc, /isHomeFeedStaticReturnLocation/);
     assert.match(stackSrc, /releaseUnchangedCommit\(\)/);
     assert.doesNotMatch(homeSrc, /home-popup|homeFeedReleaseReturn/);
+  });
+
+  it("keeps the stored Home card while Profile stays in the stack under Release", () => {
+    dismissHomeFeedReleaseReturnVisit();
+    let removed = false;
+    const surface = { remove() { removed = true; } } as unknown as HTMLElement;
+    const visit = armHomeFeedReleaseReturnVisit({
+      releasePath: marked,
+      postId: "post-1",
+      imageUrl: "https://example.com/poster.jpg",
+      objectFit: "cover",
+      surface,
+    });
+    const profilePages = reduceSettingsTransitionStack([], marked);
+    assert.deepEqual(profilePages, ["/profile/ada"]);
+    assert.equal(stackLayerRole(profilePages.length, 0), "solo");
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: visit.releasePath,
+        fullLocation: marked,
+        pages: profilePages,
+      }),
+      false,
+    );
+    assert.equal(getHomeFeedReleaseReturnVisit()?.presentation, "stored");
+    assert.equal(shouldUseHomeFeedReleaseStaticPop(marked, true), true);
+
+    const releaseLocation = "/releases/abc?from=profile&profile=ada";
+    const nestedPages = reduceSettingsTransitionStack(profilePages, releaseLocation);
+    assert.deepEqual(nestedPages, ["/profile/ada", "/releases/abc"]);
+    assert.equal(stackLayerRole(nestedPages.length, 0), "underlay");
+    assert.equal(stackLayerRole(nestedPages.length, 1), "foreground");
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: visit.releasePath,
+        fullLocation: releaseLocation,
+        pages: nestedPages,
+      }),
+      false,
+    );
+    assert.equal(getHomeFeedReleaseReturnVisit()?.id, visit.id);
+    assert.equal(getHomeFeedReleaseReturnVisit()?.presentation, "stored");
+    assert.equal(shouldUseHomeFeedReleaseStaticPop(releaseLocation, true), false);
+    assert.match(posterHostSrc, /presentation === "shown"/);
+    assert.match(posterHostSrc, /presentation === "bridging"/);
+    assert.doesNotMatch(posterHostSrc, /presentation === "stored"\) return true/);
+
+    const returnedPages = reduceSettingsTransitionStack(nestedPages, marked);
+    assert.deepEqual(returnedPages, ["/profile/ada"]);
+    assert.equal(stackLayerRole(returnedPages.length, 0), "solo");
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: visit.releasePath,
+        fullLocation: marked,
+        pages: returnedPages,
+      }),
+      false,
+    );
+    assert.equal(getHomeFeedReleaseReturnVisit()?.id, visit.id);
+    assert.equal(shouldUseHomeFeedReleaseStaticPop(marked, getHomeFeedReleaseReturnVisit() != null), true);
+    revealHomeFeedReleaseReturnVisit();
+    assert.equal(getHomeFeedReleaseReturnVisit()?.presentation, "shown");
+    bridgeHomeFeedReleaseReturnVisit();
+    assert.equal(getHomeFeedReleaseReturnVisit()?.presentation, "bridging");
+    dismissHomeFeedReleaseReturnVisit(visit.id);
+    assert.equal(getHomeFeedReleaseReturnVisit(), null);
+    assert.equal(removed, true);
+
+    let leftRemoved = false;
+    const leftSurface = { remove() { leftRemoved = true; } } as unknown as HTMLElement;
+    const storedAgain = armHomeFeedReleaseReturnVisit({
+      releasePath: marked,
+      postId: "post-1",
+      imageUrl: "https://example.com/poster.jpg",
+      objectFit: "cover",
+      surface: leftSurface,
+    });
+    const departed = reduceSettingsTransitionStack(["/profile/ada"], "/settings");
+    assert.equal(departed.includes("/profile/ada"), false);
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: storedAgain.releasePath,
+        fullLocation: "/settings",
+        pages: departed,
+      }),
+      true,
+    );
+    const leftForLeaderboard = reduceSettingsTransitionStack(["/profile/ada"], "/leaderboard");
+    assert.deepEqual(leftForLeaderboard, ["/leaderboard"]);
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: storedAgain.releasePath,
+        fullLocation: "/leaderboard",
+        pages: leftForLeaderboard,
+      }),
+      true,
+    );
+    dismissHomeFeedReleaseReturnVisit(storedAgain.id);
+    assert.equal(getHomeFeedReleaseReturnVisit(), null);
+    assert.equal(leftRemoved, true);
+
+    const feed = "/releases/abc?from=feed";
+    const feedPages = reduceSettingsTransitionStack([], feed);
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: feed,
+        fullLocation: feed,
+        pages: feedPages,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldDismissStoredHomeFeedReturnVisit({
+        visitPath: feed,
+        fullLocation: "/leaderboard",
+        pages: reduceSettingsTransitionStack(feedPages, "/leaderboard"),
+      }),
+      true,
+    );
+
+    const dismissAt = stackSrc.indexOf("shouldDismissStoredHomeFeedReturnVisit({");
+    const dismissCall = stackSrc.slice(dismissAt, stackSrc.indexOf("}, [fullLocation, pages])", dismissAt));
+    assert.match(dismissCall, /visitPath: visit\.releasePath/);
+    assert.match(dismissCall, /fullLocation/);
+    assert.match(dismissCall, /pages/);
+    assert.ok(stackSrc.indexOf("homeFeedReleaseReturnHasPainted(document, postId)") < dismissAt);
+    assert.match(stackSrc, /HOME_FEED_RELEASE_RETURN_BRIDGE_MS/);
+    assert.doesNotMatch(homeSrc, /shouldDismissStoredHomeFeedReturnVisit/);
   });
 });
 

@@ -98,6 +98,10 @@ describe("PROFILE-REFINEMENT-A — favourite genre parity", () => {
     assert.match(userProfileSrc, /PROFILE_HEADER_RHYTHM_CLASS/);
     assert.match(userProfileSrc, /data-state=\{statsLoading \? "loading" : hundredClubEarned \? "earned" : "absent"\}/);
     assert.match(userProfileSrc, /statsLoading \|\| !hundredClubEarned \? "invisible"/);
+    assert.match(
+      userProfileSrc,
+      /owner-profile-hundred-club-slot[\s\S]{0,700}inline-flex h-full items-center leading-none/,
+    );
     assert.doesNotMatch(userProfileSrc, /function ProfileKeyStatsSkeleton/);
     assert.match(userProfileSrc, /data-testid="profile-key-stat-skeleton"/);
   });

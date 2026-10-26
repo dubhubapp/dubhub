@@ -7,11 +7,9 @@ import { consumeDiscardedFormProfileArrival } from "@/lib/release-form-leave";
 import { getCommentsHomeReturnVisit } from "@/lib/comments-profile-push-underlay";
 import { getHomeFeedReleaseReturnVisit } from "@/lib/home-feed-release-poster";
 import {
-  routePathname,
   shouldUseCommentsHomeStaticPop,
   shouldUseHomeFeedReleaseStaticPop,
 } from "@/lib/interactive-page-transitions";
-import { usePublicProfilePerf } from "@/lib/perf-debug";
 import { useSettingsInteractiveBack } from "@/lib/settings-transition-context";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
@@ -200,22 +198,9 @@ function PublicArtistReleasesSkeleton() {
   return <PublicArtistDiscographySkeleton />;
 }
 
-function publicProfileLocationMatches(location: string, routeUsername: string): boolean {
-  const path = routePathname(location);
-  if (!path.startsWith("/profile/")) return false;
-  const raw = path.slice("/profile/".length);
-  let decoded = raw;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    /* keep the raw segment */
-  }
-  return decoded.trim() === routeUsername;
-}
-
 export default function PublicProfile({ stackPath }: { stackPath?: string } = {}) {
   const [, params] = useRoute("/profile/:username");
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { username: viewerUsername, currentUser, isAuthenticated } = useUser();
   const [playEnterAnimation, setPlayEnterAnimation] = useState(() => consumePublicProfileEnterAnimation());
@@ -246,7 +231,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
     }
   }, [routeUsername, routeNormalized, viewerNormalized, navigate]);
 
-  const { data: profile, isLoading, isFetching: isProfileFetching, isError } = useQuery<PublicProfileResponse>({
+  const { data: profile, isLoading, isError } = useQuery<PublicProfileResponse>({
     queryKey: publicProfileQueryKey(routeUsername),
     enabled: routeUsername.length > 0 && routeNormalized !== viewerNormalized,
     retry: false,
@@ -307,7 +292,6 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   const {
     data: profileSections,
     isLoading: sectionsLoading,
-    isFetching: sectionsFetching,
     isError: sectionsError,
   } = useQuery<PublicProfileSectionsResponse>({
     queryKey: ["/api/user", profileId, "public-profile-sections"],
@@ -321,7 +305,7 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
     },
   });
 
-  const { data: karmaData, isLoading: karmaLoading, isFetching: karmaFetching } = useQuery<{
+  const { data: karmaData, isLoading: karmaLoading } = useQuery<{
     communityTopPercent?: number | null;
   }>({
     queryKey: ["/api/user", profileId, "karma"],
@@ -345,24 +329,6 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
       if (!res.ok) throw new Error("Failed to load releases");
       return res.json();
     },
-  });
-
-  usePublicProfilePerf({
-    active:
-      routeUsername.length > 0 &&
-      routeNormalized !== viewerNormalized &&
-      publicProfileLocationMatches(location, routeUsername),
-    queryClient,
-    username: routeUsername,
-    profileEnabled: routeUsername.length > 0 && routeNormalized !== viewerNormalized,
-    profileLoading: isLoading,
-    profileFetching: isProfileFetching,
-    profileId,
-    karmaLoading,
-    karmaFetching,
-    sectionsEnabled: Boolean(profileId),
-    sectionsLoading,
-    sectionsFetching,
   });
 
   const sectionReleases = profileSections?.publicReleases;

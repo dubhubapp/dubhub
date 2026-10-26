@@ -95,7 +95,6 @@ describe("public profile light shell", () => {
     assert.match(block, /karma: karmaAgg\.score/);
     assert.match(block, /\.\.\.achievements/);
     assert.match(block, /publicLight/);
-    assert.match(block, /lookup;dur=/);
-    assert.match(block, /handler;dur=/);
+    assert.doesNotMatch(block, /Server-Timing/);
   });
 });

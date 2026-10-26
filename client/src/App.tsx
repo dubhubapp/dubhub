@@ -37,7 +37,6 @@ import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
 import { InteractiveSettingsStack } from "@/components/interactive-settings-stack";
 import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
-import { lgNav5aMark } from "@/lib/lg-nav-5a-timing";
 import { SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_SHELL_ATMOSPHERE_CLASS,
@@ -172,7 +171,6 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
       });
       clearDubhubTrimSession();
     }
-    lgNav5aMark("wouter-location", { location });
   }, [location]);
 
   const isProfileShellRoute =

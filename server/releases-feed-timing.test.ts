@@ -16,8 +16,8 @@ function sliceBetween(source: string, startNeedle: string, endNeedle: string): s
   return source.slice(start, end);
 }
 
-describe("releases feed timing", () => {
-  it("reports feed stages only through Server-Timing", () => {
+describe("releases feed", () => {
+  it("returns the feed JSON without route timing headers", () => {
     const block = sliceBetween(
       routesSrc,
       'app.get("/api/releases/feed"',
@@ -26,19 +26,11 @@ describe("releases feed timing", () => {
     assert.match(block, /storage\.getReleasesFeed\(userId, view, scope\)/);
     assert.match(block, /storage\.getReleaseLinksForReleases\(/);
     assert.doesNotMatch(block, /getReleaseLinks\(r\.id\)/);
-    assert.match(block, /feed\.length > 0 \? 1 : 0/);
-    assert.match(block, /setReleasesFeedTiming\(res, started, stage\)/);
-    const helper = sliceBetween(routesSrc, "function setReleasesFeedTiming", 'app.get("/api/releases/feed"');
+    assert.match(block, /feed\.length > 0/);
+    assert.doesNotMatch(block, /setReleasesFeedTiming/);
     assert.match(block, /releasesFeedViewer/);
     assert.doesNotMatch(block, /optionalSupabaseUser/);
-    assert.match(helper, /auth;dur=/);
-    assert.match(helper, /profileState;dur=/);
-    assert.doesNotMatch(helper, /profile;dur=/);
-    assert.match(helper, /feed;dur=/);
-    assert.match(helper, /links;dur=/);
-    assert.match(helper, /releaseCount;dur=/);
-    assert.match(helper, /linkQueryCount;dur=/);
-    assert.match(helper, /handler;dur=/);
+    assert.doesNotMatch(block, /Server-Timing/);
     assert.match(block, /res\.json\(withArtworkAndLinks\)/);
     assert.match(block, /attachBatchedReleaseLinks\(feed, linksByReleaseId\)/);
     assert.doesNotMatch(block, /res\.json\(\{[^}]*dur/);
@@ -56,13 +48,13 @@ describe("releases feed timing", () => {
     assert.match(batch, /if \(ids\.length === 0\) return new Map\(\)/);
   });
 
-  it("times releases auth without changing the optional-auth profile lookup", () => {
+  it("keeps the optional-auth profile lookup unchanged", () => {
     const block = authSrc.slice(authSrc.indexOf("export async function optionalSupabaseUser"));
-    assert.match(block, /releasesFeedClock/);
-    assert.match(authSrc, /req\.path !== "\/api\/releases\/feed"/);
+    assert.doesNotMatch(block, /releasesFeedClock/);
+    assert.doesNotMatch(authSrc, /req\.path !== "\/api\/releases\/feed"/);
     assert.match(block, /supabase\.auth\.getUser\(accessToken\)/);
     assert.match(block, /\.from\('profiles'\)/);
     assert.match(block, /if \(isBanned \|\| isSuspended\)/);
-    assert.match(block, /releasesFeedPerf/);
+    assert.doesNotMatch(block, /releasesFeedPerf/);
   });
 });

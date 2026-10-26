@@ -1192,12 +1192,7 @@ final class DubHubNativeTabBarChrome: NSObject, UITabBarDelegate, WKScriptMessag
         selectedTabId = tab
         applyResolvedItemTints()
         applyEffectiveChrome()
-        var payload: [String: Any] = ["tab": tab]
-        #if DEBUG
-        let t = CACurrentMediaTime()
-        payload["t"] = t
-        NSLog("[DubHub][LG-NAV-5A] didSelect event=%@ tab=%@ t=%.6f", event, tab, t)
-        #endif
+        let payload: [String: Any] = ["tab": tab]
         // Route event first — do not await icon animation.
         plugin?.notifyListeners(event, data: payload)
         // NATIVE-NAV-PREMIUM-2B: icon micro-anim (Submit/Home); reselect included.
@@ -1323,18 +1318,36 @@ private final class DubHubNativeProfileUnreadBadgeView: UIView {
     /// One-digit diameter / multi-digit height (system-like; 1C's 20pt was too large).
     private static let badgeHeight: CGFloat = 16
     private static let horizontalPadding: CGFloat = 5
-    private static let fillColor = UIColor.systemRed
     /// Cap width so "99+" stays compact.
     private static let maxWidth: CGFloat = 28
 
     private let label = UILabel()
+    private var isApplyingOpaqueFill = false
+
+    /// Tab-bar tint is white at 0.96 / 0.50, and Liquid Glass can re-resolve
+    /// dynamic `systemRed` inside the platter. Either path leaves this chip
+    /// translucent so the white Profile glyph shows through. The fill stays
+    /// systemRed's RGB with alpha forced to 1, and the view alpha stays 1.
+    override var alpha: CGFloat {
+        get { super.alpha }
+        set {
+            guard super.alpha != 1 else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            super.alpha = 1
+            CATransaction.commit()
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         isAccessibilityElement = false
         clipsToBounds = true
-        backgroundColor = Self.fillColor
+        // Do not inherit the bar's translucent tint or dimmed adjustment.
+        tintAdjustmentMode = .normal
+        tintColor = .white
+        applyOpaqueFill()
 
         label.font = UIFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         label.textColor = .white
@@ -1342,6 +1355,7 @@ private final class DubHubNativeProfileUnreadBadgeView: UIView {
         label.numberOfLines = 1
         label.baselineAdjustment = .alignCenters
         label.lineBreakMode = .byClipping
+        label.alpha = 1
         // Fixed-height chip: center the glyph box so ascenders/descenders never clip.
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
@@ -1351,6 +1365,61 @@ private final class DubHubNativeProfileUnreadBadgeView: UIView {
             label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 2),
             label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
         ])
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        applyOpaqueFill()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        applyOpaqueFill()
+    }
+
+    override func tintColorDidChange() {
+        super.tintColorDidChange()
+        applyOpaqueFill()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        applyOpaqueFill()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        applyOpaqueFill()
+    }
+
+    /// systemRed resolved outside the glass/vibrancy traits, then pinned to alpha 1.
+    private func opaqueBadgeFillColor() -> UIColor {
+        let traits = UITraitCollection(userInterfaceStyle: traitCollection.userInterfaceStyle)
+        return UIColor.systemRed
+            .resolvedColor(with: traits)
+            .withAlphaComponent(1)
+    }
+
+    private func applyOpaqueFill() {
+        guard !isApplyingOpaqueFill else { return }
+        isApplyingOpaqueFill = true
+        defer { isApplyingOpaqueFill = false }
+
+        let color = opaqueBadgeFillColor()
+        tintAdjustmentMode = .normal
+        if tintColor != .white {
+            tintColor = .white
+        }
+        backgroundColor = color
+        // CGColor bypasses the tint-sensitive UIView background path (iOS 26 glass).
+        layer.backgroundColor = color.cgColor
+        label.alpha = 1
+        label.textColor = .white
+        guard super.alpha != 1 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        super.alpha = 1
+        CATransaction.commit()
     }
 
     @available(*, unavailable)

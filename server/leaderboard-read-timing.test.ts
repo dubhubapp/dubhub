@@ -15,22 +15,19 @@ function sliceBetween(source: string, startNeedle: string, endNeedle: string): s
   return source.slice(start, end);
 }
 
-describe("leaderboard read timing", () => {
-  it("reports list and my-rank stages only through Server-Timing", () => {
+describe("leaderboard read", () => {
+  it("returns list and my-rank JSON without route timing headers", () => {
     const block = sliceBetween(
       routesSrc,
       'app.get("/api/leaderboard/users"',
       'app.get("/api/artists/verified"',
     );
-    assert.match(block, /getLeaderboard\("user", timeFilter, stage\)/);
-    assert.match(block, /getLeaderboard\("artist", timeFilter, stage\)/);
-    assert.match(block, /getLeaderboardUserRank\("user", userId, timeFilter, stage\)/);
-    assert.match(block, /getLeaderboardUserRank\("artist", userId, timeFilter, stage\)/);
-    assert.match(block, /setLeaderboardReadTiming\(res, started, stage\)/);
-    const helper = sliceBetween(routesSrc, "function setLeaderboardReadTiming", 'app.get("/api/leaderboard/users"');
-    assert.match(helper, /window;dur=/);
-    assert.match(helper, /ranking;dur=/);
-    assert.match(helper, /handler;dur=/);
+    assert.match(block, /getLeaderboard\("user", timeFilter\)/);
+    assert.match(block, /getLeaderboard\("artist", timeFilter\)/);
+    assert.match(block, /getLeaderboardUserRank\("user", userId, timeFilter\)/);
+    assert.match(block, /getLeaderboardUserRank\("artist", userId, timeFilter\)/);
+    assert.doesNotMatch(block, /setLeaderboardReadTiming/);
+    assert.doesNotMatch(block, /Server-Timing/);
     assert.match(block, /res\.json\(leaderboard\)/);
     assert.match(block, /res\.json\(result\)/);
     assert.doesNotMatch(block, /res\.json\(\{[^}]*dur/);
@@ -40,8 +37,8 @@ describe("leaderboard read timing", () => {
     const list = sliceBetween(storageSrc, "async getLeaderboard(", "async getLeaderboardUserRank(");
     const rank = sliceBetween(storageSrc, "async getLeaderboardUserRank(", "async rankLeaderboardPeriod(");
     for (const block of [list, rank]) {
-      assert.match(block, /timing\.window/);
-      assert.match(block, /timing\.ranking/);
+      assert.doesNotMatch(block, /timing\.window/);
+      assert.doesNotMatch(block, /timing\.ranking/);
       assert.match(block, /AS favorite_genre/);
       assert.match(block, /ORDER BY/);
     }

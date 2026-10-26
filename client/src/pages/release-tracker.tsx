@@ -20,9 +20,6 @@ import {
   shouldOfferReleasesPushPrompt,
 } from "@/lib/push-prompt";
 import { Capacitor } from "@capacitor/core";
-import { useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
-import { perfTimedReleasesFeedResponse, useReleasesPerf } from "@/lib/perf-debug";
-import { routePathname } from "@/lib/interactive-page-transitions";
 import {
   ReleaseFeedCard,
   formatReleaseCardDate,
@@ -261,7 +258,6 @@ function isReleaseDayHighlight(r: ReleaseFeedItem): boolean {
 }
 
 export default function ReleaseTracker() {
-  useLgNav5aDestinationProbe("releases");
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { currentUser, userType } = useUser();
@@ -449,13 +445,11 @@ export default function ReleaseTracker() {
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
       const params = new URLSearchParams({ view: viewArg, scope: scopeArg });
-      const res = await perfTimedReleasesFeedResponse(queryClient, scopeArg, viewArg, () =>
-        fetch(apiUrl(`/api/releases/feed?${params}`), {
-          headers,
-          credentials: "include",
-          cache: "no-store",
-        }),
-      );
+      const res = await fetch(apiUrl(`/api/releases/feed?${params}`), {
+        headers,
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch releases");
       return res.json();
     },
@@ -467,9 +461,6 @@ export default function ReleaseTracker() {
     isError: isArtworkFeedError,
     refetch: refetchArtworkFeed,
     isFetching: isArtworkFeedFetching,
-    status: artworkFeedQueryStatus,
-    fetchStatus: artworkFeedFetchStatus,
-    dataUpdatedAt: artworkFeedDataUpdatedAt,
   } = useQuery<ReleaseFeedItem[]>({
     queryKey: ["/api/releases/feed", effectiveScope, effectiveView],
     queryFn: () => fetchReleasesFeed(effectiveScope, effectiveView),
@@ -527,15 +518,6 @@ export default function ReleaseTracker() {
   const isFeedFetching = listPagerEnabled
     ? !!activeListPanelQuery?.isFetching
     : isArtworkFeedFetching;
-  const feedQueryStatus = listPagerEnabled
-    ? (activeListPanelQuery?.status ?? "pending")
-    : artworkFeedQueryStatus;
-  const feedFetchStatus = listPagerEnabled
-    ? (activeListPanelQuery?.fetchStatus ?? "idle")
-    : artworkFeedFetchStatus;
-  const feedDataUpdatedAt = listPagerEnabled
-    ? (activeListPanelQuery?.dataUpdatedAt ?? 0)
-    : artworkFeedDataUpdatedAt;
 
   const isFeedLoading = feed === undefined && !isFeedError;
   const feedItems = feed ?? [];
@@ -557,18 +539,6 @@ export default function ReleaseTracker() {
     enabled: shouldWarmMyPastFeed,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-  });
-
-  useReleasesPerf({
-    active: routePathname(location) === "/releases",
-    queryClient,
-    scope: effectiveScope,
-    view: effectiveView,
-    userReady: !!currentUser?.id,
-    adjacentViews: listPagerEnabled ? adjacentViews : [],
-    warmPast: shouldWarmMyPastFeed,
-    feedLoading: isFeedLoading,
-    feedFetching: isFeedFetching,
   });
 
   /** Owned history for My Upcoming empty copy — null until Past is known. */
@@ -595,19 +565,6 @@ export default function ReleaseTracker() {
 
   /** Stable empty CTA — no first/next flicker (see resolveMyUpcomingEmptyReleaseCtaLabel). */
   const myUpcomingEmptyCtaLabel = resolveMyUpcomingEmptyReleaseCtaLabel();
-
-  useLgNav5aRenderCycle("releases", {
-    scope: effectiveScope,
-    view: feedView,
-    feed: {
-      status: feedQueryStatus,
-      fetchStatus: feedFetchStatus,
-      isLoading: isFeedLoading,
-      isFetching: isFeedFetching,
-      rows: feedItems.length,
-      dataUpdatedAt: feedDataUpdatedAt,
-    },
-  });
 
   const openRelease = useCallback(
     (r: ReleaseFeedItem) => {

@@ -13,7 +13,6 @@ import { Capacitor } from "@capacitor/core";
 import { Heart, MessageCircle, Bookmark, Send, Check, Clock, EyeOff, X, CheckCircle, Trash2, ShieldCheck, MoreHorizontal, Flag, Music, MapPin, Users, Volume2, VolumeX, CalendarDays, Disc3, Upload, ArrowLeftRight } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { apiRequest } from "@/lib/queryClient";
-import { perfTimedCommentsResponse } from "@/lib/perf-debug";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -537,9 +536,7 @@ function VideoCardInner({
       .prefetchQuery({
         queryKey: ["/api/posts", post.id, "comments"],
         queryFn: async () => {
-          const response = await perfTimedCommentsResponse(queryClient, post.id, () =>
-            apiRequest("GET", `/api/posts/${post.id}/comments`),
-          );
+          const response = await apiRequest("GET", `/api/posts/${post.id}/comments`);
           return response.json();
         },
       })

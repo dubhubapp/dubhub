@@ -107,81 +107,40 @@ export async function withSupabaseUser(
   }
 }
 
-function commentsReadClock(req: Request): number | null {
-  if (req.method !== "GET") return null;
-  if (!/^\/api\/posts\/[^/]+\/comments\/?$/.test(req.path)) return null;
-  return performance.now();
-}
-
-function releasesFeedClock(req: Request): number | null {
-  if (req.method !== "GET") return null;
-  if (req.path !== "/api/releases/feed") return null;
-  return performance.now();
-}
-
 export async function optionalSupabaseUser(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) {
-  const commentsStarted = commentsReadClock(req);
-  const releasesStarted = releasesFeedClock(req);
-  let userResolveMs = 0;
-  let profileMs = 0;
-  const finishOptionalAuthTiming = () => {
-    if (commentsStarted != null) {
-      res.locals.commentsReadPerf = {
-        started: commentsStarted,
-        auth: performance.now() - commentsStarted,
-        userResolve: userResolveMs,
-        profile: profileMs,
-      };
-    }
-    if (releasesStarted != null) {
-      res.locals.releasesFeedPerf = {
-        started: releasesStarted,
-        auth: performance.now() - releasesStarted,
-        userResolve: userResolveMs,
-        profile: profileMs,
-      };
-    }
-  };
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       // No auth header, continue without user context
-      finishOptionalAuthTiming();
       return next();
     }
 
     const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
 
     // Verify the token with Supabase
-    const userResolveStarted = performance.now();
     const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    userResolveMs = performance.now() - userResolveStarted;
 
     if (error || !user) {
       // Invalid/expired token, continue without user context
       console.log(`[Optional Auth] Invalid token or no user:`, error?.message || 'No user');
-      finishOptionalAuthTiming();
       return next();
     }
 
     // Fetch full profile from Supabase profiles table
-    const profileStarted = performance.now();
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('username, account_type, avatar_url, verified_artist, moderator, suspended_until, banned, warning_count, country_code, country_prompt_pending')
       .eq('id', user.id)
       .single();
-    profileMs = performance.now() - profileStarted;
 
     if (profileError) {
       console.error(`[Optional Auth] Error fetching profile for ${user.id}:`, profileError);
       // Continue without user context
-      finishOptionalAuthTiming();
       return next();
     }
 
@@ -217,12 +176,10 @@ export async function optionalSupabaseUser(
       }
     }
 
-    finishOptionalAuthTiming();
     next();
   } catch (error: any) {
     console.error('[Optional Auth] Unexpected error:', error?.message || error);
     // Continue without user context on error
-    finishOptionalAuthTiming();
     next();
   }
 }
