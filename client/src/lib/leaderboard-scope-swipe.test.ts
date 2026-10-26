@@ -415,14 +415,9 @@ describe("Leaderboard page wiring — haptic + shared owner", () => {
       leaderboardSrc,
       /leaderboardArtistsQueryKey\(timeFilter\),[\s\S]*?enabled: true/,
     );
-    assert.match(
-      leaderboardSrc,
-      /enabled: !!currentUserId && activeTab === "users"/,
-    );
-    assert.match(
-      leaderboardSrc,
-      /enabled: !!currentUserId && activeTab === "artists"/,
-    );
+    assert.match(leaderboardSrc, /leaderboardMyRankQueryEnabled/);
+    assert.match(leaderboardSrc, /scope: "users"/);
+    assert.match(leaderboardSrc, /scope: "artists"/);
     assert.doesNotMatch(leaderboardSrc, /enabled:.*pagerVertUnlock|mid-drag/);
   });
 
@@ -859,11 +854,11 @@ describe("LEADERBOARD-SWIPE-11B — dual list query warmth", () => {
   it("D/E: my-rank queries remain committed-scope gated", () => {
     assert.match(
       leaderboardSrc,
-      /leaderboardUsersMyRankQueryKey[\s\S]{0,200}enabled: !!currentUserId && activeTab === "users"/,
+      /leaderboardUsersMyRankQueryKey[\s\S]{0,400}scope: "users"/,
     );
     assert.match(
       leaderboardSrc,
-      /leaderboardArtistsMyRankQueryKey[\s\S]{0,200}enabled: !!currentUserId && activeTab === "artists"/,
+      /leaderboardArtistsMyRankQueryKey[\s\S]{0,400}scope: "artists"/,
     );
   });
 

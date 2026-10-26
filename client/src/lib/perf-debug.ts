@@ -169,6 +169,87 @@ export function perfLogProfileShell(response: Response, clientMs: number): void 
   });
 }
 
+const leaderboardFetchDetail = new Map<string, Record<string, unknown>>();
+
+export function rememberLeaderboardFetch(id: string, detail: Record<string, unknown>): void {
+  leaderboardFetchDetail.set(id, detail);
+}
+
+export function takeLeaderboardFetch(id: string): Record<string, unknown> | undefined {
+  const detail = leaderboardFetchDetail.get(id);
+  if (detail) leaderboardFetchDetail.delete(id);
+  return detail;
+}
+
+/** Durations only. Does not read the leaderboard payload. */
+export async function perfTimedLeaderboardResponse(
+  queryClient: QueryClient,
+  queryKey: readonly unknown[],
+  fetchId: string,
+  request: () => Promise<Response>,
+): Promise<Response> {
+  const state = queryClient.getQueryState(queryKey);
+  const cache = state?.data !== undefined ? "hit" : "miss";
+  const started = performance.now();
+  const response = await request();
+  if (perfDebugEnabled()) {
+    const server = readServerTiming(response);
+    rememberLeaderboardFetch(fetchId, {
+      clientMs: roundTiming(performance.now() - started),
+      cache,
+      refetch: cache === "hit",
+      window: server.window,
+      ranking: server.ranking,
+      handler: server.handler,
+    });
+  }
+  return response;
+}
+
+const releasesFetchDetail = new Map<string, Record<string, unknown>>();
+
+export function rememberReleasesFetch(id: string, detail: Record<string, unknown>): void {
+  releasesFetchDetail.set(id, detail);
+}
+
+export function takeReleasesFetch(id: string): Record<string, unknown> | undefined {
+  const detail = releasesFetchDetail.get(id);
+  if (detail) releasesFetchDetail.delete(id);
+  return detail;
+}
+
+/** Durations and counts only. Does not read release titles or rows. */
+export async function perfTimedReleasesFeedResponse(
+  queryClient: QueryClient,
+  scope: string,
+  view: string,
+  request: () => Promise<Response>,
+): Promise<Response> {
+  const state = queryClient.getQueryState(["/api/releases/feed", scope, view]);
+  const cache = state?.data !== undefined ? "hit" : "miss";
+  const started = performance.now();
+  const response = await request();
+  if (perfDebugEnabled()) {
+    const server = readServerTiming(response);
+    rememberReleasesFetch(`${scope}:${view}`, {
+      clientMs: roundTiming(performance.now() - started),
+      cache,
+      refetch: cache === "hit",
+      scope,
+      view,
+      auth: server.auth,
+      userResolve: server.userResolve,
+      profileState: server.profileState,
+      feed: server.feed,
+      links: server.links,
+      handler: server.handler,
+      releaseCount: server.releaseCount,
+      linkQueryCount: server.linkQueryCount,
+    });
+  }
+  return response;
+}
+
 /** Durations and cache flags only. Does not read the comments payload. */
 export async function perfTimedCommentsResponse(
   queryClient: QueryClient,
@@ -691,49 +772,48 @@ export function useLeaderboardPerf(input: {
     }
 
     perf.mark("open", "leaderboard open", {
-      timeframe,
-      scope,
+      timeFilter: timeframe,
+      tab: scope,
       network: perf.noted(`users:${timeframe}`) || perf.noted(`artists:${timeframe}`),
     });
 
     const usersCache = rememberReport(perf, `users:${timeframe}`, users);
     const artistsCache = rememberReport(perf, `artists:${timeframe}`, artists);
     if (!usersFetching && !usersLoading) {
-      perf.mark(`users:${timeframe}`, "leaderboard users request", {
-        timeframe,
+      perf.mark(`users:${timeframe}`, "leaderboard users", {
+        timeFilter: timeframe,
+        tab: scope,
         cache: usersCache.cache,
-        network: perf.noted(`users:${timeframe}`),
-        dt: perf.since(`users:${timeframe}`),
-        users: usersCache,
+        refetch: usersCache.cache === "hit" && perf.noted(`users:${timeframe}`),
+        ...(takeLeaderboardFetch(`users:${timeframe}`) ?? {}),
       });
     }
     if (!artistsFetching && !artistsLoading) {
-      perf.mark(`artists:${timeframe}`, "leaderboard artists request", {
-        timeframe,
+      perf.mark(`artists:${timeframe}`, "leaderboard artists", {
+        timeFilter: timeframe,
+        tab: scope,
         cache: artistsCache.cache,
-        network: perf.noted(`artists:${timeframe}`),
-        dt: perf.since(`artists:${timeframe}`),
-        artists: artistsCache,
+        refetch: artistsCache.cache === "hit" && perf.noted(`artists:${timeframe}`),
+        ...(takeLeaderboardFetch(`artists:${timeframe}`) ?? {}),
       });
     }
     const rankLoading = rankScope === "users" ? userRankLoading : artistRankLoading;
     const rankFetching = rankScope === "users" ? userRankFetching : artistRankFetching;
     const rankCache = rank ? rememberReport(perf, `rank:${rankScope}:${timeframe}`, rank) : undefined;
     if (rank && rankCache && rankEnabled && !rankFetching && !rankLoading) {
-      perf.mark(`rank:${rankScope}:${timeframe}`, "leaderboard my-rank request", {
-        timeframe,
-        scope: rankScope,
+      perf.mark(`rank:${rankScope}:${timeframe}`, "leaderboard my-rank", {
+        timeFilter: timeframe,
+        tab: rankScope,
         cache: rankCache.cache,
-        network: perf.noted(`rank:${rankScope}:${timeframe}`),
-        dt: perf.since(`rank:${rankScope}:${timeframe}`),
-        rank: rankCache,
+        refetch: rankCache.cache === "hit" && perf.noted(`rank:${rankScope}:${timeframe}`),
+        ...(takeLeaderboardFetch(`rank:${rankScope}:${timeframe}`) ?? {}),
       });
     }
     const listLoading = scope === "users" ? usersLoading : artistsLoading;
     if (!listLoading) {
       perf.mark("first", "leaderboard first-content", {
-        timeframe,
-        scope,
+        timeFilter: timeframe,
+        tab: scope,
         cache: scope === "users" ? usersCache.cache : artistsCache.cache,
       });
     }
@@ -809,17 +889,28 @@ export function useReleasesPerf(input: {
     });
     if (feedFetching) perf.meta("sawFeed", "1");
     const sawFeed = perf.meta("sawFeed") === "1";
+    const feedState = queryClient.getQueryState(feedKey(scope, view));
+    const rows = Array.isArray(feedState?.data) ? feedState.data.length : undefined;
+    const fetchDetail = !feedLoading && !feedFetching ? takeReleasesFetch(`${scope}:${view}`) : undefined;
     if (!feedLoading && !feedFetching && (sawFeed || !perf.noted(`feed:${scope}:${view}`))) {
-      perf.mark("primary", "releases primary", {
+      perf.mark("primary", "releases feed", {
         cache,
         scope,
         view,
+        rows,
         network: perf.noted(`feed:${scope}:${view}`),
         fetching: perfCountFetching(queryClient, ["/api/releases/feed"]),
+        ...(fetchDetail ?? {}),
       });
     }
     if (!feedLoading) {
-      perf.mark("first", "releases first-content", { cache, scope, view });
+      perf.mark("first", "releases first-content", {
+        cache,
+        scope,
+        view,
+        rows,
+        ...(fetchDetail ?? {}),
+      });
     }
   }, [perf.active, perf.generation, queryClient, scope, view, userReady, adjacentKey, warmPast, feedLoading, feedFetching]);
 }

@@ -108,6 +108,7 @@ import {
   leaderboardArtistsQueryKey,
   leaderboardFirstPaintSlice,
   leaderboardIdsUnitLabel,
+  leaderboardMyRankQueryEnabled,
   leaderboardRepProgressAriaValueText,
   leaderboardShouldPaintOutsideTop,
   leaderboardUsersMyRankQueryKey,
@@ -132,7 +133,7 @@ import {
   whiteRepProgressGradient,
 } from "@/lib/profile-rep-styles";
 import { lgNav5aMark, useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
-import { useLeaderboardPerf } from "@/lib/perf-debug";
+import { perfTimedLeaderboardResponse, useLeaderboardPerf } from "@/lib/perf-debug";
 import { routePathname } from "@/lib/interactive-page-transitions";
 import { lbSwipe8Ensure, lbSwipe8Log } from "@/lib/leaderboard-swipe-8-runtime-audit";
 
@@ -732,6 +733,7 @@ export default function Leaderboard() {
     status: usersQueryStatus,
     fetchStatus: usersFetchStatus,
     dataUpdatedAt: usersDataUpdatedAt,
+    isPlaceholderData: usersListIsPlaceholder,
   } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardUsersQueryKey(timeFilter),
     // LEADERBOARD-SWIPE-11B — both lists warm for adjacent finger-follow paint.
@@ -740,7 +742,12 @@ export default function Leaderboard() {
     placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
-      const res = await apiRequest("GET", `/api/leaderboard/users?${params.toString()}`);
+      const res = await perfTimedLeaderboardResponse(
+        queryClient,
+        leaderboardUsersQueryKey(timeFilter),
+        `users:${timeFilter}`,
+        () => apiRequest("GET", `/api/leaderboard/users?${params.toString()}`),
+      );
       return res.json();
     },
   });
@@ -752,6 +759,7 @@ export default function Leaderboard() {
     isFetching: isFetchingArtists,
     status: artistsQueryStatus,
     fetchStatus: artistsFetchStatus,
+    isPlaceholderData: artistsListIsPlaceholder,
   } = useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardArtistsQueryKey(timeFilter),
     // LEADERBOARD-SWIPE-11B — both lists warm for adjacent finger-follow paint.
@@ -760,7 +768,12 @@ export default function Leaderboard() {
     placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ timeFilter });
-      const res = await apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`);
+      const res = await perfTimedLeaderboardResponse(
+        queryClient,
+        leaderboardArtistsQueryKey(timeFilter),
+        `artists:${timeFilter}`,
+        () => apiRequest("GET", `/api/leaderboard/artists?${params.toString()}`),
+      );
       return res.json();
     },
   });
@@ -772,15 +785,27 @@ export default function Leaderboard() {
     isFetching: isFetchingUserRank,
   } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
-    enabled: !!currentUserId && activeTab === "users",
+    enabled: leaderboardMyRankQueryEnabled({
+      currentUserId,
+      activeTab,
+      scope: "users",
+      listResolved: usersQueryStatus === "success" && !usersListIsPlaceholder,
+      entries: userLeaderboard,
+    }),
     queryFn: async () => {
       const params = new URLSearchParams({
         userId: currentUserId!,
         timeFilter,
       });
-      const res = await fetch(apiUrl(`/api/leaderboard/users/my-rank?${params.toString()}`), {
-        credentials: "include",
-      });
+      const res = await perfTimedLeaderboardResponse(
+        queryClient,
+        leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
+        `rank:users:${timeFilter}`,
+        () =>
+          fetch(apiUrl(`/api/leaderboard/users/my-rank?${params.toString()}`), {
+            credentials: "include",
+          }),
+      );
       if (res.status === 404) return { rank: 0, entry: null };
       if (!res.ok) throw new Error("Failed to fetch users rank");
       return res.json();
@@ -795,15 +820,27 @@ export default function Leaderboard() {
     isFetching: isFetchingArtistRank,
   } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
-    enabled: !!currentUserId && activeTab === "artists",
+    enabled: leaderboardMyRankQueryEnabled({
+      currentUserId,
+      activeTab,
+      scope: "artists",
+      listResolved: artistsQueryStatus === "success" && !artistsListIsPlaceholder,
+      entries: artistLeaderboard,
+    }),
     queryFn: async () => {
       const params = new URLSearchParams({
         userId: currentUserId!,
         timeFilter,
       });
-      const res = await fetch(apiUrl(`/api/leaderboard/artists/my-rank?${params.toString()}`), {
-        credentials: "include",
-      });
+      const res = await perfTimedLeaderboardResponse(
+        queryClient,
+        leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
+        `rank:artists:${timeFilter}`,
+        () =>
+          fetch(apiUrl(`/api/leaderboard/artists/my-rank?${params.toString()}`), {
+            credentials: "include",
+          }),
+      );
       if (res.status === 404) return { rank: 0, entry: null };
       if (!res.ok) throw new Error("Failed to fetch artists rank");
       return res.json();

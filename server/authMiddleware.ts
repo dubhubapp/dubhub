@@ -113,29 +113,45 @@ function commentsReadClock(req: Request): number | null {
   return performance.now();
 }
 
+function releasesFeedClock(req: Request): number | null {
+  if (req.method !== "GET") return null;
+  if (req.path !== "/api/releases/feed") return null;
+  return performance.now();
+}
+
 export async function optionalSupabaseUser(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) {
   const commentsStarted = commentsReadClock(req);
+  const releasesStarted = releasesFeedClock(req);
   let userResolveMs = 0;
   let profileMs = 0;
-  const finishCommentsAuth = () => {
-    if (commentsStarted == null) return;
-    res.locals.commentsReadPerf = {
-      started: commentsStarted,
-      auth: performance.now() - commentsStarted,
-      userResolve: userResolveMs,
-      profile: profileMs,
-    };
+  const finishOptionalAuthTiming = () => {
+    if (commentsStarted != null) {
+      res.locals.commentsReadPerf = {
+        started: commentsStarted,
+        auth: performance.now() - commentsStarted,
+        userResolve: userResolveMs,
+        profile: profileMs,
+      };
+    }
+    if (releasesStarted != null) {
+      res.locals.releasesFeedPerf = {
+        started: releasesStarted,
+        auth: performance.now() - releasesStarted,
+        userResolve: userResolveMs,
+        profile: profileMs,
+      };
+    }
   };
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       // No auth header, continue without user context
-      finishCommentsAuth();
+      finishOptionalAuthTiming();
       return next();
     }
 
@@ -149,7 +165,7 @@ export async function optionalSupabaseUser(
     if (error || !user) {
       // Invalid/expired token, continue without user context
       console.log(`[Optional Auth] Invalid token or no user:`, error?.message || 'No user');
-      finishCommentsAuth();
+      finishOptionalAuthTiming();
       return next();
     }
 
@@ -165,7 +181,7 @@ export async function optionalSupabaseUser(
     if (profileError) {
       console.error(`[Optional Auth] Error fetching profile for ${user.id}:`, profileError);
       // Continue without user context
-      finishCommentsAuth();
+      finishOptionalAuthTiming();
       return next();
     }
 
@@ -201,12 +217,12 @@ export async function optionalSupabaseUser(
       }
     }
 
-    finishCommentsAuth();
+    finishOptionalAuthTiming();
     next();
   } catch (error: any) {
     console.error('[Optional Auth] Unexpected error:', error?.message || error);
     // Continue without user context on error
-    finishCommentsAuth();
+    finishOptionalAuthTiming();
     next();
   }
 }

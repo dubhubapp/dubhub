@@ -21,7 +21,7 @@ import {
 } from "@/lib/push-prompt";
 import { Capacitor } from "@capacitor/core";
 import { useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
-import { useReleasesPerf } from "@/lib/perf-debug";
+import { perfTimedReleasesFeedResponse, useReleasesPerf } from "@/lib/perf-debug";
 import { routePathname } from "@/lib/interactive-page-transitions";
 import {
   ReleaseFeedCard,
@@ -449,11 +449,13 @@ export default function ReleaseTracker() {
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
       const params = new URLSearchParams({ view: viewArg, scope: scopeArg });
-      const res = await fetch(apiUrl(`/api/releases/feed?${params}`), {
-        headers,
-        credentials: "include",
-        cache: "no-store",
-      });
+      const res = await perfTimedReleasesFeedResponse(queryClient, scopeArg, viewArg, () =>
+        fetch(apiUrl(`/api/releases/feed?${params}`), {
+          headers,
+          credentials: "include",
+          cache: "no-store",
+        }),
+      );
       if (!res.ok) throw new Error("Failed to fetch releases");
       return res.json();
     },

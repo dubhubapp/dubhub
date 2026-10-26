@@ -320,6 +320,23 @@ export function leaderboardArtistsMyRankQueryKey(
   return ["/api/leaderboard/artists/my-rank", currentUserId, timeFilter] as const;
 }
 
+/**
+ * my-rank is only needed for the pinned row of someone outside the loaded list.
+ * Wait until that list has resolved so placeholder or loading rows cannot start it.
+ */
+export function leaderboardMyRankQueryEnabled(input: {
+  currentUserId: string | null | undefined;
+  activeTab: LeaderboardScope;
+  scope: LeaderboardScope;
+  listResolved: boolean;
+  entries: ReadonlyArray<{ user_id: string }>;
+}): boolean {
+  if (!input.currentUserId || input.activeTab !== input.scope || !input.listResolved) {
+    return false;
+  }
+  return !input.entries.some((entry) => entry.user_id === input.currentUserId);
+}
+
 /** Maps deriveTrustLevel progressPct → painted width %, preserving the visual floor. */
 export function leaderboardVisibleProgressPct(levelProgress: number): number {
   const clamped = Math.min(

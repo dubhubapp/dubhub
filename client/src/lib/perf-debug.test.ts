@@ -9,6 +9,10 @@ import {
   perfLogProfileShell,
   perfNetworkStarted,
   perfTimedCommentsResponse,
+  perfTimedLeaderboardResponse,
+  perfTimedReleasesFeedResponse,
+  takeLeaderboardFetch,
+  takeReleasesFetch,
   perfNoteFetch,
   perfSessionStart,
 } from "./perf-debug";
@@ -170,6 +174,54 @@ describe("perf debug gate", () => {
     assert.equal("token" in detail, false);
     assert.equal("username" in detail, false);
     assert.equal("body" in detail, false);
+    assert.equal(JSON.stringify(detail).includes("secret"), false);
+  });
+
+  it("remembers leaderboard stage timings without the payload", async () => {
+    installStorage("1");
+    const response = await perfTimedLeaderboardResponse(
+      { getQueryState: () => undefined } as unknown as QueryClient,
+      ["/api/leaderboard/users", "month"],
+      "users:month",
+      async () =>
+        new Response(JSON.stringify([{ username: "hidden", user_id: "secret" }]), {
+          headers: { "Server-Timing": "window;dur=4, ranking;dur=80.2, handler;dur=90" },
+        }),
+    );
+    assert.equal(Array.isArray(await response.json()), true);
+    const detail = takeLeaderboardFetch("users:month");
+    assert.equal(detail?.cache, "miss");
+    assert.equal(detail?.refetch, false);
+    assert.equal(detail?.ranking, 80.2);
+    assert.equal(detail?.handler, 90);
+    assert.equal(JSON.stringify(detail).includes("hidden"), false);
+  });
+
+  it("remembers releases feed timings without titles or rows", async () => {
+    installStorage("1");
+    const response = await perfTimedReleasesFeedResponse(
+      { getQueryState: () => undefined } as unknown as QueryClient,
+      "my",
+      "upcoming",
+      async () =>
+        new Response(JSON.stringify([{ title: "hidden release", links: [{ url: "https://secret.example" }] }]), {
+          headers: {
+            "Server-Timing":
+              "auth;dur=40, userResolve;dur=25, profileState;dur=14, feed;dur=8, links;dur=30, releaseCount;dur=3, linkQueryCount;dur=3, handler;dur=80",
+          },
+        }),
+    );
+    assert.equal(Array.isArray(await response.json()), true);
+    const detail = takeReleasesFetch("my:upcoming");
+    assert.equal(detail?.cache, "miss");
+    assert.equal(detail?.scope, "my");
+    assert.equal(detail?.view, "upcoming");
+    assert.equal(detail?.profileState, 14);
+    assert.equal("profile" in (detail ?? {}), false);
+    assert.equal(detail?.links, 30);
+    assert.equal(detail?.releaseCount, 3);
+    assert.equal(detail?.linkQueryCount, 3);
+    assert.equal(JSON.stringify(detail).includes("hidden"), false);
     assert.equal(JSON.stringify(detail).includes("secret"), false);
   });
 });

@@ -10,6 +10,11 @@ import {
 } from "@shared/schema";
 import { DELETED_COMMENT_BODY } from "@shared/deleted-comment";
 import { db, pool } from "./db";
+import {
+  groupReleaseLinksByReleaseId,
+  mapReleaseLinkRow,
+  type ReleaseLinkRecord,
+} from "./release-feed-links";
 import { eq, desc, asc, and, or, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
@@ -337,11 +342,16 @@ export interface IStorage {
   createReport(data: { postId: string; reportedBy: string; reason: string }): Promise<any>;
 
   // Leaderboards
-  getLeaderboard(userType: "user" | "artist", timeFilter?: "month" | "year" | "all"): Promise<any[]>;
+  getLeaderboard(
+    userType: "user" | "artist",
+    timeFilter?: "month" | "year" | "all",
+    timing?: { window: number; ranking: number },
+  ): Promise<any[]>;
   getLeaderboardUserRank(
     userType: "user" | "artist",
     userId: string,
     timeFilter?: "month" | "year" | "all",
+    timing?: { window: number; ranking: number },
   ): Promise<{
     rank: number;
     entry: any | null;
@@ -443,6 +453,7 @@ export interface IStorage {
     releaseTimezone?: string | null;
   }): Promise<any | undefined>;
   getReleaseLinks(releaseId: string): Promise<any[]>;
+  getReleaseLinksForReleases(releaseIds: string[]): Promise<Map<string, ReleaseLinkRecord[]>>;
   upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void>;
   deleteReleaseLink(releaseId: string, platform: string): Promise<boolean>;
   getReleasePostIds(releaseId: string): Promise<string[]>;
@@ -3189,6 +3200,7 @@ export class DatabaseStorage implements IStorage {
   async getLeaderboard(
     userType: "user" | "artist",
     timeFilter: "month" | "year" | "all" = "all",
+    timing?: { window: number; ranking: number },
   ): Promise<any[]> {
     try {
       // Read-only leaderboard reads. All score / correct_ids **writes** must go through `server/karmaService.ts`.
@@ -3198,10 +3210,13 @@ export class DatabaseStorage implements IStorage {
       // Ranking (ORDER BY): period event score + period confirmed IDs when filtered, else lifetime aggregates
       const accountType = userType === "user" ? "user" : "artist";
       const achievementScope = leaderboardScopeFromUserType(userType);
+      const windowStarted = performance.now();
       const window = await this.resolveLiveLeaderboardPeriodWindow(timeFilter);
+      if (timing) timing.window = performance.now() - windowStarted;
       const applyPeriod = window != null;
       const periodStart = window?.periodStart ?? new Date(0);
       const periodEnd = window?.periodEnd ?? new Date(0);
+      const rankingStarted = performance.now();
       const result = await db.execute(sql`
         WITH period_events AS (
           SELECT
@@ -3295,6 +3310,7 @@ export class DatabaseStorage implements IStorage {
           p.id ASC
         LIMIT 100
       `);
+      if (timing) timing.ranking = performance.now() - rankingStarted;
 
       return ((result as any).rows || []).map((row: any) => ({
         ...row,
@@ -3311,6 +3327,7 @@ export class DatabaseStorage implements IStorage {
     userType: "user" | "artist",
     userId: string,
     timeFilter: "month" | "year" | "all" = "all",
+    timing?: { window: number; ranking: number },
   ): Promise<{
     rank: number;
     entry: any | null;
@@ -3322,11 +3339,14 @@ export class DatabaseStorage implements IStorage {
       // so ROW_NUMBER ranks by period activity when filtered while `reputation` stays lifetime for UI.
       const accountType = userType === "user" ? "user" : "artist";
       const achievementScope = leaderboardScopeFromUserType(userType);
+      const windowStarted = performance.now();
       const window = await this.resolveLiveLeaderboardPeriodWindow(timeFilter);
+      if (timing) timing.window = performance.now() - windowStarted;
       const applyPeriod = window != null;
       const periodStart = window?.periodStart ?? new Date(0);
       const periodEnd = window?.periodEnd ?? new Date(0);
 
+      const rankingStarted = performance.now();
       const result = await db.execute(sql`
         WITH period_events AS (
           SELECT
@@ -3441,6 +3461,7 @@ export class DatabaseStorage implements IStorage {
         WHERE user_id = ${userId}
         LIMIT 1
       `);
+      if (timing) timing.ranking = performance.now() - rankingStarted;
 
       const row = (result as any).rows?.[0] ?? null;
       if (!row) return { rank: 0, entry: null, communityTotal: 0, communityTopPercent: null };
@@ -4670,15 +4691,26 @@ export class DatabaseStorage implements IStorage {
       ORDER BY sort_order ASC, platform ASC
     `);
     const rows = (result as any).rows || [];
-    return rows.map((r: any) => ({
-      id: r.id,
-      releaseId: r.release_id,
-      platform: r.platform,
-      url: r.url,
-      linkType: r.link_type,
-      sortOrder: r.sort_order ?? 0,
-      createdAt: r.created_at,
-    }));
+    return rows.map((r: any) => mapReleaseLinkRow(r));
+  }
+
+  async getReleaseLinksForReleases(releaseIds: string[]): Promise<Map<string, ReleaseLinkRecord[]>> {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const id of releaseIds) {
+      if (typeof id !== "string" || id.length === 0 || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+    if (ids.length === 0) return new Map();
+    const result = await pool.query(
+      `SELECT id, release_id, platform, url, link_type, sort_order, created_at::text AS created_at
+       FROM release_links
+       WHERE release_id = ANY($1::uuid[])
+       ORDER BY sort_order ASC, platform ASC`,
+      [ids],
+    );
+    return groupReleaseLinksByReleaseId(ids, result.rows.map((row) => mapReleaseLinkRow(row)));
   }
 
   async upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void> {

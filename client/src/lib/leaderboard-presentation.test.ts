@@ -32,6 +32,7 @@ import {
   leaderboardArtistsQueryKey,
   leaderboardFirstPaintRowCount,
   leaderboardFirstPaintSlice,
+  leaderboardMyRankQueryEnabled,
   leaderboardRepProgressAriaValueText,
   leaderboardShouldPaintOutsideTop,
   leaderboardUsersMyRankQueryKey,
@@ -171,6 +172,95 @@ describe("Leaderboard presentation — rows + identity", () => {
   });
 });
 
+describe("leaderboard my-rank request", () => {
+  const present = [{ user_id: "u1" }, { user_id: "u2" }];
+  const absent = [{ user_id: "u2" }];
+
+  it("skips users my-rank when the signed-in user is in the loaded list", () => {
+    assert.equal(
+      leaderboardMyRankQueryEnabled({
+        currentUserId: "u1",
+        activeTab: "users",
+        scope: "users",
+        listResolved: true,
+        entries: present,
+      }),
+      false,
+    );
+  });
+
+  it("skips artists my-rank when the signed-in artist is in the loaded list", () => {
+    assert.equal(
+      leaderboardMyRankQueryEnabled({
+        currentUserId: "a1",
+        activeTab: "artists",
+        scope: "artists",
+        listResolved: true,
+        entries: [{ user_id: "a1" }],
+      }),
+      false,
+    );
+  });
+
+  it("keeps my-rank when the signed-in user is absent from the loaded list", () => {
+    assert.equal(
+      leaderboardMyRankQueryEnabled({
+        currentUserId: "u9",
+        activeTab: "users",
+        scope: "users",
+        listResolved: true,
+        entries: absent,
+      }),
+      true,
+    );
+  });
+
+  it("does not start my-rank while the list is still loading or showing placeholder rows", () => {
+    assert.equal(
+      leaderboardMyRankQueryEnabled({
+        currentUserId: "u9",
+        activeTab: "users",
+        scope: "users",
+        listResolved: false,
+        entries: [],
+      }),
+      false,
+    );
+  });
+
+  it("leaves the outside-top pinned row path in place", () => {
+    assert.match(
+      leaderboardSrc,
+      /if \(!currentUserId \|\| userHasCurrentUserInTop \|\| !userMyRank\?\.entry\) return null;/,
+    );
+    assert.match(leaderboardSrc, /if \(\(userMyRank\.rank \?\? 0\) <= LEADERBOARD_TOP_LIMIT\) return null;/);
+    assert.match(leaderboardSrc, /return userMyRank;/);
+  });
+
+  it("stays off with no signed-in user and on the inactive tab", () => {
+    assert.equal(
+      leaderboardMyRankQueryEnabled({
+        currentUserId: undefined,
+        activeTab: "users",
+        scope: "users",
+        listResolved: true,
+        entries: absent,
+      }),
+      false,
+    );
+    assert.equal(
+      leaderboardMyRankQueryEnabled({
+        currentUserId: "u9",
+        activeTab: "artists",
+        scope: "users",
+        listResolved: true,
+        entries: absent,
+      }),
+      false,
+    );
+  });
+});
+
 describe("Leaderboard query keys + domain freeze", () => {
   it("keeps historical query key shapes", () => {
     assert.deepEqual(leaderboardUsersQueryKey("month"), ["/api/leaderboard/users", "month"]);
@@ -197,8 +287,9 @@ describe("Leaderboard query keys + domain freeze", () => {
       leaderboardSrc,
       /leaderboardArtistsQueryKey\(timeFilter\),[\s\S]*?enabled: true/,
     );
-    assert.match(leaderboardSrc, /enabled: !!currentUserId && activeTab === "users"/);
-    assert.match(leaderboardSrc, /enabled: !!currentUserId && activeTab === "artists"/);
+    assert.match(leaderboardSrc, /scope: "users"/);
+    assert.match(leaderboardSrc, /scope: "artists"/);
+    assert.match(leaderboardSrc, /leaderboardMyRankQueryEnabled/);
   });
 
   it("stages large lists on first paint, then expands after the paint release", () => {
@@ -286,14 +377,14 @@ describe("LEADERBOARD-TIMEFRAME-2 — previous-data placeholder", () => {
     assert.match(leaderboardSrc, /if \(isLoading\)/);
   });
 
-  it("F: my-rank gating unchanged", () => {
+  it("F: my-rank stays on its query key and skips when the loaded list already contains the user", () => {
     assert.match(
       leaderboardSrc,
-      /leaderboardUsersMyRankQueryKey[\s\S]{0,200}enabled: !!currentUserId && activeTab === "users"/,
+      /leaderboardUsersMyRankQueryKey[\s\S]{0,400}enabled: leaderboardMyRankQueryEnabled\(\{[\s\S]*?scope: "users"/,
     );
     assert.match(
       leaderboardSrc,
-      /leaderboardArtistsMyRankQueryKey[\s\S]{0,200}enabled: !!currentUserId && activeTab === "artists"/,
+      /leaderboardArtistsMyRankQueryKey[\s\S]{0,400}enabled: leaderboardMyRankQueryEnabled\(\{[\s\S]*?scope: "artists"/,
     );
     assert.doesNotMatch(
       leaderboardSrc,

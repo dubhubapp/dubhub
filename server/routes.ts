@@ -12,6 +12,8 @@ import { registerArtistProfileSharePreviewRoutes } from "./artistProfileSharePre
 import { supabase, supabaseAdminEnabled } from "./supabaseClient";
 import { withSupabaseUser, optionalSupabaseUser, type AuthenticatedRequest } from "./authMiddleware";
 import { commentsReadViewer } from "./comments-read-viewer";
+import { releasesFeedViewer } from "./releases-feed-viewer";
+import { attachBatchedReleaseLinks } from "./release-feed-links";
 import {
   freezeLeaderboardMonth,
   getUserLeaderboardAchievements,
@@ -6224,64 +6226,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  function setLeaderboardReadTiming(
+    res: { setHeader: (name: string, value: string) => void },
+    started: number,
+    stage: { window: number; ranking: number },
+  ) {
+    const dur = (value: number) => (Number.isFinite(value) ? value : 0).toFixed(1);
+    res.setHeader(
+      "Server-Timing",
+      [
+        `window;dur=${dur(stage.window)}`,
+        `ranking;dur=${dur(stage.ranking)}`,
+        `handler;dur=${dur(performance.now() - started)}`,
+      ].join(", "),
+    );
+  }
+
   // Leaderboard endpoints
   app.get("/api/leaderboard/users", async (req, res) => {
+    const started = performance.now();
+    const stage = { window: 0, ranking: 0 };
     try {
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const leaderboard = await storage.getLeaderboard("user", timeFilter);
+      const leaderboard = await storage.getLeaderboard("user", timeFilter, stage);
+      setLeaderboardReadTiming(res, started, stage);
       res.json(leaderboard);
     } catch (error) {
       console.error("Error fetching user leaderboard:", error);
+      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get user leaderboard" });
     }
   });
 
   app.get("/api/leaderboard/artists", async (req, res) => {
+    const started = performance.now();
+    const stage = { window: 0, ranking: 0 };
     try {
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const leaderboard = await storage.getLeaderboard("artist", timeFilter);
+      const leaderboard = await storage.getLeaderboard("artist", timeFilter, stage);
+      setLeaderboardReadTiming(res, started, stage);
       res.json(leaderboard);
     } catch (error) {
       console.error("Error fetching artist leaderboard:", error);
+      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get artist leaderboard" });
     }
   });
 
   app.get("/api/leaderboard/users/my-rank", async (req, res) => {
+    const started = performance.now();
+    const stage = { window: 0, ranking: 0 };
     try {
       const userId = String(req.query.userId ?? "").trim();
       if (!userId) return res.status(400).json({ message: "Missing userId" });
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const result = await storage.getLeaderboardUserRank("user", userId, timeFilter);
+      const result = await storage.getLeaderboardUserRank("user", userId, timeFilter, stage);
+      setLeaderboardReadTiming(res, started, stage);
       res.json(result);
     } catch (error) {
       console.error("Error fetching users leaderboard rank:", error);
+      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get users leaderboard rank" });
     }
   });
 
   app.get("/api/leaderboard/artists/my-rank", async (req, res) => {
+    const started = performance.now();
+    const stage = { window: 0, ranking: 0 };
     try {
       const userId = String(req.query.userId ?? "").trim();
       if (!userId) return res.status(400).json({ message: "Missing userId" });
       const rawTimeFilter = String(req.query.timeFilter ?? "all").toLowerCase();
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
-      const result = await storage.getLeaderboardUserRank("artist", userId, timeFilter);
+      const result = await storage.getLeaderboardUserRank("artist", userId, timeFilter, stage);
+      setLeaderboardReadTiming(res, started, stage);
       res.json(result);
     } catch (error) {
       console.error("Error fetching artists leaderboard rank:", error);
+      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get artists leaderboard rank" });
     }
   });
 
   app.get("/api/leaderboard/:type/my-rank", async (req, res) => {
+    const started = performance.now();
+    const stage = { window: 0, ranking: 0 };
     try {
       const typeParam = String(req.params.type ?? "").toLowerCase();
       const userType = typeParam === "artists" ? "artist" : typeParam === "users" ? "user" : null;
@@ -6298,10 +6334,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeFilter: "month" | "year" | "all" =
         rawTimeFilter === "month" || rawTimeFilter === "year" ? rawTimeFilter : "all";
 
-      const result = await storage.getLeaderboardUserRank(userType, userId, timeFilter);
+      const result = await storage.getLeaderboardUserRank(userType, userId, timeFilter, stage);
+      setLeaderboardReadTiming(res, started, stage);
       res.json(result);
     } catch (error) {
       console.error("Error fetching leaderboard user rank:", error);
+      setLeaderboardReadTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get leaderboard user rank" });
     }
   });
@@ -6393,34 +6431,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/releases/feed", optionalSupabaseUser, async (req: AuthenticatedRequest, res) => {
+  function setReleasesFeedTiming(
+    res: { setHeader: (name: string, value: string) => void },
+    started: number,
+    stage: {
+      auth: number;
+      userResolve: number;
+      profileState: number;
+      feed: number;
+      links: number;
+      releaseCount: number;
+      linkQueryCount: number;
+    },
+  ) {
+    const dur = (value: number) => (Number.isFinite(value) ? value : 0).toFixed(1);
+    res.setHeader(
+      "Server-Timing",
+      [
+        `auth;dur=${dur(stage.auth)}`,
+        `userResolve;dur=${dur(stage.userResolve)}`,
+        `profileState;dur=${dur(stage.profileState)}`,
+        `feed;dur=${dur(stage.feed)}`,
+        `links;dur=${dur(stage.links)}`,
+        `releaseCount;dur=${dur(stage.releaseCount)}`,
+        `linkQueryCount;dur=${dur(stage.linkQueryCount)}`,
+        `handler;dur=${dur(performance.now() - started)}`,
+      ].join(", "),
+    );
+  }
+
+  app.get("/api/releases/feed", releasesFeedViewer, async (req: AuthenticatedRequest, res) => {
+    const authPerf = (res.locals.releasesFeedPerf ?? {}) as {
+      started?: number;
+      auth?: number;
+      userResolve?: number;
+      profileState?: number;
+    };
+    const started = authPerf.started ?? performance.now();
+    const stage = {
+      auth: authPerf.auth ?? 0,
+      userResolve: authPerf.userResolve ?? 0,
+      profileState: authPerf.profileState ?? 0,
+      feed: 0,
+      links: 0,
+      releaseCount: 0,
+      linkQueryCount: 0,
+    };
     try {
       const userId = req.dbUser?.id ?? null;
-      if (!userId) return res.json([]);
+      if (!userId) {
+        setReleasesFeedTiming(res, started, stage);
+        return res.json([]);
+      }
       const view = (req.query.view as "upcoming" | "past" | "collaborations") || "upcoming";
       const scope = (req.query.scope as "my" | "saved") || "my";
+      const feedStarted = performance.now();
       const feed = await storage.getReleasesFeed(userId, view, scope);
+      stage.feed = performance.now() - feedStarted;
       if (process.env.NODE_ENV === "development") {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
         (res as any).set("etag", false);
       }
-      const withArtworkAndLinks = await Promise.all(
-        feed.map(async (r: any) => {
-          const links = await storage.getReleaseLinks(r.id);
-          return {
-            ...r,
-            artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
-            links: Array.isArray(links) ? links : [],
-          };
-        })
-      );
+      const linksStarted = performance.now();
+      const linksByReleaseId =
+        feed.length > 0
+          ? await storage.getReleaseLinksForReleases(feed.map((r: any) => String(r.id ?? "")))
+          : new Map();
+      stage.links = performance.now() - linksStarted;
+      stage.releaseCount = feed.length;
+      stage.linkQueryCount = feed.length > 0 ? 1 : 0;
+      const withArtworkAndLinks = attachBatchedReleaseLinks(feed, linksByReleaseId).map((r) => ({
+        ...r,
+        artworkUrl: releaseArtworkPublicUrl(r.artworkUrl) || r.artworkUrl || null,
+      }));
       if (process.env.NODE_ENV === "development") {
         const withZeroLinks = withArtworkAndLinks.filter((r: any) => !r.links?.length);
         console.log("[/api/releases/feed]", scope, view, "total=", withArtworkAndLinks.length, "withZeroLinks=", withZeroLinks.length);
       }
+      setReleasesFeedTiming(res, started, stage);
       res.json(withArtworkAndLinks);
     } catch (error) {
       console.error("[/api/releases/feed] Error:", error);
+      setReleasesFeedTiming(res, started, stage);
       res.status(500).json({ message: "Failed to get releases feed" });
     }
   });
