@@ -3826,16 +3826,13 @@ export class DatabaseStorage implements IStorage {
   async countSavedReleasesForProfile(userId: string): Promise<number> {
     if (!userId) return 0;
     try {
-      const [upcoming, past] = await Promise.all([
-        this.getReleasesFeed(userId, "upcoming", "saved"),
-        this.getReleasesFeed(userId, "past", "saved"),
-      ]);
-      const releaseIds = new Set<string>();
-      for (const release of [...upcoming, ...past]) {
-        const id = release?.id;
-        if (id != null) releaseIds.add(String(id));
-      }
-      return releaseIds.size;
+      const result = await db.execute(sql`
+        SELECT COUNT(DISTINCT r.id)::int AS count
+        FROM releases r
+        WHERE ${savedReleasesFeedWhereSql(userId)}
+          AND (${sqlReleaseFeedUpcoming} OR ${sqlReleaseFeedPast})
+      `);
+      return Number((result as any).rows?.[0]?.count ?? 0);
     } catch (error) {
       console.error("[countSavedReleasesForProfile] Error:", error);
       return 0;

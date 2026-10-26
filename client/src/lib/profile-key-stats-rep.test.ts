@@ -14,7 +14,7 @@ const trustSrc = readFileSync(join(here, "../../../shared/trust-level.ts"), "utf
 function keyStatBlock(): string {
   const idx = userProfileSrc.indexOf('data-testid="profile-key-stats"');
   assert.ok(idx >= 0, "missing profile-key-stats");
-  return userProfileSrc.slice(Math.max(0, idx - 120), idx + 1100);
+  return userProfileSrc.slice(Math.max(0, idx - 120), idx + 1800);
 }
 
 function keyStatRowBuilder(): string {

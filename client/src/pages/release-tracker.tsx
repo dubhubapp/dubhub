@@ -21,6 +21,8 @@ import {
 } from "@/lib/push-prompt";
 import { Capacitor } from "@capacitor/core";
 import { useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
+import { useReleasesPerf } from "@/lib/perf-debug";
+import { routePathname } from "@/lib/interactive-page-transitions";
 import {
   ReleaseFeedCard,
   formatReleaseCardDate,
@@ -553,6 +555,18 @@ export default function ReleaseTracker() {
     enabled: shouldWarmMyPastFeed,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+
+  useReleasesPerf({
+    active: routePathname(location) === "/releases",
+    queryClient,
+    scope: effectiveScope,
+    view: effectiveView,
+    userReady: !!currentUser?.id,
+    adjacentViews: listPagerEnabled ? adjacentViews : [],
+    warmPast: shouldWarmMyPastFeed,
+    feedLoading: isFeedLoading,
+    feedFetching: isFeedFetching,
   });
 
   /** Owned history for My Upcoming empty copy — null until Past is known. */

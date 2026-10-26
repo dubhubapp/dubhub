@@ -8,7 +8,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type CSSProperties,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Trophy, Calendar } from "lucide-react";
@@ -131,6 +132,8 @@ import {
   whiteRepProgressGradient,
 } from "@/lib/profile-rep-styles";
 import { lgNav5aMark, useLgNav5aDestinationProbe, useLgNav5aRenderCycle } from "@/lib/lg-nav-5a-timing";
+import { useLeaderboardPerf } from "@/lib/perf-debug";
+import { routePathname } from "@/lib/interactive-page-transitions";
 import { lbSwipe8Ensure, lbSwipe8Log } from "@/lib/leaderboard-swipe-8-runtime-audit";
 
 interface LeaderboardEntry {
@@ -652,6 +655,8 @@ export function LeaderboardList({
 
 export default function Leaderboard() {
   useLgNav5aDestinationProbe("leaderboard");
+  const [leaderboardLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { currentUser } = useUser();
   const { openByUsername, popup: userProfilePopup } = useUserProfileLightPopup({
     presentation: "sheet",
@@ -756,7 +761,12 @@ export default function Leaderboard() {
     },
   });
 
-  const { data: userMyRank, status: userRankQueryStatus } = useQuery<LeaderboardRankResponse>({
+  const {
+    data: userMyRank,
+    status: userRankQueryStatus,
+    isLoading: isLoadingUserRank,
+    isFetching: isFetchingUserRank,
+  } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardUsersMyRankQueryKey(currentUserId, timeFilter),
     enabled: !!currentUserId && activeTab === "users",
     queryFn: async () => {
@@ -774,7 +784,12 @@ export default function Leaderboard() {
     retry: false,
   });
 
-  const { data: artistMyRank, status: artistRankQueryStatus } = useQuery<LeaderboardRankResponse>({
+  const {
+    data: artistMyRank,
+    status: artistRankQueryStatus,
+    isLoading: isLoadingArtistRank,
+    isFetching: isFetchingArtistRank,
+  } = useQuery<LeaderboardRankResponse>({
     queryKey: leaderboardArtistsMyRankQueryKey(currentUserId, timeFilter),
     enabled: !!currentUserId && activeTab === "artists",
     queryFn: async () => {
@@ -790,6 +805,21 @@ export default function Leaderboard() {
       return res.json();
     },
     retry: false,
+  });
+  useLeaderboardPerf({
+    active: routePathname(leaderboardLocation) === "/leaderboard",
+    queryClient,
+    timeframe: timeFilter,
+    scope: activeTab,
+    userId: currentUserId,
+    usersLoading: isLoadingUsers,
+    usersFetching: isFetchingUsers,
+    artistsLoading: isLoadingArtists,
+    artistsFetching: isFetchingArtists,
+    userRankLoading: isLoadingUserRank,
+    userRankFetching: isFetchingUserRank,
+    artistRankLoading: isLoadingArtistRank,
+    artistRankFetching: isFetchingArtistRank,
   });
   useEffect(() => {
     if (!isLoadingUsers) {

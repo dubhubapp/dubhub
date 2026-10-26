@@ -171,13 +171,16 @@ describe("Saved Releases ownership precedence (SQL + storage wiring)", () => {
     assert.match(block, /p\.user_id\s*=\s*\$\{userId\}/);
   });
 
-  it("countSavedReleasesForProfile uses Saved feed (inherits exclusion)", () => {
+  it("countSavedReleasesForProfile counts the Saved upcoming/past union without building feeds", () => {
     const start = storageSrc.indexOf("async countSavedReleasesForProfile");
     const next = storageSrc.indexOf("async getReleasesDropDayBannerCandidates");
     assert.ok(start >= 0 && next > start);
     const block = storageSrc.slice(start, next);
-    assert.match(block, /getReleasesFeed\(userId,\s*"upcoming",\s*"saved"\)/);
-    assert.match(block, /getReleasesFeed\(userId,\s*"past",\s*"saved"\)/);
+    assert.match(block, /savedReleasesFeedWhereSql\(userId\)/);
+    assert.match(block, /sqlReleaseFeedUpcoming/);
+    assert.match(block, /sqlReleaseFeedPast/);
+    assert.match(block, /COUNT\(DISTINCT r\.id\)/);
+    assert.doesNotMatch(block, /getReleasesFeed\(/);
   });
 
   it("home widget listener candidates use savedReleasesFeedWhereSql", () => {

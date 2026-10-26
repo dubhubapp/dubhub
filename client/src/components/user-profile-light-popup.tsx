@@ -37,6 +37,12 @@ import {
   publicProfileQueryKey,
   type PublicProfileResponse,
 } from "@/lib/public-profile-query";
+import {
+  perfCacheReport,
+  perfDebugEnabled,
+  perfPopupArm,
+  useProfilePopupPerf,
+} from "@/lib/perf-debug";
 import { goldAvatarGlowShadowClass, goldTextClass } from "./verified-artist";
 import { UserRoleInlineIcons } from "./moderator-shield";
 import { isDefaultAvatarUrl, resolveAvatarUrlForProfile } from "@/lib/default-avatar";
@@ -273,6 +279,13 @@ export function useUserProfileLightPopup(options?: LightPopupOptions) {
         cacheComplete,
         surfaceGenreHint: openOptions?.surfaceGenreHint ?? null,
       });
+
+      if (perfDebugEnabled()) {
+        perfPopupArm(
+          perfCacheReport(queryClient.getQueryState(publicProfileQueryKey(trimmed))),
+          !cacheComplete,
+        );
+      }
 
       setSelectedUser(initial);
       setShowUserPopup(true);
@@ -1279,6 +1292,17 @@ function UserProfilePreviewSheet({
   const [sheetPhase, setSheetPhase] = useState<NativeNavSheetPhase>("closed");
   const holdSubscriptions = open || sheetPhase === "closing" || (Boolean(user) && open);
   const model = useProfilePreviewModel(user, holdSubscriptions || open);
+  useProfilePopupPerf({
+    open,
+    userId: user?.id,
+    profileReady: !!model && model.profileLoadPending !== true,
+    contentReady:
+      !!model &&
+      model.profileLoadPending !== true &&
+      !model.showPostsStatPulse &&
+      !model.showIdsStatPulse &&
+      !model.showRepStatPulse,
+  });
   const aboveComments = sheetStack === "above-comments";
   const stackZClass = aboveComments ? PROFILE_PREVIEW_ABOVE_COMMENTS_Z_CLASS : "z-[70]";
 
@@ -1377,6 +1401,17 @@ export function UserProfileLightPopup({ user, open, onClose, onOpenFullProfile, 
   const justClosedLatch = Boolean(user && prevOpenRef.current && !open);
   const holdPopupSubscriptions = open || exiting || justClosedLatch;
   const model = useProfilePreviewModel(user, holdPopupSubscriptions);
+  useProfilePopupPerf({
+    open,
+    userId: user?.id,
+    profileReady: !!model && model.profileLoadPending !== true,
+    contentReady:
+      !!model &&
+      model.profileLoadPending !== true &&
+      !model.showPostsStatPulse &&
+      !model.showIdsStatPulse &&
+      !model.showRepStatPulse,
+  });
 
   useLayoutEffect(() => {
     if (open && user) {

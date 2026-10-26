@@ -35,6 +35,7 @@ import {
 } from "@shared/deleted-comment";
 import { ApiRequestError } from "@/lib/apiDiagnostics";
 import { apiRequest } from "@/lib/queryClient";
+import { useCommentsPerf } from "@/lib/perf-debug";
 import { useUser } from "@/lib/user-context";
 import type { PostWithUser, CommentWithUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -1269,6 +1270,14 @@ export function CommentsModal({
     enabled: isOpen,
     staleTime: 0,
     refetchOnMount: "always",
+  });
+  useCommentsPerf({
+    active: isOpen,
+    postId: post.id,
+    queryClient,
+    fetching: isFetchingComments,
+    loading: isLoadingComments,
+    hasData: commentsData !== undefined,
   });
   const comments = Array.isArray(commentsData) ? commentsData : [];
   const isAnonymousIdentifiedPost =

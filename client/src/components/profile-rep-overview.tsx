@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { TrendingUp } from "lucide-react";
+import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import type { TrustLevelInfo } from "@shared/trust-level";
 import { StatInfoPopover } from "@/components/stat-info-popover";
 import {
@@ -18,6 +19,8 @@ import { cn } from "@/lib/utils";
 type ProfileRepOverviewProps = {
   trust: TrustLevelInfo;
   communityTopPercent?: number | null;
+  /** Rank is still loading. Reserves the percentile line without inventing a number. */
+  percentilePending?: boolean;
   /** Genre chip `bgColor` for bar tinting (same as Profile Overview). */
   genreBarColorHex?: string | null;
   showSectionHeader?: boolean;
@@ -33,6 +36,7 @@ type ProfileRepOverviewProps = {
 export function ProfileRepOverview({
   trust,
   communityTopPercent,
+  percentilePending = false,
   genreBarColorHex,
   showSectionHeader = false,
   showHelp = false,
@@ -96,7 +100,13 @@ export function ProfileRepOverview({
           </span>
         </div>
       ) : null}
-      {communityTopPercent != null && communityTopPercent > 0 ? (
+      {percentilePending ? (
+        <DubHubSkeletonBar
+          tone="faint"
+          className={cn("h-3 w-44", percentileMargin)}
+          data-testid="reputation-percentile-pending"
+        />
+      ) : communityTopPercent != null && communityTopPercent > 0 ? (
         <p className={cn("text-xs text-muted-foreground dark:text-gray-400", percentileMargin)} data-testid="reputation-percentile">
           {percentileCopy}
         </p>

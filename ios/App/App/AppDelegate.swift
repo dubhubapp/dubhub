@@ -1318,6 +1318,10 @@ class DubHubBridgeViewController: CAPBridgeViewController {
 
     override open func capacitorDidLoad() {
         super.capacitorDidLoad()
+        // Capacitor sets this only for debug. TestFlight needs the same WKWebView inspectable.
+        if #available(iOS 16.4, *) {
+            webView?.isInspectable = true
+        }
         bridge?.registerPluginInstance(DubHubVideoEditorPlugin())
         bridge?.registerPluginInstance(HomeWidgetBridgePlugin())
         bridge?.registerPluginInstance(DubHubNativeNavigationPlugin())

@@ -192,6 +192,7 @@ import {
   rebuildProfileViewerReleaseSequence,
 } from "@/lib/profile-viewer-release-return";
 import { routePathname } from "@/lib/interactive-page-transitions";
+import { useOwnProfilePerf } from "@/lib/perf-debug";
 import { clampPostSequenceInitialIndex } from "@/lib/full-screen-post-sequence-viewer";
 import {
   consumeProfileNotificationsTabIntent,
@@ -372,20 +373,8 @@ const PROFILE_OVERVIEW_SECTIONS_CLASS =
 const OWNER_PROFILE_GENRE_VALUE_PILL_CLASS =
   "inline-flex min-h-[1.625rem] w-full max-w-[5.5rem] items-center justify-center rounded px-2 py-1 text-[10px] font-semibold leading-none ring-1 ring-white/15";
 
-/** Banner key-stat row placeholder — matches `PublicProfileKeyStatsSkeleton` layout (5 columns). */
-function ProfileKeyStatsSkeleton() {
-  return (
-    <div className="grid grid-cols-5 gap-1" aria-hidden data-testid="profile-key-stats-skeleton">
-      {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="flex flex-col items-center gap-1">
-          <DubHubSkeletonBar tone="faint" className="h-4 w-4 rounded" />
-          <DubHubSkeletonBar tone="mid" className="h-4 w-8" />
-          <DubHubSkeletonBar tone="faint" className="h-2.5 w-10" />
-        </div>
-      ))}
-    </div>
-  );
-}
+/** Username, joined date, then the fav-genre row. */
+const PROFILE_HEADER_RHYTHM_CLASS = "flex flex-col gap-2";
 
 /** Rep card placeholder — matches public-profile rep skeleton. */
 function ProfileRepOverviewSkeleton() {
@@ -912,41 +901,53 @@ export default function UserProfile() {
     retry: false,
   });
 
-  // Karma system
-  const { data: karmaData, isLoading: reputationLoading, isError: karmaError } = useQuery<{
+  // Header trust: score + confirmed IDs only. Rank is a later query.
+  const { data: karmaScore, isLoading: reputationLoading, isError: karmaError } = useQuery<{
     reputation: number;
     correct_ids: number;
-    karma?: number; // backwards-compatible
+    karma?: number;
+  }>({
+    queryKey: ["/api/user", currentUser?.id, "karma-score"],
+    enabled: !!currentUser?.id,
+    retry: false,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/user/${currentUser!.id}/karma?includeRank=0`);
+      return res.json();
+    },
+  });
+  const { data: karmaRank, isError: karmaRankError } = useQuery<{
     communityRank?: number;
     communityTopPercent?: number | null;
   }>({
     queryKey: ["/api/user", currentUser?.id, "karma"],
-    enabled: !!currentUser?.id,
+    enabled: !!currentUser?.id && karmaScore !== undefined,
     retry: false,
   });
   // Hardened trust: same fields as GET /api/user/:id/karma (`reputation` === score; `karma` is legacy alias).
   const userReputation = useMemo(() => {
-    if (!karmaData) return { reputation: 0, confirmedIds: 0 };
-    const repRaw = karmaData.reputation ?? karmaData.karma ?? 0;
-    const idsRaw = karmaData.correct_ids ?? 0;
+    if (!karmaScore) return { reputation: 0, confirmedIds: 0 };
+    const repRaw = karmaScore.reputation ?? karmaScore.karma ?? 0;
+    const idsRaw = karmaScore.correct_ids ?? 0;
     const repN = Number(repRaw);
     const idsN = Number(idsRaw);
     return {
       reputation: Number.isFinite(repN) ? Math.max(0, repN) : 0,
       confirmedIds: Number.isFinite(idsN) ? Math.max(0, idsN) : 0,
     };
-  }, [karmaData]);
+  }, [karmaScore]);
 
   // Query for user's liked posts
+  const postsTabOpen = activeTab === "posts";
+  const likesTabOpen = activeTab === "liked";
   const { data: likedPosts = [], isLoading: likedLoading } = useQuery<PostWithUser[]>({
     queryKey: ["/api/user", currentUser?.id, "liked-posts"],
-    enabled: !!currentUser?.id,
+    enabled: !!currentUser?.id && likesTabOpen,
   });
 
-  // Query for user's posts
+  // Query for user's posts — only after the Posts tab is opened.
   const { data: userPosts = [], isLoading: postsLoading } = useQuery<PostWithUser[]>({
     queryKey: ["/api/user", currentUser?.id, "posts"],
-    enabled: !!currentUser?.id,
+    enabled: !!currentUser?.id && postsTabOpen,
   });
 
   type IdentifiedGenresResponse = { genres: { genreKey: string; count: number }[] };
@@ -1011,6 +1012,20 @@ export default function UserProfile() {
           ? payload.notifications
           : [];
     },
+  });
+
+  useOwnProfilePerf({
+    active: routePathname(profileLocation) === "/profile",
+    queryClient,
+    userId: currentUser?.id,
+    statsLoading,
+    karmaLoading: reputationLoading,
+    rankEnabled: karmaScore !== undefined,
+    rankLoading: karmaScore !== undefined && karmaRank === undefined && !karmaRankError,
+    postsEnabled: postsTabOpen,
+    likesEnabled: likesTabOpen,
+    postsLoading,
+    likesLoading: likedLoading,
   });
 
   const unreadCount = useMemo(() => {
@@ -1253,6 +1268,8 @@ export default function UserProfile() {
   const ownerArtistGenrePillStyle = repBarGenreChip
     ? (getGenreGlowPillStyle(repBarGenreChip.bgColor, repBarGenreChip.textClass) as CSSProperties)
     : null;
+  const favGenrePending = !repBarGenreChip && (identifiedGenresLoading || postsLoading);
+  const hundredClubEarned = userStats?.hasMonthlyTop100 === true;
 
   const hasAnyArtistImpact =
     !!artistStats &&
@@ -3374,7 +3391,8 @@ export default function UserProfile() {
             ) : null}
 
             <div className="relative z-10 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
-              <div className="mb-4 flex items-start gap-4">
+              <div className={PROFILE_HEADER_RHYTHM_CLASS}>
+              <div className="flex items-start gap-4">
                 <div className="flex shrink-0 flex-col items-center gap-2">
                   <div className="relative">
                     {userData.profileImage ? (
@@ -3418,7 +3436,7 @@ export default function UserProfile() {
                     </button>
                   </div>
                 </div>
-                <div className="min-w-0 flex-1 pt-1">
+                <div className={cn("min-w-0 flex-1 pt-1", PROFILE_HEADER_RHYTHM_CLASS)}>
                   <div className="flex items-center gap-1.5">
                     <h1
                       className={`min-w-0 truncate text-xl font-bold leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] ${
@@ -3480,55 +3498,79 @@ export default function UserProfile() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <div className="mt-2 flex flex-col items-start gap-1.5">
-                    <p className="inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
-                      {userData.joinedDateLine}
-                    </p>
-                    <MonthlyTop100Badge
-                      earned={userStats?.hasMonthlyTop100 === true}
-                      context="profile"
-                    />
-                  </div>
+                  <p className="inline-flex items-center self-start rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium text-white/80 backdrop-blur-md">
+                    {userData.joinedDateLine}
+                  </p>
                 </div>
               </div>
-
-              {userData.username ? (
-                <div
-                  className="mb-4 flex items-end gap-2"
-                  data-testid="artist-profile-actions"
-                >
-                  {repBarGenreChip && ownerArtistGenrePillStyle ? (
-                    <div
-                      className="flex w-full max-w-[5.5rem] shrink-0 flex-col items-center gap-1 text-center"
-                      data-testid="owner-profile-fav-genre"
-                    >
-                      <span className={`text-[10px] font-medium leading-none ${hasReadyUploadedBanner ? "text-white/60" : "text-muted-foreground"}`}>Fav genre</span>
+              <div className="flex flex-col items-start gap-1" data-testid="profile-header-meta">
+                <span className={`w-[5.5rem] text-center text-[10px] font-medium leading-none ${hasReadyUploadedBanner ? "text-white/60" : "text-muted-foreground"}`}>
+                  Fav genre
+                </span>
+                <div className="flex items-center gap-2" data-testid="artist-profile-actions">
+                  <div className="w-[5.5rem] shrink-0" data-testid="owner-profile-fav-genre">
+                    {repBarGenreChip && ownerArtistGenrePillStyle ? (
                       <span
                         className={cn(
                           OWNER_PROFILE_GENRE_VALUE_PILL_CLASS,
                           /* Light navy type is for the pale canvas only.
                              Over a ready banner, keep the glow-pill light text + text-shadow. */
                           hasReadyUploadedBanner ? undefined : "dubhub-profile-dense-genre-chip",
+                          "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300",
                         )}
                         style={ownerArtistGenrePillStyle}
                       >
                         <span className="truncate">{repBarGenreChip.label}</span>
                       </span>
-                    </div>
-                  ) : null}
-                  <ArtistProfileShareButton
-                    username={userData.username}
-                    variant="onDark"
-                    shareLabel="Share Profile"
-                  />
+                    ) : (
+                      <span
+                        className={cn(
+                          OWNER_PROFILE_GENRE_VALUE_PILL_CLASS,
+                          "border border-white/10 bg-white/10 text-white/45",
+                        )}
+                        aria-hidden={favGenrePending}
+                      >
+                        {favGenrePending ? (
+                          <DubHubSkeletonBar tone="mid" className="h-2.5 w-10" />
+                        ) : (
+                          "—"
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className="relative inline-flex shrink-0"
+                    data-testid="owner-profile-hundred-club-slot"
+                    data-state={statsLoading ? "loading" : hundredClubEarned ? "earned" : "absent"}
+                  >
+                    <span
+                      className={cn(
+                        statsLoading || !hundredClubEarned ? "invisible" : "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300",
+                      )}
+                      aria-hidden={statsLoading || !hundredClubEarned}
+                    >
+                      <MonthlyTop100Badge earned context="profile" />
+                    </span>
+                    {statsLoading ? (
+                      <DubHubSkeletonBar tone="faint" className="absolute inset-0 rounded-full" />
+                    ) : null}
+                  </span>
+                  {userData.username ? (
+                    <ArtistProfileShareButton
+                      username={userData.username}
+                      variant="onDark"
+                      shareLabel="Share Profile"
+                    />
+                  ) : (
+                    <span className="invisible inline-flex min-h-[1.625rem] w-[6.75rem] shrink-0" aria-hidden />
+                  )}
                 </div>
-              ) : null}
+              </div>
 
-              {profileOverviewStatsLoading ? (
-                <ProfileKeyStatsSkeleton />
-              ) : (
-                <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
-                  {keyStatRow.map(({ label, value, Icon, iconTone }) => (
+              <div className="grid grid-cols-5 gap-1" data-testid="profile-key-stats">
+                {keyStatRow.map(({ label, value, Icon, iconTone }) => {
+                  const valuePending = label === "IDs" || label === "Rep" ? reputationLoading : statsLoading;
+                  return (
                     <div key={label} className="flex flex-col items-center gap-1 text-center">
                       <Icon
                         className={`w-4 h-4 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${iconTone}`}
@@ -3540,13 +3582,24 @@ export default function UserProfile() {
                             : `${KEY_STAT_VALUE_CLASS} text-base leading-none`
                         }
                       >
-                        {value}
+                        {valuePending ? (
+                          <DubHubSkeletonBar
+                            tone="mid"
+                            className="h-4 w-8 max-w-full"
+                            data-testid="profile-key-stat-skeleton"
+                          />
+                        ) : (
+                          <span className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
+                            {value}
+                          </span>
+                        )}
                       </span>
                       <span className="text-[10px] leading-tight text-muted-foreground dark:text-gray-300/90">{label}</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
+              </div>
             </div>
           </section>
 
@@ -3813,7 +3866,8 @@ export default function UserProfile() {
               ) : (
                 <ProfileRepOverview
                   trust={repTrustForProfile}
-                  communityTopPercent={karmaData?.communityTopPercent}
+                  communityTopPercent={karmaRank?.communityTopPercent}
+                  percentilePending={karmaScore !== undefined && karmaRank === undefined && !karmaRankError}
                   genreBarColorHex={repBarGenreChip?.bgColor}
                   showSectionHeader
                   showHelp

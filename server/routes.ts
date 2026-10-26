@@ -2890,7 +2890,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user/:id/karma", async (req, res) => {
     try {
       const userId = req.params.id;
+      const includeRank = String(req.query.includeRank ?? "1") !== "0";
       const { score, correct_ids: correctIds } = await getUserKarmaAggregate(userId);
+      if (!includeRank) {
+        res.json({
+          reputation: score,
+          correct_ids: correctIds,
+          karma: score,
+        });
+        return;
+      }
       const rankMeta = await storage.getLeaderboardUserRank("user", userId, "all");
       res.json({
         reputation: score,
@@ -2922,95 +2931,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user/:id/stats", async (req, res) => {
     try {
       const userId = req.params.id;
-      
-      // Get total posts created by user
-      const totalIDsResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM posts
-        WHERE user_id = ${userId}
-      `);
-      const totalIDs = Number((totalIDsResult as any).rows?.[0]?.count ?? 0);
-      
-      // Get confirmed posts (identified)
-      const confirmedIDsResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM posts
-        WHERE user_id = ${userId}
-          AND verification_status = 'identified'
-      `);
-      const confirmedIDs = Number((confirmedIDsResult as any).rows?.[0]?.count ?? 0);
-      
-      // Get total likes given by user
-      const totalLikesResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM post_likes
-        WHERE user_id = ${userId}
-      `);
-      const totalLikes = Number((totalLikesResult as any).rows?.[0]?.count ?? 0);
 
-      // Get successful track IDs made by user on other users' posts
-      const tracksIdentifiedResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM posts p
-        INNER JOIN comments c ON c.id = p.verified_comment_id
-        WHERE p.verified_comment_id IS NOT NULL
-          AND c.user_id = ${userId}
-          AND p.user_id <> ${userId}
-      `);
-      const tracksIdentified = Number((tracksIdentifiedResult as any).rows?.[0]?.count ?? 0);
-
-      // Legacy UX metric only (see route JSDoc — not trust).
-      const identificationAttemptsResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM comments c
-        INNER JOIN posts p ON p.id = c.post_id
-        WHERE c.user_id = ${userId}
-          AND p.user_id <> ${userId}
-      `);
-      const identificationAttempts = Number((identificationAttemptsResult as any).rows?.[0]?.count ?? 0);
+      const [countsResult, releasesSaved, profile] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            (SELECT COUNT(*)::int FROM posts WHERE user_id = ${userId}) AS total_ids,
+            (SELECT COUNT(*)::int FROM posts WHERE user_id = ${userId} AND verification_status = 'identified') AS confirmed_ids,
+            (SELECT COUNT(*)::int FROM post_likes WHERE user_id = ${userId}) AS total_likes,
+            (
+              SELECT COUNT(*)::int
+              FROM posts p
+              INNER JOIN comments c ON c.id = p.verified_comment_id
+              WHERE p.verified_comment_id IS NOT NULL
+                AND c.user_id = ${userId}
+                AND p.user_id <> ${userId}
+            ) AS tracks_identified,
+            (
+              SELECT COUNT(*)::int
+              FROM comments c
+              INNER JOIN posts p ON p.id = c.post_id
+              WHERE c.user_id = ${userId}
+                AND p.user_id <> ${userId}
+            ) AS identification_attempts,
+            (
+              SELECT COUNT(*)::int
+              FROM post_likes pl
+              INNER JOIN posts p ON p.id = pl.post_id
+              WHERE p.user_id = ${userId}
+            ) AS likes_on_posts,
+            (
+              SELECT COUNT(*)::int
+              FROM comments c
+              INNER JOIN posts p ON p.id = c.post_id
+              WHERE p.user_id = ${userId}
+            ) AS comments_on_posts,
+            (
+              SELECT COUNT(*)::int
+              FROM posts
+              WHERE user_id = ${userId}
+                AND artist_verified_by IS NOT NULL
+                AND COALESCE(is_verified_artist, false) = true
+            ) AS artist_ids,
+            (SELECT COUNT(*)::int FROM comments WHERE user_id = ${userId}) AS comments_written
+        `),
+        storage.countSavedReleasesForProfile(userId),
+        storage.getUser(userId),
+      ]);
+      const counts = (countsResult as any).rows?.[0] ?? {};
+      const totalIDs = Number(counts.total_ids ?? 0);
+      const confirmedIDs = Number(counts.confirmed_ids ?? 0);
+      const totalLikes = Number(counts.total_likes ?? 0);
+      const tracksIdentified = Number(counts.tracks_identified ?? 0);
+      const identificationAttempts = Number(counts.identification_attempts ?? 0);
       const accuracyPercent =
         identificationAttempts > 0
           ? Math.round((tracksIdentified / identificationAttempts) * 100)
           : 0;
-
-      // Get engagement received on user's posts
-      const likesOnPostsResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM post_likes pl
-        INNER JOIN posts p ON p.id = pl.post_id
-        WHERE p.user_id = ${userId}
-      `);
-      const likesOnPosts = Number((likesOnPostsResult as any).rows?.[0]?.count ?? 0);
-
-      const commentsOnPostsResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM comments c
-        INNER JOIN posts p ON p.id = c.post_id
-        WHERE p.user_id = ${userId}
-      `);
-      const commentsOnPosts = Number((commentsOnPostsResult as any).rows?.[0]?.count ?? 0);
-
-      const releasesSaved = await storage.countSavedReleasesForProfile(userId);
-
-      // Artist IDs: own uploads artist-confirmed only (`is_verified_artist` + `artist_verified_by`).
-      // API field `artistIds` ↔ frontend `userStats.artistIds`. Zero means no rows match those flags.
-      const artistIdsResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM posts
-        WHERE user_id = ${userId}
-          AND artist_verified_by IS NOT NULL
-          AND COALESCE(is_verified_artist, false) = true
-      `);
-      const artistIds = Number((artistIdsResult as any).rows?.[0]?.count ?? 0);
-
-      const commentsWrittenResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM comments
-        WHERE user_id = ${userId}
-      `);
-      const commentsWritten = Number((commentsWrittenResult as any).rows?.[0]?.count ?? 0);
-
-      const profile = await storage.getUser(userId);
+      const likesOnPosts = Number(counts.likes_on_posts ?? 0);
+      const commentsOnPosts = Number(counts.comments_on_posts ?? 0);
+      const artistIds = Number(counts.artist_ids ?? 0);
+      const commentsWritten = Number(counts.comments_written ?? 0);
       const achievements = await getUserLeaderboardAchievements(
         userId,
         profile?.account_type,

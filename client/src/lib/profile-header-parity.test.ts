@@ -84,6 +84,23 @@ describe("PROFILE-REFINEMENT-A — favourite genre parity", () => {
     assert.match(userProfileSrc, /data-testid="artist-profile-actions"/);
     assert.match(userProfileSrc, /ArtistProfileShareButton/);
   });
+
+  it("reserves fav genre, 100 Club, and Share Profile before their data arrives", () => {
+    const meta = userProfileSrc.indexOf('data-testid="profile-header-meta"');
+    const actions = userProfileSrc.indexOf('data-testid="artist-profile-actions"');
+    const genre = userProfileSrc.indexOf('data-testid="owner-profile-fav-genre"');
+    const club = userProfileSrc.indexOf('data-testid="owner-profile-hundred-club-slot"');
+    const share = userProfileSrc.indexOf('shareLabel="Share Profile"');
+    assert.ok(meta >= 0 && actions > meta && genre > actions && club > genre && share > club);
+    const row = userProfileSrc.slice(actions - 40, share + 80);
+    assert.match(row, /flex items-center gap-2/);
+    assert.match(userProfileSrc.slice(meta, actions), /Fav genre/);
+    assert.match(userProfileSrc, /PROFILE_HEADER_RHYTHM_CLASS/);
+    assert.match(userProfileSrc, /data-state=\{statsLoading \? "loading" : hundredClubEarned \? "earned" : "absent"\}/);
+    assert.match(userProfileSrc, /statsLoading \|\| !hundredClubEarned \? "invisible"/);
+    assert.doesNotMatch(userProfileSrc, /function ProfileKeyStatsSkeleton/);
+    assert.match(userProfileSrc, /data-testid="profile-key-stat-skeleton"/);
+  });
 });
 
 describe("PROFILE-REFINEMENT-A — Rep heading icon", () => {
