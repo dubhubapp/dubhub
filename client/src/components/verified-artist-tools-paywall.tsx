@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
+import { VerifiedArtistToolsPaywallSoundwave } from "@/components/verified-artist-tools-paywall-soundwave";
 import { VAT_ACTIVE_MARK_CLASS } from "@/components/verified-artist-tools-settings-row";
 import { useAuthoritativeSubscriptionStatus } from "@/hooks/use-authoritative-subscription-status";
 import {
@@ -553,6 +554,9 @@ export function VerifiedArtistToolsPaywall({
         data-paywall-compact={compactShell ? "true" : "false"}
         aria-labelledby={titleId}
       >
+        {/* Static Pass 1 décor — behind content; clipped by shell overflow-hidden. */}
+        <VerifiedArtistToolsPaywallSoundwave />
+
         <div
           id={liveId}
           className="sr-only"
@@ -563,7 +567,7 @@ export function VerifiedArtistToolsPaywall({
           {liveMessage}
         </div>
 
-        <DrawerHeader className="relative shrink-0 space-y-1.5 border-b border-[#DCE3EC] px-5 pb-3 pt-2 text-left dark:border-white/10">
+        <DrawerHeader className="relative z-[1] shrink-0 space-y-1.5 border-b border-[#DCE3EC] px-5 pb-3 pt-2 text-left dark:border-white/10">
           <div className="min-w-0 space-y-1">
             <DrawerTitle
               id={titleId}
@@ -593,7 +597,7 @@ export function VerifiedArtistToolsPaywall({
 
         <div
           className={cn(
-            "overscroll-contain px-5 py-4",
+            "relative z-[1] overscroll-contain px-5 py-4",
             compactShell
               ? "shrink-0 overflow-y-auto scrollbar-hide"
               : // Grow only when sheet hits max-h so overflow scrolls; no flex spacer
@@ -873,7 +877,7 @@ export function VerifiedArtistToolsPaywall({
         <DrawerFooter
           className={cn(
             // Override DrawerFooter default mt-auto so footer follows packages.
-            "mt-0 shrink-0 gap-2 border-t border-[#DCE3EC] px-5 pb-3 dark:border-white/10",
+            "relative z-[1] mt-0 shrink-0 gap-2 border-t border-[#DCE3EC] px-5 pb-3 dark:border-white/10",
             compactShell ? "pt-3" : "pt-8",
           )}
           data-testid="paywall-footer"

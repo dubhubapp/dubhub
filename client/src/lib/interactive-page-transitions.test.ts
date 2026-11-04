@@ -1252,8 +1252,9 @@ describe("release detail byline public profile push", () => {
   });
 
   it("uses the same byline handler for an accepted collaborator", () => {
-    assert.match(releaseBylineSrc, /onClick=\{\(\) => onArtistPress\(ownerNavUsername\)\}/);
-    assert.match(releaseBylineSrc, /onClick=\{\(\) => onArtistPress\(collab\.username\)\}/);
+    assert.match(releaseBylineSrc, /onClick=\{\(\) => onArtistPress\(navUsername\)\}/);
+    assert.match(releaseBylineSrc, /release-detail-artist-link-\$\{navUsername\}/);
+    assert.match(releaseBylineSrc, /release-detail-collaborator-link-\$\{navUsername\}/);
     assert.equal(releaseDetailSrc.split("const openArtistProfile").length - 1, 1);
   });
 

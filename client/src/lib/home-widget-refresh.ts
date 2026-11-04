@@ -37,6 +37,8 @@ export type HomeWidgetRefreshResult =
       error?: string;
     };
 
+export type HomeWidgetSelectionIntent = "create" | "refresh";
+
 export type HomeWidgetRefreshDeps = {
   getAccessToken?: () => Promise<string | null>;
   getUserId?: () => Promise<string | null>;
@@ -51,6 +53,7 @@ export type HomeWidgetRefreshDeps = {
     accessToken: string;
     selectedReleaseId: string | null;
     viewerTimeZone?: string | null;
+    selectionIntent?: HomeWidgetSelectionIntent | null;
   }) => Promise<HomeWidgetPayload>;
   writePayload?: typeof writeHomeWidgetPayload;
   clearPayload?: typeof clearHomeWidgetPayload;
@@ -82,10 +85,11 @@ async function defaultGetSessionUser(): Promise<{
   };
 }
 
-async function defaultFetchPayload(args: {
+export async function defaultFetchHomeWidgetPayload(args: {
   accessToken: string;
   selectedReleaseId: string | null;
   viewerTimeZone?: string | null;
+  selectionIntent?: HomeWidgetSelectionIntent | null;
 }): Promise<HomeWidgetPayload> {
   const params = new URLSearchParams();
   if (args.selectedReleaseId) {
@@ -93,6 +97,9 @@ async function defaultFetchPayload(args: {
   }
   if (args.viewerTimeZone) {
     params.set("viewerTimeZone", args.viewerTimeZone);
+  }
+  if (args.selectionIntent === "create" || args.selectionIntent === "refresh") {
+    params.set("selectionIntent", args.selectionIntent);
   }
   const query = params.toString();
   const res = await fetch(
@@ -137,12 +144,28 @@ export function shouldAdoptNativeHomeWidgetActivePage(args: {
   return native !== stored;
 }
 
+/**
+ * Create-intent acceptance: Upcoming listener pick, or artist overlay after a
+ * creatable listener fallback was validated server-side.
+ * Rejects selected_release_not_upcoming and other invalid create reasons.
+ */
+export function isHomeWidgetCreateIntentAccepted(
+  dto: HomeWidgetPayload,
+): boolean {
+  if (dto.eligibility === "selected_release_not_upcoming") return false;
+  if (dto.mode === "listener" && dto.release) return true;
+  if (dto.mode === "artist" && dto.release) return true;
+  return false;
+}
+
 function shouldClearStoredSelection(dto: HomeWidgetPayload): boolean {
   if (dto.retireListenerSelection === true) return true;
   if (dto.advanceListenerSelectionTo) return false;
   if (dto.mode === "listener" && dto.release) return false;
   // Artist mode may still keep listener selection as fallback — except Out-now retirement.
   if (dto.mode === "artist") return false;
+  // Create-intent rejection must never clear a prior stored selection.
+  if (dto.eligibility === "selected_release_not_upcoming") return false;
   return HOME_WIDGET_INVALID_SELECTION_ELIGIBILITIES.has(dto.eligibility);
 }
 
@@ -185,7 +208,7 @@ export async function refreshHomeWidgetPayload(
       deps.writeSelectedReleaseId ??
       ((id: string, releaseId: string, options?: { selectedAt?: Date | string }) =>
         writeHomeWidgetSelectedReleaseId(id, releaseId, options));
-    const fetchPayload = deps.fetchPayload ?? defaultFetchPayload;
+    const fetchPayload = deps.fetchPayload ?? defaultFetchHomeWidgetPayload;
     const writePayload = deps.writePayload ?? writeHomeWidgetPayload;
     const reloadTimelines = deps.reloadTimelines ?? reloadHomeWidgetTimelines;
     const readPayload = deps.readPayload ?? readHomeWidgetPayload;
@@ -199,7 +222,11 @@ export async function refreshHomeWidgetPayload(
     // localStorage id so foreground refresh does not snap back to an earlier release.
     // An empty local selection is authoritative (user cleared Countdown) and must
     // not be overwritten by leftover native/payload active ids.
+    //
+    // Replacement adopt must pass Upcoming-only create validation — revalidation of
+    // the same Out now id is not an adopt (shouldAdopt is false when ids match).
     let selectedReleaseId = readSelected(userId);
+    let pendingNativeAdoptId: string | null = null;
     try {
       const nativeActive = await readActive();
       if (
@@ -208,11 +235,28 @@ export async function refreshHomeWidgetPayload(
           nativeActiveReleaseId: nativeActive,
         })
       ) {
-        writeSelected(userId, nativeActive!, { selectedAt: now });
-        selectedReleaseId = nativeActive;
+        pendingNativeAdoptId = nativeActive!.trim();
       }
     } catch {
       // Bridge optional on web.
+    }
+
+    if (pendingNativeAdoptId) {
+      try {
+        const createDto = await fetchPayload({
+          accessToken,
+          selectedReleaseId: pendingNativeAdoptId,
+          viewerTimeZone,
+          selectionIntent: "create",
+        });
+        if (isHomeWidgetCreateIntentAccepted(createDto)) {
+          writeSelected(userId, pendingNativeAdoptId, { selectedAt: now });
+          selectedReleaseId = pendingNativeAdoptId;
+        }
+        // Rejected / not creatable → keep stored selection; fall through to retain refresh.
+      } catch {
+        // Network failure must not adopt a replacement or clear the prior selection.
+      }
     }
 
     try {

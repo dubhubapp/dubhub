@@ -36,6 +36,17 @@ function viewerTimeZoneFromQuery(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** Only explicit "create" enables Upcoming-only create validation. */
+function selectionIntentFromQuery(
+  value: unknown,
+): "create" | "refresh" | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "create") return "create";
+  if (trimmed === "refresh") return "refresh";
+  return null;
+}
+
 export function registerHomeWidgetRoutes(
   app: Express,
   options: RegisterHomeWidgetRoutesOptions = {},
@@ -60,6 +71,7 @@ export function registerHomeWidgetRoutes(
             req.query.selectedReleaseId,
           ),
           viewerTimeZone: viewerTimeZoneFromQuery(req.query.viewerTimeZone),
+          selectionIntent: selectionIntentFromQuery(req.query.selectionIntent),
           deps: options.serviceDeps,
         });
         return res.json(payload);

@@ -63,10 +63,10 @@ export function parseHomeWidgetSelectionRecord(
   };
 }
 
-export function readHomeWidgetSelectedReleaseId(
+export function readHomeWidgetSelectionRecord(
   userId: string | null | undefined,
   storage: Pick<Storage, "getItem" | "removeItem"> = localStorage,
-): string | null {
+): HomeWidgetSelectionRecord | null {
   const id = normalizeUserId(userId);
   if (!id) return null;
   try {
@@ -82,10 +82,35 @@ export function readHomeWidgetSelectedReleaseId(
       }
       return null;
     }
-    return parsed.selectedReleaseId;
+    return parsed;
   } catch {
     return null;
   }
+}
+
+export function readHomeWidgetSelectedReleaseId(
+  userId: string | null | undefined,
+  storage: Pick<Storage, "getItem" | "removeItem"> = localStorage,
+): string | null {
+  return readHomeWidgetSelectionRecord(userId, storage)?.selectedReleaseId ?? null;
+}
+
+/** Restore a prior selection snapshot (id + selectedAt). Used after failed create. */
+export function restoreHomeWidgetSelectionRecord(
+  userId: string | null | undefined,
+  record: HomeWidgetSelectionRecord | null,
+  storage: Pick<Storage, "setItem" | "removeItem"> = localStorage,
+): void {
+  const id = normalizeUserId(userId);
+  if (!id) return;
+  if (!record) {
+    clearHomeWidgetSelectedReleaseId(id, storage);
+    return;
+  }
+  writeHomeWidgetSelectedReleaseId(id, record.selectedReleaseId, {
+    selectedAt: record.selectedAt,
+    storage,
+  });
 }
 
 export function writeHomeWidgetSelectedReleaseId(

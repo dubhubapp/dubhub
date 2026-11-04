@@ -8,11 +8,18 @@
  * fake or device-local aggregate counts.
  */
 
+import { computeHomeWidgetCountdown } from "@shared/home-widget-countdown";
+import {
+  extractCalendarYmdFromReleaseDate,
+  normalizeReleaseTimingMode,
+} from "@shared/release-timing";
 import { isPersistedReleaseSubscriptionSuspended } from "@/lib/release-subscription-paused";
 
 export type HomeWidgetSelectionReleaseFields = {
   id?: string | null;
   releaseDate?: string | null;
+  releaseTimingMode?: string | null;
+  releaseAt?: string | Date | null;
   isComingSoon?: boolean | null;
   isPublic?: boolean | null;
   subscriptionSuspendedAt?: string | null;
@@ -23,12 +30,32 @@ export type HomeWidgetSelectionReleaseFields = {
 };
 
 export type HomeWidgetSelectionActionVisibility =
-  | { show: false; reason: "flag_disabled" | "unauthenticated" | "unsaved" | "suspended" | "private" | "missing" }
+  | {
+      show: false;
+      reason:
+        | "flag_disabled"
+        | "unauthenticated"
+        | "unsaved"
+        | "suspended"
+        | "private"
+        | "missing"
+        | "released";
+    }
   | { show: false; reason: "undated"; message: string }
   | { show: true; canSelect: true };
 
+/** Countdown phase for Detail CTA presentation (shared countdown helpers only). */
+export type HomeWidgetSelectionCountdownPhase =
+  | "upcoming"
+  | "out_now"
+  | "expired"
+  | "unavailable";
+
 export const HOME_WIDGET_UNDATED_COPY =
   "Add a release date before using this in your Release Countdown." as const;
+
+/** setTimeout delay ceiling (~24.8d); far-future wakes re-check and reschedule. */
+const HOME_WIDGET_SELECTION_VISIBILITY_WAKE_MAX_MS = 2_147_483_647;
 
 export function isHomeWidgetSelectionReleaseDated(
   release: Pick<HomeWidgetSelectionReleaseFields, "releaseDate"> | null | undefined,
@@ -38,8 +65,76 @@ export function isHomeWidgetSelectionReleaseDated(
 }
 
 /**
+ * Map a dated release onto the shared countdown phase.
+ * Does not invent retention math — delegates to computeHomeWidgetCountdown.
+ */
+export function resolveHomeWidgetSelectionCountdownPhase(
+  release: HomeWidgetSelectionReleaseFields | null | undefined,
+  now?: Date | string | number,
+): HomeWidgetSelectionCountdownPhase {
+  if (!isHomeWidgetSelectionReleaseDated(release)) return "unavailable";
+
+  const timingMode = normalizeReleaseTimingMode(release?.releaseTimingMode);
+  const releaseCalendarDate = extractCalendarYmdFromReleaseDate(
+    release?.releaseDate,
+  );
+  const countdown = computeHomeWidgetCountdown({
+    timingMode,
+    releaseCalendarDate,
+    releaseAt: release?.releaseAt ?? null,
+    now:
+      now == null
+        ? undefined
+        : typeof now === "number"
+          ? new Date(now)
+          : now,
+  });
+  if (!countdown) return "unavailable";
+  if (countdown.isRetentionExpired) return "expired";
+  if (countdown.isOutNow) return "out_now";
+  return "upcoming";
+}
+
+/**
+ * Absolute ms when Detail Countdown visibility may next change for this release.
+ * Upcoming → boundary (Add hides / selected stays Out now).
+ * Out now → retention end (selected control hides).
+ */
+export function resolveHomeWidgetSelectionVisibilityWakeAtMs(
+  release: HomeWidgetSelectionReleaseFields | null | undefined,
+  now?: Date | string | number,
+): number | null {
+  if (!isHomeWidgetSelectionReleaseDated(release)) return null;
+
+  const timingMode = normalizeReleaseTimingMode(release?.releaseTimingMode);
+  const releaseCalendarDate = extractCalendarYmdFromReleaseDate(
+    release?.releaseDate,
+  );
+  const countdown = computeHomeWidgetCountdown({
+    timingMode,
+    releaseCalendarDate,
+    releaseAt: release?.releaseAt ?? null,
+    now:
+      now == null
+        ? undefined
+        : typeof now === "number"
+          ? new Date(now)
+          : now,
+  });
+  if (!countdown || countdown.isRetentionExpired) return null;
+  if (countdown.isOutNow) return countdown.outNowUntilMs;
+  return countdown.boundaryMs;
+}
+
+/**
  * Whether the local UI may offer Add to Release Countdown / In your Countdown.
  * Feed items from scope=saved are already currently saved for the viewer.
+ *
+ * Phase rules (presentation only; does not clear selection storage):
+ * - Upcoming dated → show (Add or In your Countdown).
+ * - Released (Out now) + already selected → keep In your Countdown through retention.
+ * - Released + unselected → hide (do not offer a new Add).
+ * - Retention expired → hide.
  */
 export function resolveHomeWidgetSelectionActionVisibility(args: {
   enabled: boolean;
@@ -47,6 +142,9 @@ export function resolveHomeWidgetSelectionActionVisibility(args: {
   release: HomeWidgetSelectionReleaseFields | null | undefined;
   /** When true, treat as currently saved (Saved feed). When false/undefined, require viewerSavedRelease. */
   assumeSaved?: boolean;
+  /** Current local selection for this release — required to retain Out now UI. */
+  isSelected?: boolean;
+  now?: Date | string | number;
 }): HomeWidgetSelectionActionVisibility {
   if (!args.enabled) return { show: false, reason: "flag_disabled" };
   if (!args.authenticated) return { show: false, reason: "unauthenticated" };
@@ -72,7 +170,36 @@ export function resolveHomeWidgetSelectionActionVisibility(args: {
     };
   }
 
-  return { show: true, canSelect: true };
+  const phase = resolveHomeWidgetSelectionCountdownPhase(
+    args.release,
+    args.now,
+  );
+  if (phase === "upcoming") {
+    return { show: true, canSelect: true };
+  }
+  if (phase === "out_now" && args.isSelected === true) {
+    return { show: true, canSelect: true };
+  }
+  return { show: false, reason: "released" };
+}
+
+/**
+ * Delay until the next visibility wake, clamped for setTimeout.
+ * Null when no wake is needed (already terminal / undated).
+ */
+export function homeWidgetSelectionVisibilityWakeDelayMs(args: {
+  release: HomeWidgetSelectionReleaseFields | null | undefined;
+  nowMs?: number;
+}): number | null {
+  const nowMs = args.nowMs ?? Date.now();
+  const wakeAt = resolveHomeWidgetSelectionVisibilityWakeAtMs(
+    args.release,
+    nowMs,
+  );
+  if (wakeAt == null) return null;
+  const delay = wakeAt - nowMs;
+  if (delay <= 0) return 0;
+  return Math.min(delay, HOME_WIDGET_SELECTION_VISIBILITY_WAKE_MAX_MS);
 }
 
 /** Customer-facing product copy. Internal module names may still say “widget”. */
@@ -99,4 +226,5 @@ export const HOME_WIDGET_INVALID_SELECTION_ELIGIBILITIES = new Set([
   "selected_release_undated",
   "selected_release_unavailable",
   "selected_release_out_now_expired",
+  // selected_release_not_upcoming is create-intent only — never clear a prior selection.
 ]);

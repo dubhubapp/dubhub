@@ -10,6 +10,7 @@ import { isHomeReleaseWidgetSelectionEnabled } from "@/lib/home-widget-selection
 import {
   HOME_WIDGET_SELECTION_COPY,
   HOME_WIDGET_UNDATED_COPY,
+  homeWidgetSelectionVisibilityWakeDelayMs,
   resolveHomeWidgetSelectionActionVisibility,
   type HomeWidgetSelectionReleaseFields,
 } from "@/lib/home-widget-selection-eligibility";
@@ -45,21 +46,46 @@ export function useHomeWidgetSelection(args: {
     () => (userId ? readHomeWidgetSelectedReleaseId(userId) : null),
   );
   const [busy, setBusy] = useState<"selecting" | "clearing" | null>(null);
+  /** Presentation clock — advances at countdown phase boundaries only. */
+  const [visibilityNowMs, setVisibilityNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     setSelectedReleaseId(userId ? getCurrentHomeWidgetSelectedReleaseId(userId) : null);
   }, [userId]);
+
+  const releaseId = args.release?.id ? String(args.release.id) : null;
+  const isSelected =
+    !!releaseId && !!selectedReleaseId && selectedReleaseId === releaseId;
 
   const visibility = resolveHomeWidgetSelectionActionVisibility({
     enabled,
     authenticated: isAuthenticated,
     release: args.release,
     assumeSaved: args.assumeSaved,
+    isSelected,
+    now: visibilityNowMs,
   });
 
-  const releaseId = args.release?.id ? String(args.release.id) : null;
-  const isSelected =
-    !!releaseId && !!selectedReleaseId && selectedReleaseId === releaseId;
+  // Re-evaluate Add / In your Countdown when the release crosses boundary or retention end.
+  // Presentation only — never clears the selection store here.
+  useEffect(() => {
+    const delay = homeWidgetSelectionVisibilityWakeDelayMs({
+      release: args.release,
+      nowMs: visibilityNowMs,
+    });
+    if (delay == null) return;
+    const id = window.setTimeout(() => {
+      setVisibilityNowMs(Date.now());
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [
+    args.release,
+    args.release?.id,
+    args.release?.releaseDate,
+    args.release?.releaseAt,
+    args.release?.releaseTimingMode,
+    visibilityNowMs,
+  ]);
 
   const artistModeLikelyActive =
     subscription.ok &&

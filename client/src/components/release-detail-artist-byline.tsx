@@ -32,57 +32,54 @@ export function ReleaseDetailArtistByline({
     collaborators,
   );
   const people: ReleaseBylineSegment[] = [owner, ...acceptedCollabs];
+  const isCombinedCredit = people.length > 1;
 
   return (
-    <p className={cn("text-sm font-medium leading-snug", className)}>
-      <span className="inline-flex max-w-full flex-wrap items-center gap-y-0.5">
-        {people.map((person, index) => {
-          const navUsername = person.username.replace(/^@+/, "").trim();
-          const isOwner = index === 0;
-          return (
-            <span key={`${person.username}-${index}`} className="inline-flex max-w-full items-center">
-              {index > 0 ? (
-                <span aria-hidden>{artistCreditSeparator(index, people.length)}</span>
-              ) : null}
-              {navUsername ? (
-                <button
-                  type="button"
-                  className={cn(
-                    ARTIST_LINK_CLASS,
-                    isOwner && ARTIST_IDENTITY_COMPACT_CLASS,
-                    isOwner && ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS,
-                  )}
-                  onClick={() => onArtistPress(navUsername)}
-                  data-testid={
-                    isOwner
-                      ? `release-detail-artist-link-${navUsername}`
-                      : `release-detail-collaborator-link-${navUsername}`
-                  }
-                >
-                  {person.label}
-                </button>
-              ) : (
-                <span
-                  className={cn(
-                    isOwner && ARTIST_IDENTITY_COMPACT_CLASS,
-                    isOwner && ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS,
-                  )}
-                >
-                  {person.label}
-                </span>
-              )}
-              {isOwner ? (
-                <span className="inline-flex">
-                  <GoldVerifiedTick
-                    className="ml-0.5 inline h-3 w-3 shrink-0 text-[#FFD700]"
-                    glow="inline"
-                  />
-                </span>
-              ) : null}
-            </span>
-          );
-        })}
-      </span>
+    <p className={cn("text-sm font-medium leading-snug break-words", className)}>
+      {people.map((person, index) => {
+        const navUsername = person.username.replace(/^@+/, "").trim();
+        const isOwner = index === 0;
+        return (
+          <span key={`${person.username}-${index}`}>
+            {index > 0 ? artistCreditSeparator(index, people.length) : null}
+            {navUsername ? (
+              <button
+                type="button"
+                className={cn(
+                  ARTIST_LINK_CLASS,
+                  isOwner && ARTIST_IDENTITY_COMPACT_CLASS,
+                  isOwner && ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS,
+                )}
+                onClick={() => onArtistPress(navUsername)}
+                data-testid={
+                  isOwner
+                    ? `release-detail-artist-link-${navUsername}`
+                    : `release-detail-collaborator-link-${navUsername}`
+                }
+              >
+                {person.label}
+              </button>
+            ) : (
+              <span
+                className={cn(
+                  isOwner && ARTIST_IDENTITY_COMPACT_CLASS,
+                  isOwner && ARTIST_IDENTITY_RELEASE_DARK_NAME_CLASS,
+                )}
+              >
+                {person.label}
+              </span>
+            )}
+            {!isCombinedCredit ? (
+              <span className="inline-flex align-middle">
+                <GoldVerifiedTick
+                  className="ml-0.5 inline h-3 w-3 shrink-0 text-[#FFD700]"
+                  glow="inline"
+                />
+              </span>
+            ) : null}
+          </span>
+        );
+      })}
     </p>
   );
 }

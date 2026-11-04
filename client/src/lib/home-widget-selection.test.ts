@@ -177,6 +177,7 @@ describe("home widget selection storage", () => {
 });
 
 describe("home widget selection eligibility UI", () => {
+  const now = new Date("2026-08-06T12:00:00.000Z");
   const dated = {
     id: "00000000-0000-4000-8000-000000000001",
     releaseDate: "2026-08-10T00:00:00.000Z",
@@ -192,6 +193,7 @@ describe("home widget selection eligibility UI", () => {
         enabled,
         authenticated: true,
         release: dated,
+        now,
       }),
       { show: true, canSelect: true },
     );
@@ -215,6 +217,7 @@ describe("home widget selection eligibility UI", () => {
       enabled,
       authenticated: true,
       release: dated,
+      now,
     });
     assert.equal(hidden.show, false);
     if (!hidden.show) assert.equal(hidden.reason, "flag_disabled");
@@ -235,6 +238,7 @@ describe("home widget selection eligibility UI", () => {
         enabled: true,
         authenticated: false,
         release: dated,
+        now,
       }).reason,
       "unauthenticated",
     );
@@ -243,6 +247,7 @@ describe("home widget selection eligibility UI", () => {
         enabled: false,
         authenticated: true,
         release: dated,
+        now,
       }).reason,
       "flag_disabled",
     );
@@ -251,6 +256,7 @@ describe("home widget selection eligibility UI", () => {
         enabled: true,
         authenticated: true,
         release: { ...dated, viewerSavedRelease: false },
+        now,
       }).reason,
       "unsaved",
     );
@@ -259,6 +265,7 @@ describe("home widget selection eligibility UI", () => {
         enabled: true,
         authenticated: true,
         release: { ...dated, subscriptionSuspendedAt: "2026-08-01T00:00:00.000Z" },
+        now,
       }).reason,
       "suspended",
     );
@@ -267,6 +274,7 @@ describe("home widget selection eligibility UI", () => {
         enabled: true,
         authenticated: true,
         release: { ...dated, isPublic: false },
+        now,
       }).reason,
       "private",
     );
@@ -282,6 +290,7 @@ describe("home widget selection eligibility UI", () => {
         isComingSoon: true,
       },
       assumeSaved: true,
+      now,
     });
     assert.equal(result.show, false);
     assert.equal(result.reason, "undated");

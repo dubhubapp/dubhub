@@ -6,6 +6,7 @@ import {
 } from "@shared/home-widget";
 import {
   calculateHomeWidgetPayloadExpiry,
+  evaluateListenerReleaseCreateEligibility,
   evaluateListenerReleaseEligibility,
   getHomeWidgetCountdown,
   listEligibleListenerSavedReleases,
@@ -196,6 +197,117 @@ describe("home widget UTC date and countdown domain", () => {
     if (!result.eligible) {
       assert.equal(result.reason, "selected_release_out_now_expired");
     }
+  });
+
+  it("create eligibility accepts Upcoming Exact and rejects at/after boundary", () => {
+    const exact = release({
+      releaseDate: "2026-08-05T00:00:00.000Z",
+      releaseTimingMode: "exact",
+      releaseAt: "2026-08-05T10:00:00.000Z",
+    });
+    assert.equal(
+      evaluateListenerReleaseCreateEligibility({
+        release: exact,
+        isSaved: true,
+        now: new Date("2026-08-05T09:59:59.000Z"),
+      }).eligible,
+      true,
+    );
+    const atBoundary = evaluateListenerReleaseCreateEligibility({
+      release: exact,
+      isSaved: true,
+      now: new Date("2026-08-05T10:00:00.000Z"),
+    });
+    assert.equal(atBoundary.eligible, false);
+    if (!atBoundary.eligible) {
+      assert.equal(atBoundary.reason, "selected_release_not_upcoming");
+    }
+    const withinRetention = evaluateListenerReleaseCreateEligibility({
+      release: exact,
+      isSaved: true,
+      now: new Date("2026-08-06T09:59:00.000Z"),
+    });
+    assert.equal(withinRetention.eligible, false);
+    if (!withinRetention.eligible) {
+      assert.equal(withinRetention.reason, "selected_release_not_upcoming");
+    }
+    // Retain still allows the same Out now window.
+    assert.equal(
+      evaluateListenerReleaseEligibility({
+        release: exact,
+        isSaved: true,
+        now: new Date("2026-08-06T09:59:00.000Z"),
+      }).eligible,
+      true,
+    );
+  });
+
+  it("create eligibility rejects Released Midnight with viewer TZ while retain keeps Out now", () => {
+    const past = release({ releaseDate: "2026-08-04T00:00:00Z" });
+    const now = new Date("2026-08-04T12:00:00.000Z");
+    const create = evaluateListenerReleaseCreateEligibility({
+      release: past,
+      isSaved: true,
+      now,
+      viewerTimeZone: "Europe/London",
+    });
+    assert.equal(create.eligible, false);
+    assert.equal(
+      evaluateListenerReleaseEligibility({
+        release: past,
+        isSaved: true,
+        now,
+        viewerTimeZone: "Europe/London",
+      }).eligible,
+      true,
+    );
+  });
+
+  it("auto-advance skips already-released Out now peers and picks Upcoming", () => {
+    const outNow = release({
+      id: "out-now",
+      releaseDate: "2026-08-05T00:00:00.000Z",
+      releaseTimingMode: "exact",
+      releaseAt: "2026-08-05T10:00:00.000Z",
+    });
+    const upcoming = release({
+      id: "upcoming",
+      releaseDate: "2026-08-20T00:00:00.000Z",
+    });
+    const now = new Date("2026-08-05T18:00:00.000Z");
+    // Retain allows Out now; create / next must not.
+    assert.equal(
+      evaluateListenerReleaseEligibility({
+        release: outNow,
+        isSaved: true,
+        now,
+      }).eligible,
+      true,
+    );
+    const next = selectNextListenerSavedRelease({
+      savedReleases: [outNow, upcoming],
+      now,
+      excludeReleaseIds: ["expired"],
+    });
+    assert.equal(next?.id, "upcoming");
+
+    const listed = listEligibleListenerSavedReleases({
+      savedReleases: [outNow, upcoming],
+      now,
+    });
+    assert.deepEqual(
+      listed.map((r) => r.id),
+      ["upcoming"],
+    );
+    const withPrefer = listEligibleListenerSavedReleases({
+      savedReleases: [outNow, upcoming],
+      now,
+      preferReleaseId: "out-now",
+    });
+    assert.deepEqual(
+      withPrefer.map((r) => r.id),
+      ["out-now", "upcoming"],
+    );
   });
 
   it("is unaffected by DST offsets or device-local representations", () => {

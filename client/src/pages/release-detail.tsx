@@ -702,10 +702,10 @@ export default function ReleaseDetail() {
         )}
 
         {showOwnerReleaseDay && (
-          <ReleaseDayCelebration releaseId={releaseData.id} title={releaseData.title} variant="full" />
+          <ReleaseDayCelebration releaseId={releaseData.id} variant="full" />
         )}
         {showSavedReleaseDay && (
-          <SavedReleaseDayCelebration releaseId={releaseData.id} title={releaseData.title} variant="full" />
+          <SavedReleaseDayCelebration releaseId={releaseData.id} variant="full" />
         )}
 
         {isOwner && hasFullDetail && !releaseData.isPublic && (releaseData.collaborators || []).length > 0 && (

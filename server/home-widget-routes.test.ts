@@ -131,6 +131,42 @@ describe("GET /api/widget/home-release", () => {
     assert.equal(body.subscription, undefined);
   });
 
+  it("selectionIntent=create rejects past Exact without retire/advance", async () => {
+    const storage: HomeWidgetServiceStorage = {
+      ...emptyStorage(),
+      async getHomeWidgetListenerSelection() {
+        return {
+          isSaved: true,
+          release: {
+            id: RELEASE_ID,
+            artistId: "00000000-0000-4000-8000-000000000099",
+            title: "Night Bus",
+            artistName: "artist-one",
+            releaseDate: "2026-08-04T00:00:00.000Z",
+            artworkUrl: null,
+            isPublic: true,
+            isComingSoon: false,
+            subscriptionSuspendedAt: null,
+            createdAt: "2026-08-01T00:00:00.000Z",
+            releaseTimingMode: "exact",
+            releaseAt: "2026-08-04T12:00:00.000Z",
+          },
+        };
+      },
+    };
+    const test = await startServer({ authenticated: true, storage });
+    servers.push(test.server);
+    const response = await fetch(
+      `${test.origin}/api/widget/home-release?selectedReleaseId=${RELEASE_ID}&selectionIntent=create`,
+    );
+    const body = await response.json() as any;
+    assert.equal(response.status, 200);
+    assert.equal(body.eligibility, "selected_release_not_upcoming");
+    assert.equal(body.release, null);
+    assert.equal(body.retireListenerSelection, undefined);
+    assert.equal(body.advanceListenerSelectionTo, undefined);
+  });
+
   it("never selects a collaborator-owned release for artist mode", async () => {
     const storage: HomeWidgetServiceStorage = {
       ...emptyStorage(),

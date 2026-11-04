@@ -408,7 +408,10 @@ describe("home widget payload refresh", () => {
     const storage = memoryStorage();
     const nativeId = "00000000-0000-4000-8000-000000000099";
     writeHomeWidgetSelectedReleaseId(USER_A, RELEASE_ID, { storage });
-    const requested: Array<string | null> = [];
+    const requested: Array<{
+      id: string | null;
+      intent?: string | null;
+    }> = [];
 
     const result = await refreshHomeWidgetPayload({
       getUserId: async () => USER_A,
@@ -417,8 +420,8 @@ describe("home widget payload refresh", () => {
       writeSelectedReleaseId: (id, releaseId, options) =>
         writeHomeWidgetSelectedReleaseId(id, releaseId, { ...options, storage }),
       readActiveReleaseId: async () => nativeId,
-      fetchPayload: async ({ selectedReleaseId }) => {
-        requested.push(selectedReleaseId);
+      fetchPayload: async ({ selectedReleaseId, selectionIntent }) => {
+        requested.push({ id: selectedReleaseId, intent: selectionIntent });
         return dto({
           release: {
             id: nativeId,
@@ -436,8 +439,64 @@ describe("home widget payload refresh", () => {
     });
 
     assert.equal(result.ok, true);
-    assert.deepEqual(requested, [nativeId]);
+    // Create-intent gate first, then retention-safe refresh of the adopted id.
+    assert.deepEqual(requested, [
+      { id: nativeId, intent: "create" },
+      { id: nativeId, intent: undefined },
+    ]);
     assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), nativeId);
+    setHomeWidgetBridgeForTests(null);
+  });
+
+  it("does not adopt a native page when create-intent rejects Released peers", async () => {
+    resetHomeWidgetRefreshStateForTests();
+    const bridge = recordingBridge();
+    setHomeWidgetBridgeForTests(bridge);
+    const storage = memoryStorage();
+    const nativeId = "00000000-0000-4000-8000-000000000099";
+    const priorAt = "2026-07-01T00:00:00.000Z";
+    writeHomeWidgetSelectedReleaseId(USER_A, RELEASE_ID, {
+      storage,
+      selectedAt: priorAt,
+    });
+
+    const result = await refreshHomeWidgetPayload({
+      getUserId: async () => USER_A,
+      getAccessToken: async () => "token",
+      readSelectedReleaseId: (id) => readHomeWidgetSelectedReleaseId(id, storage),
+      writeSelectedReleaseId: (id, releaseId, options) =>
+        writeHomeWidgetSelectedReleaseId(id, releaseId, { ...options, storage }),
+      readActiveReleaseId: async () => nativeId,
+      fetchPayload: async ({ selectedReleaseId, selectionIntent }) => {
+        if (selectionIntent === "create") {
+          return dto({
+            mode: "empty",
+            eligibility: "selected_release_not_upcoming",
+            release: null,
+          });
+        }
+        return dto({
+          release: {
+            id: selectedReleaseId ?? RELEASE_ID,
+            title: "Prior",
+            artistName: "artist",
+            artworkUrl: null,
+            releaseDate: "2026-08-10T00:00:00.000Z",
+            deepLink: `https://dubhub.uk/?release=${RELEASE_ID}`,
+            countdownLabel: "Out now",
+            isOutNow: true,
+          },
+        });
+      },
+      now: () => NOW,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(readHomeWidgetSelectedReleaseId(USER_A, storage), RELEASE_ID);
+    const raw = storage.getItem(
+      `dubhub:home-widget-selected-release:${USER_A}`,
+    );
+    assert.match(raw ?? "", new RegExp(priorAt));
     setHomeWidgetBridgeForTests(null);
   });
 

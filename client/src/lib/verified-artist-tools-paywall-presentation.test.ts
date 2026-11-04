@@ -41,6 +41,23 @@ const vatRowSrc = readFileSync(
   join(here, "../components/verified-artist-tools-settings-row.tsx"),
   "utf8",
 );
+const soundwaveSrc = readFileSync(
+  join(here, "../components/verified-artist-tools-paywall-soundwave.tsx"),
+  "utf8",
+);
+const cssSrc = readFileSync(join(here, "../index.css"), "utf8");
+const purchaseSrc = readFileSync(
+  join(here, "./verified-artist-tools-purchase.ts"),
+  "utf8",
+);
+const restoreSrc = readFileSync(
+  join(here, "./verified-artist-tools-restore.ts"),
+  "utf8",
+);
+const offeringsSrc = readFileSync(
+  join(here, "./verified-artist-tools-offerings.ts"),
+  "utf8",
+);
 
 /** Mirrors DrawerContent base + paywall className merge (cn → twMerge). */
 function mergedPaywallDrawerContentClass(): string {
@@ -113,7 +130,7 @@ describe("VAT-PAYWALL-POLISH-2D ready-state spacing", () => {
     assert.match(paywallSrc, /h-auto max-h-\[92dvh\]/);
     assert.doesNotMatch(paywallSrc, /min-h-\[min\(78dvh/);
     // DrawerFooter default mt-auto overridden so packages→CTA is not stretched.
-    assert.match(paywallSrc, /"mt-0 shrink-0/);
+    assert.match(paywallSrc, /relative z-\[1\] mt-0 shrink-0/);
     assert.match(paywallSrc, /compactShell \? "pt-3" : "pt-8"/);
     assert.match(paywallSrc, /data-testid="paywall-purchase"/);
     assert.match(paywallSrc, /data-testid="paywall-restore"/);
@@ -167,5 +184,40 @@ describe("VAT-PAYWALL-POLISH-2 pricing + CTA + legal", () => {
     assert.match(PAYWALL_SHELL_CLASS, /before:via-white\/40/);
     assert.match(PAYWALL_SHELL_CLASS, /via-\[#9eb0cc\]\/55/);
     assert.doesNotMatch(PAYWALL_SHELL_CLASS, /animate-|@keyframes|shimmer/);
+  });
+});
+
+describe("VAT-PAYWALL soundwave canvas (Pass 1 SVG fallback)", () => {
+  it("scopes non-interactive décor with canvas XOR static fallback", () => {
+    assert.match(paywallSrc, /VerifiedArtistToolsPaywallSoundwave/);
+    assert.match(paywallSrc, /from "@\/components\/verified-artist-tools-paywall-soundwave"/);
+    assert.match(soundwaveSrc, /data-testid="paywall-soundwave-decor"/);
+    assert.match(soundwaveSrc, /data-testid="paywall-soundwave-canvas"/);
+    assert.match(soundwaveSrc, /data-testid="paywall-soundwave-static"/);
+    assert.match(soundwaveSrc, /pointer-events-none/);
+    assert.match(soundwaveSrc, /aria-hidden="true"/);
+    assert.match(soundwaveSrc, /PAYWALL_SOUNDWAVE_STATIC_PATHS|PaywallSoundwaveStaticSvg/);
+    assert.match(soundwaveSrc, /requestAnimationFrame/);
+    assert.match(soundwaveSrc, /cancelAnimationFrame/);
+    assert.match(soundwaveSrc, /prefers-reduced-motion/);
+    assert.doesNotMatch(soundwaveSrc, /vat-paywall-soundwave-path|vat-paywall-soundwave-layer|--vat-wave-i/);
+    assert.doesNotMatch(soundwaveSrc, /framer-motion|Purchases|revenuecat|entitlement/i);
+    assert.doesNotMatch(drawerSrc, /paywall-soundwave|VerifiedArtistToolsPaywallSoundwave/);
+    assert.doesNotMatch(introModalSrc, /paywall-soundwave|VerifiedArtistToolsPaywallSoundwave/);
+    assert.match(paywallSrc, /DrawerHeader className="relative z-\[1\]/);
+    assert.match(paywallSrc, /"relative z-\[1\] overscroll-contain/);
+    assert.match(paywallSrc, /"relative z-\[1\] mt-0 shrink-0/);
+  });
+
+  it("does not revive obsolete CSS transform soundwave animation", () => {
+    assert.doesNotMatch(cssSrc, /vat-paywall-soundwave-flow|vat-paywall-soundwave-drift/);
+    assert.doesNotMatch(cssSrc, /vat-paywall-soundwave-path|vat-paywall-soundwave-layer/);
+    assert.doesNotMatch(PAYWALL_SHELL_CLASS, /animate-|@keyframes|shimmer|soundwave/);
+  });
+
+  it("does not alter purchase, restore, or offerings modules for décor", () => {
+    assert.doesNotMatch(purchaseSrc, /soundwave|PaywallSoundwave/);
+    assert.doesNotMatch(restoreSrc, /soundwave|PaywallSoundwave/);
+    assert.doesNotMatch(offeringsSrc, /soundwave|PaywallSoundwave/);
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 function hashString(s: string): number {
   let h = 0;
@@ -10,17 +11,102 @@ function hashString(s: string): number {
 const SPARKLE_SESSION_KEY = "dubhub-release-day-sparkles";
 const SAVED_SPARKLE_SESSION_KEY = "dubhub-saved-release-day-sparkles";
 
+/** Unified release-day celebration copy (Detail + tracker celebration line). */
+export const RELEASE_DAY_OUT_TODAY_LABEL = "Out today" as const;
+
+const LINE_ICON_CLASS =
+  "h-4 w-4 shrink-0 text-emerald-500/80 dark:text-emerald-400/75" as const;
+
+const LINE_TEXT_CLASS =
+  "text-sm font-semibold tracking-tight text-foreground dark:text-white/90" as const;
+
+type OutTodayLineProps = {
+  /** Detail centres; tracker heading/inline aligns with section titles. */
+  align?: "center" | "start";
+};
+
+/**
+ * Container-free celebration line — no card, border, gradient, or shadow.
+ */
+function OutTodayLine({ align = "center" }: OutTodayLineProps) {
+  return (
+    <div
+      className={cn(
+        "relative flex items-center gap-1.5 bg-transparent",
+        align === "center" ? "justify-center" : "justify-start",
+      )}
+      role="status"
+      aria-live="polite"
+      data-testid="release-day-out-today"
+    >
+      <Sparkles className={LINE_ICON_CLASS} aria-hidden />
+      <p className={LINE_TEXT_CLASS}>{RELEASE_DAY_OUT_TODAY_LABEL}</p>
+    </div>
+  );
+}
+
+type Speck = {
+  left: string;
+  top: string;
+  delay: string;
+  dur: string;
+  w: number;
+};
+
+type OneShotSparklesProps = {
+  show: boolean;
+  specks: Speck[];
+  /** Soft emerald tint; compatible with container-free line. */
+  tone?: "owner" | "saved";
+};
+
+/**
+ * One-shot floating specks (session-gated). Hidden under prefers-reduced-motion.
+ * Kept subtle so they do not read as a banner or burst effect.
+ */
+function OneShotSparkles({ show, specks, tone = "owner" }: OneShotSparklesProps) {
+  if (!show) return null;
+  const dotClass =
+    tone === "saved"
+      ? "absolute rounded-full bg-emerald-500/20 dark:bg-emerald-400/25 opacity-70 animate-pulse motion-reduce:animate-none"
+      : "absolute rounded-full bg-emerald-500/18 dark:bg-emerald-400/22 opacity-65 animate-pulse motion-reduce:animate-none";
+
+  return (
+    <div
+      className="pointer-events-none absolute -top-1 left-0 right-0 h-14 overflow-hidden motion-reduce:hidden"
+      aria-hidden
+      data-testid="release-day-one-shot-sparkles"
+    >
+      {specks.map((s, i) => (
+        <span
+          key={i}
+          className={dotClass}
+          style={{
+            left: s.left,
+            top: s.top,
+            width: s.w,
+            height: s.w,
+            animationDelay: s.delay,
+            animationDuration: s.dur,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 type ReleaseDayCelebrationProps = {
   releaseId: string;
+  /** @deprecated Unused — title lives in the release header / feed card. */
   title?: string;
-  /** Full detail page: soft glow + short-lived sparkles. Inline: compact strip only. */
+  /** Full detail: centred line + optional one-shot sparkles. Inline/heading: line only. */
   variant?: "full" | "inline" | "heading";
 };
 
 /**
- * Subtle “release day” moment for artists: calm copy, soft gradient, light floating specks (not loud confetti).
+ * Owner release-day moment — minimal Sparkles + “Out today” line.
  */
-export function ReleaseDayCelebration({ releaseId, title, variant = "full" }: ReleaseDayCelebrationProps) {
+export function ReleaseDayCelebration({ releaseId, variant = "full" }: ReleaseDayCelebrationProps) {
   const [showSparkles, setShowSparkles] = useState(false);
 
   useEffect(() => {
@@ -41,91 +127,41 @@ export function ReleaseDayCelebration({ releaseId, title, variant = "full" }: Re
 
   const specks = useMemo(() => {
     const h = hashString(releaseId);
-    return Array.from({ length: 16 }, (_, i) => ({
-      left: `${((h * (i + 2)) % 82) + 9}%`,
-      top: `${((h * (i + 5)) % 22) + 4}%`,
+    return Array.from({ length: 10 }, (_, i) => ({
+      left: `${((h * (i + 2)) % 70) + 15}%`,
+      top: `${((h * (i + 5)) % 40) + 20}%`,
       delay: `${(i * 0.12) % 1.8}s`,
       dur: `${2.4 + (h >> (i % 5)) % 3}s`,
-      w: 2 + ((h >> i) % 3),
+      w: 2 + ((h >> i) % 2),
     }));
   }, [releaseId]);
 
-  const banner = (
-    <div
-      className={
-        variant === "full"
-          ? "relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-violet-500/10 via-background/80 to-amber-500/10 px-4 py-3 shadow-[0_0_24px_-8px_rgba(139,92,246,0.35)]"
-          : variant === "inline"
-          ? "relative overflow-hidden rounded-lg border border-primary/15 bg-gradient-to-r from-violet-500/8 via-background/90 to-amber-500/8 px-3 py-2.5"
-          : "relative px-0 py-0"
-      }
-      role="status"
-      aria-live="polite"
-    >
-      {variant === "full" && (
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.45] bg-[radial-gradient(ellipse_at_50%_0%,rgba(139,92,246,0.22),transparent_55%)]"
-          aria-hidden
-        />
-      )}
-      <div className="relative flex items-start gap-2">
-        <Sparkles
-          className={`shrink-0 text-primary/80 ${variant === "full" ? "h-5 w-5 mt-0.5" : "h-4 w-4 mt-0.5"}`}
-          aria-hidden
-        />
-        <div className="min-w-0">
-          <p className={`font-semibold text-foreground ${variant === "full" ? "text-base" : "text-sm"}`}>
-            Happy Release Day
-          </p>
-          {title ? (
-            <p className={`text-muted-foreground truncate ${variant === "full" ? "text-sm mt-0.5" : "text-xs mt-0.5"}`}>
-              {title}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-
   if (variant === "inline" || variant === "heading") {
-    return banner;
+    return <OutTodayLine align="start" />;
   }
 
   return (
-    <div className="relative mb-4">
-      {showSparkles && (
-        <div className="pointer-events-none absolute -top-2 left-0 right-0 h-28 overflow-hidden rounded-xl" aria-hidden>
-          {specks.map((s, i) => (
-            <span
-              key={i}
-              className="absolute rounded-full bg-primary/25 dark:bg-primary/35 animate-pulse"
-              style={{
-                left: s.left,
-                top: s.top,
-                width: s.w,
-                height: s.w,
-                animationDelay: s.delay,
-                animationDuration: s.dur,
-              }}
-            />
-          ))}
-        </div>
-      )}
-      {banner}
+    <div className="relative mb-3">
+      <OneShotSparkles show={showSparkles} specks={specks} tone="owner" />
+      <OutTodayLine align="center" />
     </div>
   );
 }
 
 type SavedReleaseDayCelebrationProps = {
   releaseId: string;
+  /** @deprecated Unused — title lives in the release header / feed card. */
   title?: string;
   variant?: "full" | "inline";
 };
 
 /**
- * Lighter payoff for viewers who saved a release (liked / uploaded) — calmer than the owner “Happy release day” block.
+ * Saved-listener release-day moment — same minimal line as owner Detail.
  */
-export function SavedReleaseDayCelebration({ releaseId, title, variant = "full" }: SavedReleaseDayCelebrationProps) {
+export function SavedReleaseDayCelebration({
+  releaseId,
+  variant = "full",
+}: SavedReleaseDayCelebrationProps) {
   const [showSparkles, setShowSparkles] = useState(false);
 
   useEffect(() => {
@@ -147,74 +183,22 @@ export function SavedReleaseDayCelebration({ releaseId, title, variant = "full" 
   const specks = useMemo(() => {
     const h = hashString(`${releaseId}-saved`);
     return Array.from({ length: 8 }, (_, i) => ({
-      left: `${((h * (i + 3)) % 80) + 10}%`,
-      top: `${((h * (i + 6)) % 18) + 5}%`,
+      left: `${((h * (i + 3)) % 68) + 16}%`,
+      top: `${((h * (i + 6)) % 36) + 22}%`,
       delay: `${(i * 0.15) % 1.4}s`,
       dur: `${3 + (h >> (i % 4)) % 2}s`,
       w: 2 + ((h >> i) % 2),
     }));
   }, [releaseId]);
 
-  const banner = (
-    <div
-      className={
-        variant === "full"
-          ? "relative overflow-hidden rounded-xl border border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.06] via-background/90 to-sky-500/[0.05] px-3.5 py-2.5 shadow-[0_0_18px_-10px_rgba(16,185,129,0.28)]"
-          : "relative overflow-hidden rounded-lg border border-emerald-500/12 bg-gradient-to-r from-emerald-500/[0.05] via-background/95 to-sky-500/[0.04] px-2.5 py-2"
-      }
-      role="status"
-      aria-live="polite"
-    >
-      {variant === "full" && (
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.35] bg-[radial-gradient(ellipse_at_40%_0%,rgba(16,185,129,0.12),transparent_50%)]"
-          aria-hidden
-        />
-      )}
-      <div className="relative flex items-start gap-2">
-        <Sparkles
-          className={`shrink-0 text-emerald-600/70 dark:text-emerald-400/70 ${variant === "full" ? "h-4 w-4 mt-0.5" : "h-3.5 w-3.5 mt-0.5"}`}
-          aria-hidden
-        />
-        <div className="min-w-0">
-          <p className={`font-medium text-foreground ${variant === "full" ? "text-sm" : "text-xs"}`}>
-            Released today
-          </p>
-          {title ? (
-            <p className={`text-muted-foreground truncate ${variant === "full" ? "text-xs mt-0.5" : "text-[11px] mt-0.5"}`}>
-              {title}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-
   if (variant === "inline") {
-    return banner;
+    return <OutTodayLine align="start" />;
   }
 
   return (
-    <div className="relative mb-4">
-      {showSparkles && (
-        <div className="pointer-events-none absolute -top-1 left-0 right-0 h-20 overflow-hidden rounded-xl" aria-hidden>
-          {specks.map((s, i) => (
-            <span
-              key={i}
-              className="absolute rounded-full bg-emerald-500/15 dark:bg-emerald-400/20 opacity-70 animate-pulse"
-              style={{
-                left: s.left,
-                top: s.top,
-                width: s.w,
-                height: s.w,
-                animationDelay: s.delay,
-                animationDuration: s.dur,
-              }}
-            />
-          ))}
-        </div>
-      )}
-      {banner}
+    <div className="relative mb-3">
+      <OneShotSparkles show={showSparkles} specks={specks} tone="saved" />
+      <OutTodayLine align="center" />
     </div>
   );
 }

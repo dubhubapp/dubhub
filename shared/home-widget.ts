@@ -26,6 +26,8 @@ export type HomeWidgetEligibility =
   | "selected_release_undated"
   | "selected_release_unavailable"
   | "selected_release_out_now_expired"
+  /** Create-intent only: release is at/after its boundary (not Upcoming). */
+  | "selected_release_not_upcoming"
   | "artist_subscription_unavailable";
 
 export type HomeWidgetTimingMode = "midnight" | "exact";

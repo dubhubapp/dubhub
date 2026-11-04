@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import {
   isReleaseDayTodayFromTiming,
 } from "@/lib/release-status";
-import { ReleaseDayCelebration, SavedReleaseDayCelebration } from "@/components/release-day-celebration";
+import { ReleaseDayCelebration } from "@/components/release-day-celebration";
 import { apiUrl } from "@/lib/apiBase";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { DubHubSkeletonBar } from "@/components/ui/skeleton";
@@ -1221,20 +1221,9 @@ export default function ReleaseTracker() {
         )}
         {slices.outToday.length > 0 && (
           <section className="space-y-2">
+            {/* Section heading keeps list grouping; inline celebration omitted to avoid
+                “Released today” + “Out today” stacked redundancy. */}
             <h2 className={RELEASE_FEED_MONTH_HEADING_CLASS}>Released today</h2>
-            {slices.outToday[0]!.artistId === currentUser?.id ? (
-              <ReleaseDayCelebration
-                releaseId={slices.outToday[0]!.id}
-                title={slices.outToday[0]!.title}
-                variant="inline"
-              />
-            ) : (
-              <SavedReleaseDayCelebration
-                releaseId={slices.outToday[0]!.id}
-                title={slices.outToday[0]!.title}
-                variant="inline"
-              />
-            )}
             <div className={RELEASE_FEED_DIVIDE_CLASS}>
               {slices.outToday.map((r) => renderReleaseCard(r, { view }))}
             </div>

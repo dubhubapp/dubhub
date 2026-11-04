@@ -559,6 +559,110 @@ describe("home widget service resolution", () => {
     assert.equal(payload.release?.isOutNow, true);
   });
 
+  it("create-intent rejects Out now picks without retiring or advancing", async () => {
+    const payload = await buildHomeWidgetPayload({
+      profile: profile(),
+      selectedReleaseId: SELECTED_ID,
+      selectionIntent: "create",
+      deps: {
+        ...presentationDeps,
+        now: () => new Date("2026-08-06T09:59:00.000Z"),
+        storage: storageFixture({
+          listener: {
+            release: release({
+              releaseDate: "2026-08-05T00:00:00.000Z",
+              releaseTimingMode: "exact",
+              releaseAt: "2026-08-05T10:00:00.000Z",
+            }),
+            isSaved: true,
+          },
+          savedCandidates: [
+            release({
+              id: "00000000-0000-4000-8000-0000000000aa",
+              releaseDate: "2026-08-20T00:00:00.000Z",
+            }),
+          ],
+        }),
+      },
+    });
+    assert.equal(payload.mode, "empty");
+    assert.equal(payload.eligibility, "selected_release_not_upcoming");
+    assert.equal(payload.release, null);
+    assert.equal(payload.retireListenerSelection, undefined);
+    assert.equal(payload.advanceListenerSelectionTo, undefined);
+  });
+
+  it("create-intent accepts Upcoming Exact dated releases", async () => {
+    const payload = await buildHomeWidgetPayload({
+      profile: profile(),
+      selectedReleaseId: SELECTED_ID,
+      selectionIntent: "create",
+      deps: {
+        ...presentationDeps,
+        now: () => new Date("2026-08-05T09:00:00.000Z"),
+        storage: storageFixture({
+          listener: {
+            release: release({
+              releaseDate: "2026-08-05T00:00:00.000Z",
+              releaseTimingMode: "exact",
+              releaseAt: "2026-08-05T10:00:00.000Z",
+            }),
+            isSaved: true,
+          },
+        }),
+      },
+    });
+    assert.equal(payload.mode, "listener");
+    assert.equal(payload.eligibility, "eligible_listener_release");
+    assert.equal(payload.release?.id, SELECTED_ID);
+    assert.equal(payload.retireListenerSelection, undefined);
+  });
+
+  it("auto-advance after retention skips Out now peers for Upcoming only", async () => {
+    const expiredId = SELECTED_ID;
+    const outNowPeer = "00000000-0000-4000-8000-0000000000b0";
+    const upcomingId = "00000000-0000-4000-8000-0000000000b1";
+    const payload = await buildHomeWidgetPayload({
+      profile: profile(),
+      selectedReleaseId: expiredId,
+      deps: {
+        ...presentationDeps,
+        now: () => new Date("2026-08-06T10:00:00.000Z"),
+        storage: storageFixture({
+          listener: {
+            release: release({
+              id: expiredId,
+              releaseDate: "2026-08-05T00:00:00.000Z",
+              releaseTimingMode: "exact",
+              releaseAt: "2026-08-05T10:00:00.000Z",
+            }),
+            isSaved: true,
+          },
+          savedCandidates: [
+            release({
+              id: expiredId,
+              releaseDate: "2026-08-05T00:00:00.000Z",
+              releaseTimingMode: "exact",
+              releaseAt: "2026-08-05T10:00:00.000Z",
+            }),
+            release({
+              id: outNowPeer,
+              releaseDate: "2026-08-05T00:00:00.000Z",
+              releaseTimingMode: "exact",
+              releaseAt: "2026-08-05T12:00:00.000Z",
+            }),
+            release({
+              id: upcomingId,
+              releaseDate: "2026-08-20T00:00:00.000Z",
+            }),
+          ],
+        }),
+      },
+    });
+    assert.equal(payload.advanceListenerSelectionTo, upcomingId);
+    assert.equal(payload.release?.id, upcomingId);
+  });
+
   it("rejects unsaved, unavailable, undated, missing, and malformed selections", async () => {
     const cases: Array<{
       id: string;

@@ -188,17 +188,21 @@ export function stampHomeWidgetCountdown(args: {
   return getHomeWidgetCountdown(args.releaseDate, args.now);
 }
 
+export type ListenerReleaseEligibilityReason =
+  | "invalid_listener_selection"
+  | "selected_release_not_saved"
+  | "selected_release_undated"
+  | "selected_release_unavailable"
+  | "selected_release_out_now_expired"
+  | "selected_release_not_upcoming";
+
 export type ListenerReleaseEligibility =
   | { eligible: true; release: HomeWidgetReleaseCandidate }
   | {
       eligible: false;
-      reason:
-        | "invalid_listener_selection"
-        | "selected_release_not_saved"
-        | "selected_release_undated"
-        | "selected_release_unavailable"
-        | "selected_release_out_now_expired";
+      reason: ListenerReleaseEligibilityReason;
     };
+
 
 /**
  * Home-widget release dates intentionally use UTC calendar days.
@@ -309,6 +313,11 @@ export function selectArtistWidgetRelease(
   return eligible[0] ?? null;
 }
 
+/**
+ * Retain an already-selected listener Countdown release.
+ * Upcoming OR within the existing 24h Out now window.
+ * Artist auto mode uses isArtistWidgetReleaseEligible — do not change that path here.
+ */
 export function evaluateListenerReleaseEligibility(args: {
   release: HomeWidgetReleaseCandidate | null;
   isSaved: boolean;
@@ -359,7 +368,60 @@ export function evaluateListenerReleaseEligibility(args: {
 }
 
 /**
+ * Create / replace a listener Countdown selection.
+ * Requires a confirmed dated release that is still strictly Upcoming (now < boundary).
+ * Does not allow newly selecting a release that is Out now or past retention.
+ */
+export function evaluateListenerReleaseCreateEligibility(args: {
+  release: HomeWidgetReleaseCandidate | null;
+  isSaved: boolean;
+  now?: Date;
+  viewerTimeZone?: string | null;
+}): ListenerReleaseEligibility {
+  if (!args.release) {
+    return { eligible: false, reason: "invalid_listener_selection" };
+  }
+  if (!args.isSaved) {
+    return { eligible: false, reason: "selected_release_not_saved" };
+  }
+  if (
+    args.release.isPublic !== true ||
+    args.release.subscriptionSuspendedAt != null
+  ) {
+    return { eligible: false, reason: "selected_release_unavailable" };
+  }
+  if (args.release.releaseDate == null) {
+    return { eligible: false, reason: "selected_release_undated" };
+  }
+
+  const timing = resolveHomeWidgetReleaseTiming(args.release);
+  if (!timing.ok) {
+    return { eligible: false, reason: "selected_release_undated" };
+  }
+  const boundaryMs = resolveServerHomeWidgetBoundaryMs(
+    timing,
+    args.viewerTimeZone,
+  );
+  if (boundaryMs == null) {
+    if (timing.timingMode === "midnight") {
+      // No viewer TZ → cannot prove the local boundary has passed. Do not invent UTC.
+      // Updated clients always send viewerTimeZone on create-intent; keep this fail-open
+      // so auto-advance listing without TZ does not falsely empty the candidate set.
+      return { eligible: true, release: args.release };
+    }
+    return { eligible: false, reason: "selected_release_undated" };
+  }
+  const now = args.now ?? new Date();
+  if (now.getTime() < boundaryMs) {
+    return { eligible: true, release: args.release };
+  }
+  return { eligible: false, reason: "selected_release_not_upcoming" };
+}
+
+/**
  * Eligible Saved Releases for listener Countdown (chronological, then ID).
+ * Default candidates are Upcoming-only (create eligibility).
+ * When preferReleaseId is still retainable (e.g. Out now active), it is kept in the set.
  * Candidate set is Saved Releases only — never Release Alerts / same-artist discovery.
  */
 export function listEligibleListenerSavedReleases(args: {
@@ -373,17 +435,33 @@ export function listEligibleListenerSavedReleases(args: {
   preferReleaseId?: string | null;
 }): HomeWidgetReleaseCandidate[] {
   const exclude = new Set(args.excludeReleaseIds ?? []);
-  const eligible: HomeWidgetReleaseCandidate[] = [];
+  const byId = new Map<string, HomeWidgetReleaseCandidate>();
+
   for (const release of args.savedReleases) {
     if (exclude.has(release.id)) continue;
-    const result = evaluateListenerReleaseEligibility({
+    const create = evaluateListenerReleaseCreateEligibility({
       release,
       isSaved: true,
       now: args.now,
       viewerTimeZone: args.viewerTimeZone,
     });
-    if (result.eligible) eligible.push(result.release);
+    if (create.eligible) byId.set(create.release.id, create.release);
   }
+
+  const prefer = args.preferReleaseId?.trim() ?? "";
+  if (prefer && !byId.has(prefer) && !exclude.has(prefer)) {
+    const preferredRow =
+      args.savedReleases.find((r) => r.id === prefer) ?? null;
+    const retain = evaluateListenerReleaseEligibility({
+      release: preferredRow,
+      isSaved: preferredRow != null,
+      now: args.now,
+      viewerTimeZone: args.viewerTimeZone,
+    });
+    if (retain.eligible) byId.set(retain.release.id, retain.release);
+  }
+
+  const eligible = [...byId.values()];
   eligible.sort((a, b) =>
     compareArtistWidgetReleasesForSelection(a, b, args.viewerTimeZone),
   );
@@ -396,7 +474,6 @@ export function listEligibleListenerSavedReleases(args: {
       : HOME_WIDGET_LISTENER_COLLECTION_MAX;
   if (eligible.length <= max) return eligible;
 
-  const prefer = args.preferReleaseId?.trim() ?? "";
   const preferIndex = prefer
     ? eligible.findIndex((r) => r.id === prefer)
     : -1;
@@ -413,7 +490,7 @@ export function listEligibleListenerSavedReleases(args: {
 
 /**
  * After Out-now retention expires on the current selection, pick the earliest
- * still-eligible Saved Release (canonical boundary ascending, then ID).
+ * still-Upcoming Saved Release (create eligibility only).
  * Candidate set is Saved Releases only — never Release Alerts / same-artist discovery.
  */
 export function selectNextListenerSavedRelease(args: {
@@ -422,14 +499,22 @@ export function selectNextListenerSavedRelease(args: {
   excludeReleaseIds?: Iterable<string>;
   viewerTimeZone?: string | null;
 }): HomeWidgetReleaseCandidate | null {
-  return (
-    listEligibleListenerSavedReleases({
-      savedReleases: args.savedReleases,
+  const exclude = new Set(args.excludeReleaseIds ?? []);
+  const upcoming: HomeWidgetReleaseCandidate[] = [];
+  for (const release of args.savedReleases) {
+    if (exclude.has(release.id)) continue;
+    const create = evaluateListenerReleaseCreateEligibility({
+      release,
+      isSaved: true,
       now: args.now,
-      excludeReleaseIds: args.excludeReleaseIds,
       viewerTimeZone: args.viewerTimeZone,
-    })[0] ?? null
+    });
+    if (create.eligible) upcoming.push(create.release);
+  }
+  upcoming.sort((a, b) =>
+    compareArtistWidgetReleasesForSelection(a, b, args.viewerTimeZone),
   );
+  return upcoming[0] ?? null;
 }
 
 /**

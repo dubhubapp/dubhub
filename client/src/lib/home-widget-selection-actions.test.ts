@@ -9,6 +9,7 @@ import {
 import {
   clearHomeWidgetReleaseSelection,
   getCurrentHomeWidgetSelectedReleaseId,
+  resetHomeWidgetSelectGenerationForTests,
   selectHomeWidgetRelease,
 } from "./home-widget-selection";
 import {
@@ -110,8 +111,10 @@ function refreshDeps(
       releaseId: string,
       options?: { selectedAt?: Date | string },
     ) => writeHomeWidgetSelectedReleaseId(id, releaseId, options),
-    fetchPayload: async (args: { selectedReleaseId: string | null }) =>
-      fetchPayload(args.selectedReleaseId),
+    fetchPayload: async (args: {
+      selectedReleaseId: string | null;
+      selectionIntent?: string | null;
+    }) => fetchPayload(args.selectedReleaseId),
     now: () => NOW,
     readActiveReleaseId: extras?.readActiveReleaseId,
   };
@@ -139,6 +142,7 @@ describe("home widget selection actions", () => {
 
   it("paid artist selection stores fallback copy when artist mode returns", async () => {
     resetHomeWidgetRefreshStateForTests();
+    resetHomeWidgetSelectGenerationForTests();
     const bridge = recordingBridge();
     setHomeWidgetBridgeForTests(bridge);
 
@@ -241,6 +245,7 @@ describe("home widget selection actions", () => {
 
   it("successful select updates stored id to A", async () => {
     resetHomeWidgetRefreshStateForTests();
+    resetHomeWidgetSelectGenerationForTests();
     const bridge = recordingBridge();
     setHomeWidgetBridgeForTests(bridge);
     clearHomeWidgetSelectedReleaseId(USER);
@@ -265,6 +270,7 @@ describe("home widget selection actions", () => {
 
   it("select B replaces A in store and selected state", async () => {
     resetHomeWidgetRefreshStateForTests();
+    resetHomeWidgetSelectGenerationForTests();
     const bridge = recordingBridge();
     setHomeWidgetBridgeForTests(bridge);
     writeHomeWidgetSelectedReleaseId(USER, RELEASE_A);

@@ -6,6 +6,7 @@ import {
 import type { AuthenticatedRequest } from "./authMiddleware";
 import {
   calculateHomeWidgetPayloadExpiry,
+  evaluateListenerReleaseCreateEligibility,
   evaluateListenerReleaseEligibility,
   listEligibleListenerSavedReleases,
   resolveHomeWidgetMode,
@@ -125,6 +126,12 @@ export async function buildHomeWidgetPayload(args: {
   selectedReleaseId?: string | null;
   /** Device IANA timezone for listener Midnight retention / auto-advance. */
   viewerTimeZone?: string | null;
+  /**
+   * When "create", validate Upcoming-only create eligibility for selectedReleaseId.
+   * Failed create must not retire, advance, or imply the stored selection is invalid.
+   * Omit / other values → retention-safe refresh (legacy-compatible).
+   */
+  selectionIntent?: "create" | "refresh" | null;
   deps?: HomeWidgetServiceDeps;
 }): Promise<HomeWidgetPayload> {
   const serviceStorage =
@@ -169,6 +176,7 @@ export async function buildHomeWidgetPayload(args: {
   }
 
   const listenerSelectionProvided = args.selectedReleaseId != null;
+  const createIntent = args.selectionIntent === "create";
   let listenerEligibility: ListenerReleaseEligibility | null = null;
   let advanceListenerSelectionTo: string | undefined;
   let retireListenerSelection = false;
@@ -185,53 +193,88 @@ export async function buildHomeWidgetPayload(args: {
         args.profile.id,
         normalizedSelection,
       );
-      listenerEligibility = evaluateListenerReleaseEligibility({
-        release: selected.release ? toCandidate(selected.release) : null,
-        isSaved: selected.isSaved,
-        now: generatedAt,
-        viewerTimeZone,
-      });
+      const selectedCandidate = selected.release
+        ? toCandidate(selected.release)
+        : null;
 
-      const savedRows =
-        await serviceStorage.getHomeWidgetListenerSavedReleaseCandidates(
-          args.profile.id,
-        );
-      const savedCandidates = savedRows.map(toCandidate);
-
-      // Out-now retention ended → auto-advance within Saved Releases only.
-      if (
-        !listenerEligibility.eligible &&
-        listenerEligibility.reason === "selected_release_out_now_expired"
-      ) {
-        const next = selectNextListenerSavedRelease({
-          savedReleases: savedCandidates,
+      if (createIntent) {
+        // Create-intent: Upcoming-only. Never retire/advance on failure —
+        // client must not treat this as invalidating a prior stored selection.
+        listenerEligibility = evaluateListenerReleaseCreateEligibility({
+          release: selectedCandidate,
+          isSaved: selected.isSaved,
           now: generatedAt,
-          excludeReleaseIds: [normalizedSelection],
           viewerTimeZone,
         });
-        if (next) {
-          listenerEligibility = { eligible: true, release: next };
-          advanceListenerSelectionTo = next.id;
-        } else {
-          retireListenerSelection = true;
+        if (listenerEligibility.eligible) {
+          const savedRows =
+            await serviceStorage.getHomeWidgetListenerSavedReleaseCandidates(
+              args.profile.id,
+            );
+          const preferredId = listenerEligibility.release.id;
+          listenerCollection = listEligibleListenerSavedReleases({
+            savedReleases: savedRows.map(toCandidate),
+            now: generatedAt,
+            viewerTimeZone,
+            preferReleaseId: preferredId,
+          });
+          const active = resolveListenerCollectionActiveRelease({
+            collection: listenerCollection,
+            preferredReleaseId: preferredId,
+          });
+          if (active) {
+            listenerEligibility = { eligible: true, release: active };
+          }
         }
-      }
-
-      if (listenerEligibility.eligible) {
-        const preferredId =
-          advanceListenerSelectionTo ?? listenerEligibility.release.id;
-        listenerCollection = listEligibleListenerSavedReleases({
-          savedReleases: savedCandidates,
+      } else {
+        listenerEligibility = evaluateListenerReleaseEligibility({
+          release: selectedCandidate,
+          isSaved: selected.isSaved,
           now: generatedAt,
           viewerTimeZone,
-          preferReleaseId: preferredId,
         });
-        const active = resolveListenerCollectionActiveRelease({
-          collection: listenerCollection,
-          preferredReleaseId: preferredId,
-        });
-        if (active) {
-          listenerEligibility = { eligible: true, release: active };
+
+        const savedRows =
+          await serviceStorage.getHomeWidgetListenerSavedReleaseCandidates(
+            args.profile.id,
+          );
+        const savedCandidates = savedRows.map(toCandidate);
+
+        // Out-now retention ended → auto-advance to Upcoming Saved Releases only.
+        if (
+          !listenerEligibility.eligible &&
+          listenerEligibility.reason === "selected_release_out_now_expired"
+        ) {
+          const next = selectNextListenerSavedRelease({
+            savedReleases: savedCandidates,
+            now: generatedAt,
+            excludeReleaseIds: [normalizedSelection],
+            viewerTimeZone,
+          });
+          if (next) {
+            listenerEligibility = { eligible: true, release: next };
+            advanceListenerSelectionTo = next.id;
+          } else {
+            retireListenerSelection = true;
+          }
+        }
+
+        if (listenerEligibility.eligible) {
+          const preferredId =
+            advanceListenerSelectionTo ?? listenerEligibility.release.id;
+          listenerCollection = listEligibleListenerSavedReleases({
+            savedReleases: savedCandidates,
+            now: generatedAt,
+            viewerTimeZone,
+            preferReleaseId: preferredId,
+          });
+          const active = resolveListenerCollectionActiveRelease({
+            collection: listenerCollection,
+            preferredReleaseId: preferredId,
+          });
+          if (active) {
+            listenerEligibility = { eligible: true, release: active };
+          }
         }
       }
     }
