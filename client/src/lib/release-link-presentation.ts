@@ -1,6 +1,7 @@
 /**
  * Presentation-only release-link surface rules (overview vs detail).
- * Does not change visibility, URL, or domain CTA resolution — wraps getLinkCtaLabel.
+ * Visible copy wraps the shared public CTA. Href selection stays with
+ * resolvePublicReleaseLinkDestination so this module does not pick a URL.
  */
 
 import {

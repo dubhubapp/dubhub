@@ -30,7 +30,13 @@ export type ReleaseDetailRecord = {
   releaseTimingMode?: string | null;
   releaseAt?: string | null;
   releaseTimezone?: string | null;
-  links?: { id: string; platform: string; url: string; linkType?: string | null }[];
+  links?: {
+    id: string;
+    platform: string;
+    url: string;
+    linkType?: string | null;
+    postReleaseUrl?: string | null;
+  }[];
   collaborators?: { id?: string; artistId?: string; username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   viewerSavedRelease?: boolean;

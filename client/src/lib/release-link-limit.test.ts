@@ -242,7 +242,7 @@ describe("planReleaseLinkSync", () => {
       ],
     });
     assert.deepEqual(plan.updates, [
-      { platform: "spotify", url: "https://s/new", linkType: null },
+      { platform: "spotify", url: "https://s/new", linkType: null, postReleaseUrl: null },
     ]);
     assert.equal(plan.removals.length, 0);
     assert.equal(plan.inserts.length, 0);
@@ -255,7 +255,12 @@ describe("planReleaseLinkSync", () => {
     });
     assert.deepEqual(plan.primaryReplace, {
       fromPlatform: "spotify",
-      next: { platform: "apple_music", url: "https://a/1", linkType: "listen" },
+      next: {
+        platform: "apple_music",
+        url: "https://a/1",
+        linkType: "listen",
+        postReleaseUrl: null,
+      },
     });
     assert.equal(plan.removals.length, 0);
     assert.equal(plan.inserts.length, 0);

@@ -252,6 +252,22 @@ describe("release feed link actions split", () => {
     );
     assert.equal(
       resolveReleaseFeedPrimaryCtaLabel({
+        platform: "spotify",
+        linkType: "presave",
+        isUpcoming: false,
+      }),
+      "Listen",
+    );
+    assert.equal(
+      resolveReleaseFeedPrimaryCtaLabel({
+        platform: "beatport",
+        linkType: "presave",
+        isUpcoming: false,
+      }),
+      "Buy",
+    );
+    assert.equal(
+      resolveReleaseFeedPrimaryCtaLabel({
         platform: "apple_music",
         linkType: "presave",
         isUpcoming: true,

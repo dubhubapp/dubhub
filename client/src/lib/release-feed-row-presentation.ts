@@ -15,6 +15,7 @@ import {
 import { resolveReleaseLinkSurfacePresentation } from "@/lib/release-link-presentation";
 import {
   getReleaseLinkPlatformCapability,
+  resolvePublicReleaseLinkDestination,
 } from "@shared/release-link-platforms";
 
 export const RELEASE_FEED_SECONDARY_ICON_MAX = 3 as const;
@@ -24,6 +25,7 @@ export type ReleaseFeedLinkLike = {
   platform: string;
   url: string;
   linkType?: string | null;
+  postReleaseUrl?: string | null;
 };
 
 function acceptedCollaborators(
@@ -77,7 +79,7 @@ export function resolveReleaseFeedPrimaryCtaLabel(args: {
   const cap = getReleaseLinkPlatformCapability(args.platform);
   const lt = normalizeStoredLinkType(args.linkType);
 
-  if (lt === "presave") {
+  if (args.isUpcoming && lt === "presave") {
     return cap?.preReleaseLabel?.trim() || "Pre-release";
   }
   if (args.isUpcoming) return null;
@@ -114,10 +116,18 @@ export function splitReleaseFeedLinkActions<T extends ReleaseFeedLinkLike>(args:
   }> = [];
 
   for (const link of publicLinks) {
-    const presentation = resolveReleaseLinkSurfacePresentation({
+    const destination = resolvePublicReleaseLinkDestination({
       platform: link.platform,
       linkType: link.linkType,
       url: link.url,
+      postReleaseUrl: link.postReleaseUrl,
+      isUpcoming: args.isUpcoming,
+    });
+    if (!destination) continue;
+    const presentation = resolveReleaseLinkSurfacePresentation({
+      platform: link.platform,
+      linkType: link.linkType,
+      url: destination.href,
       isUpcoming: args.isUpcoming,
       surface: "overview",
     });
@@ -125,11 +135,11 @@ export function splitReleaseFeedLinkActions<T extends ReleaseFeedLinkLike>(args:
     const ctaLabel = resolveReleaseFeedPrimaryCtaLabel({
       platform: link.platform,
       linkType: link.linkType,
-      url: link.url,
+      url: destination.href,
       isUpcoming: args.isUpcoming,
     });
     eligible.push({
-      link,
+      link: { ...link, url: destination.href },
       iconPlatform: presentation.iconPlatform,
       ctaLabel,
     });

@@ -213,6 +213,13 @@ describe("public CTA + overview", () => {
     );
   });
 
+  it("released presave CTA uses the live action", () => {
+    assert.equal(
+      resolvePublicLinkCta({ platform: "spotify", linkType: "presave", isUpcoming: false }),
+      "Listen on Spotify",
+    );
+  });
+
   it("future listen CTA hidden", () => {
     assert.equal(
       resolvePublicLinkCta({ platform: "spotify", linkType: "listen", isUpcoming: true }),

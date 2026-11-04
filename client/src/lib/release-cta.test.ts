@@ -34,6 +34,12 @@ describe("explicit link_type presentation", () => {
     assert.equal(getLinkCtaLabel("soundcloud", true, "presave"), "Pre-release on SoundCloud");
   });
 
+  it("released presave uses the platform released CTA", () => {
+    assert.equal(getLinkCtaLabel("spotify", false, "presave"), "Listen on Spotify");
+    assert.equal(getLinkCtaLabel("apple_music", false, "presave"), "Listen on Apple Music");
+    assert.equal(getLinkCtaLabel("beatport", false, "presave"), "Buy on Beatport");
+  });
+
   it("banner uses overview families, not generic Pre-save for Apple-only", () => {
     assert.equal(
       getBannerFromLinks([{ platform: "apple_music", linkType: "presave" }], true),

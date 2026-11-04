@@ -1,6 +1,7 @@
 /**
  * Dynamic CTA labels for release links and banner.
- * Presentation is driven by stored link_type + shared platform capability map.
+ * Public href + label decisions live in resolvePublicReleaseLinkDestination.
+ * This module keeps label/visibility helpers for existing callers.
  */
 
 import {

@@ -57,6 +57,10 @@ import {
   selectedLinkTypeDisplay,
 } from "@/lib/release-link-type-options";
 import { RELEASE_LINKS_VISIBILITY_COPY } from "@/lib/release-links-visibility-copy";
+import {
+  platformUsesDualReleaseDestinations,
+  RELEASE_LINK_DESTINATION_HINT,
+} from "@/lib/release-link-destinations-form";
 import { triggerSelectionHaptic } from "@/lib/verified-artist-tools-haptics";
 import {
   type CanonicalLinkPurpose,
@@ -86,6 +90,7 @@ export type ReleaseDraftLink = {
   platform: string;
   url: string;
   linkType?: string | null;
+  postReleaseUrl?: string | null;
   sortOrder?: number | null;
 };
 
@@ -108,6 +113,9 @@ type ReleaseLinksSheetProps = {
   onLockedPurposeSelect: (purpose: CanonicalLinkPurpose) => void;
   linkUrl: string;
   onLinkUrlChange: (url: string) => void;
+  /** Pre-release URL for platforms that support one. Released URL stays on linkUrl. */
+  linkPreReleaseUrl: string;
+  onLinkPreReleaseUrlChange: (url: string) => void;
   platformChoices: { value: string; label: string }[];
   linkTypeOptions: LinkTypeOption[];
   canAddDraftLink: boolean;
@@ -162,6 +170,9 @@ function SortableLinkRow({
     purpose === "listen" && !link.linkType
       ? null
       : purposeOptionLabel(link.platform, purpose);
+  const releasedPreview = String(link.postReleaseUrl ?? "")
+    .trim()
+    .replace(/^https?:\/\//i, "");
 
   return (
     <li
@@ -194,6 +205,9 @@ function SortableLinkRow({
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {purposeLabel ? `${purposeLabel} · ` : null}
             {link.url.replace(/^https?:\/\//i, "")}
+            {releasedPreview
+              ? ` · ${purposeOptionLabel(link.platform, "listen")} · ${releasedPreview}`
+              : null}
           </p>
         </div>
       </button>
@@ -232,6 +246,8 @@ export function ReleaseLinksSheet({
   onLockedPurposeSelect,
   linkUrl,
   onLinkUrlChange,
+  linkPreReleaseUrl,
+  onLinkPreReleaseUrlChange,
   platformChoices,
   linkTypeOptions,
   canAddDraftLink,
@@ -248,7 +264,20 @@ export function ReleaseLinksSheet({
 
   const isFormView = view === "add" || view === "edit";
   const formEnabled = view === "edit" || (view === "add" && canAddDraftLink);
-  const showLinkType = Boolean(linkPlatform && linkTypeOptions.length > 0);
+  const dualDestinations = platformUsesDualReleaseDestinations(linkPlatform);
+  const showLinkType =
+    !dualDestinations && Boolean(linkPlatform && linkTypeOptions.length > 0);
+  const hasDestination = dualDestinations
+    ? Boolean(linkPreReleaseUrl.trim() || linkUrl.trim())
+    : Boolean(linkUrl.trim());
+  const preReleaseSupporting = purposeOptionLabel(linkPlatform, "presave");
+  const releasedSupporting = purposeOptionLabel(
+    linkPlatform,
+    dualDestinations ? "listen" : "download",
+  );
+  const presaveLocked = linkTypeOptions.some(
+    (option) => option.purpose === "presave" && option.locked,
+  );
 
   const resetToList = () => {
     setView("list");
@@ -651,18 +680,81 @@ export function ReleaseLinksSheet({
               </div>
             </ReleaseSheetExpandable>
 
-            <div className="min-w-0 space-y-1">
-              <p className="text-[10px] text-muted-foreground">URL</p>
-              <Input
-                placeholder="URL"
-                value={linkUrl}
-                onChange={(e) => onLinkUrlChange(e.target.value)}
-                className={cn("min-w-0 w-full bg-black/40", SHEET_CONTROL_FOCUS)}
-                onKeyDown={preventEnterFormSubmit}
-                disabled={!formEnabled}
-                data-testid="release-link-url"
-              />
-            </div>
+            {dualDestinations ? (
+              <div className="min-w-0 space-y-4">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-muted-foreground" id="release-link-pre-release-label">
+                      Pre-release link
+                    </p>
+                    <p className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                      {presaveLocked ? (
+                        <Lock
+                          className="h-3 w-3"
+                          aria-hidden
+                          data-testid="release-link-pre-release-lock"
+                        />
+                      ) : null}
+                      {preReleaseSupporting}
+                    </p>
+                  </div>
+                  <Input
+                    id="release-link-pre-release-url"
+                    placeholder="Optional"
+                    value={linkPreReleaseUrl}
+                    onChange={(e) => onLinkPreReleaseUrlChange(e.target.value)}
+                    className={cn("min-w-0 w-full bg-black/40", SHEET_CONTROL_FOCUS)}
+                    onKeyDown={preventEnterFormSubmit}
+                    disabled={!formEnabled}
+                    aria-labelledby="release-link-pre-release-label"
+                    aria-label={`Pre-release link, ${preReleaseSupporting}`}
+                    data-testid="release-link-pre-release-url"
+                  />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-muted-foreground" id="release-link-released-label">
+                      Released link
+                    </p>
+                    <p className="shrink-0 text-[10px] text-muted-foreground">
+                      {releasedSupporting}
+                    </p>
+                  </div>
+                  <Input
+                    id="release-link-released-url"
+                    placeholder="Optional"
+                    value={linkUrl}
+                    onChange={(e) => onLinkUrlChange(e.target.value)}
+                    className={cn("min-w-0 w-full bg-black/40", SHEET_CONTROL_FOCUS)}
+                    onKeyDown={preventEnterFormSubmit}
+                    disabled={!formEnabled}
+                    aria-labelledby="release-link-released-label"
+                    aria-label={`Released link, ${releasedSupporting}`}
+                    data-testid="release-link-released-url"
+                  />
+                </div>
+                <p
+                  className="text-xs leading-snug text-muted-foreground"
+                  data-testid="release-link-destination-hint"
+                >
+                  {RELEASE_LINK_DESTINATION_HINT}
+                </p>
+              </div>
+            ) : (
+              <div className="min-w-0 space-y-1">
+                <p className="text-[10px] text-muted-foreground">URL</p>
+                <Input
+                  placeholder="URL"
+                  value={linkUrl}
+                  onChange={(e) => onLinkUrlChange(e.target.value)}
+                  className={cn("min-w-0 w-full bg-black/40", SHEET_CONTROL_FOCUS)}
+                  onKeyDown={preventEnterFormSubmit}
+                  disabled={!formEnabled}
+                  aria-label={linkPlatform ? `${releasedSupporting} URL` : "URL"}
+                  data-testid="release-link-url"
+                />
+              </div>
+            )}
 
             {showCapacityNearAdd ? (
               <p
@@ -705,7 +797,7 @@ export function ReleaseLinksSheet({
               onClick={handlePrimaryAction}
               disabled={
                 !linkPlatform ||
-                !linkUrl.trim() ||
+                !hasDestination ||
                 (view === "add" ? !canAddDraftLink : false)
               }
               data-testid={

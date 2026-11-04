@@ -9,6 +9,7 @@ export type ReleaseEditLinkSnapshot = {
   platform: string;
   url: string;
   linkType: string | null;
+  postReleaseUrl: string | null;
 };
 
 export type ReleaseEditSnapshot = {
@@ -26,6 +27,7 @@ export type ReleaseEditLinkDraft = {
   platform: string;
   url: string;
   linkType?: string | null;
+  postReleaseUrl?: string | null;
   sortOrder?: number | null;
 };
 
@@ -43,6 +45,11 @@ function normalizeUrl(url: string): string {
   return String(url ?? "").trim();
 }
 
+function normalizePostReleaseUrl(value?: string | null): string | null {
+  const raw = String(value ?? "").trim();
+  return raw || null;
+}
+
 /** Stable ordered link list for comparison (order is part of dirty state). */
 export function normalizeEditLinksForSnapshot(
   links: ReleaseEditLinkDraft[],
@@ -51,6 +58,7 @@ export function normalizeEditLinksForSnapshot(
     platform: normalizePlatform(l.platform),
     url: normalizeUrl(l.url),
     linkType: normalizeLinkType(l.linkType),
+    postReleaseUrl: normalizePostReleaseUrl(l.postReleaseUrl),
   }));
 }
 
@@ -113,7 +121,8 @@ function sameLinks(
     if (
       a[i].platform !== b[i].platform ||
       a[i].url !== b[i].url ||
-      a[i].linkType !== b[i].linkType
+      a[i].linkType !== b[i].linkType ||
+      a[i].postReleaseUrl !== b[i].postReleaseUrl
     ) {
       return false;
     }

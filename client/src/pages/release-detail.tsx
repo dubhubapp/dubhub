@@ -52,6 +52,7 @@ import { sanitizeReleaseText } from "@/lib/release-display";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { filterPublicReleaseLinks } from "@/lib/release-cta";
 import { resolveReleaseLinkSurfacePresentation } from "@/lib/release-link-presentation";
+import { resolvePublicReleaseLinkDestination } from "@shared/release-link-platforms";
 import {
   RELEASE_DETAIL_LINK_CLASS,
   RELEASE_DETAIL_LINK_ICON_SLOT_CLASS,
@@ -135,7 +136,13 @@ import {
   isPersistedReleaseSubscriptionSuspended,
 } from "@/lib/release-subscription-paused";
 
-type ReleaseLink = { id: string; platform: string; url: string; linkType?: string | null };
+type ReleaseLink = {
+  id: string;
+  platform: string;
+  url: string;
+  linkType?: string | null;
+  postReleaseUrl?: string | null;
+};
 type ReleaseStats = {
   postsFeaturingTrack: number;
   totalLikes: number;
@@ -511,6 +518,8 @@ export default function ReleaseDetail() {
     releaseAt: releaseData.releaseAt,
     releaseTimezone: releaseData.releaseTimezone,
   };
+  // Same boundary as the status pill: viewer-local midnight for a date-only
+  // release, releaseAt for Exact, and Coming Soon stays upcoming.
   const upcoming = isReleaseUpcomingFromTiming(timingInput);
   const showOwnerReleaseDay =
     isArtist &&
@@ -826,10 +835,18 @@ export default function ReleaseDetail() {
         {!isSubscriptionPausedPublic && releaseData.links && releaseData.links.length > 0 && (
           <div className={RELEASE_DETAIL_LINK_ROW_CLASS} data-testid="release-detail-link-actions">
             {filterPublicReleaseLinks((releaseData.links as ReleaseLink[]) || [], upcoming).map((link) => {
-              const presentation = resolveReleaseLinkSurfacePresentation({
+              const destination = resolvePublicReleaseLinkDestination({
                 platform: link.platform,
                 linkType: link.linkType,
                 url: link.url,
+                postReleaseUrl: link.postReleaseUrl,
+                isUpcoming: upcoming,
+              });
+              if (!destination) return null;
+              const presentation = resolveReleaseLinkSurfacePresentation({
+                platform: link.platform,
+                linkType: link.linkType,
+                url: destination.href,
                 isUpcoming: upcoming,
                 surface: "detail",
               });
@@ -837,7 +854,7 @@ export default function ReleaseDetail() {
               return (
                 <a
                   key={link.id}
-                  href={link.url}
+                  href={destination.href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={RELEASE_DETAIL_LINK_CLASS}

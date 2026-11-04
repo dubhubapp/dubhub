@@ -7,12 +7,13 @@ export type SyncableLink = {
   platform: string;
   url: string;
   linkType?: string | null;
+  postReleaseUrl?: string | null;
 };
 
 export type LinkSyncPlan = {
   /** Unchanged platforms — skip network. */
   unchanged: string[];
-  /** Same platform, URL and/or type changed. */
+  /** Same platform, URL, type, and/or released URL changed. */
   updates: SyncableLink[];
   /** Platforms to delete (not in draft). */
   removals: string[];
@@ -45,6 +46,12 @@ function normUrl(url: string): string {
   return String(url).trim();
 }
 
+function normPost(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s.length > 0 ? s : null;
+}
+
 /**
  * Build a sync plan. When existing has exactly one link and draft has exactly
  * one different platform, primaryReplace is set and inserts/removals for that
@@ -60,6 +67,7 @@ export function planReleaseLinkSync(args: {
       platform: normPlatform(link.platform),
       url: normUrl(link.url),
       linkType: normType(link.linkType),
+      postReleaseUrl: normPost(link.postReleaseUrl),
     });
   }
 
@@ -70,6 +78,7 @@ export function planReleaseLinkSync(args: {
       platform: normPlatform(link.platform),
       url: normUrl(link.url),
       linkType: normType(link.linkType),
+      postReleaseUrl: normPost(link.postReleaseUrl),
     });
   }
 
@@ -86,7 +95,8 @@ export function planReleaseLinkSync(args: {
     }
     const sameUrl = existing.url === draftLink.url;
     const sameType = normType(existing.linkType) === normType(draftLink.linkType);
-    if (sameUrl && sameType) {
+    const samePost = existing.postReleaseUrl === draftLink.postReleaseUrl;
+    if (sameUrl && sameType && samePost) {
       unchanged.push(platform);
     } else {
       updates.push(draftLink);

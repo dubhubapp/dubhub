@@ -94,7 +94,9 @@ describe("Edit mode UX", () => {
     ] as const) {
       const block = extractStartEditDraftLink(src);
       assert.match(block, /setLinkPlatform\(link\.platform\)/, label);
-      assert.match(block, /setLinkUrl\(link\.url\)/, label);
+      assert.match(block, /formFieldsFromStoredLink\(link\)/, label);
+      assert.match(block, /setLinkPreReleaseUrl\(fields\.preReleaseUrl\)/, label);
+      assert.match(block, /setLinkUrl\(fields\.releasedUrl\)/, label);
       assert.match(block, /setLinkPurpose\(purpose\)/, label);
       assert.match(block, /presave/, label);
     }
@@ -117,8 +119,9 @@ describe("Edit mode UX", () => {
     ] as const) {
       const update = extractHandleUpdateDraftLink(src);
       assert.match(update, /links\.map/, label);
-      assert.match(update, /url: linkUrl\.trim\(\)/, label);
-      assert.match(update, /linkType: purpose === "listen" \? null : purpose/, label);
+      assert.match(update, /url: stored\.url/, label);
+      assert.match(update, /linkType: stored\.linkType/, label);
+      assert.match(update, /postReleaseUrl: stored\.postReleaseUrl/, label);
       assert.match(update, /clearLinkForm\(\)/, label);
       assert.doesNotMatch(update, /links\.filter/, `${label}: no delete/reinsert`);
     }

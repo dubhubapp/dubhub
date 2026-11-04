@@ -49,7 +49,13 @@ export type ReleaseFeedCardData = {
   releaseTimingMode?: string | null;
   releaseAt?: string | null;
   releaseTimezone?: string | null;
-  links?: { id: string; platform: string; url: string; linkType?: string | null }[];
+  links?: {
+    id: string;
+    platform: string;
+    url: string;
+    linkType?: string | null;
+    postReleaseUrl?: string | null;
+  }[];
   collaborators?: { username: string; status: string }[];
   collaboratorStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   /** Earliest like timestamp when saved via attached-post like (public community profiles only). */
@@ -140,6 +146,7 @@ export function ReleaseFeedCard({
   const releaseDayHighlight = !!highlight?.releaseDayHighlight;
   const isOwnerReleaseDay = !!highlight?.isOwnerReleaseDay;
   const featured = !!highlight?.featured;
+  // Same Upcoming/Released boundary as the status pill on this card.
   const upcoming = isReleaseUpcomingFromTiming({
     isComingSoon: r.isComingSoon,
     releaseDate: r.releaseDate,

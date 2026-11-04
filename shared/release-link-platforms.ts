@@ -444,7 +444,23 @@ export function resolvePreReleaseOverviewCopy(
   return "Pre-save or pre-order now";
 }
 
-/** Full public CTA from stored purpose + platform map. */
+function trimmedStoredUrl(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function isDownloadOnlyReleasePlatform(platform: string): boolean {
+  const cap = getReleaseLinkPlatformCapability(platform);
+  return cap?.category === "download";
+}
+
+/**
+ * Public CTA from stored purpose + platform map.
+ * After release, a stored `presave` row uses the platform's released CTA.
+ * This does not choose the href and does not write stored data.
+ * Owner editing labels stay on `purposeOptionLabel`.
+ */
 export function resolvePublicLinkCta(args: {
   platform: string;
   linkType?: string | null;
@@ -455,14 +471,59 @@ export function resolvePublicLinkCta(args: {
     .trim()
     .toLowerCase();
 
-  // Explicit premium pre-release may display before release day.
-  if (lt === "presave") {
-    return cap?.preReleaseCta ?? "Pre-release link";
+  if (args.isUpcoming) {
+    if (lt === "presave") return cap?.preReleaseCta ?? "Pre-release link";
+    return null;
   }
-  // Future live/free links (listen, download, Free Download, Dub Pack) stay hidden.
-  if (args.isUpcoming) return null;
   if (lt === "download" || cap?.category === "download") {
     return cap?.liveCta ?? "Download";
   }
   return cap?.liveCta ?? "Open link";
+}
+
+export type PublicReleaseLinkDestination = {
+  href: string;
+  label: string;
+};
+
+/**
+ * One public button for a stored platform row.
+ * Upcoming uses the original URL and pre-release CTA for `presave` only.
+ * Released prefers `postReleaseUrl` for a pre-release row on a platform that
+ * supports one, otherwise keeps the original URL, and always uses the
+ * released CTA. Download-only platforms ignore `postReleaseUrl`.
+ * Blank post-release URLs count as absent. Does not mutate the input.
+ *
+ * Callers must pass `isUpcoming` from `isReleaseUpcomingFromTiming`
+ * (viewer-local midnight for date-only releases, `releaseAt` for Exact,
+ * Coming Soon stays upcoming). This function does not read the clock.
+ */
+export function resolvePublicReleaseLinkDestination(args: {
+  platform: string;
+  linkType?: string | null;
+  url?: string | null;
+  postReleaseUrl?: string | null;
+  isUpcoming: boolean;
+}): PublicReleaseLinkDestination | null {
+  const label = resolvePublicLinkCta({
+    platform: args.platform,
+    linkType: args.linkType,
+    isUpcoming: args.isUpcoming,
+  });
+  if (!label) return null;
+
+  const storedUrl = trimmedStoredUrl(args.url);
+  const postReleaseUrl = trimmedStoredUrl(args.postReleaseUrl);
+  const purpose = String(args.linkType ?? "")
+    .trim()
+    .toLowerCase();
+  const href =
+    !args.isUpcoming &&
+    purpose === "presave" &&
+    !isDownloadOnlyReleasePlatform(args.platform) &&
+    postReleaseUrl
+      ? postReleaseUrl
+      : storedUrl;
+  if (!href) return null;
+  return { href, label };
 }

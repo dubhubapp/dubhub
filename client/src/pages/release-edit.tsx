@@ -144,6 +144,11 @@ import {
   resolveLinkLimitCardCopy,
 } from "@/lib/release-link-limit";
 import { planReleaseLinkSync, releaseLinkSyncNeedsOrderRoundTrip } from "@/lib/sync-release-links";
+import {
+  commitDraftLinkFromForm,
+  formFieldsFromStoredLink,
+  releaseLinkWriteBody,
+} from "@/lib/release-link-destinations-form";
 import type { ReleaseDetailRecord } from "@/lib/release-cache";
 import {
   isReleaseUpcomingFromTiming,
@@ -174,6 +179,7 @@ export default function ReleaseEdit() {
   const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [linkPlatform, setLinkPlatform] = useState("");
+  const [linkPreReleaseUrl, setLinkPreReleaseUrl] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [linkPurpose, setLinkPurpose] = useState<CanonicalLinkPurpose>("listen");
   const [purposeTouched, setPurposeTouched] = useState(false);
@@ -185,6 +191,7 @@ export default function ReleaseEdit() {
       platform: string;
       url: string;
       linkType?: string | null;
+      postReleaseUrl?: string | null;
       sortOrder?: number | null;
     }[]
   >([]);
@@ -246,6 +253,8 @@ export default function ReleaseEdit() {
         platform: l.platform,
         url: l.url,
         linkType: (l as any).linkType ?? (l as any).link_type ?? null,
+        postReleaseUrl:
+          (l as any).postReleaseUrl ?? (l as any).post_release_url ?? null,
         sortOrder:
           typeof (l as any).sortOrder === "number"
             ? (l as any).sortOrder
@@ -440,7 +449,18 @@ export default function ReleaseEdit() {
   };
 
   const handleAddDraftLink = (): boolean => {
-    if (!linkPlatform || !linkUrl.trim()) return false;
+    const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
+    const pickerPurpose = unlocked.includes(linkPurpose)
+      ? linkPurpose
+      : (unlocked[0] ?? "listen");
+    const committed = commitDraftLinkFromForm({
+      platform: linkPlatform,
+      preReleaseUrl: linkPreReleaseUrl,
+      releasedUrl: linkUrl,
+      pickerPurpose,
+    });
+    if (!committed) return false;
+    const { purpose, stored } = committed;
     if (!canAddDraftLink) {
       toast({
         title: LINK_LIMIT_TOAST.title,
@@ -463,10 +483,6 @@ export default function ReleaseEdit() {
       });
       return false;
     }
-    const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
-    const purpose = unlocked.includes(linkPurpose)
-      ? linkPurpose
-      : (unlocked[0] ?? "listen");
     if (!linkUnlimited && isPaidOnlyReleaseLink(linkPlatform, purpose)) {
       openLinksPremiumUpgrade({
         platform: linkPlatform,
@@ -478,12 +494,14 @@ export default function ReleaseEdit() {
       ...links,
       {
         platform: linkPlatform,
-        url: linkUrl.trim(),
-        linkType: purpose === "listen" ? null : purpose,
+        url: stored.url,
+        linkType: stored.linkType,
+        postReleaseUrl: stored.postReleaseUrl,
         sortOrder: links.length,
       },
     ]);
     setLinkPlatform("");
+    setLinkPreReleaseUrl("");
     setLinkUrl("");
     setLinkPurpose("listen");
     setPurposeTouched(false);
@@ -492,6 +510,7 @@ export default function ReleaseEdit() {
 
   const clearLinkForm = () => {
     setLinkPlatform("");
+    setLinkPreReleaseUrl("");
     setLinkUrl("");
     setLinkPurpose("listen");
     setPurposeTouched(false);
@@ -501,9 +520,12 @@ export default function ReleaseEdit() {
     platform: string;
     url: string;
     linkType?: string | null;
+    postReleaseUrl?: string | null;
   }) => {
+    const fields = formFieldsFromStoredLink(link);
     setLinkPlatform(link.platform);
-    setLinkUrl(link.url);
+    setLinkPreReleaseUrl(fields.preReleaseUrl);
+    setLinkUrl(fields.releasedUrl);
     const raw = String(link.linkType ?? "").trim().toLowerCase();
     const purpose: CanonicalLinkPurpose =
       raw === "presave" || raw === "download" || raw === "listen" ? raw : "listen";
@@ -512,11 +534,18 @@ export default function ReleaseEdit() {
   };
 
   const handleUpdateDraftLink = (): boolean => {
-    if (!linkPlatform || !linkUrl.trim()) return false;
     const unlocked = linkTypeOptions.filter((o) => !o.locked).map((o) => o.purpose);
-    const purpose = unlocked.includes(linkPurpose)
+    const pickerPurpose = unlocked.includes(linkPurpose)
       ? linkPurpose
       : (unlocked[0] ?? "listen");
+    const committed = commitDraftLinkFromForm({
+      platform: linkPlatform,
+      preReleaseUrl: linkPreReleaseUrl,
+      releasedUrl: linkUrl,
+      pickerPurpose,
+    });
+    if (!committed) return false;
+    const { purpose, stored } = committed;
     if (!linkUnlimited && isPaidOnlyReleaseLink(linkPlatform, purpose)) {
       openLinksPremiumUpgrade({
         platform: linkPlatform,
@@ -530,8 +559,9 @@ export default function ReleaseEdit() {
         normalizePlatformForApi(l.platform) === platformKey
           ? {
               ...l,
-              url: linkUrl.trim(),
-              linkType: purpose === "listen" ? null : purpose,
+              url: stored.url,
+              linkType: stored.linkType,
+              postReleaseUrl: stored.postReleaseUrl,
             }
           : l,
       ),
@@ -546,6 +576,7 @@ export default function ReleaseEdit() {
       platform: string;
       url: string;
       linkType?: string | null;
+      postReleaseUrl?: string | null;
       sortOrder?: number | null;
     }[],
   ) => {
@@ -833,10 +864,12 @@ export default function ReleaseEdit() {
         platform: string;
         url: string;
         linkType?: string | null;
+        postReleaseUrl?: string | null;
       }[] = ((release.links as any[]) || []).map((l: any) => ({
         platform: l.platform,
         url: l.url,
         linkType: l.linkType ?? l.link_type ?? null,
+        postReleaseUrl: l.postReleaseUrl ?? l.post_release_url ?? null,
       }));
       const plan = planReleaseLinkSync({
         existing: existingLinks,
@@ -844,24 +877,23 @@ export default function ReleaseEdit() {
           platform: normalizePlatformForApi(l.platform),
           url: l.url.trim(),
           linkType: l.linkType ?? null,
+          postReleaseUrl: l.postReleaseUrl ?? null,
         })),
       });
 
       if (plan.primaryReplace) {
         await apiRequest("POST", `/api/releases/${releaseId}/links/replace`, {
           from_platform: plan.primaryReplace.fromPlatform,
-          platform: plan.primaryReplace.next.platform,
-          url: plan.primaryReplace.next.url,
-          link_type: plan.primaryReplace.next.linkType ?? null,
+          ...releaseLinkWriteBody(plan.primaryReplace.next),
         });
       } else {
         // Updates and inserts before removals so a failed insert cannot wipe links.
         for (const link of [...plan.updates, ...plan.inserts]) {
-          await apiRequest("POST", `/api/releases/${releaseId}/links`, {
-            platform: link.platform,
-            url: link.url,
-            link_type: link.linkType ?? null,
-          });
+          await apiRequest(
+            "POST",
+            `/api/releases/${releaseId}/links`,
+            releaseLinkWriteBody(link),
+          );
         }
         for (const platform of plan.removals) {
           await apiRequest("DELETE", `/api/releases/${releaseId}/links/${platform}`);
@@ -1344,6 +1376,8 @@ export default function ReleaseEdit() {
             }}
             linkUrl={linkUrl}
             onLinkUrlChange={setLinkUrl}
+            linkPreReleaseUrl={linkPreReleaseUrl}
+            onLinkPreReleaseUrlChange={setLinkPreReleaseUrl}
             platformChoices={platformChoices}
             linkTypeOptions={linkTypeOptions}
             canAddDraftLink={canAddDraftLink}
