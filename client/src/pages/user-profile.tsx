@@ -40,6 +40,7 @@ import { ArtistProfileQuestionsPrompt } from "@/components/artist-profile-questi
 import { getGenreChipStyle, getGenreGlowPillStyle } from "@/lib/genre-styles";
 import { formatJoinedDateLine } from "@/lib/joined-date";
 import {
+  BEST_MONTHLY_RANK_HELP,
   formatBestMonthlyRankMonth,
   formatBestMonthlyRankValue,
 } from "@/lib/monthly-top-100-presentation";
@@ -268,8 +269,7 @@ const PROFILE_HELP = {
   idsStat: "Lifetime tracks you've helped identify.",
   releasesSaved: "Releases saved to your collection.",
   artistIds: "Your uploads that an artist has identified and confirmed.",
-  bestMonthlyRank:
-    "Your best final place on a completed monthly leaderboard. The current month does not count until it finishes.",
+  bestMonthlyRank: BEST_MONTHLY_RANK_HELP,
   accuracy:
     "The percentage of your ID attempts that turned out to be correct.",
   likesOnPosts: "Total likes received across posts you uploaded.",

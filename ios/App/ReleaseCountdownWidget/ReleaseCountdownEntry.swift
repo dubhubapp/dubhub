@@ -22,11 +22,10 @@ enum ReleaseCountdownDisplayState: Equatable {
         /// Artist mode never pages even if count > 1.
         allowsPaging: Bool
     )
-    /// No active countdown (listener empty / retention expired / no selection).
+    /// No active countdown (listener empty / retention expired / no selection / cleared).
     case empty
     /// Stamped empty payload with eligibility `no_eligible_artist_release`.
     case emptyArtist
-    case refresh
 }
 
 struct ReleaseCountdownEntry: TimelineEntry {
@@ -44,8 +43,6 @@ enum ReleaseCountdownEntryFactory {
             return ReleaseCountdownEntry(date: date, state: emptyDisplayState(eligibility: eligibility))
         case .invalid:
             return ReleaseCountdownEntry(date: date, state: .empty)
-        case .expired:
-            return ReleaseCountdownEntry(date: date, state: .refresh)
         case .release(let envelope):
             guard let release = HomeWidgetPayloadLoader.resolveActiveRelease(in: envelope) else {
                 return ReleaseCountdownEntry(date: date, state: .empty)

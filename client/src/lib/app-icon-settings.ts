@@ -147,15 +147,5 @@ export function appIconAlternateHint(args: {
   if (!args.verifiedArtist) {
     return "Alternate icons are part of Artist Tools for verified artists.";
   }
-  if (
-    args.gate === "loading" ||
-    args.gate === "unavailable" ||
-    args.freshness === "stale" ||
-    args.freshness === "unknown" ||
-    args.state === "stale" ||
-    args.state === "unknown"
-  ) {
-    return "Alternate icons can’t be changed until Artist Tools status is confirmed.";
-  }
   return null;
 }

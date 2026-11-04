@@ -782,11 +782,11 @@ export default function ReleaseDetail() {
 
         {isSubscriptionPausedOwner ? (
           <div
-            className="mb-4 space-y-1.5 rounded-lg border border-[#DCE3EC] bg-white/70 px-3 py-2 dark:border-white/10 dark:bg-muted/30"
+            className="mb-4 space-y-1.5 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground"
             data-testid="banner-release-subscription-paused"
             role="status"
           >
-            <p className="text-sm font-medium text-foreground">
+            <p className="text-sm font-medium text-card-foreground">
               {RELEASE_SUBSCRIPTION_PAUSED_OWNER_TITLE}
             </p>
             <p className="text-xs leading-snug text-muted-foreground">
@@ -797,7 +797,7 @@ export default function ReleaseDetail() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="mt-0.5 h-8 border-[#DCE3EC] bg-white text-xs dark:border-white/15 dark:bg-black/20"
+                className={cn("mt-0.5 h-8 text-xs", APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS)}
                 onClick={() =>
                   requestVerifiedArtistToolsUpgrade(toast, {
                     source: "future_release_paused",
@@ -813,7 +813,7 @@ export default function ReleaseDetail() {
 
         {isSubscriptionPausedPublic ? (
           <div
-            className="mb-4 rounded-lg border border-[#DCE3EC] bg-white/80 px-3 py-2 dark:border-white/10 dark:bg-black/30"
+            className="mb-4 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground"
             data-testid="banner-release-unavailable"
             role="status"
           >

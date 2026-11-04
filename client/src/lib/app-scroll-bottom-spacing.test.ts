@@ -103,7 +103,10 @@ describe("global scroll bottom content spacing", () => {
       SETTINGS_PAGE_SCROLL_CLASS,
       new RegExp(APP_PAGE_SCROLL_CLASS.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     );
-    assert.match(SETTINGS_PAGE_PAD_CLASS, /pt-1/);
+    assert.match(
+      SETTINGS_PAGE_PAD_CLASS,
+      /pt-\[calc\(env\(safe-area-inset-top,0px\)\+0\.25rem\)\]/,
+    );
     assert.match(SETTINGS_PAGE_PAD_CLASS, /px-6/);
     assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /pb-/);
 

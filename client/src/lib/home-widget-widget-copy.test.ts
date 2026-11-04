@@ -35,15 +35,11 @@ describe("Release Countdown widget copy contract", () => {
     "ios/App/Shared/HomeWidgetPayloadModels.swift",
   );
 
-  it("keeps Release Countdown title and exact empty/stale/artist bodies", () => {
+  it("keeps Release Countdown title and exact empty/artist bodies", () => {
     assert.equal(HOME_WIDGET_COPY.title, "Release Countdown");
     assert.equal(
       HOME_WIDGET_COPY.emptyBody,
       "Choose a saved release in dub hub to start a new countdown.",
-    );
-    assert.equal(
-      HOME_WIDGET_COPY.staleBody,
-      "Open dub hub to refresh your countdown.",
     );
     assert.equal(
       HOME_WIDGET_COPY.artistEmptyBody,
@@ -57,10 +53,7 @@ describe("Release Countdown widget copy contract", () => {
       viewsSrc,
       /message: "Choose a saved release in dub hub to start a new countdown\."/,
     );
-    assert.match(
-      viewsSrc,
-      /message: "Open dub hub to refresh your countdown\."/,
-    );
+    assert.doesNotMatch(viewsSrc, /Open dub hub to refresh your countdown/);
     assert.match(
       viewsSrc,
       /message: "Create your next release in dub hub to start a countdown\."/,
@@ -104,8 +97,8 @@ describe("Release Countdown widget copy contract", () => {
     assert.match(widgetSrc, /saved dub hub release/);
   });
 
-  it("lowercases mid-sentence countdown in empty/stale/setup copy", () => {
-    assert.match(viewsSrc, /refresh your countdown/);
+  it("lowercases mid-sentence countdown in empty/setup copy", () => {
+    assert.match(viewsSrc, /start a new countdown/);
     assert.doesNotMatch(viewsSrc, /refresh your Countdown/);
     assert.equal(
       HOME_WIDGET_SETUP_GUIDE_COPY.steps[2],
@@ -135,10 +128,11 @@ describe("Release Countdown widget copy contract", () => {
     );
   });
 
-  it("keeps empty/stale deep links at app root", () => {
+  it("keeps empty deep links at app root", () => {
     assert.match(
       viewsSrc,
-      /case \.empty, \.emptyArtist, \.refresh:[\s\S]*https:\/\/dubhub\.uk\//,
+      /case \.empty, \.emptyArtist:[\s\S]*https:\/\/dubhub\.uk\//,
     );
+    assert.doesNotMatch(viewsSrc, /case \.refresh/);
   });
 });

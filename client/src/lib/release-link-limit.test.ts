@@ -25,7 +25,7 @@ import {
   resolveLinkCapacityHeader,
   resolveLinkLimitCardCopy,
 } from "./release-link-limit";
-import { planReleaseLinkSync } from "./sync-release-links";
+import { planReleaseLinkSync, releaseLinkSyncNeedsOrderRoundTrip } from "./sync-release-links";
 
 describe("formatLinkLimitTitle / resolveLinkLimitCardCopy", () => {
   it("formats 0/1, 1/1, and over-limit 5/1", () => {
@@ -275,5 +275,52 @@ describe("planReleaseLinkSync", () => {
     });
     assert.deepEqual(plan.removals, ["apple_music"]);
     assert.equal(plan.inserts.length, 0);
+  });
+
+  it("skips the save-time order round trip when nothing changed", () => {
+    const plan = planReleaseLinkSync({
+      existing: [{ platform: "spotify", url: "https://s/1", linkType: null }],
+      draft: [{ platform: "spotify", url: "https://s/1", linkType: null }],
+    });
+    assert.equal(releaseLinkSyncNeedsOrderRoundTrip(plan), false);
+  });
+
+  it("keeps the order round trip for updates, inserts, removals, and replace", () => {
+    assert.equal(
+      releaseLinkSyncNeedsOrderRoundTrip(
+        planReleaseLinkSync({
+          existing: [{ platform: "spotify", url: "https://s/old", linkType: null }],
+          draft: [{ platform: "spotify", url: "https://s/new", linkType: null }],
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      releaseLinkSyncNeedsOrderRoundTrip(
+        planReleaseLinkSync({
+          existing: [],
+          draft: [{ platform: "spotify", url: "https://s/1", linkType: null }],
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      releaseLinkSyncNeedsOrderRoundTrip(
+        planReleaseLinkSync({
+          existing: [{ platform: "spotify", url: "https://s/1", linkType: null }],
+          draft: [],
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      releaseLinkSyncNeedsOrderRoundTrip(
+        planReleaseLinkSync({
+          existing: [{ platform: "spotify", url: "https://s/1", linkType: null }],
+          draft: [{ platform: "apple_music", url: "https://a/1", linkType: null }],
+        }),
+      ),
+      true,
+    );
   });
 });

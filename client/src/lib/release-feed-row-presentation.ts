@@ -9,10 +9,10 @@ import {
 } from "@/lib/release-cta";
 import {
   type CollaboratorLike,
-  sanitizeReleaseText,
+  formatArtistCreditList,
+  formatArtistCreditName,
 } from "@/lib/release-display";
 import { resolveReleaseLinkSurfacePresentation } from "@/lib/release-link-presentation";
-import { formatUsernameDisplay } from "@/lib/utils";
 import {
   getReleaseLinkPlatformCapability,
 } from "@shared/release-link-platforms";
@@ -32,49 +32,30 @@ function acceptedCollaborators(
   return (collaborators || []).filter((c) => c.status === "ACCEPTED");
 }
 
-function collaboratorDisplayName(c: CollaboratorLike): string {
-  const raw = sanitizeReleaseText(c.username ?? "").replace(/^@+/, "").trim();
-  if (!raw) return "";
-  const withAt = formatUsernameDisplay(c.username);
-  if (withAt) return sanitizeReleaseText(withAt).replace(/^@+/, "");
-  return raw;
-}
-
 /**
- * Saved / other / collaborations: `@owner` or `@owner — Collab` / `@owner — Collab +N`
- * Own My Releases with collabs: `with Collab` / `with Collab +N` (no own handle)
+ * Saved / other / collaborations: "Artist" or "Artist & Artist1" / "Artist, Artist1 & Artist2"
+ * Own My Releases with collabs: "with Artist1" (owner omitted)
  * Own solo: empty
  */
 export function formatReleaseFeedRowSubtitle(args: {
   ownerUsername: string;
   collaborators?: CollaboratorLike[] | null;
-  /** Own release on My Upcoming/Past — omit own @handle. */
+  /** Own release on My Upcoming/Past — omit own handle. */
   omitOwnHandle: boolean;
 }): string {
-  const accepted = acceptedCollaborators(args.collaborators);
-  const collabNames = accepted
-    .map(collaboratorDisplayName)
+  const collabNames = acceptedCollaborators(args.collaborators)
+    .map((c) => formatArtistCreditName(c.username))
     .filter(Boolean);
 
   if (args.omitOwnHandle) {
     if (collabNames.length === 0) return "";
-    const first = collabNames[0];
-    if (collabNames.length === 1) return `with ${first}`;
-    return `with ${first} +${collabNames.length - 1}`;
+    return `with ${formatArtistCreditList(collabNames)}`;
   }
 
-  const ownerDisp = formatUsernameDisplay(args.ownerUsername);
-  const ownerLabel = ownerDisp
-    ? sanitizeReleaseText(ownerDisp)
-    : (() => {
-        const raw = sanitizeReleaseText(args.ownerUsername).replace(/^@+/, "");
-        return raw ? `@${raw}` : "@";
-      })();
-
-  if (collabNames.length === 0) return ownerLabel;
-  const first = collabNames[0];
-  if (collabNames.length === 1) return `${ownerLabel} — ${first}`;
-  return `${ownerLabel} — ${first} +${collabNames.length - 1}`;
+  return formatArtistCreditList([
+    formatArtistCreditName(args.ownerUsername),
+    ...collabNames,
+  ]);
 }
 
 /** Short primary CTA copy for the overview pill (icon already identifies platform). */

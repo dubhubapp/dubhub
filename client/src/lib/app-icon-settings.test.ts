@@ -387,7 +387,7 @@ describe("app icon display order", () => {
   it("uses the exact gallery order and display names", () => {
     assert.deepEqual(
       APP_ICON_ALTERNATES.map((icon) => icon.label),
-      ["Beta Blue", "Eyesore", "Clean", "Clean Granite", "OG", "OG Granite", "Government Name", "Spicy"],
+      ["Beta Blue", "Eyesore", "Clean", "Clean Granite", "OG", "OG Granite", "Government Name", "dub hog"],
     );
     assert.deepEqual(
       APP_ICON_ALTERNATES.map((icon) => icon.name),

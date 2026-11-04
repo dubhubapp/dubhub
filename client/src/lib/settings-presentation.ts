@@ -32,8 +32,9 @@ export function isSettingsUtilityRoute(pathname: string): boolean {
 
 /**
  * Premium atmosphere on the authenticated shell itself (C6B.4).
- * Paints the shell padding box behind the status bar. Layout inset stays
- * `APP_SHELL_SAFE_TOP_CLASS`. `bg-background` is the light-mode fallback;
+ * Paints behind the status bar. Utility routes do not take
+ * `APP_SHELL_SAFE_TOP_CLASS` — the page pad owns that inset so a bleed
+ * underlay is not shifted. `bg-background` is the light-mode fallback;
  * dark canvas CSS overrides it.
  */
 export const SETTINGS_SHELL_ATMOSPHERE_CLASS =
@@ -41,16 +42,18 @@ export const SETTINGS_SHELL_ATMOSPHERE_CLASS =
 
 /**
  * Settings utility scroller. Transparent so the shell atmosphere shows through.
- * Must NOT carry env(safe-area-inset-top) padding (shell already owns that).
+ * Must NOT carry env(safe-area-inset-top) padding (page pad owns that).
  */
 export const SETTINGS_PAGE_SCROLL_CLASS =
   `${APP_PAGE_SCROLL_CLASS} bg-transparent` as const;
 
 /**
- * Compact inner pad after the shell inset (~4px).
+ * Status-bar inset plus the compact 4px rhythm (former shell safe-top + pt-1).
+ * Owned here so Profile → Settings does not move the shared stack.
  * Bottom breathing room comes from `--app-scroll-end-pad` on the scroll root — no pb-*.
  */
-export const SETTINGS_PAGE_PAD_CLASS = "pt-1 px-6" as const;
+export const SETTINGS_PAGE_PAD_CLASS =
+  "pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] px-6" as const;
 
 /** Title row immediately under Back (~4px). */
 export const SETTINGS_TITLE_AFTER_BACK_CLASS = "mt-1 flex items-center gap-2" as const;

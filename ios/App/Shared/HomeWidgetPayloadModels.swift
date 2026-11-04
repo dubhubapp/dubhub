@@ -49,8 +49,32 @@ enum HomeWidgetPayloadLoadResult: Equatable {
     /// Empty / unavailable stamped payload. Eligibility is preserved so WidgetKit
     /// can distinguish artist-no-next copy without inventing account UI state.
     case empty(eligibility: String?)
-    case expired
+    /// Missing, corrupt, or structurally unusable. Freshness is not invalidity.
     case invalid
+}
+
+/// WidgetKit reload hint for a structurally valid release timeline.
+/// `payloadExpiresAt` may request a reload. It never inserts a blank card.
+enum HomeWidgetTimelineReloadHint: Equatable {
+    case atEnd
+    case after(Date)
+}
+
+enum HomeWidgetTimelinePolicy {
+    static func reloadHint(
+        truncated: Bool,
+        lastScheduledDate: Date?,
+        payloadExpiresAt: Date,
+        now: Date
+    ) -> HomeWidgetTimelineReloadHint {
+        if truncated, let lastScheduledDate, lastScheduledDate > now {
+            return .after(lastScheduledDate)
+        }
+        if payloadExpiresAt > now {
+            return .after(payloadExpiresAt)
+        }
+        return .atEnd
+    }
 }
 
 enum HomeWidgetPayloadLoader {
@@ -70,7 +94,11 @@ enum HomeWidgetPayloadLoader {
         return parse(data: data, now: now)
     }
 
+    /// Structural parse. `now` is accepted so callers can pass a clock; a past
+    /// `dto.expiresAt` stays renderable. The provider uses that date only as a
+    /// timeline reload hint.
     static func parse(data: Data, now: Date = Date()) -> HomeWidgetPayloadLoadResult {
+        _ = now
         let decoder = JSONDecoder()
         guard let envelope = try? decoder.decode(HomeWidgetBridgeEnvelope.self, from: data) else {
             return .invalid
@@ -85,12 +113,8 @@ enum HomeWidgetPayloadLoader {
             return .invalid
         }
         guard parseISO8601(envelope.writtenAt) != nil else { return .invalid }
-        guard let expiresAt = parseISO8601(envelope.dto.expiresAt) else { return .invalid }
+        guard parseISO8601(envelope.dto.expiresAt) != nil else { return .invalid }
         guard parseISO8601(envelope.dto.generatedAt) != nil else { return .invalid }
-
-        if now >= expiresAt {
-            return .expired
-        }
 
         let mode = envelope.dto.mode
         if mode == "empty" || mode == "unavailable" {

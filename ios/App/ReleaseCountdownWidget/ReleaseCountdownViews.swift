@@ -102,14 +102,6 @@ struct ReleaseCountdownEntryView: View {
             .accessibilityLabel(
                 "Release Countdown. Create your next release in dub hub to start a countdown."
             )
-        case .refresh:
-            emptyContent(
-                title: "Release Countdown",
-                message: "Open dub hub to refresh your countdown."
-            )
-            .accessibilityLabel(
-                "Release Countdown. Open dub hub to refresh your countdown."
-            )
         }
     }
 
@@ -117,7 +109,7 @@ struct ReleaseCountdownEntryView: View {
         switch state {
         case let .release(_, _, _, _, _, _, _, deepLink, _, _, _, _):
             return deepLink
-        case .empty, .emptyArtist, .refresh:
+        case .empty, .emptyArtist:
             return URL(string: "https://dubhub.uk/")!
         }
     }
@@ -129,7 +121,7 @@ struct ReleaseCountdownEntryView: View {
             artworkBackdrop(
                 ReleaseCountdownArtworkImage.load(localPath: artworkLocalPath)
             )
-        case .empty, .emptyArtist, .refresh:
+        case .empty, .emptyArtist:
             brandBackground
         }
     }

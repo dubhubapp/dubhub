@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { releaseAlertsEnableToastCopy } from "@/lib/release-alerts-enable-toast";
 
 const RELEASE_ALERTS_BUTTON_CLASS =
-  "inline-flex min-h-[1.625rem] w-full items-center justify-center gap-1 rounded px-2.5 py-1 text-[10px] font-semibold leading-none ring-1 backdrop-blur-md transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]";
+  "inline-flex min-h-[1.625rem] shrink-0 items-center justify-center gap-1 rounded px-2.5 py-1 text-[10px] font-semibold leading-none ring-1 backdrop-blur-md transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]";
 
 export type ArtistReleaseAlertResponse = {
   enabled: boolean;
@@ -159,7 +159,7 @@ export function ArtistReleaseAlertsButton({ artistId, className }: ArtistRelease
         data-testid="button-artist-release-alerts"
       >
         <span
-          className="h-2.5 w-[min(100%,9.75rem)] max-w-full animate-pulse rounded-sm bg-white/14"
+          className="h-2.5 w-[9.75rem] animate-pulse rounded-sm bg-white/14"
           aria-hidden
         />
       </div>

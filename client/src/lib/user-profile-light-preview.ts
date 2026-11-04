@@ -31,7 +31,7 @@ export const HOME_PROFILE_PREVIEW_SHEET_HEIGHT_CLASS =
 export const HOME_PROFILE_PREVIEW_CTA_GAP_CLASS = "mt-6" as const;
 
 export const HOME_PROFILE_PREVIEW_REP_HINT =
-  "Keep posting and sharing IDs to level up." as const;
+  "Keep IDing tracks to level up." as const;
 
 /**
  * Subtle genre ambient wash for the full sheet surface (header → body).

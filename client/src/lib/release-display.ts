@@ -2,12 +2,12 @@
  * Display helpers for releases: title line with collaborators.
  * Collaborators come from release_collaborators (status=ACCEPTED). Display string is computed.
  *
- * Format:
- * - With ACCEPTED collaborators: "@owner & @collab1 & @collab2 — title"
- * - Without: "@owner — title"
+ * Public credit names drop a leading @ and use natural-language joining:
+ * - One: "Artist"
+ * - Two: "Artist & Artist1"
+ * - Three or more: "Artist, Artist1 & Artist2"
+ * The em dash is only the separator before a release title: "Artist & Artist1 — title".
  */
-
-import { formatUsernameDisplay } from "@/lib/utils";
 
 export type CollaboratorLike = { artistId?: string; username?: string; status?: string };
 
@@ -26,24 +26,48 @@ export function sanitizeReleaseText(value: unknown): string {
   return stripEmbeddedImageDataUris(normalizeInlineReleaseText(value));
 }
 
-/** Compute display byline: "@owner & @collab1" */
+/** Public credit name. Strips a leading @. Does not change stored usernames. */
+export function formatArtistCreditName(username: string | null | undefined): string {
+  return sanitizeReleaseText(username).replace(/^@+/, "").trim();
+}
+
+/** Separator before names[index]. Empty for the first name. */
+export function artistCreditSeparator(index: number, count: number): string {
+  if (index <= 0 || count <= 1) return "";
+  if (index === count - 1) return " & ";
+  return ", ";
+}
+
+/**
+ * Natural-language public credit.
+ * One: "Artist". Two: "Artist & Artist1". Three+: "Artist, Artist1 & Artist2".
+ */
+export function formatArtistCreditList(names: Array<string | null | undefined>): string {
+  const cleaned = names.map((name) => formatArtistCreditName(name)).filter(Boolean);
+  if (cleaned.length === 0) return "";
+  return cleaned
+    .map((name, index) => `${artistCreditSeparator(index, cleaned.length)}${name}`)
+    .join("");
+}
+
+function acceptedCollaboratorNames(
+  collaborators?: CollaboratorLike[] | null,
+): string[] {
+  return (collaborators || [])
+    .filter((c) => c.status === "ACCEPTED")
+    .map((c) => formatArtistCreditName(c.username))
+    .filter(Boolean);
+}
+
+/** Compute display byline: "Artist & Artist1" */
 export function formatReleaseByline(
   ownerUsername: string,
   collaborators?: CollaboratorLike[] | null
 ): string {
-  const accepted = (collaborators || []).filter((c) => c.status === "ACCEPTED");
-  const parts: string[] = [];
-  const ownerDisp = formatUsernameDisplay(ownerUsername);
-  if (ownerDisp) parts.push(sanitizeReleaseText(ownerDisp));
-  else {
-    const raw = sanitizeReleaseText(ownerUsername).replace(/^@+/, "");
-    parts.push(raw ? `@${raw}` : "@");
-  }
-  for (const c of accepted) {
-    const seg = formatUsernameDisplay(c.username);
-    if (seg) parts.push(sanitizeReleaseText(seg));
-  }
-  return parts.length > 1 ? parts.join(" & ") : parts[0];
+  return formatArtistCreditList([
+    formatArtistCreditName(ownerUsername),
+    ...acceptedCollaboratorNames(collaborators),
+  ]);
 }
 
 export type ReleaseBylineSegment = {
@@ -58,22 +82,15 @@ export function getReleaseBylineSegments(
   ownerUsername: string,
   collaborators?: CollaboratorLike[] | null,
 ): { owner: ReleaseBylineSegment; collaborators: ReleaseBylineSegment[] } {
-  const ownerNav = sanitizeReleaseText(ownerUsername).replace(/^@+/, "").trim();
-  const ownerDisp = formatUsernameDisplay(ownerUsername);
-  const ownerLabel = ownerDisp
-    ? sanitizeReleaseText(ownerDisp)
-    : ownerNav
-      ? `@${ownerNav}`
-      : "@";
+  const ownerNav = formatArtistCreditName(ownerUsername);
+  const ownerLabel = ownerNav;
 
   const accepted = (collaborators || []).filter((c) => c.status === "ACCEPTED");
   const collabSegments: ReleaseBylineSegment[] = [];
   for (const c of accepted) {
-    const nav = sanitizeReleaseText(c.username ?? "").replace(/^@+/, "").trim();
+    const nav = formatArtistCreditName(c.username);
     if (!nav) continue;
-    const seg = formatUsernameDisplay(c.username);
-    const label = seg ? sanitizeReleaseText(seg) : `@${nav}`;
-    collabSegments.push({ username: nav, label });
+    collabSegments.push({ username: nav, label: nav });
   }
 
   return {
@@ -82,7 +99,7 @@ export function getReleaseBylineSegments(
   };
 }
 
-/** Compute display title line: "@owner & @collab1 — title" */
+/** Compute display title line: "Artist & Artist1 — title" */
 export function formatReleaseTitleLine(
   ownerUsername: string,
   title: string,

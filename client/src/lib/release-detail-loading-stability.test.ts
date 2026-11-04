@@ -128,6 +128,24 @@ describe("Paused recovery notice placement", () => {
     assert.doesNotMatch(skeletonSrc, /Restore release/);
   });
 
+  it("uses an opaque card surface for owner and public paused notices", () => {
+    const ownerStart = detailSrc.indexOf('data-testid="banner-release-subscription-paused"');
+    const publicStart = detailSrc.indexOf('data-testid="banner-release-unavailable"');
+    assert.ok(ownerStart > 0 && publicStart > ownerStart);
+    const owner = detailSrc.slice(ownerStart - 280, publicStart);
+    const publicNotice = detailSrc.slice(publicStart - 280, publicStart + 500);
+    for (const chunk of [owner, publicNotice]) {
+      assert.match(chunk, /border-border bg-card/);
+      assert.match(chunk, /text-card-foreground/);
+      assert.match(chunk, /text-muted-foreground/);
+      assert.doesNotMatch(chunk, /bg-white\/70|bg-white\/80|dark:bg-muted\/30|dark:bg-black\/30/);
+    }
+    assert.match(owner, /APP_MATERIAL_OVERLAY_SECONDARY_ACTION_CLASS/);
+    assert.doesNotMatch(owner, /dark:bg-black\/20|bg-white text-xs/);
+    assert.match(detailSrc, /isSubscriptionPausedOwner \?/);
+    assert.match(detailSrc, /isSubscriptionPausedPublic \?/);
+  });
+
   it("keeps public paused unavailable notice distinct from owner recovery", () => {
     assert.equal(
       shouldShowPublicSubscriptionPausedState({

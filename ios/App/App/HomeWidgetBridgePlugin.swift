@@ -45,7 +45,7 @@ public class HomeWidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             case .invalid:
                 call.reject("Invalid home widget bridge payload")
                 return
-            case .empty, .expired, .release:
+            case .empty, .release:
                 break
             }
 

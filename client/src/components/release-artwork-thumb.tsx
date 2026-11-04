@@ -3,7 +3,7 @@
  * Do not use emoji (🎵) — it can render as a boxed “?” on some iOS fonts.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Music } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,9 @@ export function ReleaseArtworkThumb({
 }: ReleaseArtworkThumbProps) {
   const [failed, setFailed] = useState(false);
   const url = hasReleaseArtworkUrl(artworkUrl) ? artworkUrl!.trim() : null;
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
   const showImage = !!url && !failed;
 
   const fallback = (
@@ -53,6 +56,7 @@ export function ReleaseArtworkThumb({
 
   const image = showImage ? (
     <img
+      key={url}
       src={url!}
       alt=""
       className={cn("h-full w-full object-cover", imageClassName)}

@@ -328,7 +328,10 @@ describe("settings corrective slice — scroll + flat containers", () => {
     assert.match(settingsSrc, /SETTINGS_PAGE_PAD_CLASS/);
     assert.doesNotMatch(settingsSrc, /app-page-top-pad/);
     assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /pb-/);
-    assert.match(SETTINGS_PAGE_PAD_CLASS, /pt-1/);
+    assert.match(
+      SETTINGS_PAGE_PAD_CLASS,
+      /pt-\[calc\(env\(safe-area-inset-top,0px\)\+0\.25rem\)\]/,
+    );
   });
 
   it("removes decorative SETTINGS_GROUP_CLASS from Settings root sections", () => {

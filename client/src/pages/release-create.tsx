@@ -41,6 +41,7 @@ import {
 } from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { apiUrl } from "@/lib/apiBase";
+import { pickReleaseArtwork, RELEASE_ARTWORK_ACCEPT } from "@/lib/release-artwork-image";
 import { playSuccessNotification } from "@/lib/haptic";
 import { SwipeBackPage } from "@/components/swipe-back-page";
 import { useIosKeyboardResizeNone } from "@/lib/use-ios-keyboard-resize-none";
@@ -548,40 +549,35 @@ export default function ReleaseCreate() {
     [eligiblePosts, searchTerm],
   );
 
+  const artworkPreviewUrlRef = useRef<string | null>(null);
+  artworkPreviewUrlRef.current = artworkPreviewUrl;
+  useEffect(() => () => {
+    const url = artworkPreviewUrlRef.current;
+    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+  }, []);
+
   const handleArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
     if (!file) return;
-    setArtworkPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
     setUploading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Not signed in");
-      const form = new FormData();
-      form.append("artwork", file);
-      const res = await fetch(apiUrl("/api/releases/upload-artwork"), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: form,
+      const result = await pickReleaseArtwork({
+        file,
+        accessToken: session?.access_token ?? null,
+        previousPreviewUrl: artworkPreviewUrl,
+        previousArtworkPath: artworkPath,
+        onPreview: setArtworkPreviewUrl,
       });
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || "Upload failed");
-      }
-      const json = await res.json();
-      setArtworkPath(json.path ?? null);
-    } catch (err) {
-      toast({ title: "Artwork upload failed", variant: "destructive" });
+      setArtworkPreviewUrl(result.previewUrl);
+      setArtworkPath(result.artworkPath);
+      toast(result.toast);
     } finally {
       setUploading(false);
     }
   };
-
-  useEffect(() => () => {
-    if (artworkPreviewUrl) URL.revokeObjectURL(artworkPreviewUrl);
-  }, [artworkPreviewUrl]);
 
   async function attachPostsWithAuth(releaseId: string, postIds: string[], opts?: { revealAndAttach?: boolean }) {
     if (postIds.length === 0) return;
@@ -961,7 +957,7 @@ export default function ReleaseCreate() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept={RELEASE_ARTWORK_ACCEPT}
               className="hidden"
               onChange={handleArtworkChange}
             />

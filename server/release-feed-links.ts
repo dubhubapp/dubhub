@@ -5,9 +5,17 @@ export type ReleaseLinkRecord = {
   platform: unknown;
   url: unknown;
   linkType: unknown;
+  /** Stored released destination. Null when the column is absent or blank. */
+  postReleaseUrl: string | null;
   sortOrder: number;
   createdAt: unknown;
 };
+
+function storedPostReleaseUrl(value: unknown): string | null {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
 
 export function mapReleaseLinkRow(row: {
   id: unknown;
@@ -15,6 +23,7 @@ export function mapReleaseLinkRow(row: {
   platform: unknown;
   url: unknown;
   link_type: unknown;
+  post_release_url?: unknown;
   sort_order?: unknown;
   created_at: unknown;
 }): ReleaseLinkRecord {
@@ -24,6 +33,7 @@ export function mapReleaseLinkRow(row: {
     platform: row.platform,
     url: row.url,
     linkType: row.link_type,
+    postReleaseUrl: storedPostReleaseUrl(row.post_release_url),
     sortOrder: (row.sort_order ?? 0) as number,
     createdAt: row.created_at,
   };

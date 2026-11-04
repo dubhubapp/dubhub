@@ -21,6 +21,10 @@ import {
 } from "./release-link-limit";
 import type { SubscriptionSnapshotByEnvironment } from "./subscription-status-repository";
 import type { SubscriptionEnvironment } from "./subscription-status-domain";
+import {
+  normalizePostReleaseUrl,
+  postReleaseUrlWrite,
+} from "./release-link-post-release-url";
 
 export type ReleaseLinkRow = {
   id: string;
@@ -28,6 +32,7 @@ export type ReleaseLinkRow = {
   platform: string;
   url: string;
   linkType: string | null;
+  postReleaseUrl: string | null;
   sortOrder: number;
   createdAt: string | Date | null;
 };
@@ -36,6 +41,8 @@ export type UpsertReleaseLinkInput = {
   platform: string;
   url: string;
   linkType?: string | null;
+  /** undefined leaves a stored released URL unchanged. null clears it. */
+  postReleaseUrl?: string | null;
 };
 
 export type ReplaceReleaseLinkInput = {
@@ -43,6 +50,8 @@ export type ReplaceReleaseLinkInput = {
   platform: string;
   url: string;
   linkType?: string | null;
+  /** undefined carries the source row's released URL onto the replacement. */
+  postReleaseUrl?: string | null;
 };
 
 export type LinkLimitDeps = {
@@ -80,6 +89,7 @@ function mapLinkRow(r: {
   platform: string;
   url: string;
   link_type: string | null;
+  post_release_url?: string | null;
   sort_order: number;
   created_at: string | Date | null;
 }): ReleaseLinkRow {
@@ -89,6 +99,7 @@ function mapLinkRow(r: {
     platform: r.platform,
     url: r.url,
     linkType: r.link_type,
+    postReleaseUrl: normalizePostReleaseUrl(r.post_release_url),
     sortOrder: typeof r.sort_order === "number" ? r.sort_order : 0,
     createdAt: r.created_at,
   };
@@ -120,14 +131,21 @@ async function findLinkByPlatform(
   client: PoolClient,
   releaseId: string,
   platform: string,
-): Promise<{ id: string; platform: string; link_type: string | null; url: string } | null> {
+): Promise<{
+  id: string;
+  platform: string;
+  link_type: string | null;
+  url: string;
+  post_release_url: string | null;
+} | null> {
   const result = await client.query<{
     id: string;
     platform: string;
     link_type: string | null;
     url: string;
+    post_release_url: string | null;
   }>(
-    `SELECT id, platform, link_type, url FROM release_links
+    `SELECT id, platform, link_type, url, post_release_url FROM release_links
      WHERE release_id = $1 AND platform = $2 LIMIT 1`,
     [releaseId, platform],
   );
@@ -144,10 +162,11 @@ async function listLinks(
     platform: string;
     url: string;
     link_type: string | null;
+    post_release_url: string | null;
     sort_order: number;
     created_at: string | Date | null;
   }>(
-    `SELECT id, release_id, platform, url, link_type, sort_order, created_at
+    `SELECT id, release_id, platform, url, link_type, post_release_url, sort_order, created_at
      FROM release_links WHERE release_id = $1
      ORDER BY sort_order ASC, platform ASC`,
     [releaseId],
@@ -368,19 +387,36 @@ export async function upsertReleaseLinkWithLimit(
       });
     }
 
+    const postWrite = postReleaseUrlWrite(input.postReleaseUrl);
     if (existing) {
-      await client.query(
-        `UPDATE release_links SET url = $1, link_type = $2
-         WHERE release_id = $3 AND platform = $4`,
-        [url, linkType, releaseId, platform],
-      );
+      if (postWrite.mode === "omit") {
+        await client.query(
+          `UPDATE release_links SET url = $1, link_type = $2
+           WHERE release_id = $3 AND platform = $4`,
+          [url, linkType, releaseId, platform],
+        );
+      } else {
+        await client.query(
+          `UPDATE release_links SET url = $1, link_type = $2, post_release_url = $3
+           WHERE release_id = $4 AND platform = $5`,
+          [url, linkType, postWrite.value, releaseId, platform],
+        );
+      }
     } else {
       const sortOrder = await nextSortOrder(client, releaseId);
-      await client.query(
-        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [releaseId, platform, url, linkType, sortOrder],
-      );
+      if (postWrite.mode === "set" && postWrite.value != null) {
+        await client.query(
+          `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, post_release_url, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [releaseId, platform, url, linkType, sortOrder, postWrite.value],
+        );
+      } else {
+        await client.query(
+          `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [releaseId, platform, url, linkType, sortOrder],
+        );
+      }
     }
 
     const links = await listLinks(client, releaseId);
@@ -420,7 +456,7 @@ export async function replaceReleasePrimaryLink(
   if (fromPlatform === platform) {
     return upsertReleaseLinkWithLimit(
       releaseId,
-      { platform, url, linkType },
+      { platform, url, linkType, postReleaseUrl: input.postReleaseUrl },
       deps,
     );
   }
@@ -463,6 +499,11 @@ export async function replaceReleasePrimaryLink(
       existingRow: null,
     });
 
+    const carriedPostReleaseUrl =
+      input.postReleaseUrl === undefined
+        ? normalizePostReleaseUrl(fromRow.post_release_url)
+        : normalizePostReleaseUrl(input.postReleaseUrl);
+
     if (!enforcementEnabled || paidToolAccess) {
       await client.query(
         `DELETE FROM release_links WHERE release_id = $1 AND platform = $2`,
@@ -470,9 +511,9 @@ export async function replaceReleasePrimaryLink(
       );
       const sortOrder = await nextSortOrder(client, releaseId);
       await client.query(
-        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [releaseId, platform, url, linkType, sortOrder],
+        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, post_release_url, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [releaseId, platform, url, linkType, sortOrder, carriedPostReleaseUrl],
       );
       logLinkLimitDecision({
         releaseId,
@@ -509,9 +550,9 @@ export async function replaceReleasePrimaryLink(
       );
       const sortOrder = await nextSortOrder(client, releaseId);
       await client.query(
-        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [releaseId, platform, url, linkType, sortOrder],
+        `INSERT INTO release_links (release_id, platform, url, link_type, sort_order, post_release_url, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [releaseId, platform, url, linkType, sortOrder, carriedPostReleaseUrl],
       );
       logLinkLimitDecision({
         releaseId,

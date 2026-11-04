@@ -8,11 +8,17 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  formatArtistCreditList,
+  formatReleaseTitleLine,
+} from "@/lib/release-display";
+import { formatReleaseCollaboratorsRowSummary } from "@/lib/release-tools-collaborators-summary";
+import {
   formatReleaseFeedRowSubtitle,
   RELEASE_FEED_SECONDARY_ICON_MAX,
   resolveReleaseFeedPrimaryCtaLabel,
   splitReleaseFeedLinkActions,
 } from "@/lib/release-feed-row-presentation";
+import { RELEASE_FEED_BYLINE_CLASS } from "@/lib/release-tracker-presentation";
 import { getLinkCtaLabel } from "@/lib/release-cta";
 import {
   RELEASE_FEED_ARTWORK_PX,
@@ -29,37 +35,74 @@ const feedCardSrc = readFileSync(
 const trackerSrc = readFileSync(join(here, "../pages/release-tracker.tsx"), "utf8");
 
 describe("release feed row subtitle", () => {
-  it("Saved attribution: @owner, @owner — Collab, @owner — Collab +N", () => {
+  it("public credits: 1, 2, 3, and 4 artists, with leading @ stripped", () => {
+    assert.equal(formatArtistCreditList(["@Artist"]), "Artist");
+    assert.equal(formatArtistCreditList(["Artist", "@Artist1"]), "Artist & Artist1");
     assert.equal(
-      formatReleaseFeedRowSubtitle({
-        ownerUsername: "bigggX12",
-        collaborators: [],
-        omitOwnHandle: false,
-      }),
-      "@bigggX12",
+      formatArtistCreditList(["Artist", "Artist1", "@Artist2"]),
+      "Artist, Artist1 & Artist2",
+    );
+    assert.equal(
+      formatArtistCreditList(["Artist", "Artist1", "Artist2", "@Artist3"]),
+      "Artist, Artist1, Artist2 & Artist3",
     );
     assert.equal(
       formatReleaseFeedRowSubtitle({
-        ownerUsername: "bigggX12",
-        collaborators: [{ username: "Kanine", status: "ACCEPTED" }],
+        ownerUsername: "@bigggX12",
+        collaborators: [],
         omitOwnHandle: false,
       }),
-      "@bigggX12 — Kanine",
+      "bigggX12",
+    );
+    assert.equal(
+      formatReleaseFeedRowSubtitle({
+        ownerUsername: "@bigggX12",
+        collaborators: [{ username: "@Kanine", status: "ACCEPTED" }],
+        omitOwnHandle: false,
+      }),
+      "bigggX12 & Kanine",
     );
     assert.equal(
       formatReleaseFeedRowSubtitle({
         ownerUsername: "bigggX12",
         collaborators: [
           { username: "Kanine", status: "ACCEPTED" },
-          { username: "Other", status: "ACCEPTED" },
+          { username: "@Other", status: "ACCEPTED" },
         ],
         omitOwnHandle: false,
       }),
-      "@bigggX12 — Kanine +1",
+      "bigggX12, Kanine & Other",
+    );
+    assert.equal(
+      formatReleaseFeedRowSubtitle({
+        ownerUsername: "Artist",
+        collaborators: [
+          { username: "Artist1", status: "ACCEPTED" },
+          { username: "Artist2", status: "ACCEPTED" },
+          { username: "Artist3", status: "ACCEPTED" },
+        ],
+        omitOwnHandle: false,
+      }),
+      "Artist, Artist1, Artist2 & Artist3",
     );
   });
 
-  it("My Releases omits own handle; with Collab / +N", () => {
+  it("excludes pending and rejected collaborators from public credit", () => {
+    assert.equal(
+      formatReleaseFeedRowSubtitle({
+        ownerUsername: "Artist",
+        collaborators: [
+          { username: "Artist1", status: "ACCEPTED" },
+          { username: "Pending", status: "PENDING" },
+          { username: "No", status: "REJECTED" },
+        ],
+        omitOwnHandle: false,
+      }),
+      "Artist & Artist1",
+    );
+  });
+
+  it("My Releases omits the owner and joins accepted collaborators", () => {
     assert.equal(
       formatReleaseFeedRowSubtitle({
         ownerUsername: "me",
@@ -70,8 +113,8 @@ describe("release feed row subtitle", () => {
     );
     assert.equal(
       formatReleaseFeedRowSubtitle({
-        ownerUsername: "me",
-        collaborators: [{ username: "Kanine", status: "ACCEPTED" }],
+        ownerUsername: "@me",
+        collaborators: [{ username: "@Kanine", status: "ACCEPTED" }],
         omitOwnHandle: true,
       }),
       "with Kanine",
@@ -80,14 +123,63 @@ describe("release feed row subtitle", () => {
       formatReleaseFeedRowSubtitle({
         ownerUsername: "me",
         collaborators: [
-          { username: "Kanine", status: "ACCEPTED" },
-          { username: "A", status: "ACCEPTED" },
-          { username: "B", status: "PENDING" },
+          { username: "Artist1", status: "ACCEPTED" },
+          { username: "Artist2", status: "ACCEPTED" },
         ],
         omitOwnHandle: true,
       }),
-      "with Kanine +1",
+      "with Artist1 & Artist2",
     );
+    assert.equal(
+      formatReleaseFeedRowSubtitle({
+        ownerUsername: "me",
+        collaborators: [
+          { username: "Artist1", status: "ACCEPTED" },
+          { username: "Artist2", status: "ACCEPTED" },
+          { username: "Artist3", status: "PENDING" },
+        ],
+        omitOwnHandle: true,
+      }),
+      "with Artist1 & Artist2",
+    );
+    assert.equal(
+      formatReleaseFeedRowSubtitle({
+        ownerUsername: "me",
+        collaborators: [
+          { username: "Artist1", status: "ACCEPTED" },
+          { username: "Artist2", status: "ACCEPTED" },
+          { username: "Artist3", status: "ACCEPTED" },
+        ],
+        omitOwnHandle: true,
+      }),
+      "with Artist1, Artist2 & Artist3",
+    );
+  });
+
+  it("title line keeps the em dash only before the title", () => {
+    assert.equal(
+      formatReleaseTitleLine("Artist", "Night Drive", [
+        { username: "@Artist1", status: "ACCEPTED" },
+        { username: "Wait", status: "PENDING" },
+      ]),
+      "Artist & Artist1 — Night Drive",
+    );
+    assert.equal(formatReleaseTitleLine("@Artist", "Night Drive"), "Artist — Night Drive");
+  });
+
+  it("collaborator tools summary still uses @handles and pending copy", () => {
+    assert.equal(
+      formatReleaseCollaboratorsRowSummary({
+        existing: [{ username: "artist1", status: "PENDING" }],
+        staged: [],
+      }),
+      "@artist1 · pending",
+    );
+  });
+
+  it("feed byline can wrap to a second line", () => {
+    assert.match(RELEASE_FEED_BYLINE_CLASS, /line-clamp-2/);
+    assert.doesNotMatch(RELEASE_FEED_BYLINE_CLASS, /truncate/);
   });
 });
 

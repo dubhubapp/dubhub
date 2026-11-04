@@ -291,19 +291,42 @@ enum HomeWidgetCountdown {
 
     struct TimelineDates {
         let dates: [Date]
-        /// True when the rolling cap stopped before Out now / expiresAt.
+        /// True when the rolling cap stopped before Out now / the schedule horizon.
         let truncated: Bool
     }
 
-    /// Timeline change points until expiresAt (exclusive of expiry refresh entry).
+    /// Exclusive end for countdown entries: release boundary + Out-now retention.
+    /// Payload freshness (`expiresAt`) is not a schedule cutoff.
+    static func scheduleHorizon(
+        mode: TimingMode,
+        releaseCalendarDate: String?,
+        releaseAt: Date?,
+        now: Date,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> Date {
+        let pastRetention = outNowRetentionHours * hour + minute
+        if let boundary = resolveBoundary(
+            mode: mode,
+            releaseCalendarDate: releaseCalendarDate,
+            releaseAt: releaseAt,
+            timeZone: timeZone
+        ) {
+            let end = boundary.addingTimeInterval(pastRetention)
+            return end > now ? end : now.addingTimeInterval(minute)
+        }
+        return now.addingTimeInterval(pastRetention)
+    }
+
+    /// Timeline change points until `until` (exclusive).
     /// Caps at `timelineMaxLabelEntries` label transitions; caller should reload via `.after`.
     /// Also schedules Out-now retention end and optional announcement freshness expiry.
+    /// Does not stop because the stamped payload freshness date has passed.
     static func timelineChangeDates(
         mode: TimingMode,
         releaseCalendarDate: String?,
         releaseAt: Date?,
         now: Date,
-        expiresAt: Date,
+        until: Date,
         timeZone: TimeZone = .autoupdatingCurrent,
         announcementExpiresAt: Date? = nil
     ) -> TimelineDates {
@@ -327,16 +350,16 @@ enum HomeWidgetCountdown {
                 break
             }
             if result.isOutNow {
-                if result.boundary > now && result.boundary < expiresAt {
+                if result.boundary > now && result.boundary < until {
                     dates.append(result.boundary)
                 }
-                if result.outNowUntil > now && result.outNowUntil < expiresAt {
+                if result.outNowUntil > now && result.outNowUntil < until {
                     dates.append(result.outNowUntil)
                 }
                 break
             }
             guard let next = result.nextLabelChange, next > cursor else { break }
-            if next >= expiresAt { break }
+            if next >= until { break }
             dates.append(next)
             cursor = next
             guardCount += 1
@@ -349,7 +372,7 @@ enum HomeWidgetCountdown {
                     now: cursor,
                     timeZone: timeZone
                 ), !more.isOutNow, !more.isRetentionExpired,
-                   let further = more.nextLabelChange, further < expiresAt {
+                   let further = more.nextLabelChange, further < until {
                     truncated = true
                 }
             }
@@ -357,7 +380,7 @@ enum HomeWidgetCountdown {
 
         if let announceEnd = announcementExpiresAt,
            announceEnd > now,
-           announceEnd < expiresAt {
+           announceEnd < until {
             dates.append(announceEnd)
         }
 

@@ -4,10 +4,14 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  BEST_MONTHLY_RANK_HELP,
+  BEST_MONTHLY_RANK_POPOVER_TITLE,
   formatBestMonthlyRankHeaderLabel,
   formatBestMonthlyRankMonth,
+  formatBestMonthlyRankPopoverDetail,
   formatBestMonthlyRankValue,
 } from "./monthly-top-100-presentation";
+import { APP_MATERIAL_TOAST_SURFACE_CLASS } from "./app-material";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const publicProfileSrc = readFileSync(join(here, "../pages/public-profile.tsx"), "utf8");
@@ -32,6 +36,12 @@ function publicActionsBlock(): string {
   const idx = publicProfileSrc.indexOf('data-testid="artist-profile-actions"');
   assert.ok(idx >= 0, "missing artist-profile-actions");
   return publicProfileSrc.slice(Math.max(0, idx - 120), idx + 1400);
+}
+
+function publicAchievementsBlock(): string {
+  const idx = publicProfileSrc.indexOf('data-testid="public-profile-achievements"');
+  assert.ok(idx >= 0, "missing public-profile-achievements");
+  return publicProfileSrc.slice(Math.max(0, idx - 500), idx + 700);
 }
 
 function publicStatsToRepSlice(): string {
@@ -84,12 +94,15 @@ describe("PROFILE-REFINEMENT-C3C — Best rank in header; body restored", () => 
     assert.doesNotMatch(publicProfileSrc, /border-t border-white\/5/);
   });
 
-  it("Best rank appears in header action area when available", () => {
-    const block = publicActionsBlock();
-    assert.match(block, /BestMonthlyRankHeaderChip/);
-    assert.match(block, /showBestMonthlyRankHeader/);
-    assert.match(block, /rank=\{profile\.bestMonthlyRank\}/);
-    assert.match(block, /month=\{profile\.bestMonthlyRankMonth\}/);
+  it("Best rank sits in the achievement row, not the action row", () => {
+    const achievements = publicAchievementsBlock();
+    assert.match(achievements, /MonthlyTop100Badge/);
+    assert.match(achievements, /BestMonthlyRankHeaderChip/);
+    assert.match(achievements, /showBestMonthlyRankHeader/);
+    assert.match(achievements, /rank=\{profile\.bestMonthlyRank\}/);
+    assert.match(achievements, /month=\{profile\.bestMonthlyRankMonth\}/);
+    assert.match(achievements, /flex max-w-full flex-wrap items-center gap-1\.5/);
+    assert.doesNotMatch(publicActionsBlock(), /BestMonthlyRankHeaderChip/);
     assert.match(bestMonthlyChipSrc, /BestMonthlyRankHeaderChip/);
     assert.match(bestMonthlyChipSrc, /formatBestMonthlyRankHeaderLabel/);
     assert.equal(formatBestMonthlyRankHeaderLabel(3), "Top Rank #3");
@@ -101,7 +114,7 @@ describe("PROFILE-REFINEMENT-C3C — Best rank in header; body restored", () => 
     assert.equal(formatBestMonthlyRankHeaderLabel(null), null);
     assert.equal(formatBestMonthlyRankHeaderLabel(undefined), null);
     assert.equal(formatBestMonthlyRankHeaderLabel(0), null);
-    assert.match(bestMonthlyChipSrc, /if \(label == null\) return null/);
+    assert.match(bestMonthlyChipSrc, /if \(label == null \|\| detail == null\) return null/);
     assert.match(publicProfileSrc, /showBestMonthlyRankHeader \?/);
     assert.doesNotMatch(publicActionsBlock(), /formatBestMonthlyRankValue/);
     // Own Profile still shows explicit Best Monthly Rank in Your Activity
@@ -109,17 +122,18 @@ describe("PROFILE-REFINEMENT-C3C — Best rank in header; body restored", () => 
     assert.match(userProfileSrc, /formatBestMonthlyRankValue/);
   });
 
-  it("Fav Genre + Share remain in same row; Best rank joins that action area", () => {
+  it("Fav Genre + Share + Release Alerts share the action row", () => {
     const block = publicActionsBlock();
     assert.match(block, /data-testid="artist-profile-actions"/);
     assert.match(block, /flex flex-wrap items-end gap-2/);
     assert.match(block, /data-testid="public-profile-fav-genre"/);
     assert.match(block, /ArtistProfileShareButton/);
-    assert.match(block, /BestMonthlyRankHeaderChip/);
+    assert.match(block, /ArtistReleaseAlertsButton/);
+    assert.doesNotMatch(block, /BestMonthlyRankHeaderChip/);
     const genreIdx = block.indexOf("public-profile-fav-genre");
     const shareIdx = block.indexOf("ArtistProfileShareButton");
-    const bestIdx = block.indexOf("BestMonthlyRankHeaderChip");
-    assert.ok(genreIdx > 0 && shareIdx > genreIdx && bestIdx > shareIdx);
+    const alertsIdx = block.indexOf("ArtistReleaseAlertsButton");
+    assert.ok(genreIdx > 0 && shareIdx > genreIdx && alertsIdx > shareIdx);
   });
 
   it("divider below stats removed; Rep returns to previous spacing/position", () => {
@@ -131,6 +145,23 @@ describe("PROFILE-REFINEMENT-C3C — Best rank in header; body restored", () => 
     assert.match(publicProfileSrc, /ProfileRepOverview/);
     assert.match(publicProfileSrc, /percentileVariant="public"/);
     assert.match(publicProfileSrc, /compact/);
+  });
+
+  it("Release Alerts stays content-sized inside the wrapping action row", () => {
+    const alertsSrc = readFileSync(
+      join(here, "../components/artist-release-alerts-button.tsx"),
+      "utf8",
+    );
+    assert.match(publicProfileSrc, /flex flex-wrap items-end gap-2/);
+    assert.match(publicProfileSrc, /<ArtistReleaseAlertsButton artistId=\{profileId\} \/>/);
+    assert.doesNotMatch(
+      publicProfileSrc,
+      /ArtistReleaseAlertsButton artistId=\{profileId\} className="min-w-0 flex-1"/,
+    );
+    const classLine = alertsSrc.match(/const RELEASE_ALERTS_BUTTON_CLASS =\n  "([^"]+)"/);
+    assert.ok(classLine);
+    assert.equal(classLine[1].includes("w-full"), false);
+    assert.match(alertsSrc, /whitespace-nowrap/);
   });
 
   it("Share / Fav Genre chrome + lighter Best pill", () => {
@@ -150,9 +181,10 @@ describe("PROFILE-REFINEMENT-C3C — Artist / Community parity + Top 100 badge",
     assert.match(publicProfileSrc, /showArtistProfileActions/);
     assert.match(
       publicProfileSrc,
-      /canShareProfile \|\|[\s\S]*showArtistReleaseAlerts \|\|[\s\S]*showFavGenrePill \|\|[\s\S]*showBestMonthlyRankHeader/,
+      /canShareProfile \|\|[\s\S]*showArtistReleaseAlerts \|\|[\s\S]*showFavGenrePill;/,
     );
-    assert.match(publicProfileSrc, /BestMonthlyRankHeaderChip/);
+    assert.match(publicProfileSrc, /data-testid="public-profile-achievements"/);
+    assert.doesNotMatch(publicActionsBlock(), /BestMonthlyRankHeaderChip/);
     assert.match(publicProfileSrc, /PUBLIC_KEY_STAT_ICON_CLASS/);
     assert.match(publicProfileSrc, /!isVerifiedArtist \?[\s\S]*label="Artist IDs"/);
   });
@@ -166,5 +198,61 @@ describe("PROFILE-REFINEMENT-C3C — Artist / Community parity + Top 100 badge",
     // Not merged into Top 100 badge
     assert.doesNotMatch(badgeSrc, /BestMonthlyRank|bestMonthlyRank|formatBestMonthlyRank/);
     assert.match(bestMonthlyChipSrc, /Top Rank|formatBestMonthlyRankHeaderLabel/);
+  });
+});
+
+describe("public profile achievement row — Top Rank beside 100 Club", () => {
+  it("100 Club + Top Rank share the achievement row", () => {
+    const block = publicAchievementsBlock();
+    const clubIdx = block.indexOf("MonthlyTop100Badge");
+    const rankIdx = block.indexOf("BestMonthlyRankHeaderChip");
+    assert.ok(clubIdx > 0 && rankIdx > clubIdx);
+    assert.match(block, /profile\.hasMonthlyTop100 === true \|\| showBestMonthlyRankHeader|showPublicAchievements/);
+    assert.match(publicProfileSrc, /showPublicAchievements/);
+  });
+
+  it("Top Rank only still occupies that row; 100 Club only stays; neither skips the row", () => {
+    assert.match(
+      publicProfileSrc,
+      /profile\.hasMonthlyTop100 === true \|\| showBestMonthlyRankHeader/,
+    );
+    assert.match(publicProfileSrc, /\{showPublicAchievements \? \(/);
+    assert.match(badgeSrc, /if \(!hasEarnedMonthlyTop100\(earned\)\) return null/);
+    assert.match(bestMonthlyChipSrc, /if \(label == null \|\| detail == null\) return null/);
+    assert.doesNotMatch(publicActionsBlock(), /BestMonthlyRank|public-best-monthly-rank/);
+  });
+
+  it("Release Alerts returns beside Share without the shrink-to-zero setup", () => {
+    const block = publicActionsBlock();
+    const shareIdx = block.indexOf("ArtistProfileShareButton");
+    const alertsIdx = block.indexOf("ArtistReleaseAlertsButton");
+    assert.ok(shareIdx > 0 && alertsIdx > shareIdx);
+    assert.doesNotMatch(block, /min-w-0 flex-1/);
+    assert.match(publicProfileSrc, /<ArtistReleaseAlertsButton artistId=\{profileId\} \/>/);
+  });
+
+  it("Top Rank popover uses the shared info surface and short finish copy", () => {
+    assert.equal(APP_MATERIAL_TOAST_SURFACE_CLASS, "dubhub-app-toast-surface");
+    assert.match(bestMonthlyChipSrc, /APP_MATERIAL_TOAST_SURFACE_CLASS/);
+    assert.match(
+      bestMonthlyChipSrc,
+      /border-transparent bg-transparent p-3 text-sm leading-relaxed text-muted-foreground shadow-none/,
+    );
+    assert.doesNotMatch(bestMonthlyChipSrc, /bg-black\/90|border-white\/15/);
+    assert.equal(BEST_MONTHLY_RANK_POPOVER_TITLE, "Best monthly finish");
+    assert.match(bestMonthlyChipSrc, /BEST_MONTHLY_RANK_POPOVER_TITLE/);
+    assert.doesNotMatch(bestMonthlyChipSrc, /BEST_MONTHLY_RANK_HELP/);
+    assert.equal(formatBestMonthlyRankPopoverDetail(1, "2026-08"), "#1 · Aug ’26");
+    assert.equal(formatBestMonthlyRankPopoverDetail(2, "2026-09"), "#2 · Sep ’26");
+    assert.equal(formatBestMonthlyRankPopoverDetail(7, "2026-03"), "#7 · Mar ’26");
+    assert.equal(formatBestMonthlyRankPopoverDetail(2, null), "#2");
+    assert.equal(formatBestMonthlyRankPopoverDetail(2, undefined), "#2");
+    assert.equal(formatBestMonthlyRankPopoverDetail(2, ""), "#2");
+    assert.equal(formatBestMonthlyRankPopoverDetail(null, "2026-09"), null);
+    assert.match(userProfileSrc, /bestMonthlyRank: BEST_MONTHLY_RANK_HELP/);
+    assert.equal(
+      BEST_MONTHLY_RANK_HELP,
+      "Your best final place on a completed monthly leaderboard. The current month does not count until it finishes.",
+    );
   });
 });

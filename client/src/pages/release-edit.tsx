@@ -56,6 +56,7 @@ import {
 } from "@/lib/platforms";
 import { INPUT_LIMITS } from "@shared/input-limits";
 import { apiUrl } from "@/lib/apiBase";
+import { pickReleaseArtwork, RELEASE_ARTWORK_ACCEPT } from "@/lib/release-artwork-image";
 import { playSuccessNotification } from "@/lib/haptic";
 import { VinylLoader } from "@/components/ui/vinyl-loader";
 import { SwipeBackPage } from "@/components/swipe-back-page";
@@ -93,7 +94,10 @@ import {
 } from "@/lib/release-attach-clips-overview";
 import { resolveFreeQuotaNoticeProminence } from "@/lib/release-form-limit-prominence";
 import { releaseTimingApiErrorToast } from "@/lib/release-timing-api-error";
-import { buildOwnerReleaseEditPatchBody } from "@/lib/release-edit-patch";
+import {
+  buildOwnerReleaseEditPatchBody,
+  mergeReleasePatchIntoDetail,
+} from "@/lib/release-edit-patch";
 import {
   buildReleaseEditSnapshot,
   editBackDecision,
@@ -139,7 +143,8 @@ import {
   releaseLinkCapacityQueryKey,
   resolveLinkLimitCardCopy,
 } from "@/lib/release-link-limit";
-import { planReleaseLinkSync } from "@/lib/sync-release-links";
+import { planReleaseLinkSync, releaseLinkSyncNeedsOrderRoundTrip } from "@/lib/sync-release-links";
+import type { ReleaseDetailRecord } from "@/lib/release-cache";
 import {
   isReleaseUpcomingFromTiming,
   isReleaseLiveLockedFromTiming,
@@ -284,9 +289,12 @@ export default function ReleaseEdit() {
     );
   }, [release, draftsHydrated]);
 
+  const artworkPreviewUrlRef = useRef<string | null>(null);
+  artworkPreviewUrlRef.current = artworkPreviewUrl;
   useEffect(() => () => {
-    if (artworkPreviewUrl) URL.revokeObjectURL(artworkPreviewUrl);
-  }, [artworkPreviewUrl]);
+    const url = artworkPreviewUrlRef.current;
+    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+  }, []);
 
   const { data: verifiedArtists = [] } = useQuery({
     queryKey: ["/api/artists/verified", collabSearch],
@@ -596,29 +604,23 @@ export default function ReleaseEdit() {
   };
 
   const handleArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
     if (!file) return;
-    setArtworkPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
     setUploading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Not signed in");
-      const form = new FormData();
-      form.append("artwork", file);
-      const res = await fetch(apiUrl("/api/releases/upload-artwork"), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: form,
+      const result = await pickReleaseArtwork({
+        file,
+        accessToken: session?.access_token ?? null,
+        previousPreviewUrl: artworkPreviewUrl,
+        previousArtworkPath: artworkPath,
+        onPreview: setArtworkPreviewUrl,
       });
-      if (!res.ok) throw new Error("Upload failed");
-      const json = await res.json();
-      setArtworkPath(json.path ?? null);
-      toast({ title: "Artwork uploaded" });
-    } catch {
-      toast({ title: "Artwork upload failed", variant: "destructive" });
+      setArtworkPreviewUrl(result.previewUrl);
+      setArtworkPath(result.artworkPath);
+      toast(result.toast);
     } finally {
       setUploading(false);
     }
@@ -779,9 +781,10 @@ export default function ReleaseEdit() {
         liveLockedForSave,
       });
 
+      let patchBody: unknown = null;
       if (isOwner) {
       // 1) Basic release fields (owner only). Post-live omits timing/status.
-      await apiRequest(
+      const patchRes = await apiRequest(
         "PATCH",
         `/api/releases/${releaseId}`,
         buildOwnerReleaseEditPatchBody({
@@ -794,6 +797,7 @@ export default function ReleaseEdit() {
             timingFields && !("error" in timingFields) ? timingFields : null,
         }),
       );
+      patchBody = await patchRes.json().catch(() => null);
       console.log("[ReleaseEdit] Basic fields saved", { releaseId });
 
       // 2) Collaborators: send invites for staged (only when no existing collaborators)
@@ -872,10 +876,13 @@ export default function ReleaseEdit() {
         primaryReplace: !!plan.primaryReplace,
       });
 
-      // Persist artist draft order (catalog sort must not overwrite).
+      // Persist artist draft order only after a real link mutation.
+      // Unchanged plans skip this GET + PUT. In-sheet reorder still saves itself.
+      if (releaseLinkSyncNeedsOrderRoundTrip(plan)) {
       try {
-        const refreshed = await apiRequest("GET", `/api/releases/${releaseId}`);
-        const serverLinks = ((refreshed as any)?.links as any[] | undefined) || [];
+        const refreshedRes = await apiRequest("GET", `/api/releases/${releaseId}`);
+        const refreshed = await refreshedRes.json().catch(() => null);
+        const serverLinks = (refreshed?.links as any[] | undefined) || [];
         const byPlatform = new Map(
           serverLinks.map((l) => [
             normalizePlatformForApi(String(l.platform ?? "")),
@@ -892,6 +899,7 @@ export default function ReleaseEdit() {
         }
       } catch (orderError) {
         console.error("[ReleaseEdit] Link order sync failed", orderError);
+      }
       }
       }
 
@@ -940,6 +948,15 @@ export default function ReleaseEdit() {
           revealAndAttach: anonymousSelected.length > 0,
         });
         console.log("[ReleaseEdit] Attached posts", { releaseId, toAttach });
+      }
+
+      if (patchBody && typeof patchBody === "object") {
+        queryClient.setQueryData(["/api/releases", releaseId], (previous) =>
+          mergeReleasePatchIntoDetail(
+            previous as ReleaseDetailRecord | undefined,
+            patchBody as Partial<ReleaseDetailRecord>,
+          ),
+        );
       }
 
       // Mark caches stale without awaiting refetches. TanStack Query v5's
@@ -1195,7 +1212,7 @@ export default function ReleaseEdit() {
           </h2>
             <input
               type="file"
-              accept="image/*"
+              accept={RELEASE_ARTWORK_ACCEPT}
               ref={fileInputRef}
               className="hidden"
               onChange={handleArtworkChange}
@@ -1431,7 +1448,7 @@ export default function ReleaseEdit() {
             className={APP_MATERIAL_FORM_PRIMARY_CLASS}
             size="lg"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || uploading}
           >
             {saving ? "Saving…" : "Save Changes"}
           </Button>

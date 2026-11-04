@@ -121,3 +121,17 @@ export function planReleaseLinkSync(args: {
 
   return { unchanged, updates, removals, inserts, primaryReplace };
 }
+
+/**
+ * Save-time GET + links/order is only needed after a real link mutation.
+ * Unchanged artwork/metadata saves skip it. Explicit in-sheet reorder
+ * still persists through its own PUT.
+ */
+export function releaseLinkSyncNeedsOrderRoundTrip(plan: LinkSyncPlan): boolean {
+  return (
+    plan.updates.length > 0 ||
+    plan.inserts.length > 0 ||
+    plan.removals.length > 0 ||
+    plan.primaryReplace != null
+  );
+}

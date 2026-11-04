@@ -3,6 +3,7 @@
  */
 
 import type { Pool, PoolClient } from "pg";
+import { normalizePostReleaseUrl } from "./release-link-post-release-url";
 
 export class ReleaseLinkReorderError extends Error {
   readonly statusCode: number;
@@ -36,6 +37,7 @@ export type ReorderReleaseLinksResult = {
   platform: string;
   url: string;
   linkType: string | null;
+  postReleaseUrl: string | null;
   sortOrder: number;
   createdAt: string | Date | null;
 }[];
@@ -120,10 +122,11 @@ async function listOrderedLinks(
     platform: string;
     url: string;
     link_type: string | null;
+    post_release_url: string | null;
     sort_order: number;
     created_at: string | Date | null;
   }>(
-    `SELECT id, release_id, platform, url, link_type, sort_order, created_at
+    `SELECT id, release_id, platform, url, link_type, post_release_url, sort_order, created_at
      FROM release_links
      WHERE release_id = $1
      ORDER BY sort_order ASC, platform ASC`,
@@ -135,6 +138,7 @@ async function listOrderedLinks(
     platform: r.platform,
     url: r.url,
     linkType: r.link_type,
+    postReleaseUrl: normalizePostReleaseUrl(r.post_release_url),
     sortOrder: r.sort_order,
     createdAt: r.created_at,
   }));

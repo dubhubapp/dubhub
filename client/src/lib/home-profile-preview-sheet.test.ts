@@ -301,7 +301,7 @@ describe("Home profile preview sheet — visual refinement", () => {
     assert.match(popupSrc, /home-profile-preview-stats-row/);
     assert.match(popupSrc, /home-profile-preview-rep-progress/);
     assert.match(popupSrc, /Rep Progress/);
-    assert.equal(HOME_PROFILE_PREVIEW_REP_HINT, "Keep posting and sharing IDs to level up.");
+    assert.equal(HOME_PROFILE_PREVIEW_REP_HINT, "Keep IDing tracks to level up.");
     assert.match(popupSrc, /HOME_PROFILE_PREVIEW_REP_HINT/);
     assert.match(popupSrc, /reputationTrust/);
     assert.doesNotMatch(popupSrc, /Verified Artist tile|grid-cols-4.*Posts|bottom.?stat.?tile/i);

@@ -1,7 +1,6 @@
 import { useToast } from "@/hooks/use-toast"
 import {
   Toast,
-  ToastClose,
   ToastDescription,
   ToastProvider,
   ToastTitle,
@@ -12,7 +11,7 @@ export function Toaster() {
   const { toasts } = useToast()
 
   return (
-    <ToastProvider swipeDirection="up" swipeThreshold={80}>
+    <ToastProvider swipeDirection="up" swipeThreshold={24}>
       {toasts.map(function ({ id, title, description, action, ...props }) {
         return (
           <Toast key={id} {...props}>
@@ -23,7 +22,6 @@ export function Toaster() {
               )}
             </div>
             {action}
-            <ToastClose />
           </Toast>
         )
       })}

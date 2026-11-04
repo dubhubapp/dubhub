@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { defaultMidnightDraft, enableExactDraft } from "@/lib/release-timing-draft";
+import { mergeReleasePatchIntoDetail } from "@/lib/release-edit-patch";
 import {
   buildReleaseEditSnapshot,
   editBackDecision,
@@ -20,6 +21,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const editSrc = readFileSync(join(here, "../pages/release-edit.tsx"), "utf8");
+const thumbSrc = readFileSync(join(here, "../components/release-artwork-thumb.tsx"), "utf8");
 const attachSrc = readFileSync(
   join(here, "../components/release-attach-posts-section.tsx"),
   "utf8",
@@ -288,6 +290,61 @@ describe("Edit Back / Discard / Save destinations", () => {
       editSrc,
       /invalidateQueries\(\{ queryKey: \["\/api\/releases", releaseId\] \}\)/,
     );
+  });
+
+  it("merges the PATCH body before navigation and does not await invalidation", () => {
+    const saveStart = editSrc.indexOf("const handleSave = async");
+    const saveEnd = editSrc.indexOf("if (!releaseId || !release) {", saveStart);
+    const save = editSrc.slice(saveStart, saveEnd);
+    assert.match(save, /releaseLinkSyncNeedsOrderRoundTrip\(plan\)/);
+    assert.match(save, /mergeReleasePatchIntoDetail/);
+    const success = save.slice(save.indexOf("mergeReleasePatchIntoDetail"));
+    assert.match(success, /void queryClient\.invalidateQueries\(\{ queryKey: \["\/api\/releases", releaseId\] \}\)/);
+    assert.doesNotMatch(success, /await queryClient\.invalidateQueries/);
+    const mergeAt = save.indexOf("mergeReleasePatchIntoDetail");
+    const exitAt = save.indexOf("exitToDetail()");
+    const invalidateAt = save.indexOf(
+      'void queryClient.invalidateQueries({ queryKey: ["/api/releases", releaseId] })',
+    );
+    assert.ok(mergeAt > 0 && invalidateAt > mergeAt && exitAt > invalidateAt);
+    assert.match(editSrc, /disabled=\{saving \|\| uploading\}/);
+    assert.match(thumbSrc, /key=\{url\}/);
+  });
+
+  it("PATCH merge keeps collaborators, links, and suspension fields", () => {
+    const previous = {
+      id: "rel-1",
+      artistId: "artist-1",
+      title: "Old",
+      releaseDate: "2026-01-01",
+      artworkUrl: "https://cdn.example/old.jpg",
+      artistUsername: "Artist",
+      collaborators: [{ username: "Artist1", status: "ACCEPTED" }],
+      links: [{ id: "link-1", platform: "spotify", url: "https://s/1" }],
+      subscriptionPaused: true,
+      subscriptionSuspendedAt: "2026-08-01T00:00:00.000Z",
+      attachedClips: [{ id: "clip-1", title: "Clip", thumbnailUrl: null, uploaderUsername: "u", isVerifiedArtist: false, likes: 0 }],
+    };
+    const merged = mergeReleasePatchIntoDetail(previous, {
+      title: "New",
+      artworkUrl: "https://cdn.example/new.jpg",
+      artworkPath: "artist/new.jpg",
+      releaseDate: "2026-02-02",
+      isComingSoon: false,
+      links: [],
+      collaborators: [],
+      subscriptionPaused: false,
+    });
+    assert.equal(merged?.title, "New");
+    assert.equal(merged?.artworkUrl, "https://cdn.example/new.jpg");
+    assert.equal(merged?.artworkPath, "artist/new.jpg");
+    assert.equal(merged?.releaseDate, "2026-02-02");
+    assert.equal(merged?.collaborators?.[0]?.username, "Artist1");
+    assert.equal(merged?.links?.[0]?.id, "link-1");
+    assert.equal(merged?.subscriptionPaused, true);
+    assert.equal(merged?.subscriptionSuspendedAt, "2026-08-01T00:00:00.000Z");
+    assert.equal(merged?.attachedClips?.[0]?.id, "clip-1");
+    assert.equal(mergeReleasePatchIntoDetail(undefined, { title: "New" }), undefined);
   });
 
   it("SwipeBack stays disabled; onBack reuses guard", () => {

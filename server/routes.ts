@@ -63,6 +63,10 @@ import { insertCommentSchema, patchUserNotificationPreferencesSchema } from "@sh
 import { comments, moderatorActions as moderatorActionsTable, reports } from "@shared/schema";
 import { parseCountryCodeInput } from "@shared/country-codes";
 import { updateNotificationEmojiForUser } from "./notification-emoji-update";
+import {
+  releaseArtworkMulterMiddleware,
+  releaseArtworkSignatureMiddleware,
+} from "./release-artwork-upload";
 import { db, pool } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -124,6 +128,10 @@ import {
   isPaidLinkTypeRequiredError,
   normalizeReleaseLinkPlatform,
 } from "./release-link-limit";
+import {
+  isInvalidPostReleaseUrlError,
+  readPostReleaseUrlFromBody,
+} from "./release-link-post-release-url";
 import { isFreeReleaseSubscriptionSuspendedError } from "./future-release-suspension";
 import { getFutureReleaseCapacity } from "./future-release-capacity";
 import { isServerDetachLocked, isServerReleaseLiveForMutation } from "./release-timing-live";
@@ -6290,16 +6298,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- Releases (post-based) ---
-  const releaseArtworkUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-      const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (allowed.includes(file.mimetype)) cb(null, true);
-      else cb(new Error('Invalid file type. Only image files are allowed.'));
-    },
-  });
-
   function looksLikeImageDataUri(value: string | null | undefined): boolean {
     if (!value) return false;
     return /^data:image\/[a-zA-Z0-9.+-]+(?:;[a-zA-Z0-9=:+-]+)?,/i.test(value.trim());
@@ -6589,7 +6587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/releases/upload-artwork", withSupabaseUser, releaseArtworkUpload.single('artwork'), async (req: AuthenticatedRequest, res) => {
+  app.post("/api/releases/upload-artwork", withSupabaseUser, releaseArtworkMulterMiddleware, releaseArtworkSignatureMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ message: "Not authenticated" });
       if (req.dbUser.account_type !== 'artist') return res.status(403).json({ message: "Artists only" });
@@ -6820,6 +6818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (release.artistId !== req.dbUser.id) return res.status(403).json({ message: "Not your release" });
       const { platform, url, link_type } = req.body;
       if (!platform || !url) return res.status(400).json({ message: "platform and url are required" });
+      const postReleaseUrl = readPostReleaseUrlFromBody(req.body);
       const normalized = normalizeReleaseLinkPlatform(platform);
       const selectableAllowed = [
         "spotify",
@@ -6861,6 +6860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           platform: normalized,
           url: String(url).trim(),
           linkType: link_type?.trim() || null,
+          postReleaseUrl,
         },
         {
           pool,
@@ -6869,6 +6869,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       res.json(links);
     } catch (error) {
+      if (isInvalidPostReleaseUrlError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
       if (isInvalidReleaseLinkTypeError(error)) {
         return res.status(error.statusCode).json(error.toJSON());
       }
@@ -6916,6 +6919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "from_platform, platform and url are required",
         });
       }
+      const postReleaseUrl = readPostReleaseUrlFromBody(req.body);
       const fromNormalized = normalizeReleaseLinkPlatform(from_platform);
       const normalized = normalizeReleaseLinkPlatform(platform);
       // Source may be legacy (e.g. Juno); replacement target must be newly selectable.
@@ -6932,6 +6936,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           platform: normalized,
           url: String(url).trim(),
           linkType: link_type?.trim() || null,
+          postReleaseUrl,
         },
         {
           pool,
@@ -6940,6 +6945,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       res.json(links);
     } catch (error) {
+      if (isInvalidPostReleaseUrlError(error)) {
+        return res.status(error.statusCode).json(error.toJSON());
+      }
       if (isInvalidReleaseLinkTypeError(error)) {
         return res.status(error.statusCode).json(error.toJSON());
       }

@@ -54,6 +54,14 @@ export const MONTHLY_TOP_100_ACHIEVEMENT_A11Y_LABEL =
 
 export const BEST_MONTHLY_RANK_POPOVER_TITLE = "Best monthly finish" as const;
 
+/**
+ * Own Profile stat help. Best finished monthly place only —
+ * not the live month, and not an all-time leaderboard rank.
+ * Public Top Rank uses the short title + `#N · Mon ’YY` detail instead.
+ */
+export const BEST_MONTHLY_RANK_HELP =
+  "Your best final place on a completed monthly leaderboard. The current month does not count until it finishes." as const;
+
 export type MonthlyTop100BadgeContext = "profile" | "popup" | "leaderboard";
 
 /** Visible label beside the vinyl mark — always “Club”. */
@@ -110,6 +118,22 @@ export function formatBestMonthlyRankHeaderLabel(
   const value = formatBestMonthlyRankValue(rank);
   if (value === "—") return null;
   return `Top Rank ${value}`;
+}
+
+/**
+ * Public Top Rank popover detail.
+ * `#2 · Sep ’26` when a stored month exists, otherwise `#2`.
+ * Does not invent a month.
+ */
+export function formatBestMonthlyRankPopoverDetail(
+  rank: number | null | undefined,
+  yearMonth?: string | null,
+): string | null {
+  const value = formatBestMonthlyRankValue(rank);
+  if (value === "—") return null;
+  const month = formatBestMonthlyRankMonth(yearMonth);
+  if (!month) return value;
+  return `${value} · ${month}`;
 }
 
 export function hasEarnedMonthlyTop100(

@@ -510,12 +510,14 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
   const showFavGenrePill = Boolean(genreChip && genrePillStyle);
   const bestMonthlyRankHeaderLabel = formatBestMonthlyRankHeaderLabel(profile.bestMonthlyRank);
   const showBestMonthlyRankHeader = bestMonthlyRankHeaderLabel != null;
+  const showPublicAchievements =
+    profile.hasMonthlyTop100 === true || showBestMonthlyRankHeader;
+  const showIdentityMeta = Boolean(joinedDateLine) || showPublicAchievements;
 
   const showArtistProfileActions =
     canShareProfile ||
     showArtistReleaseAlerts ||
-    showFavGenrePill ||
-    showBestMonthlyRankHeader;
+    showFavGenrePill;
 
   return (
     <SwipeBackPage
@@ -636,23 +638,32 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                         shieldTone="onDark"
                       />
                     </div>
-                    {joinedDateLine ? (
+                    {showIdentityMeta ? (
                       <div className="mt-2 flex flex-col items-start gap-1.5">
-                        <p className="inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium leading-none text-white/80 backdrop-blur-md">
-                          {joinedDateLine}
-                        </p>
-                        <MonthlyTop100Badge
-                          earned={profile.hasMonthlyTop100 === true}
-                          context="profile"
-                        />
+                        {joinedDateLine ? (
+                          <p className="inline-flex items-center rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-xs font-medium leading-none text-white/80 backdrop-blur-md">
+                            {joinedDateLine}
+                          </p>
+                        ) : null}
+                        {showPublicAchievements ? (
+                          <div
+                            className="flex max-w-full flex-wrap items-center gap-1.5"
+                            data-testid="public-profile-achievements"
+                          >
+                            <MonthlyTop100Badge
+                              earned={profile.hasMonthlyTop100 === true}
+                              context="profile"
+                            />
+                            {showBestMonthlyRankHeader ? (
+                              <BestMonthlyRankHeaderChip
+                                rank={profile.bestMonthlyRank}
+                                month={profile.bestMonthlyRankMonth}
+                              />
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
-                    ) : (
-                      <MonthlyTop100Badge
-                        earned={profile.hasMonthlyTop100 === true}
-                        context="profile"
-                        className="mt-2"
-                      />
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
@@ -682,14 +693,8 @@ export default function PublicProfile({ stackPath }: { stackPath?: string } = {}
                         className="self-end"
                       />
                     ) : null}
-                    {showBestMonthlyRankHeader ? (
-                      <BestMonthlyRankHeaderChip
-                        rank={profile.bestMonthlyRank}
-                        month={profile.bestMonthlyRankMonth}
-                      />
-                    ) : null}
                     {showArtistReleaseAlerts && profileId ? (
-                      <ArtistReleaseAlertsButton artistId={profileId} className="min-w-0 flex-1" />
+                      <ArtistReleaseAlertsButton artistId={profileId} />
                     ) : null}
                   </div>
                 ) : null}

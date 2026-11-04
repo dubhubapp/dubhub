@@ -42,14 +42,24 @@ function readVerificationStatus(post: Record<string, unknown>): string | undefin
   return typeof status === "string" ? status : undefined;
 }
 
-function isPublicArtistVerified(post: Record<string, unknown>): boolean {
-  const artistVerifiedBy = post.artistVerifiedBy ?? post.artist_verified_by;
-  const isArtistVerified = !!(post.isVerifiedArtist ?? post.is_verified_artist);
+/**
+ * Public artist identification: both the artist flag and a non-empty artist id.
+ * A bare `isVerifiedArtist` with no `artistVerifiedBy` is not this state.
+ */
+export function isPublicArtistIdentifiedPost(post: unknown): boolean {
+  if (post == null || typeof post !== "object") return false;
+  const record = post as Record<string, unknown>;
+  const artistVerifiedBy = record.artistVerifiedBy ?? record.artist_verified_by;
+  const isArtistVerified = !!(record.isVerifiedArtist ?? record.is_verified_artist);
   return (
     isArtistVerified &&
     artistVerifiedBy != null &&
     String(artistVerifiedBy).trim() !== ""
   );
+}
+
+function isPublicArtistVerified(post: Record<string, unknown>): boolean {
+  return isPublicArtistIdentifiedPost(post);
 }
 
 /**

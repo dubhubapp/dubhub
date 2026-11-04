@@ -34,7 +34,8 @@ struct ReleaseCountdownProvider: TimelineProvider {
         completion(built)
     }
 
-    /// Builds entries at label-change boundaries until expiresAt, then a refresh entry.
+    /// Builds countdown entries through the release lifecycle.
+    /// Payload `expiresAt` is a reload hint only — it does not add a fallback card.
     /// When the rolling 96-entry cap truncates final-24h buckets, reload via `.after`
     /// at the last scheduled entry (does not silently freeze mid-countdown).
     static func buildTimeline(
@@ -45,11 +46,6 @@ struct ReleaseCountdownProvider: TimelineProvider {
         case .empty, .invalid:
             return Timeline(
                 entries: [ReleaseCountdownEntryFactory.makeEntry(from: load, at: now)],
-                policy: .atEnd
-            )
-        case .expired:
-            return Timeline(
-                entries: [ReleaseCountdownEntryFactory.makeEntry(from: .expired, at: now)],
                 policy: .atEnd
             )
         case .release(let envelope):
@@ -71,20 +67,25 @@ struct ReleaseCountdownProvider: TimelineProvider {
                 )
             }
 
-            let planned = timelineDates(release: release, now: now, expiresAt: expiresAt)
-            var entries = planned.dates.map { date in
+            let planned = timelineDates(release: release, now: now)
+            let entries = planned.dates.map { date in
                 ReleaseCountdownEntryFactory.makeEntry(from: load, at: date)
             }
-            if !planned.truncated, expiresAt > now {
-                entries.append(ReleaseCountdownEntry(date: expiresAt, state: .refresh))
-            }
-
+            let hint = HomeWidgetTimelinePolicy.reloadHint(
+                truncated: planned.truncated,
+                lastScheduledDate: entries.last?.date,
+                payloadExpiresAt: expiresAt,
+                now: now
+            )
             let policy: TimelineReloadPolicy
-            if planned.truncated, let last = entries.last {
-                // Reload when the rolling window ends so the next 5-minute buckets appear.
-                policy = .after(last.date)
-            } else {
+            switch hint {
+            case .atEnd:
                 policy = .atEnd
+            case .after(let date):
+                // Reload so a newer app-written payload can be picked up, or so the
+                // next 5-minute buckets appear. The current entries stay countdown
+                // entries either way.
+                policy = .after(date)
             }
             return Timeline(entries: entries, policy: policy)
         }
@@ -100,8 +101,7 @@ struct ReleaseCountdownProvider: TimelineProvider {
 
     private static func timelineDates(
         release: HomeWidgetReleaseDto,
-        now: Date,
-        expiresAt: Date
+        now: Date
     ) -> HomeWidgetCountdown.TimelineDates {
         let modeRaw = release.timingMode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if modeRaw == "exact",
@@ -112,12 +112,18 @@ struct ReleaseCountdownProvider: TimelineProvider {
                 releaseBoundary: at,
                 now: now
             )
+            let horizon = HomeWidgetCountdown.scheduleHorizon(
+                mode: .exact,
+                releaseCalendarDate: release.releaseCalendarDate,
+                releaseAt: at,
+                now: now
+            )
             return HomeWidgetCountdown.timelineChangeDates(
                 mode: .exact,
                 releaseCalendarDate: release.releaseCalendarDate,
                 releaseAt: at,
                 now: now,
-                expiresAt: expiresAt,
+                until: horizon,
                 announcementExpiresAt: announcementExpiresAt
             )
         }
@@ -146,21 +152,28 @@ struct ReleaseCountdownProvider: TimelineProvider {
                 releaseBoundary: boundary,
                 now: now
             )
+            let horizon = HomeWidgetCountdown.scheduleHorizon(
+                mode: .midnight,
+                releaseCalendarDate: ymd,
+                releaseAt: nil,
+                now: now
+            )
             return HomeWidgetCountdown.timelineChangeDates(
                 mode: .midnight,
                 releaseCalendarDate: ymd,
                 releaseAt: nil,
                 now: now,
-                expiresAt: expiresAt,
+                until: horizon,
                 announcementExpiresAt: announcementExpiresAt
             )
         }
 
-        // Legacy fallback: a few UTC midnights.
+        // Legacy fallback: a few UTC midnights through Out-now retention, not payload freshness.
+        let horizon = now.addingTimeInterval(HomeWidgetCountdown.outNowRetentionHours * 3_600 + 60)
         var dates: [Date] = [now]
         var cursor = HomeWidgetCountdownLegacyNextUtc.midnight(after: now)
         var guardCount = 0
-        while cursor < expiresAt && guardCount < 4 {
+        while cursor < horizon && guardCount < 4 {
             dates.append(cursor)
             cursor = HomeWidgetCountdownLegacyNextUtc.midnight(after: cursor)
             guardCount += 1

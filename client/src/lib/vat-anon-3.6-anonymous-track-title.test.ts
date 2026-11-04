@@ -149,7 +149,7 @@ describe("VAT-ANON-3.6 confirm dialog + collaborators", () => {
 });
 
 describe("VAT-ANON-3.6 comments presentation", () => {
-  it("renders neutral ID - title without artist author chrome", () => {
+  it("header shows the raw anonymous title without artist chrome; ID - stays a non-header formatter", () => {
     assert.equal(
       formatAnonymousIdentificationTitleLabel("Test Song"),
       "ID - Test Song",
@@ -157,14 +157,19 @@ describe("VAT-ANON-3.6 comments presentation", () => {
     assert.equal(formatAnonymousIdentificationTitleLabel("  "), null);
     assert.match(commentsSrc, /anonymous-identification-title-row/);
     assert.match(commentsSrc, /anonymous-identification-title-label/);
-    assert.match(commentsSrc, /resolveArtistIdentificationHeaderTitleLabel|resolveAnonymousIdentificationHeaderLabel/);
-    // Anonymous system row: no avatar chrome on the status header itself.
+    assert.match(commentsSrc, /anonymousHeaderTrackTitle/);
+    assert.doesNotMatch(commentsSrc, /resolveAnonymousIdentificationHeaderLabel/);
+    const header = commentsSrc.slice(
+      commentsSrc.indexOf("if (!showArtistIdentificationHeader) return null"),
+      commentsSrc.indexOf("identificationClusterComments.map"),
+    );
+    assert.doesNotMatch(header, /ID -/);
     assert.doesNotMatch(
       commentsSrc.slice(
         commentsSrc.indexOf('"anonymous-identification-title-row"'),
-        commentsSrc.indexOf('"anonymous-identification-title-row"') + 400,
+        commentsSrc.indexOf('"anonymous-identification-title-row"') + 500,
       ),
-      /avatar|GoldVerifiedTick/,
+      /avatar|GoldVerifiedTick|VerifiedArtistName/,
     );
   });
 

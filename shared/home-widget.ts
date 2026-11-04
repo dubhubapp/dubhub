@@ -1,3 +1,7 @@
+/**
+ * Stamped payload reload hint. WidgetKit may reload after this.
+ * A valid release stays visible; this is not a blank-card cutoff.
+ */
 export const HOME_WIDGET_PAYLOAD_TTL_HOURS = 48 as const;
 
 /**

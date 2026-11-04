@@ -4,9 +4,11 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  BEST_MONTHLY_RANK_HELP,
   BEST_MONTHLY_RANK_POPOVER_TITLE,
   formatBestMonthlyRankHeaderLabel,
   formatBestMonthlyRankMonth,
+  formatBestMonthlyRankPopoverDetail,
   hasEarnedMonthlyTop100,
   HUNDRED_CLUB_MARK_VIEWBOX,
   monthlyTop100BadgeLabel,
@@ -111,11 +113,25 @@ describe("100 Club achievement polish — placement preserved", () => {
   it("no regressions to Top Rank pill", () => {
     assert.equal(formatBestMonthlyRankHeaderLabel(3), "Top Rank #3");
     assert.equal(BEST_MONTHLY_RANK_POPOVER_TITLE, "Best monthly finish");
+    assert.equal(
+      BEST_MONTHLY_RANK_HELP,
+      "Your best final place on a completed monthly leaderboard. The current month does not count until it finishes.",
+    );
     assert.equal(formatBestMonthlyRankMonth("2026-09"), "Sep ’26");
+    assert.equal(formatBestMonthlyRankPopoverDetail(2, "2026-09"), "#2 · Sep ’26");
+    assert.equal(formatBestMonthlyRankPopoverDetail(2, null), "#2");
     assert.match(bestMonthlyChipSrc, /BestMonthlyRankHeaderChip/);
     assert.match(bestMonthlyChipSrc, /<Popover/);
-    assert.match(publicProfileSrc, /BestMonthlyRankHeaderChip/);
+    assert.match(bestMonthlyChipSrc, /BEST_MONTHLY_RANK_POPOVER_TITLE/);
+    assert.match(bestMonthlyChipSrc, /APP_MATERIAL_TOAST_SURFACE_CLASS/);
+    assert.doesNotMatch(bestMonthlyChipSrc, /BEST_MONTHLY_RANK_HELP/);
+    assert.doesNotMatch(bestMonthlyChipSrc, /bg-black\/90/);
+    assert.match(publicProfileSrc, /data-testid="public-profile-achievements"/);
+    assert.match(publicProfileSrc, /flex flex-wrap items-end gap-2/);
+    assert.doesNotMatch(publicProfileSrc, /ArtistReleaseAlertsButton artistId=\{profileId\} className="min-w-0 flex-1"/);
+    assert.match(userProfileSrc, /bestMonthlyRank: BEST_MONTHLY_RANK_HELP/);
     assert.doesNotMatch(badgeSrc, /BestMonthlyRank|Top Rank|formatBestMonthlyRank/);
     assert.doesNotMatch(presentationSrc, /#FFD700|0a83ff/);
+    assert.doesNotMatch(BEST_MONTHLY_RANK_HELP, /current rank|live rank|all-time/i);
   });
 });

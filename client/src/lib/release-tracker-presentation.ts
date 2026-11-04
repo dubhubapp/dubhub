@@ -94,9 +94,9 @@ export const RELEASE_FEED_TITLE_CLASS =
 export const RELEASE_FEED_BYLINE_ROW_CLASS =
   "flex w-full min-w-0 items-start" as const;
 
-/** Artist — secondary; muted; no separator into the title. */
+/** Artist credit — secondary; muted. Wraps to a second line instead of +N. */
 export const RELEASE_FEED_BYLINE_CLASS =
-  "m-0 w-full min-w-0 truncate p-0 text-xs leading-snug text-muted-foreground" as const;
+  "m-0 w-full min-w-0 line-clamp-2 whitespace-normal p-0 text-xs leading-snug text-muted-foreground" as const;
 
 /** Date on its own row (status pill follows beneath). */
 export const RELEASE_FEED_DATE_ROW_CLASS =

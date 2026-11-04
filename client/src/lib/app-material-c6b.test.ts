@@ -183,8 +183,11 @@ describe("C6B Settings rhythm", () => {
     assert.match(SETTINGS_HEADER_TO_SECTIONS_CLASS, /mt-5/);
     assert.match(SETTINGS_SECTIONS_STACK_CLASS, /space-y-4/);
     assert.doesNotMatch(SETTINGS_SECTIONS_STACK_CLASS, /space-y-8|space-y-6/);
-    assert.match(SETTINGS_PAGE_PAD_CLASS, /pt-1/);
-    assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /safe-area-inset-top/);
+    assert.match(
+      SETTINGS_PAGE_PAD_CLASS,
+      /pt-\[calc\(env\(safe-area-inset-top,0px\)\+0\.25rem\)\]/,
+    );
+    assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /pt-2/);
     assert.match(SETTINGS_TITLE_AFTER_BACK_CLASS, /mt-1/);
     const jsx = settingsSrc.slice(settingsSrc.indexOf("return ("));
     const back = jsx.indexOf("button-settings-back");
@@ -484,9 +487,13 @@ describe("C6B.4 Settings shell atmosphere + compact header", () => {
     assert.match(appSrc, /isProfileShellRoute/);
   });
 
-  it("keeps a single layout safe-area owner (shell, not page pad/scroll)", () => {
+  it("keeps Settings safe-area on the page pad, not the shared shell", () => {
+    assert.match(appSrc, /authenticatedMainShellUsesSafeTop/);
     assert.match(appSrc, /APP_SHELL_SAFE_TOP_CLASS/);
-    assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /safe-area-inset-top/);
+    assert.match(
+      SETTINGS_PAGE_PAD_CLASS,
+      /pt-\[calc\(env\(safe-area-inset-top,0px\)\+0\.25rem\)\]/,
+    );
     assert.doesNotMatch(SETTINGS_PAGE_SCROLL_CLASS, /safe-area-inset-top/);
     assert.doesNotMatch(SETTINGS_PAGE_SCROLL_CLASS, /pt-\[env/);
     assert.doesNotMatch(settingsSrc, /pt-\[env\(safe-area-inset-top/);
@@ -497,7 +504,7 @@ describe("C6B.4 Settings shell atmosphere + compact header", () => {
   });
 
   it("uses compact Back/title geometry without a second inset or C6B.3 gap", () => {
-    assert.match(SETTINGS_PAGE_PAD_CLASS, /pt-1/);
+    assert.match(SETTINGS_PAGE_PAD_CLASS, /0\.25rem/);
     assert.doesNotMatch(SETTINGS_PAGE_PAD_CLASS, /pt-2/);
     assert.match(SETTINGS_TITLE_AFTER_BACK_CLASS, /mt-1/);
     assert.doesNotMatch(SETTINGS_TITLE_AFTER_BACK_CLASS, /mt-2|mt-3|mt-4|mt-6/);

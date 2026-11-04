@@ -7,7 +7,6 @@ export const HOME_WIDGET_COPY = {
   title: "Release Countdown",
   emptyBody:
     "Choose a saved release in dub hub to start a new countdown.",
-  staleBody: "Open dub hub to refresh your countdown.",
   artistEmptyBody:
     "Create your next release in dub hub to start a countdown.",
   outNow: "Out now",

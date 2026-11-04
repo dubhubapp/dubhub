@@ -46,6 +46,7 @@ export function ReleaseFormHero({
           uploading && "opacity-70",
         )}
         aria-label={artworkUrl ? "Change artwork" : "Add artwork"}
+        aria-busy={uploading}
         data-testid="release-form-hero-artwork"
       >
         {artworkUrl ? (

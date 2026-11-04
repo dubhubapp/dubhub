@@ -64,7 +64,7 @@ describe("VAT-ANON-5.2 Info popover stacking vs Comments drawer", () => {
 });
 
 describe("VAT-ANON-5.2 compact anonymous presentation", () => {
-  it("keeps pill + title + info on one compact containerless centred row", () => {
+  it("keeps title above the unchanged pill, with info beside the pill and no card", () => {
     const gridIdx = commentsSrc.indexOf("grid-cols-[2rem_minmax(0,1fr)_2rem]");
     const row = commentsSrc.slice(
       gridIdx,
@@ -77,10 +77,11 @@ describe("VAT-ANON-5.2 compact anonymous presentation", () => {
     assert.match(row, /justify-center/);
     assert.match(row, /anonymous-identification-title-label/);
     assert.match(row, /CommentsPostIdentificationPill/);
+    assert.doesNotMatch(row, /ID -/);
     const pillIdx = row.indexOf("CommentsPostIdentificationPill");
     const titleIdx = row.indexOf("anonymous-identification-title-label");
     const infoIdx = row.indexOf("StatInfoPopover");
-    assert.ok(pillIdx >= 0 && titleIdx > pillIdx && infoIdx > titleIdx);
+    assert.ok(titleIdx >= 0 && pillIdx > titleIdx && infoIdx > pillIdx);
   });
 
   it("anonymous pill reuses the same Identified glow chrome as other Comments pills", () => {

@@ -33,7 +33,9 @@ type LinkRow = {
   platform: string;
   url: string;
   link_type: string | null;
+  post_release_url: string | null;
   created_at: Date;
+  sort_order?: number;
 };
 
 class FakeLinkDb {
@@ -42,13 +44,19 @@ class FakeLinkDb {
   failNextInsert = false;
   private snapshot: Map<string, LinkRow> | null = null;
 
-  seed(platform: string, url: string, linkType: string | null = null) {
+  seed(
+    platform: string,
+    url: string,
+    linkType: string | null = null,
+    postReleaseUrl: string | null = null,
+  ) {
     this.links.set(platform, {
       id: `id-${platform}`,
       release_id: RELEASE,
       platform,
       url,
       link_type: linkType,
+      post_release_url: postReleaseUrl,
       created_at: new Date(),
     });
   }
@@ -151,13 +159,19 @@ class FakeLinkDb {
               };
             }
             if (sql.startsWith("UPDATE release_links")) {
+              const setsPost = sql.includes("post_release_url");
               const url = String(params?.[0]);
               const linkType = (params?.[1] as string | null) ?? null;
-              const platform = String(params?.[3]);
+              const platform = String(params?.[setsPost ? 4 : 3]);
               const row = db.links.get(platform);
               if (row) {
                 row.url = url;
                 row.link_type = linkType;
+                if (setsPost) {
+                  const raw = params?.[2];
+                  row.post_release_url =
+                    raw == null || String(raw).trim() === "" ? null : String(raw).trim();
+                }
               }
               return { rows: [], rowCount: 1, command: "UPDATE", oid: 0, fields: [] };
             }
@@ -171,12 +185,18 @@ class FakeLinkDb {
               const linkType = (params?.[3] as string | null) ?? null;
               const sortOrder =
                 typeof params?.[4] === "number" ? params[4] : db.links.size;
+              const setsPost = sql.includes("post_release_url");
+              const rawPost = setsPost ? params?.[5] : null;
               db.links.set(platform, {
                 id: `id-${platform}`,
                 release_id: RELEASE,
                 platform,
                 url,
                 link_type: linkType,
+                post_release_url:
+                  rawPost == null || String(rawPost).trim() === ""
+                    ? null
+                    : String(rawPost).trim(),
                 sort_order: sortOrder,
                 created_at: new Date(),
               });
@@ -942,5 +962,222 @@ describe("replaceReleasePrimaryLink", () => {
     assert.equal(db.links.size, 1);
     const platform = [...db.links.keys()][0];
     assert.ok(platform === "apple_music" || platform === "tidal");
+  });
+});
+
+describe("post_release_url persistence", () => {
+  const unpaid = {
+    getSnapshotsForUser: async () => ({}),
+    enforcementEnabled: true,
+    paidToolAccessOverride: false,
+  };
+  const paid = {
+    getSnapshotsForUser: async () => ({}),
+    enforcementEnabled: true,
+    paidToolAccessOverride: true,
+  };
+
+  it("reads an old row with no released URL as null and leaves url stored", async () => {
+    const db = new FakeLinkDb();
+    db.seed("spotify", "https://pre.example/spotify", "presave");
+    const links = await upsertReleaseLinkWithLimit(
+      RELEASE,
+      { platform: "spotify", url: "https://pre.example/spotify", linkType: "presave" },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.url, "https://pre.example/spotify");
+    assert.equal(links[0]?.linkType, "presave");
+    assert.equal(links[0]?.postReleaseUrl, null);
+    assert.equal(db.links.size, 1);
+  });
+
+  it("inserts one platform row with both stored URLs", async () => {
+    const db = new FakeLinkDb();
+    const links = await upsertReleaseLinkWithLimit(
+      RELEASE,
+      {
+        platform: "spotify",
+        url: "https://pre.example/spotify",
+        linkType: "presave",
+        postReleaseUrl: "  https://open.spotify.com/album/1  ",
+      },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(db.links.size, 1);
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.url, "https://pre.example/spotify");
+    assert.equal(links[0]?.postReleaseUrl, "https://open.spotify.com/album/1");
+    assert.notEqual(links[0]?.url, links[0]?.postReleaseUrl);
+  });
+
+  it("updates only the released URL", async () => {
+    const db = new FakeLinkDb();
+    db.seed("spotify", "https://pre.example/spotify", "presave", "https://live.example/old");
+    const links = await upsertReleaseLinkWithLimit(
+      RELEASE,
+      {
+        platform: "spotify",
+        url: "https://pre.example/spotify",
+        linkType: "presave",
+        postReleaseUrl: "https://live.example/new",
+      },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(links[0]?.url, "https://pre.example/spotify");
+    assert.equal(links[0]?.linkType, "presave");
+    assert.equal(links[0]?.postReleaseUrl, "https://live.example/new");
+    assert.equal(db.links.size, 1);
+  });
+
+  it("clears the released URL only when the field is explicit", async () => {
+    const db = new FakeLinkDb();
+    db.seed("spotify", "https://pre.example/spotify", "presave", "https://live.example/old");
+    const cleared = await upsertReleaseLinkWithLimit(
+      RELEASE,
+      {
+        platform: "spotify",
+        url: "https://pre.example/spotify",
+        linkType: "presave",
+        postReleaseUrl: "   ",
+      },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(cleared[0]?.url, "https://pre.example/spotify");
+    assert.equal(cleared[0]?.postReleaseUrl, null);
+    assert.equal(db.links.get("spotify")?.post_release_url, null);
+  });
+
+  it("keeps the released URL when the field is omitted", async () => {
+    const db = new FakeLinkDb();
+    db.seed("spotify", "https://pre.example/spotify", "presave", "https://live.example/keep");
+    const links = await upsertReleaseLinkWithLimit(
+      RELEASE,
+      {
+        platform: "spotify",
+        url: "https://pre.example/spotify-edited",
+        linkType: "presave",
+      },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(links[0]?.url, "https://pre.example/spotify-edited");
+    assert.equal(links[0]?.postReleaseUrl, "https://live.example/keep");
+  });
+
+  it("carries both URLs onto a replaced platform unless removal is explicit", async () => {
+    const db = new FakeLinkDb();
+    db.seed("spotify", "https://pre.example/spotify", "presave", "https://live.example/spotify");
+    const carried = await replaceReleasePrimaryLink(
+      RELEASE,
+      {
+        fromPlatform: "spotify",
+        platform: "apple_music",
+        url: "https://pre.example/apple",
+        linkType: "presave",
+      },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(db.links.size, 1);
+    assert.equal(db.links.has("spotify"), false);
+    assert.equal(carried[0]?.platform, "apple_music");
+    assert.equal(carried[0]?.url, "https://pre.example/apple");
+    assert.equal(carried[0]?.postReleaseUrl, "https://live.example/spotify");
+
+    const replaced = await replaceReleasePrimaryLink(
+      RELEASE,
+      {
+        fromPlatform: "apple_music",
+        platform: "soundcloud",
+        url: "https://pre.example/sc",
+        linkType: "presave",
+        postReleaseUrl: null,
+      },
+      { pool: db.asPool(), ...paid },
+    );
+    assert.equal(db.links.size, 1);
+    assert.equal(replaced[0]?.url, "https://pre.example/sc");
+    assert.equal(replaced[0]?.postReleaseUrl, null);
+  });
+
+  it("still counts one platform when both destinations are stored", async () => {
+    const db = new FakeLinkDb();
+    await upsertReleaseLinkWithLimit(
+      RELEASE,
+      {
+        platform: "spotify",
+        url: "https://pre.example/spotify",
+        linkType: null,
+        postReleaseUrl: "https://live.example/spotify",
+      },
+      { pool: db.asPool(), ...unpaid },
+    );
+    assert.equal(db.links.size, 1);
+    await assert.rejects(
+      () =>
+        upsertReleaseLinkWithLimit(
+          RELEASE,
+          {
+            platform: "apple_music",
+            url: "https://music.apple.com/1",
+            linkType: null,
+            postReleaseUrl: "https://music.apple.com/live",
+          },
+          { pool: db.asPool(), ...unpaid },
+        ),
+      (e: unknown) => e instanceof FreeLinkLimitReachedError && e.used === 1,
+    );
+    assert.equal(db.links.size, 1);
+    assert.equal(db.links.get("spotify")?.post_release_url, "https://live.example/spotify");
+  });
+
+  it("does not let a released URL bypass the pre-release entitlement", async () => {
+    const db = new FakeLinkDb();
+    await assert.rejects(
+      () =>
+        upsertReleaseLinkWithLimit(
+          RELEASE,
+          {
+            platform: "spotify",
+            url: "https://pre.example/spotify",
+            linkType: "presave",
+            postReleaseUrl: "https://live.example/spotify",
+          },
+          { pool: db.asPool(), ...unpaid },
+        ),
+      (e: unknown) => e instanceof PaidLinkTypeRequiredError,
+    );
+    assert.equal(db.links.size, 0);
+  });
+
+  it("keeps both destinations after a free-tier downgrade edit", async () => {
+    const db = new FakeLinkDb();
+    db.seed("spotify", "https://pre.example/spotify", "presave", "https://live.example/spotify");
+    db.seed("soundcloud", "https://soundcloud.com/a", null, null);
+    const links = await upsertReleaseLinkWithLimit(
+      RELEASE,
+      {
+        platform: "spotify",
+        url: "https://pre.example/spotify",
+        linkType: "presave",
+      },
+      { pool: db.asPool(), ...unpaid },
+    );
+    assert.equal(db.links.size, 2);
+    const spotify = links.find((link) => link.platform === "spotify");
+    assert.equal(spotify?.url, "https://pre.example/spotify");
+    assert.equal(spotify?.postReleaseUrl, "https://live.example/spotify");
+    await assert.rejects(
+      () =>
+        upsertReleaseLinkWithLimit(
+          RELEASE,
+          { platform: "tidal", url: "https://tidal.com/1", linkType: null },
+          { pool: db.asPool(), ...unpaid },
+        ),
+      (e: unknown) => e instanceof FreeLinkLimitReachedError,
+    );
+    assert.equal(db.links.size, 2);
+    assert.equal(db.links.get("spotify")?.url, "https://pre.example/spotify");
+    assert.equal(db.links.get("spotify")?.post_release_url, "https://live.example/spotify");
+    assert.equal(db.links.get("soundcloud")?.url, "https://soundcloud.com/a");
   });
 });

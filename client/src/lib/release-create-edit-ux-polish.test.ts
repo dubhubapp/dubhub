@@ -127,8 +127,10 @@ describe("release required-metadata validation UX", () => {
   });
 
   it("real backend / network failures remain destructive-styled", () => {
-    assert.match(createSrc, /Artwork upload failed[\s\S]*variant:\s*"destructive"/);
-    assert.match(editSrc, /Artwork upload failed[\s\S]*variant:\s*"destructive"/);
+    const artworkSrc = readFileSync(join(here, "./release-artwork-image.ts"), "utf8");
+    assert.match(artworkSrc, /variant:\s*"destructive"/);
+    assert.match(createSrc, /toast\(result\.toast\)/);
+    assert.match(editSrc, /toast\(result\.toast\)/);
     assert.match(createSrc, /variant:\s*"destructive"/);
     assert.match(editSrc, /Update failed[\s\S]*variant:\s*"destructive"/);
   });

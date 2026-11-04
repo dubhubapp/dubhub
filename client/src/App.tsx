@@ -36,7 +36,11 @@ import ResetPasswordPage from "@/pages/reset-password";
 import AuthCallbackPage from "@/pages/auth-callback";
 import ModeratorPage from "@/pages/moderator";
 import { InteractiveSettingsStack } from "@/components/interactive-settings-stack";
-import { APP_MAIN_SHELL_BASE, APP_SHELL_SAFE_TOP_CLASS } from "@/lib/app-shell-layout";
+import {
+  APP_MAIN_SHELL_BASE,
+  APP_SHELL_SAFE_TOP_CLASS,
+  authenticatedMainShellUsesSafeTop,
+} from "@/lib/app-shell-layout";
 import { SUBMIT_METADATA_SHELL_ATMOSPHERE_CLASS } from "@/lib/app-material";
 import {
   SETTINGS_SHELL_ATMOSPHERE_CLASS,
@@ -190,9 +194,12 @@ function AuthenticatedMainShell({ children }: { children: React.ReactNode }) {
     isReleaseDetailBleedRoute ||
     location === "/leaderboard";
 
-  const shellClass = isBleedRoute
-    ? APP_MAIN_SHELL_BASE
-    : `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`;
+  const shellClass = authenticatedMainShellUsesSafeTop({
+    bleedRoute: isBleedRoute,
+    settingsUtilityRoute: isSettingsUtilityRoute(location),
+  })
+    ? `${APP_MAIN_SHELL_BASE} ${APP_SHELL_SAFE_TOP_CLASS}`
+    : APP_MAIN_SHELL_BASE;
 
   return (
     <div

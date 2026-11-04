@@ -8,7 +8,10 @@ export const INLINE_ROLE_ICON_SIZE = "h-4 w-4";
 
 /** Fixed 12×12px inline verified-artist tick box — matches Identified pill icon container. */
 const INLINE_ROLE_TICK_SIZE = "h-3 w-3";
-/** ~10% artwork upscale inside the fixed box (between h-3 and h-3.5). */
+/**
+ * Optical upscale used on profile, feed, and leaderboard name rows.
+ * Comments pass `scaledTick={false}` so the tick matches mention and ID-header ticks.
+ */
 const INLINE_ROLE_TICK_ARTWORK_SCALE = "origin-center scale-[1.1]";
 const INLINE_ROLE_TICK_WRAPPER = `inline-flex ${INLINE_ROLE_TICK_SIZE} shrink-0 items-center justify-center overflow-visible`;
 const INLINE_ROLE_SHIELD_ALIGN = "-mt-0.5 self-center";
@@ -87,6 +90,7 @@ export function ModeratorShieldIcon({
 export function UserRoleInlineIcons({
   verifiedArtist,
   moderator,
+  scaledTick = true,
   tickClassName,
   shieldClassName,
   shieldSizeClass = INLINE_ROLE_ICON_SIZE,
@@ -95,6 +99,8 @@ export function UserRoleInlineIcons({
 }: {
   verifiedArtist: boolean;
   moderator: boolean;
+  /** Default keeps the shared 1.1 optical scale. Comments set false for a true 12px tick. */
+  scaledTick?: boolean;
   tickClassName?: string;
   shieldClassName?: string;
   shieldSizeClass?: string;
@@ -109,7 +115,11 @@ export function UserRoleInlineIcons({
         <span className={INLINE_ROLE_TICK_WRAPPER}>
           <GoldVerifiedTick
             glow="inline"
-            className={cn(INLINE_ROLE_TICK_SIZE, INLINE_ROLE_TICK_ARTWORK_SCALE, tickClassName)}
+            className={cn(
+              INLINE_ROLE_TICK_SIZE,
+              scaledTick && INLINE_ROLE_TICK_ARTWORK_SCALE,
+              tickClassName,
+            )}
           />
         </span>
       )}

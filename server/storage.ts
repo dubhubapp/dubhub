@@ -15,6 +15,7 @@ import {
   mapReleaseLinkRow,
   type ReleaseLinkRecord,
 } from "./release-feed-links";
+import { postReleaseUrlWrite } from "./release-link-post-release-url";
 import { eq, desc, asc, and, or, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { supabase } from "./supabaseClient";
@@ -451,7 +452,13 @@ export interface IStorage {
   }): Promise<any | undefined>;
   getReleaseLinks(releaseId: string): Promise<any[]>;
   getReleaseLinksForReleases(releaseIds: string[]): Promise<Map<string, ReleaseLinkRecord[]>>;
-  upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void>;
+  upsertReleaseLink(
+    releaseId: string,
+    platform: string,
+    url: string,
+    linkType?: string | null,
+    postReleaseUrl?: string | null,
+  ): Promise<void>;
   deleteReleaseLink(releaseId: string, platform: string): Promise<boolean>;
   getReleasePostIds(releaseId: string): Promise<string[]>;
   attachPostsToRelease(releaseId: string, artistId: string, postIds: string[]): Promise<{
@@ -4667,7 +4674,7 @@ export class DatabaseStorage implements IStorage {
 
   async getReleaseLinks(releaseId: string): Promise<any[]> {
     const result = await db.execute(sql`
-      SELECT id, release_id, platform, url, link_type, sort_order, created_at
+      SELECT id, release_id, platform, url, link_type, post_release_url, sort_order, created_at
       FROM release_links
       WHERE release_id = ${releaseId}
       ORDER BY sort_order ASC, platform ASC
@@ -4686,7 +4693,7 @@ export class DatabaseStorage implements IStorage {
     }
     if (ids.length === 0) return new Map();
     const result = await pool.query(
-      `SELECT id, release_id, platform, url, link_type, sort_order, created_at::text AS created_at
+      `SELECT id, release_id, platform, url, link_type, post_release_url, sort_order, created_at::text AS created_at
        FROM release_links
        WHERE release_id = ANY($1::uuid[])
        ORDER BY sort_order ASC, platform ASC`,
@@ -4695,25 +4702,47 @@ export class DatabaseStorage implements IStorage {
     return groupReleaseLinksByReleaseId(ids, result.rows.map((row) => mapReleaseLinkRow(row)));
   }
 
-  async upsertReleaseLink(releaseId: string, platform: string, url: string, linkType?: string | null): Promise<void> {
+  async upsertReleaseLink(
+    releaseId: string,
+    platform: string,
+    url: string,
+    linkType?: string | null,
+    postReleaseUrl?: string | null,
+  ): Promise<void> {
+    const postWrite = postReleaseUrlWrite(postReleaseUrl);
     const existing = await db.execute(sql`
       SELECT id FROM release_links WHERE release_id = ${releaseId} AND platform = ${platform} LIMIT 1
     `);
     const rows = (existing as any).rows || [];
     if (rows.length > 0) {
-      await db.execute(sql`
-        UPDATE release_links SET url = ${url}, link_type = ${linkType ?? null} WHERE release_id = ${releaseId} AND platform = ${platform}
-      `);
+      if (postWrite.mode === "omit") {
+        await db.execute(sql`
+          UPDATE release_links SET url = ${url}, link_type = ${linkType ?? null} WHERE release_id = ${releaseId} AND platform = ${platform}
+        `);
+      } else {
+        await db.execute(sql`
+          UPDATE release_links
+          SET url = ${url}, link_type = ${linkType ?? null}, post_release_url = ${postWrite.value}
+          WHERE release_id = ${releaseId} AND platform = ${platform}
+        `);
+      }
     } else {
       const maxResult = await db.execute(sql`
         SELECT COALESCE(MAX(sort_order), -1)::int AS m FROM release_links WHERE release_id = ${releaseId}
       `);
       const maxRows = (maxResult as any).rows || [];
       const nextOrder = (maxRows[0]?.m ?? -1) + 1;
-      await db.execute(sql`
-        INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
-        VALUES (${releaseId}, ${platform}, ${url}, ${linkType ?? null}, ${nextOrder}, NOW())
-      `);
+      if (postWrite.mode === "set" && postWrite.value != null) {
+        await db.execute(sql`
+          INSERT INTO release_links (release_id, platform, url, link_type, sort_order, post_release_url, created_at)
+          VALUES (${releaseId}, ${platform}, ${url}, ${linkType ?? null}, ${nextOrder}, ${postWrite.value}, NOW())
+        `);
+      } else {
+        await db.execute(sql`
+          INSERT INTO release_links (release_id, platform, url, link_type, sort_order, created_at)
+          VALUES (${releaseId}, ${platform}, ${url}, ${linkType ?? null}, ${nextOrder}, NOW())
+        `);
+      }
     }
   }
 
